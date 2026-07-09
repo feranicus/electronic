@@ -1,0 +1,8 @@
+# Build context is this folder (parent) so Dockerfiles can COPY the skill/bot.
+# Keep the context tiny: ignore everything except the folders the images need.
+*
+!hermes-local
+!hermes-skills
+!assess-bot
+!cassandra-bot
+!colt_auth.py

@@ -1,0 +1,58 @@
+# REUSE MODE — feed the EXISTING Grafana/Loki on the droplet. Adds NO extra observability stack.
+# Only a tiny promtail shipper + the two bots. Import obs/grafana/dashboards/assess.json into
+# your existing Grafana (it already has the 'loki' datasource, so it maps automatically).
+#
+#   Needs: LOKI_URL (existing Loki push endpoint) + LOKI_NETWORK (its docker network).
+#   deploy.py --reuse discovers both automatically.
+name: colt-stack
+
+services:
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: colt-promtail
+    command: -config.file=/etc/promtail/promtail-reuse.yml -config.expand-env=true
+    environment:
+      - LOKI_URL=${LOKI_URL:?set LOKI_URL to the existing Loki push endpoint}
+    volumes:
+      - ./obs/promtail-reuse.yml:/etc/promtail/promtail-reuse.yml:ro
+      - colt_events:/logs:ro
+      - promtail-data:/tmp/promtail
+    networks: [lokinet]          # joins the EXISTING stack's network only to reach Loki
+    restart: unless-stopped
+
+  colttechbot:
+    build: {context: ., dockerfile: assess-bot/Dockerfile}
+    image: colt-assessbot
+    container_name: colt-assessbot
+    restart: unless-stopped
+    env_file: assess-bot/.env
+    environment: [EVENTS_LOG=/var/log/colt/events.log]
+    volumes:
+      - colt_events:/var/log/colt
+      - ./shodan-out:/root/work
+    networks: [colt]             # own network; shares logs via the volume, not the network
+    depends_on: [promtail]
+
+  cassandra:
+    build: {context: ., dockerfile: cassandra-bot/Dockerfile}
+    image: colt-cassandra
+    container_name: colt-cassandra
+    restart: unless-stopped
+    env_file: cassandra-bot/.env
+    environment: [EVENTS_LOG=/var/log/colt/events.log]
+    volumes:
+      - colt_events:/var/log/colt
+    networks: [colt]
+    depends_on: [promtail]
+
+networks:
+  colt:
+    name: colt-net
+    driver: bridge
+  lokinet:
+    external: true
+    name: ${LOKI_NETWORK:?set LOKI_NETWORK to the existing stack's docker network}
+
+volumes:
+  promtail-data:
+  colt_events:

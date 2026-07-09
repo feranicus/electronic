@@ -1,0 +1,121 @@
+{
+  "customer": "Rosneft Oil Company",
+  "currency": { "code": "EUR", "symbol": "€", "word": "euros" },
+  "classification": "CONFIDENTIAL — ILLUSTRATIVE MODEL OUTPUT",
+  "frameworks": ["Open FAIR™", "NIST IR 8286D", "Gartner ROSI"],
+  "method": "Monte-Carlo, 50,000 runs (lognormal)",
+  "remediationSuite": "Colt PSF + SASE + Managed NDR",
+  "montecarlo": { "runs": 50000, "distribution": "lognormal" },
+  "frequencyBands": {
+    "Routine": [12, 52],
+    "Likely": [4, 12],
+    "Plausible": [1, 4],
+    "Tail": [0.1, 1]
+  },
+  "buckets": [
+    { "id": "L1", "name": "Response & investigation", "surface": "IR retainers, forensics" },
+    { "id": "L2", "name": "Notification & legal", "surface": "GDPR/DPA counsel" },
+    { "id": "L3", "name": "Business interruption", "surface": "Refinery / trading downtime" },
+    { "id": "L4", "name": "Regulatory fines", "surface": "GDPR, sanctions exposure" },
+    { "id": "L5", "name": "Reputation & churn", "surface": "Counterparty confidence" },
+    { "id": "L6", "name": "Recovery & rebuild", "surface": "OT/IT rebuild, hardening" },
+    { "id": "L7", "name": "Secondary / liability", "surface": "Third-party claims" }
+  ],
+  "benchmarks": [
+    { "label": "Energy-sector mean breach cost", "value": 5100000, "source": "IBM/Ponemon 2024" },
+    { "label": "OT ransomware downtime / day", "value": 850000, "source": "Colt PSF model" }
+  ],
+  "findings": [
+    {
+      "id": "C-01",
+      "tier": "CRIT",
+      "label": "Unpatched VPN gateway (CVE-2026-50751)",
+      "asset": { "C": "high", "I": "high", "A": "high" },
+      "lossScenario": "Perimeter VPN RCE → domain foothold → OT pivot / ransomware",
+      "realComparable": "Colonial Pipeline (2021): $4.4M ransom, 6-day shutdown, ~$1bn systemic impact",
+      "tef": 8,
+      "vuln": 0.55,
+      "lmBuckets": {
+        "L1": [80000, 200000, 500000],
+        "L2": [60000, 180000, 600000],
+        "L3": [900000, 2500000, 7000000],
+        "L4": [200000, 900000, 3500000],
+        "L5": [300000, 1100000, 4000000],
+        "L6": [400000, 1200000, 3000000],
+        "L7": [100000, 400000, 1500000]
+      },
+      "pmlRange": [9000000, 22000000],
+      "coltControl": "Colt SASE + Managed NDR + patch SLA",
+      "controlCost": 640000,
+      "aleAfter": 380000
+    },
+    {
+      "id": "H-01",
+      "tier": "HIGH",
+      "label": "Exposed RDP on trading network",
+      "asset": { "C": "high", "I": "med", "A": "high" },
+      "lossScenario": "Brute-force / credential stuffing → lateral movement into trading systems",
+      "realComparable": "Norsk Hydro (2019): ~$70M loss from LockerGoga",
+      "tef": 20,
+      "vuln": 0.3,
+      "lmBuckets": {
+        "L1": [40000, 120000, 300000],
+        "L2": [20000, 80000, 250000],
+        "L3": [300000, 900000, 2500000],
+        "L4": [50000, 300000, 1200000],
+        "L5": [100000, 400000, 1500000],
+        "L6": [150000, 500000, 1400000],
+        "L7": [40000, 150000, 600000]
+      },
+      "pmlRange": [3500000, 8500000],
+      "coltControl": "Colt Zero-Trust access + MFA enforcement",
+      "controlCost": 220000,
+      "aleAfter": 210000
+    },
+    {
+      "id": "M-01",
+      "tier": "MED",
+      "label": "Legacy TLS / expired certificates on portal",
+      "asset": { "C": "med", "I": "med", "A": "low" },
+      "lossScenario": "MITM / phishing enablement against customer-facing portal",
+      "realComparable": "Equifax (2017): expired cert masked C2 for 76 days",
+      "tef": 15,
+      "vuln": 0.2,
+      "lmBuckets": {
+        "L1": [15000, 50000, 150000],
+        "L2": [10000, 40000, 120000],
+        "L3": [50000, 150000, 500000],
+        "L4": [20000, 90000, 400000],
+        "L5": [60000, 220000, 800000],
+        "L6": [30000, 110000, 350000],
+        "L7": [10000, 60000, 250000]
+      },
+      "pmlRange": [900000, 2400000],
+      "coltControl": "Colt cert lifecycle + WAF",
+      "controlCost": 75000,
+      "aleAfter": 60000
+    }
+  ],
+  "portfolio": {
+    "aleRange": [6500000, 17000000],
+    "aleLikely": 9800000,
+    "largestPmls": [
+      { "id": "C-01", "pml": 22000000 },
+      { "id": "H-01", "pml": 8500000 },
+      { "id": "M-01", "pml": 2400000 }
+    ],
+    "waterfall": [
+      { "label": "C-01 VPN RCE", "cut": 5900000, "svc": "SASE + NDR" },
+      { "label": "H-01 RDP", "cut": 2600000, "svc": "Zero-Trust" },
+      { "label": "M-01 TLS", "cut": 700000, "svc": "Cert lifecycle" }
+    ],
+    "rosiPct": 940,
+    "payback": "≈ 5 months",
+    "codAvoided": 820000
+  },
+  "lossExceedance": {
+    "thresholds": [1000000, 2500000, 5000000, 10000000, 20000000, 40000000],
+    "before": [0.82, 0.61, 0.44, 0.26, 0.11, 0.03],
+    "after": [0.38, 0.19, 0.09, 0.03, 0.008, 0.001]
+  }
+}

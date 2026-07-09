@@ -1,0 +1,23 @@
+# Dedicated assessment bot (no LLM). AE sends /assess <company> -> 3 decks back.
+#   1) create a NEW bot with @BotFather -> put its token in .env as BOT_TOKEN
+#   2) put SHODAN_API_KEY + ALLOWED_USERS (your Telegram numeric ids) in .env
+#   3) docker volume create colt_events   (once, shared with the obs stack)
+#   4) docker compose up -d --build
+services:
+  assessbot:
+    build:
+      context: ..
+      dockerfile: assess-bot/Dockerfile
+    image: assess-bot
+    container_name: assess-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - EVENTS_LOG=/var/log/colt/events.log
+    volumes:
+      - ../shodan-out:/root/work
+      - colt_events:/var/log/colt        # shared with promtail (reliable file-watch)
+
+volumes:
+  colt_events:
+    external: true

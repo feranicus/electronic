@@ -1,0 +1,23 @@
+# ===================== SECRETS — NEVER COMMIT =====================
+**/.env
+.env
+*.env
+gmail_sa.json
+colt-bots-*.json
+*_sa.json
+service-account*.json
+*credential*.json
+*token*.txt
+
+# ===================== generated / large / local =====================
+shodan-out/
+*.pptx
+*.tgz
+*.zip
+__pycache__/
+*.pyc
+uploads/
+*.bak
+*.bak2
+*.bak3
+node_modules/

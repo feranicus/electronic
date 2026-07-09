@@ -1,0 +1,21 @@
+# Cassandra — Colt AE assistant bot. Zero-trust (colt.net email + shared password), DeepSeek-backed.
+#   1) put the cassandra bot token + keys in .env
+#   2) docker volume create colt_events   (shared with obs + colttechbot; run once)
+#   3) docker compose up -d --build
+services:
+  cassandra:
+    build:
+      context: ..
+      dockerfile: cassandra-bot/Dockerfile
+    image: cassandra-bot
+    container_name: cassandra-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - EVENTS_LOG=/var/log/colt/events.log
+    volumes:
+      - colt_events:/var/log/colt        # shared audit/observability volume
+
+volumes:
+  colt_events:
+    external: true

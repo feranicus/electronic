@@ -1,0 +1,10 @@
+# For WhatsApp Cloud API only (Telegram needs nothing here).
+# Add to /opt/videodead/Caddyfile so Meta can reach Hermes' webhook over HTTPS.
+# Replace 8099 with the real gateway webhook port shown by `hermes setup gateway`.
+hermes.jobhuntwow.com {
+    encode gzip zstd
+    reverse_proxy 127.0.0.1:8099
+}
+# DNS: add  A hermes -> 64.225.108.200  (or CNAME hermes -> jobhuntwow.com) in GoDaddy.
+# In Meta's WhatsApp app, set the webhook callback URL to:
+#   https://hermes.jobhuntwow.com/<path Hermes prints during setup>
