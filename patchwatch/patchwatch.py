@@ -19,7 +19,9 @@ The LLM only SUMMARISES and assesses risk. It never decides whether to run apt o
 deterministic. Config comes from /etc/patchwatch/patchwatch.env (see patchwatch.env.example).
 No secret is ever hard-coded; everything sensitive is read from the environment on the droplet.
 """
-import os, sys, json, time, subprocess, socket, tarfile, tempfile, datetime, urllib.request, urllib.error
+import os, sys, json, time, subprocess, socket, tarfile, tempfile, datetime, uuid, contextlib, urllib.request, urllib.error
+
+RUN_ID = uuid.uuid4().hex[:12]   # correlates every event of a single run
 
 # ----------------------------------------------------------------------------- config
 def env(k, d=""): return os.environ.get(k, d)
@@ -63,7 +65,7 @@ EVENTS_LOG = env("PATCH_EVENTS_LOG", "/opt/colt-stack/observe/events.log")
 # ----------------------------------------------------------------------------- helpers
 def log(evt, **kw):
     rec = {"ts": int(time.time()), "iso": datetime.datetime.utcnow().isoformat() + "Z",
-           "bot": "patchwatch", "host": HOST, "evt": evt, **kw}
+           "bot": "patchwatch", "host": HOST, "run_id": RUN_ID, "evt": evt, **kw}
     line = json.dumps(rec, default=str)
     print(line, flush=True)
     try:
@@ -72,6 +74,19 @@ def log(evt, **kw):
             f.write(line + "\n")
     except Exception:
         pass
+
+@contextlib.contextmanager
+def phase(name, **meta):
+    """Emit start/done/error events with a duration so Grafana can render a progress timeline."""
+    t0 = time.time()
+    log(evt="phase", phase=name, state="start", **meta)
+    try:
+        yield
+    except Exception as e:
+        log(evt="phase", phase=name, state="error", dur_s=round(time.time() - t0, 1), err=str(e)[:200])
+        raise
+    else:
+        log(evt="phase", phase=name, state="done", dur_s=round(time.time() - t0, 1))
 
 def sh(cmd, timeout=1800, check=False):
     """Run a shell command, capture output."""
@@ -140,7 +155,7 @@ def backup_to_spaces():
     s3 = boto3.client("s3", region_name=SPACES_REGION, endpoint_url=SPACES_ENDPOINT,
                       aws_access_key_id=SPACES_KEY, aws_secret_access_key=SPACES_SECRET)
     if DRY_RUN:
-        log("backup_dry_run", key=key, bytes=size); os.unlink(tmp.name); return key
+        log("backup_dry_run", key=key, bytes=size); os.unlink(tmp.name); return key, size
     s3.upload_file(tmp.name, SPACES_BUCKET, key)
     os.unlink(tmp.name)
     log("backup_uploaded", key=key, bytes=size, volumes=vols)
@@ -152,7 +167,7 @@ def backup_to_spaces():
             s3.delete_object(Bucket=SPACES_BUCKET, Key=o["Key"]); log("backup_pruned", key=o["Key"])
     except Exception as e:
         log("backup_prune_err", err=str(e)[:160])
-    return key
+    return key, size
 
 def snapshot_droplet():
     """Optional full-image snapshot via DO API. Waits for completion. Returns action id or None."""
@@ -197,10 +212,12 @@ def upgrade(inv):
     elif FULL_UPGRADE:
         rc, out, err = sh(f"{envp} apt-get {opts} full-upgrade", timeout=3600)
         results["apt"] = "ok" if rc == 0 else f"rc={rc}: {err[-300:]}"
+        results["upgraded_count"] = out.count("Setting up ")
         sh(f"{envp} apt-get {opts} autoremove --purge")
     else:  # security-only
         rc, out, err = sh(f"{envp} unattended-upgrade -v 2>&1 || {envp} apt-get {opts} upgrade", timeout=3600)
         results["apt"] = "ok" if rc == 0 else f"rc={rc}: {err[-300:]}"
+        results["upgraded_count"] = out.count("Setting up ")
     # refresh ONLY the colt-stack images (do not touch amnezia/videodead/joplin)
     for cf in ("/opt/colt-stack/docker-compose.ghcr.yml", "/opt/colt-stack/docker-compose.reuse.yml",
                "/root/colt-stack/docker-compose.ghcr.yml"):
@@ -259,38 +276,50 @@ def notify_telegram(text):
 def main():
     if os.geteuid() != 0 and not DRY_RUN:
         sys.exit("patchwatch must run as root (needs apt + reboot).")
+    t_run = time.time()
     log("run_start", dry_run=DRY_RUN, upgrade_mode="full" if FULL_UPGRADE else "security",
         reboot_mode=REBOOT_MODE)
 
-    inv = inventory()
-    log("inventory", **{k: inv[k] for k in ("upgradable", "kernel_updates", "kernel_running",
-                                            "docker", "reboot_required_before", "disk_root")})
+    with phase("inventory"):
+        inv = inventory()
+    log("inventory", upgradable_count=len(inv["upgradable"]), kernel_update_count=len(inv["kernel_updates"]),
+        **{k: inv[k] for k in ("upgradable", "kernel_updates", "kernel_running",
+                               "docker", "reboot_required_before", "disk_root")})
 
     nothing = not inv["upgradable"] and not inv["kernel_updates"]
     if nothing:
+        log("metrics", upgradable_count=0, kernel_update_count=0, upgraded_count=0,
+            backup_bytes=0, reboot_required=0, changed=0, duration_s=round(time.time() - t_run, 1))
         log("run_end", changed=False, note="already up to date")
         notify_telegram(f"🟢 patchwatch @{HOST}: nothing to update. Kernel {inv['kernel_running']}.")
         return
 
     # 2) BACKUP FIRST — abort the whole run if it fails and REQUIRE_BACKUP is on
-    backup_key, snap = None, None
+    backup_key, snap, backup_bytes = None, None, 0
     try:
-        backup_key = backup_to_spaces()
-        snap = snapshot_droplet()
+        with phase("backup_spaces", volumes_project=COMPOSE_PROJECT):
+            backup_key, backup_bytes = backup_to_spaces()
+        with phase("snapshot_droplet"):
+            snap = snapshot_droplet()
     except Exception as e:
         log("backup_failed", err=str(e)[:300])
         if REQUIRE_BACKUP:
             notify_telegram(f"🛑 patchwatch @{HOST}: BACKUP FAILED ({str(e)[:150]}). "
                             f"No packages were touched. Fix Spaces/DO creds and it will retry next cycle.")
+            log("metrics", upgradable_count=len(inv["upgradable"]), kernel_update_count=len(inv["kernel_updates"]),
+                upgraded_count=0, backup_bytes=0, reboot_required=0, changed=0, aborted=1,
+                duration_s=round(time.time() - t_run, 1))
             log("run_end", changed=False, aborted="backup_failed")
             return
 
     # 3) UPGRADE
-    upg = upgrade(inv)
+    with phase("upgrade", upgrade_mode="full" if FULL_UPGRADE else "security"):
+        upg = upgrade(inv)
     log("upgrade_done", **upg)
 
     # 4) DIGEST + 5) NOTIFY
-    digest = llm_digest(inv, upg, backup_key, snap)
+    with phase("digest"):
+        digest = llm_digest(inv, upg, backup_key, snap)
     reboot_needed = upg.get("reboot_required")
     header = f"🩹 patchwatch @{HOST} — {len(inv['upgradable'])} pkg(s) updated"
     if inv["kernel_updates"]:
@@ -298,8 +327,16 @@ def main():
     tail = "\n\n⚠️ Reboot required." if reboot_needed else ""
     if reboot_needed and REBOOT_MODE == "auto":
         tail += " Rebooting now (low-traffic window; Docker services auto-restart, VPN reconnects)."
-    notify_telegram(f"{header}\n\n{digest}\n\nBackup: {backup_key or 'n/a'}"
-                    f"{' + DO snapshot' if snap else ''}{tail}")
+    with phase("notify"):
+        notify_telegram(f"{header}\n\n{digest}\n\nBackup: {backup_key or 'n/a'}"
+                        f"{' + DO snapshot' if snap else ''}{tail}")
+
+    # numeric summary for the dashboard gauges/trends
+    log("metrics",
+        upgradable_count=len(inv["upgradable"]), kernel_update_count=len(inv["kernel_updates"]),
+        upgraded_count=int(upg.get("upgraded_count", 0)), backup_bytes=int(backup_bytes),
+        snapshot=1 if snap else 0, reboot_required=1 if reboot_needed else 0, changed=1,
+        duration_s=round(time.time() - t_run, 1))
 
     # 6) REBOOT
     if reboot_needed and REBOOT_MODE == "auto" and not DRY_RUN:

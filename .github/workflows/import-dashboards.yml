@@ -1,0 +1,31 @@
+name: Import Grafana dashboards
+# Push every dashboard in obs/grafana/dashboards/ into the existing Grafana.
+# Grafana token is an encrypted GitHub secret; URL is a repo variable.
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths: ["obs/grafana/dashboards/**"]
+
+concurrency:
+  group: grafana-import
+  cancel-in-progress: true
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Import all dashboards
+        env:
+          GRAFANA_URL: ${{ vars.GRAFANA_URL }}
+          GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
+        run: |
+          if [ -z "$GRAFANA_TOKEN" ]; then
+            echo "GRAFANA_TOKEN secret not set — skipping (set it to enable auto-import)."; exit 0
+          fi
+          python import_dashboard.py --url "${GRAFANA_URL:-https://godeyes.ai/observe}" \
+            --token "$GRAFANA_TOKEN" --all

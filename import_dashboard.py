@@ -78,6 +78,7 @@ def main():
     ap.add_argument("--loki-uid", default="", help="override if datasource listing is blocked")
     ap.add_argument("--folder", default="", help="Grafana folder title (optional; default General)")
     ap.add_argument("--insecure", action="store_true", help="skip TLS verification")
+    ap.add_argument("--all", action="store_true", help="import EVERY *.json in obs/grafana/dashboards/")
     a = ap.parse_args()
     base = a.url.rstrip("/")
     headers = auth_headers(a.token, a.user, a.password)
@@ -96,22 +97,32 @@ def main():
                  "Re-run with --loki-uid <uid> — find it in Grafana: Connections -> Data sources -> your Loki.")
     print("Using Loki datasource uid: %s" % uid)
 
-    # 2) load + retarget the dashboard
-    dash = json.load(open(a.dashboard, encoding="utf-8"))
-    dash.pop("id", None); dash["id"] = None      # create-or-update by uid
-    retarget(dash, uid)
-
-    payload = {"dashboard": dash, "overwrite": True, "message": "colt-bots dashboard via import_dashboard.py"}
-    if a.folder:
-        payload["folderUid"] = a.folder  # if you pass a folder UID; leave blank for General
-
-    # 3) create/update
-    st, res = req("POST", base + "/api/dashboards/db", headers, body=payload, insecure=a.insecure)
-    if st == 200 and isinstance(res, dict) and res.get("status") == "success":
-        print("✅ Dashboard imported/updated: %s%s" % (base, res.get("url", "")))
-        print("   Open Grafana -> 'Colt Bots Observability'. Send /auth on Telegram to populate it.")
+    # 2) which dashboard(s) to push
+    if a.all:
+        ddir = os.path.dirname(os.path.abspath(a.dashboard))
+        paths = sorted(p for p in [os.path.join(ddir, f) for f in os.listdir(ddir)]
+                       if p.endswith(".json"))
     else:
-        print("!! Import failed (%s): %s" % (st, str(res)[:400]))
+        paths = [a.dashboard]
+
+    # 3) load + retarget + create/update each
+    failures = 0
+    for path in paths:
+        dash = json.load(open(path, encoding="utf-8"))
+        dash.pop("id", None); dash["id"] = None      # create-or-update by uid
+        retarget(dash, uid)
+        payload = {"dashboard": dash, "overwrite": True,
+                   "message": "imported via import_dashboard.py"}
+        if a.folder:
+            payload["folderUid"] = a.folder
+        st, res = req("POST", base + "/api/dashboards/db", headers, body=payload, insecure=a.insecure)
+        name = os.path.basename(path)
+        if st == 200 and isinstance(res, dict) and res.get("status") == "success":
+            print("✅ %-22s -> %s%s" % (name, base, res.get("url", "")))
+        else:
+            print("!! %-22s import failed (%s): %s" % (name, st, str(res)[:300]))
+            failures += 1
+    if failures:
         sys.exit(1)
 
 if __name__ == "__main__":
