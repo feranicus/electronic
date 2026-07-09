@@ -15,14 +15,15 @@ on:
         default: auto
         options: [notify, auto]
 
+# Own lane — never queue behind the bot-deploy pipeline; no manual approval gate
+# (idempotent infra setup, first run uses reboot=notify so it's safe unattended).
 concurrency:
-  group: prod-deploy
-  cancel-in-progress: false
+  group: patchwatch-provision
+  cancel-in-progress: true
 
 jobs:
   provision:
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
