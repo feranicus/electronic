@@ -44,7 +44,7 @@ jobs:
           load: true
           tags: ${{ env.IMAGE_BASE }}/colttechbot:${{ steps.meta.outputs.tag }}
       - name: Scan colttechbot (fail on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5  # v0.30.0
         with:
           image-ref: ${{ env.IMAGE_BASE }}/colttechbot:${{ steps.meta.outputs.tag }}
           severity: HIGH,CRITICAL
@@ -64,7 +64,7 @@ jobs:
           load: true
           tags: ${{ env.IMAGE_BASE }}/cassandra:${{ steps.meta.outputs.tag }}
       - name: Scan cassandra (fail on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5  # v0.30.0
         with:
           image-ref: ${{ env.IMAGE_BASE }}/cassandra:${{ steps.meta.outputs.tag }}
           severity: HIGH,CRITICAL
