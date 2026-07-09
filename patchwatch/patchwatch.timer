@@ -1,0 +1,11 @@
+[Unit]
+Description=Run patchwatch every ~3 days in a low-traffic window
+
+[Timer]
+# Every 3 days at 04:17 UTC (low-traffic window; a kernel reboot here is least disruptive).
+OnCalendar=*-*-01/3 04:17:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

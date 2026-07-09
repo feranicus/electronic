@@ -1,0 +1,15 @@
+[Unit]
+Description=patchwatch — backup-first, LLM-assisted auto-patcher
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/patchwatch/patchwatch.env
+# also load shared secrets (DeepSeek/Telegram) from the colt-stack env if present
+EnvironmentFile=-/opt/colt-stack/.env
+ExecStart=/usr/bin/python3 /opt/patchwatch/patchwatch.py
+# never let a patch run hang forever
+TimeoutStartSec=5400
+Nice=10
+IOSchedulingClass=idle
