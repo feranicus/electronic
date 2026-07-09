@@ -1,0 +1,27 @@
+# Optional overlay: hard egress enforcement via a domain-allowlist proxy.
+# Use ONLY together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d --build
+# With this on, the Hermes container can reach the internet ONLY through squid, which
+# permits just the domains in allowlist.txt (and blocks cloud-metadata/internal SSRF).
+services:
+  egress:
+    image: ubuntu/squid:latest
+    container_name: hermes-egress
+    restart: unless-stopped
+    volumes:
+      - ./squid/squid.conf:/etc/squid/squid.conf:ro
+      - ./allowlist.txt:/etc/squid/allowlist.txt:ro
+    networks:
+      - egnet
+  hermes:
+    environment:
+      HTTP_PROXY: http://egress:3128
+      HTTPS_PROXY: http://egress:3128
+      NO_PROXY: localhost,127.0.0.1
+    depends_on:
+      - egress
+    networks:
+      - egnet
+networks:
+  egnet:
+    driver: bridge

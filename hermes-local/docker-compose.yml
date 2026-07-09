@@ -1,0 +1,30 @@
+# Hermes 24/7 Telegram gateway. The shodan-assessment skill is BAKED INTO THE IMAGE
+# and exposed as one command:  shodan-assessment <company>   (see Dockerfile).
+#   1) put keys in .env   2) docker compose up -d --build
+#   3) Telegram (fresh session):  run: shodan-assessment keb.de
+services:
+  hermes:
+    build:
+      context: ..
+      dockerfile: hermes-local/Dockerfile
+    image: hermes-local
+    container_name: hermes-local
+    restart: unless-stopped
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
+    mem_limit: 2g
+    volumes:
+      - hermes_data:/root/.hermes
+      - ../shodan-out:/root/work
+      - ./AGENTS.md:/root/AGENTS.md:ro
+      - ./allowlist.txt:/root/allowlist.txt:ro
+    command: ["hermes", "gateway"]
+    stdin_open: true
+    tty: true
+volumes:
+  hermes_data:
+    external: true

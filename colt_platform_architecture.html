@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Colt Cyber Assessment Platform — Live Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+ --bg:#0c1830; --bg2:#132444; --card:rgba(29,43,78,.55); --stroke:rgba(0,178,169,.24);
+ --teal:#00B2A9; --tealBright:#00D7BD; --navy:#1D2B4E; --red:#F20C36; --tealDark:#0C544E; --gold:#F7C844; --purple:#6B3FA0; --blue:#3E9BE6;
+ --coral:#ff7a6b; --green:#10B981; --ink:#eaf1fb; --muted:#9fb0c8;
+ --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:radial-gradient(1200px 700px at 80% -10%,rgba(0,178,169,.14),transparent 60%),radial-gradient(900px 600px at -10% 20%,rgba(107,63,160,.12),transparent 55%),linear-gradient(180deg,var(--bg),#0a1428);color:var(--ink);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1280px;margin:0 auto;padding:0 22px}
+h1,h2,h3{font-family:'Space Grotesk',sans-serif;letter-spacing:-.02em;margin:0}
+.eyebrow{font-family:'Space Grotesk';font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--teal);font-weight:600}
+.muted{color:var(--muted)}
+a{color:var(--teal)}
+/* ---- hero ---- */
+header{padding:64px 0 26px}
+.brandrow{display:flex;align-items:center;gap:14px;margin-bottom:26px}
+.chev{font-family:'Space Grotesk';font-weight:700;font-size:26px;color:var(--teal)}
+.wordmark{font-family:'Space Grotesk';font-weight:700;font-size:22px;letter-spacing:-.02em}
+.pill{font-size:11px;font-family:var(--mono);color:var(--green);border:1px solid rgba(46,230,166,.35);padding:4px 10px;border-radius:999px;background:rgba(46,230,166,.06)}
+h1.title{font-size:clamp(30px,5.4vw,58px);line-height:1.03;font-weight:700;max-width:16ch}
+h1.title b{background:linear-gradient(100deg,var(--teal),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{margin-top:18px;max-width:64ch;font-size:17px;color:var(--muted)}
+.stats{display:flex;gap:26px;flex-wrap:wrap;margin-top:26px}
+.stat b{font-family:'Space Grotesk';font-size:26px;display:block;color:var(--ink)}
+.stat span{font-size:12px;color:var(--muted);letter-spacing:.04em}
+/* ---- section ---- */
+section{padding:44px 0}
+.sec-head{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.sec-head h2{font-size:clamp(22px,3vw,32px)}
+.sec-sub{color:var(--muted);max-width:70ch;margin:6px 0 24px;font-size:15px}
+/* ---- diagram frame ---- */
+.diagram{position:relative;border:1px solid var(--stroke);border-radius:20px;background:linear-gradient(180deg,rgba(6,33,26,.6),rgba(4,20,15,.6));overflow:hidden;box-shadow:0 30px 80px -40px rgba(0,0,0,.8)}
+.diagram svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:16px;font-size:12.5px;color:var(--muted)}
+.legend i{display:inline-block;width:22px;height:3px;border-radius:2px;margin-right:7px;vertical-align:middle}
+/* svg node styling via classes */
+.node{fill:var(--card);stroke:var(--stroke);stroke-width:1.2}
+.node.accent{stroke:rgba(0,215,189,.45)}
+.node.warn{stroke:rgba(247,200,68,.4)}
+.node.dim{fill:rgba(10,32,25,.4);stroke:rgba(255,255,255,.06)}
+.ntitle{font-family:'Space Grotesk';font-weight:600;fill:var(--ink)}
+.nsub{fill:var(--muted);font-family:var(--mono)}
+.tag{font-family:var(--mono);fill:var(--teal)}
+.flow{fill:none;stroke-width:1.6;opacity:.35}
+.container{fill:rgba(0,215,189,.03);stroke:rgba(0,215,189,.22);stroke-dasharray:5 5}
+.clabel{font-family:'Space Grotesk';font-weight:600;fill:var(--teal);letter-spacing:.12em;font-size:12px}
+.pulse{animation:pulse 3s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+/* ---- lifecycle steps ---- */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:8px}
+.step{border:1px solid var(--stroke);border-radius:16px;padding:18px;background:var(--card);backdrop-filter:blur(8px);position:relative;overflow:hidden}
+.step:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,var(--teal),transparent)}
+.step .n{font-family:var(--mono);font-size:12px;color:var(--gold)}
+.step h3{font-size:16px;margin:8px 0 6px}
+.step p{margin:0;font-size:13.5px;color:var(--muted);line-height:1.5}
+/* ---- mobile mockup ---- */
+.mobrow{display:grid;grid-template-columns:340px 1fr;gap:30px;align-items:start}
+@media(max-width:820px){.mobrow{grid-template-columns:1fr}}
+.phone{width:320px;margin:0 auto;border-radius:44px;padding:14px;background:linear-gradient(160deg,#16294c,#0a1428);border:1px solid rgba(0,215,189,.22);box-shadow:0 40px 90px -30px rgba(0,0,0,.9),inset 0 0 0 2px rgba(255,255,255,.02)}
+.screen{border-radius:32px;background:#0c1830;height:600px;overflow:hidden;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.05)}
+.tgbar{display:flex;align-items:center;gap:10px;padding:14px 16px;background:linear-gradient(90deg,#0c544e,#0e463f);border-bottom:1px solid rgba(0,0,0,.3)}
+.tgbar .av{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 30% 30%,var(--teal),var(--tealDark));display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;color:#04140f}
+.tgbar .nm{font-family:'Space Grotesk';font-weight:600;font-size:15px}
+.tgbar .st{font-size:11px;color:rgba(234,255,246,.6)}
+.chat{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:9px;background:
+  radial-gradient(circle at 20% 10%,rgba(0,215,189,.05),transparent 40%),#0c1830}
+.chat::-webkit-scrollbar{width:0}
+.b{max-width:80%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.4;opacity:0;transform:translateY(8px);animation:rise .4s forwards}
+.b.me{align-self:flex-end;background:linear-gradient(135deg,#1f6b62,#0c544e);border-bottom-right-radius:4px}
+.b.bot{align-self:flex-start;background:#17294c;border:1px solid rgba(255,255,255,.05);border-bottom-left-radius:4px}
+.b .cmd{font-family:var(--mono);color:var(--gold);font-size:12px;word-break:break-all}
+.b .ok{color:var(--green);font-weight:600}
+.b .warn{color:var(--gold)}
+.b .doc{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;color:var(--teal)}
+.b .doc:before{content:"📎"}
+@keyframes rise{to{opacity:1;transform:none}}
+.toggle{display:inline-flex;background:rgba(0,215,189,.08);border:1px solid var(--stroke);border-radius:999px;padding:4px;margin-bottom:18px}
+.toggle button{font-family:'Space Grotesk';font-weight:600;font-size:13px;color:var(--muted);background:transparent;border:0;padding:8px 16px;border-radius:999px;cursor:pointer;transition:.2s}
+.toggle button.on{background:linear-gradient(120deg,var(--teal),var(--tealDark));color:#04140f}
+.guide{border:1px solid var(--stroke);border-radius:16px;background:var(--card);padding:6px}
+.gstep{display:flex;gap:14px;padding:14px;border-bottom:1px solid rgba(255,255,255,.05)}
+.gstep:last-child{border-bottom:0}
+.gstep .gi{flex:0 0 30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--teal),var(--tealDark));color:#04140f;font-family:'Space Grotesk';font-weight:700;display:grid;place-items:center;font-size:14px}
+.gstep h4{margin:2px 0 4px;font-family:'Space Grotesk';font-size:15px}
+.gstep p{margin:0;font-size:13px;color:var(--muted);line-height:1.5}
+.gstep code{font-family:var(--mono);color:var(--gold);font-size:12px;background:rgba(247,200,68,.08);padding:1px 6px;border-radius:5px}
+footer{padding:50px 0 70px;color:var(--muted);font-size:13px;border-top:1px solid rgba(255,255,255,.06);margin-top:30px}
+.chip{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--stroke);border-radius:8px;padding:3px 9px;margin:3px 4px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="brandrow"><span class="chev">&#10095;</span><span class="wordmark">colt</span>
+    <span class="pill">LIVE · FRA1 droplet · 2FA over Gmail API</span></div>
+  <div class="eyebrow">Cyber Assessment Platform</div>
+  <h1 class="title">Two Telegram bots, <b>one accountable plane</b> — find it, price it, fix it, watch it.</h1>
+  <p class="sub">A deep-dive of every moving part: zero-trust access, Shodan attack-surface assessment, DeepSeek enrichment, live OSINT research, email one-time-code 2FA through the Google Cloud Gmail API, and reused Grafana/Loki observability — all isolated on your DigitalOcean droplet alongside Amnezia VPN &amp; VideoDead.</p>
+  <div class="stats">
+    <div class="stat"><b>2</b><span>zero-trust bots</span></div>
+    <div class="stat"><b>4</b><span>VIP decks / run</span></div>
+    <div class="stat"><b>2-factor</b><span>colt.net email + OTP</span></div>
+    <div class="stat"><b>0</b><span>new firewall rules</span></div>
+    <div class="stat"><b>HTTPS</b><span>Gmail API delivery</span></div>
+  </div>
+</header>
+
+<!-- ================= ARCHITECTURE ================= -->
+<section>
+  <div class="sec-head"><div class="eyebrow">Deep dive</div><h2>Live moving-parts architecture</h2></div>
+  <p class="sec-sub">Particles show real data flows. Green = requests &amp; auth, gold = the OTP email path through Google Cloud, blue = AI &amp; OSINT calls, teal = observability. Everything in the dashed box runs in the isolated <span class="tag">colt-stack</span> project; the droplet's other services are untouched.</p>
+
+  <div class="diagram">
+  <svg viewBox="0 0 1280 880" role="img" aria-label="Architecture diagram">
+    <defs>
+      <linearGradient id="gcard" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="rgba(0,215,189,.06)"/><stop offset="1" stop-color="rgba(0,0,0,0)"/></linearGradient>
+    </defs>
+
+    <!-- droplet container -->
+    <rect class="container" x="452" y="60" width="392" height="676" rx="18"/>
+    <text class="clabel" x="470" y="86">DIGITALOCEAN DROPLET · FRA1 · project colt-stack</text>
+
+    <!-- ===== connectors (paths) ===== -->
+    <!-- request: AE->TG->AUTH -->
+    <path id="f1" class="flow" style="stroke:var(--green)" d="M212,410 H250 M430,410 H500"/>
+    <!-- auth -> gmail (send OTP) -->
+    <path id="f2" class="flow" style="stroke:var(--gold)" d="M812,150 C860,150 860,150 900,140"/>
+    <path id="f2b" class="flow" style="stroke:var(--gold);stroke-dasharray:4 4" d="M900,168 C640,240 300,300 132,455"/>
+    <!-- auth authorizes bots -->
+    <path id="f3" class="flow" style="stroke:var(--green)" d="M660,182 V210 M660,182 V320"/>
+    <!-- bot1 -> shodan -->
+    <path id="f4" class="flow" style="stroke:var(--blue)" d="M812,250 C860,300 860,330 900,338"/>
+    <!-- bot1 -> infer -->
+    <path id="f5" class="flow" style="stroke:var(--blue)" d="M812,240 H900"/>
+    <!-- bot2 -> infer / web -->
+    <path id="f6" class="flow" style="stroke:var(--blue)" d="M812,350 C860,300 860,250 900,242"/>
+    <path id="f7" class="flow" style="stroke:var(--purple)" d="M812,360 C860,400 860,430 900,435"/>
+    <!-- deliver: bot1 -> decks -> TG -> AE -->
+    <path id="f8" class="flow" style="stroke:var(--teal)" d="M500,250 C440,300 400,520 345,560"/>
+    <path id="f8b" class="flow" style="stroke:var(--teal)" d="M260,585 C150,560 150,470 132,455"/>
+    <!-- logs: bots -> promtail -> loki -> grafana -->
+    <path id="f9" class="flow" style="stroke:var(--teal)" d="M660,400 V560"/>
+    <path id="f10" class="flow" style="stroke:var(--teal)" d="M660,620 C660,700 680,720 700,760"/>
+    <path id="f11" class="flow" style="stroke:var(--teal)" d="M840,790 H900"/>
+
+    <!-- ===== nodes ===== -->
+    <!-- AE -->
+    <g class="pulse"><rect class="node accent" x="40" y="360" width="172" height="100" rx="14"/></g>
+    <text class="ntitle" x="60" y="398" font-size="16">Colt AE</text>
+    <text class="nsub" x="60" y="420" font-size="11">Telegram client</text>
+    <text class="nsub" x="60" y="440" font-size="11">phone · desktop</text>
+
+    <!-- Telegram -->
+    <rect class="node" x="250" y="368" width="180" height="84" rx="14"/>
+    <text class="ntitle" x="270" y="404" font-size="15">Telegram Bot API</text>
+    <text class="nsub" x="270" y="426" font-size="11">long-poll · outbound only</text>
+
+    <!-- AUTH gate -->
+    <rect class="node warn" x="500" y="112" width="320" height="70" rx="12"/>
+    <text class="ntitle" x="520" y="144" font-size="15">Zero-Trust 2FA gate</text>
+    <text class="nsub" x="520" y="166" font-size="11">name.familyname@colt.net + 99-char pass → OTP → /verify</text>
+
+    <!-- BOT1 -->
+    <rect class="node accent" x="500" y="200" width="320" height="92" rx="12"/>
+    <text class="ntitle" x="520" y="232" font-size="15">colttechbot</text>
+    <text class="nsub" x="520" y="252" font-size="11">/assess → Shodan recon → DeepSeek</text>
+    <text class="nsub" x="520" y="270" font-size="11">→ 4 decks (Shodan·C-BIQ·GEOPOL·DELTAS)</text>
+
+    <!-- BOT2 -->
+    <rect class="node accent" x="500" y="310" width="320" height="92" rx="12"/>
+    <text class="ntitle" x="520" y="342" font-size="15">cassandra — AE assistant</text>
+    <text class="nsub" x="520" y="362" font-size="11">/research (live OSINT) · MEDDPICC</text>
+    <text class="nsub" x="520" y="380" font-size="11">outreach drafting · colttechbot help desk</text>
+
+    <!-- promtail -->
+    <rect class="node" x="500" y="560" width="320" height="60" rx="12"/>
+    <text class="ntitle" x="520" y="588" font-size="14">colt-promtail</text>
+    <text class="nsub" x="520" y="608" font-size="11">tails events.log → ships to existing Loki</text>
+
+    <!-- neighbors -->
+    <rect class="node dim" x="500" y="648" width="320" height="66" rx="12"/>
+    <text class="nsub" x="520" y="676" font-size="11" style="fill:var(--muted)">Amnezia VPN · VideoDead · jobhuntwow · joplin</text>
+    <text class="nsub" x="520" y="696" font-size="11" style="fill:rgba(46,230,166,.7)">— untouched · no firewall change —</text>
+
+    <!-- GMAIL -->
+    <g class="pulse"><rect class="node warn" x="900" y="102" width="340" height="80" rx="12"/></g>
+    <text class="ntitle" x="922" y="134" font-size="15">Google Cloud · Gmail API</text>
+    <text class="nsub" x="922" y="155" font-size="11">service account + domain-wide delegation</text>
+    <text class="tag" x="922" y="173" font-size="11" style="fill:var(--gold)">OTP email · HTTPS 443 (bypasses SMTP block)</text>
+
+    <!-- INFER -->
+    <rect class="node" x="900" y="200" width="340" height="80" rx="12"/>
+    <text class="ntitle" x="922" y="232" font-size="15">DO Serverless Inference</text>
+    <text class="nsub" x="922" y="253" font-size="11">DeepSeek-3.2 enrich + chat</text>
+    <text class="tag" x="922" y="271" font-size="11" style="fill:var(--blue)">fallback: openai-gpt-oss-120b</text>
+
+    <!-- SHODAN -->
+    <rect class="node" x="900" y="300" width="340" height="76" rx="12"/>
+    <text class="ntitle" x="922" y="330" font-size="15">Shodan API + RIPEstat / RDAP</text>
+    <text class="nsub" x="922" y="352" font-size="11">Top-10 filters · org/ssl/hostname across ASNs</text>
+
+    <!-- WEB -->
+    <rect class="node" x="900" y="398" width="340" height="76" rx="12"/>
+    <text class="ntitle" x="922" y="428" font-size="15">Web · Wikipedia · company site</text>
+    <text class="nsub" x="922" y="450" font-size="11">allowlisted OSINT · Playwright/Chromium fallback</text>
+
+    <!-- DECKS -->
+    <rect class="node accent" x="250" y="560" width="180" height="120" rx="14"/>
+    <text class="ntitle" x="270" y="590" font-size="14">4 VIP decks</text>
+    <text class="nsub" x="270" y="612" font-size="11">Shodan Findings</text>
+    <text class="nsub" x="270" y="630" font-size="11">C-BIQ (€ impact)</text>
+    <text class="nsub" x="270" y="648" font-size="11">GEOPOL actors</text>
+    <text class="nsub" x="270" y="666" font-size="11">DELTAS (AI value)</text>
+
+    <!-- LOKI -->
+    <rect class="node" x="620" y="760" width="220" height="60" rx="12"/>
+    <text class="ntitle" x="640" y="788" font-size="14">videodead-loki</text>
+    <text class="nsub" x="640" y="807" font-size="11">reused · not duplicated</text>
+
+    <!-- GRAFANA -->
+    <g class="pulse"><rect class="node accent" x="900" y="760" width="340" height="60" rx="12"/></g>
+    <text class="ntitle" x="922" y="788" font-size="14">Grafana · godeyes.ai/observe</text>
+    <text class="nsub" x="922" y="807" font-size="11">“Colt Bots Observability” — auth · chat · assessments</text>
+
+    <!-- ===== animated particles ===== -->
+    <circle r="4" fill="#10B981"><animateMotion dur="3.2s" repeatCount="indefinite"><mpath href="#f1"/></animateMotion></circle>
+    <circle r="4.5" fill="#F7C844"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#f2"/></animateMotion></circle>
+    <circle r="4.5" fill="#F7C844"><animateMotion dur="3.6s" repeatCount="indefinite"><mpath href="#f2b"/></animateMotion></circle>
+    <circle r="4" fill="#10B981"><animateMotion dur="2.2s" repeatCount="indefinite"><mpath href="#f3"/></animateMotion></circle>
+    <circle r="4" fill="#3E9BE6"><animateMotion dur="2.8s" repeatCount="indefinite"><mpath href="#f4"/></animateMotion></circle>
+    <circle r="4" fill="#3E9BE6"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#f5"/></animateMotion></circle>
+    <circle r="4" fill="#3E9BE6"><animateMotion dur="2.6s" repeatCount="indefinite"><mpath href="#f6"/></animateMotion></circle>
+    <circle r="4" fill="#6B3FA0"><animateMotion dur="3s" repeatCount="indefinite"><mpath href="#f7"/></animateMotion></circle>
+    <circle r="4.5" fill="#00D7BD"><animateMotion dur="3.4s" repeatCount="indefinite"><mpath href="#f8"/></animateMotion></circle>
+    <circle r="4.5" fill="#00D7BD"><animateMotion dur="2.6s" repeatCount="indefinite"><mpath href="#f8b"/></animateMotion></circle>
+    <circle r="3.5" fill="#00D7BD"><animateMotion dur="2.6s" repeatCount="indefinite"><mpath href="#f9"/></animateMotion></circle>
+    <circle r="3.5" fill="#00D7BD"><animateMotion dur="2.8s" repeatCount="indefinite"><mpath href="#f10"/></animateMotion></circle>
+    <circle r="3.5" fill="#00D7BD"><animateMotion dur="1.8s" repeatCount="indefinite"><mpath href="#f11"/></animateMotion></circle>
+  </svg>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:#10B981"></i>Requests &amp; authorization</span>
+    <span><i style="background:#F7C844"></i>OTP email · Google Cloud Gmail API (HTTPS 443)</span>
+    <span><i style="background:#3E9BE6"></i>AI &amp; Shodan/RIPE calls</span>
+    <span><i style="background:#6B3FA0"></i>Live web research</span>
+    <span><i style="background:#00D7BD"></i>Decks &amp; observability</span>
+  </div>
+</section>
+
+<!-- ================= LIFECYCLE ================= -->
+<section>
+  <div class="sec-head"><div class="eyebrow">Request lifecycle</div><h2>What happens on one <span style="font-family:var(--mono);color:var(--gold)">/assess</span></h2></div>
+  <div class="steps">
+    <div class="step"><div class="n">01</div><h3>Authenticate</h3><p>AE sends <code>/auth name.familyname@colt.net &lt;pass&gt;</code>. Email + shared password checked (constant-time).</p></div>
+    <div class="step"><div class="n">02</div><h3>Prove the mailbox</h3><p>A 6-digit code is emailed via the <b>Gmail API over HTTPS</b>; AE replies <code>/verify 123456</code>. Guessing email+password isn't enough.</p></div>
+    <div class="step"><div class="n">03</div><h3>Recon</h3><p>colttechbot runs the Top-10 Shodan filters + RIPE/RDAP, resolving the estate across ASNs, orgs, certs &amp; hostnames.</p></div>
+    <div class="step"><div class="n">04</div><h3>Enrich</h3><p>Findings go to <b>DeepSeek</b> on DO serverless — pursuit-grade prose, named incidents, Colt remediation, exec summary.</p></div>
+    <div class="step"><div class="n">05</div><h3>Build decks</h3><p>Deterministic generators produce the four VIP decks: Shodan Findings, C-BIQ (€ impact), GEOPOL actors, and the DELTAS “what AI added”.</p></div>
+    <div class="step"><div class="n">06</div><h3>Deliver &amp; observe</h3><p>Decks land back in Telegram; every step is logged to the reused Loki and shown live in Grafana.</p></div>
+  </div>
+</section>
+
+<!-- ================= MOBILE GUIDE ================= -->
+<section>
+  <div class="sec-head"><div class="eyebrow">For Colt employees</div><h2>How to use the bots — step by step</h2></div>
+  <p class="sec-sub">Two separate Telegram bots. Both need a one-time authentication (Colt email + access password + emailed code). Then it's a single command.</p>
+
+  <div class="toggle" id="tg">
+    <button class="on" data-bot="colttechbot">colttechbot — assessment</button>
+    <button data-bot="cassandra">cassandra — AE assistant</button>
+  </div>
+
+  <div class="mobrow">
+    <div class="phone">
+      <div class="screen">
+        <div class="tgbar"><div class="av" id="av">C</div><div><div class="nm" id="botname">colttechbot</div><div class="st">bot · zero-trust</div></div></div>
+        <div class="chat" id="chat"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="guide" id="guide"></div>
+      <div style="margin-top:16px">
+        <span class="chip">colt.net email required</span><span class="chip">99-char access password</span>
+        <span class="chip">6-digit email code</span><span class="chip">codes expire 10 min</span>
+        <span class="chip">5-try lockout</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="padding:0">
+    <div style="color:var(--teal);letter-spacing:.5em;font-size:15px;margin-bottom:12px">&#187; &#187; &#187; &#187; &#187;</div>
+    <div style="margin-bottom:10px"><span style="font-family:'Space Grotesk';font-weight:700;color:var(--teal);font-size:20px">&#10095; colt</span></div>
+    <b style="color:var(--ink);font-family:'Space Grotesk'">Colt · S4BIZ — internal.</b> Isolated on the DigitalOcean droplet (project <span class="tag">colt-stack</span>), reusing the existing Grafana/Loki. Firewall, Amnezia VPN, VideoDead and jobhuntwow untouched. 2FA delivered over the Google Cloud Gmail API to bypass the droplet's SMTP egress block.
+  </div>
+</footer>
+
+</div>
+
+<script>
+const scripts = {
+  colttechbot: {
+    av:"C", name:"colttechbot",
+    chat:[
+      ["me","cmd","/start"],
+      ["bot","","🔒 Colt Cyber Assessment bot. Authenticate with your Colt identity, then run /assess."],
+      ["me","cmd","/auth jevgenijs.vainsteins@colt.net ••••••••••"],
+      ["bot","","📧 I emailed a 6-digit code to your Colt address. Reply /verify &lt;code&gt; (valid 10 min)."],
+      ["me","cmd","/verify 481902"],
+      ["bot","ok","✅ Verified. You're in as jevgenijs.vainsteins@colt.net."],
+      ["me","cmd","/assess sglcarbon.com --asn AS34386"],
+      ["bot","","⏳ Shodan recon → AI enrichment → building 4 VIP decks…"],
+      ["bot","ok","✅ Done. CRIT 1 · HIGH 4 · MED 4 · LOW 1 · portfolio ALE €10.7–28.5M · 🧠 AI: deepseek-3.2"],
+      ["bot","doc","sglcarbon.com_Shodan_Findings.pptx"],
+      ["bot","doc","sglcarbon.com_C-BIQ.pptx"],
+      ["bot","doc","sglcarbon.com_GEOPOL.pptx"],
+      ["bot","doc","sglcarbon.com_DELTAS.pptx"]
+    ],
+    guide:[
+      ["1","Open the bot","Search the colttechbot in Telegram and press Start."],
+      ["2","Authenticate","Send <code>/auth name.familyname@colt.net &lt;access-password&gt;</code>. Only <b>@colt.net</b> emails are accepted."],
+      ["3","Enter the emailed code","You'll get a 6-digit code in your Colt inbox. Reply <code>/verify 123456</code>."],
+      ["4","Run an assessment","<code>/assess company.com</code>. Behind a CDN / many ASNs? add <code>--asn AS1234 --org \"Name\"</code>."],
+      ["5","Get your decks","Four .pptx files come straight back: Shodan Findings, C-BIQ, GEOPOL, DELTAS."]
+    ]
+  },
+  cassandra: {
+    av:"K", name:"cassandra",
+    chat:[
+      ["me","cmd","/auth jevgenijs.vainsteins@colt.net ••••••••••"],
+      ["bot","","📧 Code emailed. Reply /verify &lt;code&gt;."],
+      ["me","cmd","/verify 730514"],
+      ["bot","ok","✅ Verified. Ask me anything."],
+      ["me","cmd","/research sglcarbon.com"],
+      ["bot","","🔎 Researching sglcarbon.com (OSINT + RIPE + Wikipedia)…"],
+      ["bot","","📋 Briefing: SGL Carbon SE — graphite/carbon, HQ Wiesbaden. ASN AS34386. Likely pains: WAN resilience, exposed edge. 3 MEDDPICC starters + 2 outreach hooks below…"],
+      ["me","","Draft a LinkedIn message to their Head of IT"],
+      ["bot","","Here are 2 short variants in Colt's voice — value-led, one ask each …"],
+      ["me","","How do I run a full attack-surface scan?"],
+      ["bot","","Use the colttechbot: /auth then /assess sglcarbon.com --asn AS34386. It returns the 4 decks."]
+    ],
+    guide:[
+      ["1","Authenticate once","Same gate: <code>/auth name.familyname@colt.net &lt;password&gt;</code> → <code>/verify &lt;code&gt;</code>."],
+      ["2","Research a prospect","<code>/research company.com</code> — live briefing from the company site, RIPE &amp; Wikipedia."],
+      ["3","Just chat","Ask for MEDDPICC coaching, tech-stack discovery, or outreach drafts — she writes in Colt's voice."],
+      ["4","Need the deep scan?","Cassandra tells you the exact colttechbot command; she never guesses data."],
+      ["5","All audited","Every auth, chat and research is logged to the same Grafana dashboard."]
+    ]
+  }
+};
+
+function render(botKey){
+  const s = scripts[botKey];
+  document.getElementById('av').textContent = s.av;
+  document.getElementById('botname').textContent = s.name;
+  const chat = document.getElementById('chat'); chat.innerHTML="";
+  s.chat.forEach((m,i)=>{
+    const d=document.createElement('div');
+    d.className='b '+(m[0]==='me'?'me':'bot');
+    d.style.animationDelay=(i*0.28)+'s';
+    if(m[1]==='cmd') d.innerHTML='<span class="cmd">'+m[2]+'</span>';
+    else if(m[1]==='ok') d.innerHTML='<span class="ok">'+m[2]+'</span>';
+    else if(m[1]==='doc') d.innerHTML='<span class="doc">'+m[2]+'</span>';
+    else d.innerHTML=m[2];
+    chat.appendChild(d);
+  });
+  setTimeout(()=>{chat.scrollTop=chat.scrollHeight;}, s.chat.length*300+200);
+  const g=document.getElementById('guide'); g.innerHTML="";
+  s.guide.forEach(step=>{
+    const el=document.createElement('div'); el.className='gstep';
+    el.innerHTML='<div class="gi">'+step[0]+'</div><div><h4>'+step[1]+'</h4><p>'+step[2]+'</p></div>';
+    g.appendChild(el);
+  });
+}
+document.querySelectorAll('#tg button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#tg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); render(b.dataset.bot);
+}));
+render('colttechbot');
+</script>
+</body>
+</html>

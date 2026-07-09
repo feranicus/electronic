@@ -1,0 +1,14 @@
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    volumes: [ "jhw_data:/data" ]
+    expose: [ "8000" ]
+    restart: unless-stopped
+  frontend:
+    build: ./frontend
+    depends_on: [ backend ]
+    ports: [ "8090:80" ]        # app on http://localhost:8090 (front your Caddy at app.jobhuntwow.com)
+    restart: unless-stopped
+volumes:
+  jhw_data:

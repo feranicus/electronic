@@ -1,0 +1,15 @@
+{
+  "target": { "company": "Example AG", "audience": "Internal — Colt Sales Engineering", "date": "2026-07-06", "scope": "org:\"Example AG\", asn:AS12345, net:203.0.113.0/24" },
+  "summary": { "records": 42, "unique_ips": 31, "asns": 3, "countries": 4, "critical": 2, "high": 3, "medium": 2, "low": 2 },
+  "findings": [
+    { "sev":"CRITICAL","id":"C1","title":"Exposed database with known-exploited CVE","what":["MongoDB reachable from the internet","Host flagged with CVE-2021-XXXX (known-exploited)"],"evidence":["203.0.113.10:27017  MongoDB 3.6","vulns: CVE-2021-XXXX"],"why":["Direct data-exfiltration path","Actively exploited in the wild"],"rem":["Firewall the DB port","Patch to supported version","Enable auth + TLS"],"refs":["CVE-2021-XXXX","CISA KEV"] },
+    { "sev":"CRITICAL","id":"C2","title":"Internet-facing RDP","what":["RDP (3389) exposed on a Windows host"],"evidence":["203.0.113.22:3389  ms-wbt-server"],"why":["Top ransomware entry vector"],"rem":["Remove from internet","Require VPN + MFA"],"refs":["MITRE T1133"] },
+    { "sev":"HIGH","id":"H1","title":"Expired / legacy TLS","what":["TLS 1.0 still offered","Certificate expired 2 months ago"],"evidence":["203.0.113.30:443  TLSv1.0","cert.expired: true"],"why":["MITM / downgrade risk","Compliance gap (PCI/DORA)"],"rem":["Disable TLS<1.2","Rotate certificate"],"refs":["RFC 8996"] },
+    { "sev":"HIGH","id":"H2","title":"Exposed management panel","what":["Router/firewall admin UI reachable"],"evidence":["203.0.113.40:8443  admin login"],"why":["Credential brute-force / default creds"],"rem":["Restrict to mgmt VLAN"],"refs":["MITRE T1190"] },
+    { "sev":"HIGH","id":"H3","title":"Shodan-tagged vulnerabilities","what":["3 hosts carry Shodan vuln tags"],"evidence":["vulns across 3 IPs"],"why":["Pre-mapped exploit paths"],"rem":["Prioritise patching"],"refs":["Shodan vulns"] },
+    { "sev":"MEDIUM","id":"M1","title":"Verbose service banners","what":["Product + version leaked in banners"],"evidence":["nginx 1.14.0; OpenSSH 7.4"],"why":["Eases attacker recon"],"rem":["Suppress version banners"],"refs":[] },
+    { "sev":"MEDIUM","id":"M2","title":"Self-signed certificates","what":["2 hosts use self-signed certs"],"evidence":["cert.self_signed: true"],"why":["No trust anchor; MITM easier"],"rem":["Use CA-issued certs"],"refs":[] },
+    { "sev":"LOW","id":"L1","title":"Standard services exposed","what":["HTTP/HTTPS on expected hosts"],"evidence":["203.0.113.5:80/443"],"why":["Baseline; monitor for drift"],"rem":["Confirm intended"],"refs":[] },
+    { "sev":"LOW","id":"L2","title":"Geographic spread","what":["Assets across 4 countries"],"evidence":["DE, NL, US, SG"],"why":["Jurisdiction / data-residency note"],"rem":["Map to policy"],"refs":[] }
+  ]
+}

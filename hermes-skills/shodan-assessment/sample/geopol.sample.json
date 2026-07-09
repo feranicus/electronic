@@ -1,0 +1,190 @@
+{
+  "customer": "Rosneft Oil Company",
+  "date": "2026-07-06",
+  "classification": "CONFIDENTIAL — INTELLIGENCE PRODUCT",
+  "frameworks": ["MITRE ATT&CK", "Diamond Model", "Admiralty (NATO STANAG 2511)"],
+  "shelfLifeMonths": 6,
+  "sectorContext": "State-controlled oil & gas major; sanctioned entity; strategic energy infrastructure with OT/ICS and global trading operations.",
+  "verdict": "Rosneft is a top-tier target for both Western state-aligned disruptive actors and financially-motivated ransomware crews. As a sanctioned Russian energy champion it draws hacktivist and state-aligned hostility, while its exposed edge (VPN, RDP) invites eCrime. The dominant near-term risk is extortion or wiper operations against internet-facing infrastructure — one CRITICAL and two HIGH actors rate above the action threshold.",
+  "exposureMap": [
+    { "driver": "Sanctioned Russian energy champion", "attracts": "Western state-aligned & hacktivist actors", "why": "Symbolic + strategic value; disruption serves geopolitical signalling" },
+    { "driver": "Critical OT / ICS in refining & pipelines", "attracts": "Nation-state pre-positioning (Sandworm)", "why": "Physical-impact capability is a strategic deterrent asset" },
+    { "driver": "Global trading & treasury operations", "attracts": "Organised eCrime / ransomware", "why": "High willingness/ability to pay; downtime is extremely costly" },
+    { "driver": "Exposed VPN & RDP on perimeter", "attracts": "Opportunistic and targeted intrusion sets", "why": "Low-cost initial access into a high-value environment" }
+  ],
+  "likelihoodBands": {
+    "Likely": [0.6, 0.9],
+    "Plausible": [0.3, 0.6],
+    "Routine": [0.05, 0.3]
+  },
+  "actors": [
+    {
+      "band": "NATION-STATE",
+      "sponsor": "Russia (GRU Unit 74455)",
+      "tier": "HIGH",
+      "eyebrow": "Russian military intelligence",
+      "title": "Sandworm / APT44",
+      "pills": ["Destructive OT", "GRU-sponsored", "ICS wipers"],
+      "what": [
+        "Premier state OT/ICS attack unit; author of Industroyer & NotPetya",
+        "Specialises in destructive wiper and grid-disruption operations",
+        "Blends espionage, pre-positioning and physical-impact tradecraft"
+      ],
+      "evidence": [
+        "ATT&CK G0034 — Sandworm Team",
+        "Industroyer2 (2022) — Ukraine grid",
+        "NotPetya (2017) — $10bn global damage",
+        "CaddyWiper / HermeticWiper families",
+        "CISA AA22-110A joint advisory",
+        "Mandiant APT44 report (2024)"
+      ],
+      "why": "As Russia's own energy champion, Rosneft is less a target than a potential proxy/collateral in intra-state operations — but the same TTPs (OT wipers, supply-chain implants) define the ceiling of what a hostile actor could do to comparable infrastructure.",
+      "refs": "CISA AA22-110A; Mandiant APT44",
+      "admiraltyGrade": "A2",
+      "score": { "intent": 6, "capability": 10, "exposureFit": 7 },
+      "likelihood12mo": "Plausible",
+      "rem": [
+        { "tag": "VENDOR", "title": "OT segmentation review", "body": "Enforce IEC 62443 zones; isolate ICS from IT VPN reach." },
+        { "tag": "COLT", "title": "Managed NDR for OT", "body": "24/7 detection tuned to ICS protocols and wiper precursors." },
+        { "tag": "PSF", "title": "OT incident retainer", "body": "Colt PSF wiper-recovery & forensic readiness playbook." }
+      ]
+    },
+    {
+      "band": "STATE-ALIGNED",
+      "sponsor": "Russia (GRU Unit 26165)",
+      "tier": "MEDIUM",
+      "eyebrow": "Russian cyber-espionage",
+      "title": "APT28 / Fancy Bear",
+      "pills": ["Espionage", "Credential theft", "GRU"],
+      "what": [
+        "Long-running GRU espionage set targeting energy & government",
+        "Heavy use of credential phishing and edge-device exploitation",
+        "Recent NTLM-relay and router-implant campaigns (2024–25)"
+      ],
+      "evidence": [
+        "ATT&CK G0007 — APT28",
+        "CVE-2023-23397 Outlook NTLM relay",
+        "Jaguar Tooth router implant (2023)",
+        "NSA/CISA advisory on GRU 26165",
+        "Roundcube webmail 0-day (2024)"
+      ],
+      "why": "APT28's edge-focused access model maps directly onto Rosneft's exposed VPN/webmail surface. Even as intra-state espionage, credential harvesting here feeds broader strategic collection and could enable third-party access.",
+      "refs": "NSA/CISA GRU 26165 advisory",
+      "admiraltyGrade": "B2",
+      "score": { "intent": 4, "capability": 8, "exposureFit": 6 },
+      "likelihood12mo": "Routine",
+      "rem": [
+        { "tag": "VENDOR", "title": "Patch edge devices", "body": "Prioritise VPN, webmail and router firmware (KEV catalog)." },
+        { "tag": "COLT", "title": "SASE + MFA", "body": "Colt SASE terminates exposed VPN; enforce phishing-resistant MFA." },
+        { "tag": "OSS", "title": "NTLM hardening", "body": "Block outbound SMB; deploy free NTLM-relay mitigations." }
+      ]
+    },
+    {
+      "band": "ORGANISED eCRIME",
+      "sponsor": "Financially motivated (RaaS)",
+      "tier": "CRITICAL",
+      "eyebrow": "Ransomware-as-a-service",
+      "title": "Qilin (Agenda)",
+      "pills": ["Double extortion", "Rust locker", "VPN access"],
+      "what": [
+        "Prolific RaaS crew; Rust/Go lockers with fast encryption",
+        "Primary access vector: exposed/unpatched VPN and RDP",
+        "Aggressive double-extortion with leak-site pressure"
+      ],
+      "evidence": [
+        "Qilin leak site — 300+ victims (2024–25)",
+        "Synnovis NHS attack (2024) — major disruption",
+        "Initial access via CVE-2026-50751 VPN RCE",
+        "Rust-based locker, ESXi variant observed",
+        "Affiliates seen brute-forcing exposed RDP",
+        "Ransom demands €1M–€5M typical"
+      ],
+      "why": "This is the near-term worst case. Rosneft's exposed VPN gateway (CVE-2026-50751, finding C-01) is exactly Qilin's preferred entry. A successful intrusion would combine trading-floor downtime with data-leak extortion — the highest expected-loss scenario in the C-BIQ model.",
+      "refs": "Colt Shodan finding C-01; Qilin leak-site telemetry",
+      "admiraltyGrade": "B1",
+      "score": { "intent": 9, "capability": 8, "exposureFit": 10 },
+      "likelihood12mo": "Likely",
+      "linkedFindingId": "C-01",
+      "rem": [
+        { "tag": "VENDOR", "title": "Emergency VPN patch", "body": "Remediate CVE-2026-50751 immediately; rotate all VPN creds." },
+        { "tag": "COLT", "title": "Managed NDR + DDoS", "body": "Detect lateral movement & encryption staging in real time." },
+        { "tag": "PSF", "title": "Ransomware retainer", "body": "Colt PSF containment, negotiation-support and recovery." }
+      ]
+    },
+    {
+      "band": "HACKTIVIST",
+      "sponsor": "Pro-Russia collective",
+      "tier": "MEDIUM",
+      "eyebrow": "DDoS hacktivism",
+      "title": "NoName057(16)",
+      "pills": ["DDoS", "DDoSia project", "Pro-Russia"],
+      "what": [
+        "Crowdsourced DDoS collective (DDoSia botnet toolkit)",
+        "Targets perceived adversaries of Russian interests",
+        "High-volume but generally low-sophistication L7 floods"
+      ],
+      "evidence": [
+        "DDoSia toolkit — thousands of volunteers",
+        "Sustained EU/NATO DDoS campaigns (2023–25)",
+        "Telegram target-tasking channels",
+        "Peaks > 1 Tbps observed on some targets"
+      ],
+      "why": "Ambiguous alignment: as a Russian entity Rosneft is unlikely a primary target, but mistaken-identity or spill-over floods against its public portals remain plausible. Impact is availability-only, but customer-facing outages carry reputational cost.",
+      "refs": "DDoSia telemetry; national CERT advisories",
+      "admiraltyGrade": "C3",
+      "score": { "intent": 3, "capability": 4, "exposureFit": 5 },
+      "likelihood12mo": "Routine",
+      "rem": [
+        { "tag": "COLT", "title": "Managed DDoS", "body": "Always-on Colt DDoS scrubbing for public-facing assets." },
+        { "tag": "VENDOR", "title": "CDN / WAF", "body": "Absorb L7 floods; rate-limit and geo-fence portals." },
+        { "tag": "OSS", "title": "Portal hardening", "body": "Cache static content; free WAF rules for volumetric L7." }
+      ]
+    },
+    {
+      "band": "HACKTIVIST",
+      "sponsor": "Decentralised collective",
+      "tier": "LOW",
+      "eyebrow": "Opportunistic hacktivism",
+      "title": "Anonymous / IT Army",
+      "pills": ["Doxxing", "Defacement", "Opportunistic"],
+      "what": [
+        "Loose banner for pro-Ukraine / anti-Russia operations",
+        "Data-leak, defacement and doxxing of Russian entities",
+        "Low coordination; opportunistic exploitation of exposed assets"
+      ],
+      "evidence": [
+        "IT Army of Ukraine tasking channels",
+        "Multiple Russian-entity data dumps (2022–24)",
+        "Defacement of state-linked portals",
+        "Opportunistic use of leaked credentials"
+      ],
+      "why": "As a flagship sanctioned Russian company, Rosneft is a symbolic target for this banner. Capability is low and diffuse, but any exposed asset or leaked credential set could be seized opportunistically for a reputational hit.",
+      "refs": "Public leak aggregators; OSINT",
+      "admiraltyGrade": "C4",
+      "score": { "intent": 5, "capability": 3, "exposureFit": 4 },
+      "likelihood12mo": "Routine",
+      "rem": [
+        { "tag": "OSS", "title": "Credential hygiene", "body": "Monitor breach dumps; force resets on exposed accounts." },
+        { "tag": "COLT", "title": "Attack-surface monitoring", "body": "Continuous Shodan/OSINT sweep of exposed edge assets." },
+        { "tag": "VENDOR", "title": "Portal WAF & MFA", "body": "Block defacement vectors; enforce MFA on admin panels." }
+      ]
+    }
+  ],
+  "killChain": {
+    "scenarioTitle": "Qilin ransomware via exposed VPN (finding C-01)",
+    "steps": [
+      "Reconnaissance — Shodan/mass-scan identifies Rosneft VPN gateway exposing CVE-2026-50751",
+      "Initial access — affiliate exploits the VPN RCE to gain an unauthenticated foothold",
+      "Credential access — harvests domain credentials; disables/rotates around MFA gaps",
+      "Lateral movement — pivots from IT VPN toward trading systems and file servers",
+      "Collection & exfiltration — stages sensitive trading and HR data to a leak site",
+      "Impact — deploys Rust locker across ESXi and Windows; encrypts trading & backups",
+      "Extortion — double-extortion demand (€1M–€5M) with leak-site countdown"
+    ]
+  },
+  "cbiqBridge": [
+    { "scenario": "Qilin ransomware via VPN RCE", "ale": "€6.5–17M", "pml": "€22M", "note": "Trading downtime + leak-site extortion; highest EL scenario", "linkedFindingId": "C-01" },
+    { "scenario": "RDP intrusion → trading lateral move", "ale": "€1.5–4M", "pml": "€8.5M", "note": "Norsk Hydro-class disruption", "linkedFindingId": "H-01" },
+    { "scenario": "Hacktivist DDoS on public portals", "ale": "€0.2–0.8M", "pml": "€2.4M", "note": "Availability-only; reputational cost", "linkedFindingId": "M-01" }
+  ]
+}

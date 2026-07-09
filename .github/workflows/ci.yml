@@ -1,0 +1,37 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality-and-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python compile + ruff
+        run: |
+          pip install --quiet ruff
+          python -m compileall -q colt_auth.py assess-bot cassandra-bot hermes-skills/shodan-assessment/scripts *.py
+          ruff check . || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Node --check deck builders
+        run: |
+          for f in hermes-skills/shodan-assessment/scripts/*.js; do echo "check $f"; node --check "$f"; done

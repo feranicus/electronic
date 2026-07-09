@@ -1,0 +1,39 @@
+# Egress / browsing allowlist — one domain per line.
+# Leading dot = the domain and all its subdomains. Used by AGENTS.md policy and,
+# in the hardened profile, by the squid egress proxy. Add a source = add a line.
+
+# --- network ownership / ASN / whois ---
+.ripe.net
+bgp.he.net
+.bgp.tools
+
+# --- company registry / contacts / funding ---
+.northdata.com
+.unternehmensregister.de
+.handelsregister.de
+.crunchbase.com
+
+# --- IT stack / traffic ---
+.builtwith.com
+.wappalyzer.com
+.similarweb.com
+
+# --- news ---
+.techcrunch.com
+.theregister.com
+.heise.de
+.golem.de
+.handelsblatt.com
+.faz.net
+.sueddeutsche.de
+.spiegel.de
+.wiwo.de
+.manager-magazin.de
+.computerwoche.de
+
+# --- required APIs (not browsing) ---
+api.shodan.io
+inference.do-ai.run
+.telegram.org
+
+# --- per-engagement: add the assessed company's own domains below ---

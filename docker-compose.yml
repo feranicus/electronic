@@ -1,0 +1,96 @@
+# ============================================================================
+# Colt bots + observability — UNIFIED, ISOLATED stack for the DO droplet.
+# SAFE alongside existing services (Amnezia VPN, VideoDead):
+#   * unique project name (colt-stack) + unique container names (colt-*)
+#   * own bridge network (colt-net); NO firewall changes required
+#   * Grafana bound to 127.0.0.1 only (reach via SSH tunnel); Loki NOT published
+#   * bots are OUTBOUND ONLY (Telegram long-poll) — no inbound ports
+#
+#   GRAFANA_PORT / GRAFANA_PASSWORD come from the root .env (deploy.py sets them)
+#   docker compose -p colt-stack up -d --build
+# ============================================================================
+name: colt-stack
+
+services:
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: colt-loki
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./obs/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks: [colt]
+    restart: unless-stopped        # NOTE: no ports: — Loki stays internal to colt-net
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: colt-promtail
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./obs/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - colt_events:/logs:ro
+      - promtail-data:/tmp/promtail
+    depends_on: [loki]
+    networks: [colt]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: colt-grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"   # localhost only — SSH-tunnel to reach it
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-change-me-now}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_LOG_LEVEL=warn
+    volumes:
+      - ./obs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./obs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [loki]
+    networks: [colt]
+    restart: unless-stopped
+
+  colttechbot:
+    build:
+      context: .
+      dockerfile: assess-bot/Dockerfile
+    image: colt-assessbot
+    container_name: colt-assessbot
+    restart: unless-stopped
+    env_file: assess-bot/.env
+    environment:
+      - EVENTS_LOG=/var/log/colt/events.log
+    volumes:
+      - colt_events:/var/log/colt
+      - ./shodan-out:/root/work
+    depends_on: [promtail]
+    networks: [colt]
+
+  cassandra:
+    build:
+      context: .
+      dockerfile: cassandra-bot/Dockerfile
+    image: colt-cassandra
+    container_name: colt-cassandra
+    restart: unless-stopped
+    env_file: cassandra-bot/.env
+    environment:
+      - EVENTS_LOG=/var/log/colt/events.log
+    volumes:
+      - colt_events:/var/log/colt
+    depends_on: [promtail]
+    networks: [colt]
+
+networks:
+  colt:
+    name: colt-net        # dedicated network; does not touch other stacks
+    driver: bridge
+
+volumes:
+  loki-data:
+  promtail-data:
+  grafana-data:
+  colt_events:

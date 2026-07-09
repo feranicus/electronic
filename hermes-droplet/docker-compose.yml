@@ -1,0 +1,16 @@
+services:
+  hermes:
+    build: .
+    image: hermes-agent-local
+    env_file: .env                       # OPENAI_API_KEY + OPENAI_BASE_URL (your DO Qwen)
+    volumes:
+      - hermes_data:/root/.hermes        # config + memory + sessions persist here
+    command: ["hermes", "gateway"]       # run the messaging gateway (Telegram/WhatsApp) as a daemon
+    restart: unless-stopped              # 24/7 — survives reboots
+    # WhatsApp Cloud API needs a public webhook. Telegram uses polling (no port needed).
+    # Expose the gateway webhook port ONLY to localhost; your Caddy fronts it with HTTPS.
+    # Confirm the real port from `hermes setup gateway` output, then match it here + in Caddy.
+    ports:
+      - "127.0.0.1:8099:8099"
+volumes:
+  hermes_data:

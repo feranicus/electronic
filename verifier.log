@@ -1,0 +1,1048 @@
+[2026-04-22 19:21:09] [TEST MODE] Processing first 5 stakeholders.
+[2026-04-22 19:21:09] Loaded checkpoint with 0 prior results.
+[2026-04-22 19:21:09] Browser: UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb..., viewport={'width': 1920, 'height': 1080}, locale=en-US, tz=Europe/Berlin
+[2026-04-22 19:21:10] [OK] Loaded 43 cookies (0 skipped).
+[2026-04-22 19:21:10] [Preflight] Checking login status via linkedin.com/feed...
+[2026-04-22 19:21:19] [OK] Logged in — cookies are valid.
+[2026-04-22 19:21:30] Searching: Bernd Mayer @ Allianz Technology
+[2026-04-22 19:21:36] [CHALLENGE] Detected on search page for Bernd Mayer
+[2026-04-22 19:21:36] [PAUSE] Sleeping 600s for manual solve. Keep browser open.
+[2026-04-22 19:30:31] Closing browser.
+[2026-04-22 19:32:53] [TEST MODE] Processing first 5 stakeholders.
+[2026-04-22 19:32:53] Loaded checkpoint with 0 prior results.
+[2026-04-22 19:32:54] Browser: UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb..., viewport={'width': 1920, 'height': 1080}, locale=en-US, tz=Europe/Berlin
+[2026-04-22 19:32:54] [OK] Loaded 43 cookies (0 skipped).
+[2026-04-22 19:32:54] [Preflight] Checking login status via linkedin.com/feed...
+[2026-04-22 19:36:07] [OK] Saved 52 refreshed cookies to linkedin_cookies.json
+[2026-04-22 19:36:08] Searching: Bernd Mayer @ Allianz Technology
+[2026-04-22 19:36:18]   [candidates] 5 found. Top: 'Irina Seifert' score=0.31
+[2026-04-22 19:36:57]   -> Falling back to Xing for Bernd Mayer
+[2026-04-22 19:37:08] Searching: René Lorenz Knebel @ DZ BANK
+[2026-04-22 19:37:17]   [candidates] 3 found. Top: 'René Lorenz Knebel 
+ • 2nd
+
+CISSP | CISM | CISA | ' score=0.71
+[2026-04-22 19:37:44]   -> Falling back to Xing for René Lorenz Knebel
+[2026-04-22 19:37:52] Searching: Alexander Zhitenev @ IFCO
+[2026-04-22 19:38:04]   [candidates] 3 found. Top: 'Alexander Z. 
+ • 2nd
+
+IT Executive | Helping globa' score=0.57
+[2026-04-22 19:38:04]   -> Falling back to Xing for Alexander Zhitenev
+[2026-04-22 19:38:12] Searching: Ofelia Szebin @ Jabil
+[2026-04-22 19:38:21]   [candidates] 3 found. Top: 'Ofelia Szebin 
+ • 1st
+
+Business Information Securi' score=0.56
+[2026-04-22 19:38:21]   -> Falling back to Xing for Ofelia Szebin
+[2026-04-22 19:38:30] Searching: Birgit Biondi @ Munich Re
+[2026-04-22 19:38:40]   [candidates] 2 found. Top: 'Birgit Biondi • 2nd
+
+Head of Global Third Party Ma' score=0.61
+[2026-04-22 19:38:40]   -> Falling back to Xing for Birgit Biondi
+[2026-04-22 19:38:47] Closing browser.
+[2026-04-22 19:38:47] [DONE] Results saved to verified.xlsx
+[2026-04-22 19:52:08] Loaded checkpoint with 5 prior results.
+[2026-04-22 19:52:09] Browser: UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb..., viewport={'width': 1920, 'height': 1080}, locale=en-US, tz=Europe/Berlin
+[2026-04-22 19:52:09] [OK] Loaded 52 cookies (0 skipped).
+[2026-04-22 19:52:09] [Preflight] Checking login status via linkedin.com/feed...
+[2026-04-22 19:52:17] [OK] Logged in — cookies are valid.
+[2026-04-22 19:52:27] Searching: Bernd Mayer @ Allianz Technology
+[2026-04-22 19:52:39]   [candidates] 5 found. Top: 'Irina Seifert' score=0.31
+[2026-04-22 19:53:05]   -> Falling back to Xing for Bernd Mayer
+[2026-04-22 19:53:15] Searching: René Lorenz Knebel @ DZ BANK
+[2026-04-22 19:53:24]   [candidates] 3 found. Top: 'René Lorenz Knebel 
+ • 2nd
+
+CISSP | CISM | CISA | ' score=0.71
+[2026-04-22 19:53:51]   -> Falling back to Xing for René Lorenz Knebel
+[2026-04-22 19:54:00] Searching: Alexander Zhitenev @ IFCO
+[2026-04-22 19:54:11]   [candidates] 3 found. Top: 'Alexander Z. 
+ • 2nd
+
+IT Executive | Helping globa' score=0.57
+[2026-04-22 19:54:11]   -> Falling back to Xing for Alexander Zhitenev
+[2026-04-22 19:54:20] Searching: Ofelia Szebin @ Jabil
+[2026-04-22 19:54:32]   [candidates] 3 found. Top: 'Ofelia Szebin 
+ • 1st
+
+Business Information Securi' score=0.56
+[2026-04-22 19:54:32]   -> Falling back to Xing for Ofelia Szebin
+[2026-04-22 19:54:40] Searching: Birgit Biondi @ Munich Re
+[2026-04-22 19:54:54]   [candidates] 2 found. Top: 'Birgit Biondi • 2nd
+
+Head of Global Third Party Ma' score=0.61
+[2026-04-22 19:54:54]   -> Falling back to Xing for Birgit Biondi
+[2026-04-22 19:55:02] Searching: Arian Jakub Saliu @ Pfandbriefbank
+[2026-04-22 19:55:11]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 19:55:21]   [DEBUG] Saved failing page HTML to debug_no_results_Saliu.html
+[2026-04-22 19:55:21]   -> Falling back to Xing for Arian Jakub Saliu
+[2026-04-22 19:55:32] Searching: Sven Limberg @ Philip Morris International
+[2026-04-22 19:55:43]   [candidates] 1 found. Top: 'Sven Limberg 
+ • 2nd
+
+Director IT Global Markets C' score=0.65
+[2026-04-22 19:55:43]   -> Falling back to Xing for Sven Limberg
+[2026-04-22 19:55:51] Searching: Mark Beregi @ BayWa R.e. Global
+[2026-04-22 19:56:01]   [candidates] 3 found. Top: 'Mark Beregi 
+ • 2nd
+
+Director of IT & Digital Serv' score=0.65
+[2026-04-22 19:56:01]   -> Falling back to Xing for Mark Beregi
+[2026-04-22 19:56:09] Searching: Michael Huber @ Faber-Castell AG
+[2026-04-22 19:56:18]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 19:56:28]   [DEBUG] Saved failing page HTML to debug_no_results_Huber.html
+[2026-04-22 19:56:28]   -> Falling back to Xing for Michael Huber
+[2026-04-22 19:56:34] Searching: Denesh Murugesan @ General Motors Company
+[2026-04-22 19:56:43]   [candidates] 1 found. Top: 'Dinesh Murugesan 
+ • 3rd+
+
+Senior Software Enginee' score=0.23
+[2026-04-22 19:56:43]   -> Falling back to Xing for Denesh Murugesan
+[2026-04-22 19:56:53] Searching: Andreas Horn-Fink @ Korian
+[2026-04-22 19:57:04]   [candidates] 1 found. Top: 'Andreas Horn-Fink 
+ • 2nd
+
+Head of IT Applications' score=0.50
+[2026-04-22 19:57:04]   -> Falling back to Xing for Andreas Horn-Fink
+[2026-04-22 19:57:12] Searching: Audrey Gerardin @ MSD Deutschland
+[2026-04-22 19:57:21]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 19:57:30]   [DEBUG] Saved failing page HTML to debug_no_results_Gerardin.html
+[2026-04-22 19:57:30]   -> Falling back to Xing for Audrey Gerardin
+[2026-04-22 19:57:38] Searching: Krishnan Venkatasubramanian @ MediaMarktSaturn
+[2026-04-22 19:57:47]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 19:57:55]   [DEBUG] Saved failing page HTML to debug_no_results_Venkatasubramanian.html
+[2026-04-22 19:57:55]   -> Falling back to Xing for Krishnan Venkatasubramanian
+[2026-04-22 19:58:02] Searching: Shamanth Prasad @ Westwing
+[2026-04-22 19:58:11]   [candidates] 1 found. Top: 'Shamanth Prasad 
+ • 2nd
+
+Chief of Staff to the CTO' score=0.69
+[2026-04-22 19:58:11]   -> Falling back to Xing for Shamanth Prasad
+[2026-04-22 19:58:18] Searching: Michael Helisch @ Allianz Technology
+[2026-04-22 19:58:29]   [candidates] 3 found. Top: 'Michael Helisch 
+ • 2nd
+
+Be aware and care
+
+Unterf' score=0.69
+[2026-04-22 19:58:29]   -> Falling back to Xing for Michael Helisch
+[2026-04-22 19:58:33] [BREAK] Human-like pause for 101s after 15 profiles.
+[2026-04-22 20:00:15] Searching: Theresa Edelbroich @ Faber-Castell AG
+[2026-04-22 20:00:24]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:00:31]   [DEBUG] Saved failing page HTML to debug_no_results_Edelbroich.html
+[2026-04-22 20:00:31]   -> Falling back to Xing for Theresa Edelbroich
+[2026-04-22 20:00:38] Searching: Michele De Donno @ Munich Re
+[2026-04-22 20:00:50]   [candidates] 2 found. Top: 'Michelle Glithero de Acha • 3rd+
+
+Surety Expert (C' score=0.48
+[2026-04-22 20:00:50]   -> Falling back to Xing for Michele De Donno
+[2026-04-22 20:00:59] Closing browser.
+[2026-04-22 20:17:32] Loaded checkpoint with 17 prior results.
+[2026-04-22 20:17:32]   Status breakdown: {'candidate': 2, 'not_found': 15}
+[2026-04-22 20:17:32] Browser: UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb..., viewport={'width': 1920, 'height': 1080}, locale=en-US, tz=Europe/Berlin
+[2026-04-22 20:17:33] [OK] Loaded 52 cookies (0 skipped).
+[2026-04-22 20:17:33] [Preflight] Checking login status via linkedin.com/feed...
+[2026-04-22 20:17:42] [OK] Logged in — cookies are valid.
+[2026-04-22 20:17:50] [SKIP] Bernd Mayer — already candidate.
+[2026-04-22 20:17:50] [SKIP] René Lorenz Knebel — already candidate.
+[2026-04-22 20:17:50] [SKIP] Alexander Zhitenev — already not_found.
+[2026-04-22 20:17:50] [SKIP] Ofelia Szebin — already not_found.
+[2026-04-22 20:17:50] [SKIP] Birgit Biondi — already not_found.
+[2026-04-22 20:17:50] [SKIP] Arian Jakub Saliu — already not_found.
+[2026-04-22 20:17:50] [SKIP] Sven Limberg — already not_found.
+[2026-04-22 20:17:50] [SKIP] Mark Beregi — already not_found.
+[2026-04-22 20:17:50] [SKIP] Michael Huber — already not_found.
+[2026-04-22 20:17:50] [SKIP] Denesh Murugesan — already not_found.
+[2026-04-22 20:17:50] [SKIP] Andreas Horn-Fink — already not_found.
+[2026-04-22 20:17:50] [SKIP] Audrey Gerardin — already not_found.
+[2026-04-22 20:17:50] [SKIP] Krishnan Venkatasubramanian — already not_found.
+[2026-04-22 20:17:50] [SKIP] Shamanth Prasad — already not_found.
+[2026-04-22 20:17:50] [SKIP] Michael Helisch — already not_found.
+[2026-04-22 20:17:50] [SKIP] Theresa Edelbroich — already not_found.
+[2026-04-22 20:17:50] [SKIP] Michele De Donno — already not_found.
+[2026-04-22 20:17:50] Searching: Irina Seifert @ Allianz SE
+[2026-04-22 20:17:59]   [candidates] 3 found. Top: 'Irina Seifert 
+ • 1st
+
+Cluster Lead | Global IT Po' score=0.66
+[2026-04-22 20:18:00]   -> Falling back to Xing for Irina Seifert
+[2026-04-22 20:18:07] Searching: Stefan Boesl @ Ammega
+[2026-04-22 20:18:18]   [candidates] 3 found. Top: 'Stefan Boesl 
+ • 2nd
+
+Global Head of Digital Trans' score=0.65
+[2026-04-22 20:18:18]   -> Falling back to Xing for Stefan Boesl
+[2026-04-22 20:18:24] Searching: Niklas Gutheil @ FIM Research Center
+[2026-04-22 20:18:33]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:18:41]   [DEBUG] Saved failing page HTML to debug_no_results_Gutheil.html
+[2026-04-22 20:18:41]   -> Falling back to Xing for Niklas Gutheil
+[2026-04-22 20:18:49] Searching: Valentin Mayer @ FIM Research Center
+[2026-04-22 20:18:58]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:19:07]   [DEBUG] Saved failing page HTML to debug_no_results_Mayer.html
+[2026-04-22 20:19:07]   -> Falling back to Xing for Valentin Mayer
+[2026-04-22 20:19:14] Searching: Polly Gitau @ Global Council for Responsible AI
+[2026-04-22 20:19:24]   [candidates] 3 found. Top: 'Polly Gitau 
+ • 2nd
+
+Top Cybersecurity Woman of th' score=0.53
+[2026-04-22 20:19:24]   -> Falling back to Xing for Polly Gitau
+[2026-04-22 20:19:31] Searching: Claire Ribiere @ Mytheresa
+[2026-04-22 20:19:42]   [candidates] 1 found. Top: 'Claire Ribiere 
+ • 3rd+
+
+Head of AI Applications |' score=0.69
+[2026-04-22 20:19:42]   -> Falling back to Xing for Claire Ribiere
+[2026-04-22 20:19:51] Searching: Marios Menexiadis @ Aegean Airlines
+[2026-04-22 20:20:05]   [candidates] 3 found. Top: 'Dr Marios Menexiadis 
+ • 2nd
+
+GROUP INTERNAL AUDIT' score=0.57
+[2026-04-22 20:20:36]   -> Falling back to Xing for Marios Menexiadis
+[2026-04-22 20:20:43] Searching: Alejandro Martin Soto @ Airbus Defence And Space
+[2026-04-22 20:20:53]   [candidates] 3 found. Top: 'Alejandro Martín Soto 
+ • 2nd
+
+Head of Digital Sec' score=0.72
+[2026-04-22 20:21:20]   -> Falling back to Xing for Alejandro Martin Soto
+[2026-04-22 20:21:27] Searching: Thomas Wiedenmann @ Airbus Defence And Space
+[2026-04-22 20:21:39]   [candidates] 3 found. Top: 'Thomas Wiedenmann 
+ • 2nd
+
+CISSP | Program Directo' score=0.71
+[2026-04-22 20:22:06]   -> Falling back to Xing for Thomas Wiedenmann
+[2026-04-22 20:22:13] Searching: Marcus Zappe @ Allianz Commercial
+[2026-04-22 20:22:22]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:22:31]   [DEBUG] Saved failing page HTML to debug_no_results_Zappe.html
+[2026-04-22 20:22:31]   -> Falling back to Xing for Marcus Zappe
+[2026-04-22 20:22:42] Searching: Parag Barua @ Amer Sports
+[2026-04-22 20:22:54]   [candidates] 3 found. Top: 'Parag Barua 
+ • 2nd
+
+Cyber Security Architect bei ' score=0.64
+[2026-04-22 20:22:54]   -> Falling back to Xing for Parag Barua
+[2026-04-22 20:23:04] Searching: Khurram Lodi @ Amer Sports
+[2026-04-22 20:23:14]   [candidates] 3 found. Top: 'Khurram Lodi 
+ • 2nd
+
+Empowering Excellence in Cyb' score=0.59
+[2026-04-22 20:23:14]   -> Falling back to Xing for Khurram Lodi
+[2026-04-22 20:23:26] Searching: Karan Dewan @ OESL
+[2026-04-22 20:23:36]   [candidates] 3 found. Top: 'Karan Dewan 
+ • 2nd
+
+LEADERSHIP | CYBERSECURITY | ' score=0.58
+[2026-04-22 20:23:36]   -> Falling back to Xing for Karan Dewan
+[2026-04-22 20:23:40] [BREAK] Human-like pause for 179s after 30 profiles.
+[2026-04-22 20:26:39] Searching: Masoud Arbabi @ PAYBACK
+[2026-04-22 20:26:50]   [candidates] 3 found. Top: 'Masoud A. 
+ • 2nd
+
+Senior Cyber Security Engineer ' score=0.67
+[2026-04-22 20:26:50]   -> Falling back to Xing for Masoud Arbabi
+[2026-04-22 20:26:59] Searching: Ahmed Magdy @ PAYBACK
+[2026-04-22 20:27:08]   [candidates] 3 found. Top: 'Ahmed Magdy 
+ • 2nd
+
+Information Security Expert| ' score=0.63
+[2026-04-22 20:27:08]   -> Falling back to Xing for Ahmed Magdy
+[2026-04-22 20:27:15] Searching: Nawid Sayed @ PAYBACK
+[2026-04-22 20:27:26]   [candidates] 3 found. Top: 'Nawid Sayed 
+ • 2nd
+
+Chief Information Security Of' score=0.64
+[2026-04-22 20:27:26]   -> Falling back to Xing for Nawid Sayed
+[2026-04-22 20:27:34] Searching: Stefan Markgraf @ PAYONE
+[2026-04-22 20:27:46]   [candidates] 3 found. Top: 'Stefan Markgraf 
+ • 2nd
+
+Navigating AI Risks while' score=0.63
+[2026-04-22 20:27:46]   -> Falling back to Xing for Stefan Markgraf
+[2026-04-22 20:27:55] Searching: Frank French @ SAP
+[2026-04-22 20:28:07]   [candidates] 8 found. Top: 'Frank F. 
+ • 2nd
+
+Making the magic with SAP
+
+Heide' score=0.48
+[2026-04-22 20:28:07]   -> Falling back to Xing for Frank French
+[2026-04-22 20:28:14] Searching: Antonio Carbone @ Stadtwerke München
+[2026-04-22 20:28:26]   [candidates] 3 found. Top: 'Antonio Carbone 
+ • 2nd
+
+Cloud Security Architect
+' score=0.63
+[2026-04-22 20:28:26]   -> Falling back to Xing for Antonio Carbone
+[2026-04-22 20:28:34] Searching: Michael Paci @ State Street
+[2026-04-22 20:28:46]   [candidates] 3 found. Top: 'Michael Paci, PMP, CISM, CISA, CRISC, CGEIT 
+ • 2n' score=0.65
+[2026-04-22 20:28:46]   -> Falling back to Xing for Michael Paci
+[2026-04-22 20:28:56] Searching: Ali Baccouche @ Texas Instruments
+[2026-04-22 20:29:05]   [candidates] 4 found. Top: 'Ali Baccouche 
+ • 2nd
+
+Regional Information Securi' score=0.56
+[2026-04-22 20:29:05]   -> Falling back to Xing for Ali Baccouche
+[2026-04-22 20:29:14] Searching: Farell Folly @ TÜV Rheinland
+[2026-04-22 20:29:23]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:29:33]   [DEBUG] Saved failing page HTML to debug_no_results_Folly.html
+[2026-04-22 20:29:33]   -> Falling back to Xing for Farell Folly
+[2026-04-22 20:29:40] Searching: Claudia Preis @ Allianz SE
+[2026-04-22 20:29:48]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:29:58]   [DEBUG] Saved failing page HTML to debug_no_results_Preis.html
+[2026-04-22 20:29:58]   -> Falling back to Xing for Claudia Preis
+[2026-04-22 20:30:05] Searching: Rahul Ramachandran @ Allianz Technology
+[2026-04-22 20:30:15]   [candidates] 4 found. Top: 'Rahul Ramachandran 
+ • 2nd
+
+IT Architect | Senior ' score=0.71
+[2026-04-22 20:30:41]   -> Falling back to Xing for Rahul Ramachandran
+[2026-04-22 20:30:49] Searching: Victoria Pysarenko @ BMW
+[2026-04-22 20:31:00]   [candidates] 3 found. Top: 'Victoria Pysarenko, MBA 
+ • 2nd
+
+Executive Advisor' score=0.71
+[2026-04-22 20:31:27]   -> Falling back to Xing for Victoria Pysarenko
+[2026-04-22 20:31:37] Searching: Peter Boujev @ BNP Paribas Real Estate
+[2026-04-22 20:31:46]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:31:57]   [DEBUG] Saved failing page HTML to debug_no_results_Boujev.html
+[2026-04-22 20:31:57]   -> Falling back to Xing for Peter Boujev
+[2026-04-22 20:32:06] Searching: Gernot Möller @ DRÄXLMAIER Group
+[2026-04-22 20:32:14]   [candidates] 3 found. Top: 'Gernot Möller 
+ • 2nd
+
+VP IT at DRÄXLMAIER Group
+
+' score=0.56
+[2026-04-22 20:32:14]   -> Falling back to Xing for Gernot Möller
+[2026-04-22 20:32:23] Searching: Uwe Jacobsen @ DZ BANK
+[2026-04-22 20:32:33]   [candidates] 2 found. Top: 'Uwe Jacobsen 
+ • 2nd
+
+Managing Director, Capital M' score=0.55
+[2026-04-22 20:32:33]   -> Falling back to Xing for Uwe Jacobsen
+[2026-04-22 20:32:37] [BREAK] Human-like pause for 66s after 45 profiles.
+[2026-04-22 20:33:43] Searching: Ibiere Addey @ Daiichi-Sankyo
+[2026-04-22 20:33:52]   [candidates] 2 found. Top: 'Ibiere Addey 
+ • 2nd
+
+Enterprise Governance & Stra' score=0.65
+[2026-04-22 20:33:52]   -> Falling back to Xing for Ibiere Addey
+[2026-04-22 20:34:02] Searching: Jens Aberer @ Eterna MODE Gmbh
+[2026-04-22 20:34:12]   [candidates] 3 found. Top: 'Jens Aberer 
+ • 2nd
+
+Strategist | Transformer | Pr' score=0.54
+[2026-04-22 20:34:12]   -> Falling back to Xing for Jens Aberer
+[2026-04-22 20:34:21] Searching: Konstantin Fast @ Fresenius
+[2026-04-22 20:34:31]   [candidates] 2 found. Top: 'Konstantin Fast, MBA • 2nd
+
+Way to go.
+
+Bad Schwal' score=0.69
+[2026-04-22 20:34:31]   -> Falling back to Xing for Konstantin Fast
+[2026-04-22 20:34:38] Searching: Michael Kohlert @ Litens Automotive Group
+[2026-04-22 20:34:50]   [candidates] 3 found. Top: 'Dr. Michael Kohlert 
+ • 2nd
+
+Vice President IT | G' score=0.70
+[2026-04-22 20:34:50]   -> Falling back to Xing for Michael Kohlert
+[2026-04-22 20:34:58] Searching: Patrick Becker @ MoldTecs
+[2026-04-22 20:35:09]   [candidates] 2 found. Top: 'Patrick Becker 
+ • 2nd
+
+Director of IT MoldTecs Gm' score=0.68
+[2026-04-22 20:35:10]   -> Falling back to Xing for Patrick Becker
+[2026-04-22 20:35:18] Searching: Jennifer Bath @ SES
+[2026-04-22 20:35:29]   [candidates] 4 found. Top: 'Jennifer Bath 
+ • 2nd
+
+VP Customer Program Transfo' score=0.61
+[2026-04-22 20:35:29]   -> Falling back to Xing for Jennifer Bath
+[2026-04-22 20:35:38] Searching: Tilmann Kloppe @ Siemens
+[2026-04-22 20:35:48]   [candidates] 2 found. Top: 'Tilmann Kloppe 
+ • 2nd
+
+Manager Digital Transforma' score=0.67
+[2026-04-22 20:35:48]   -> Falling back to Xing for Tilmann Kloppe
+[2026-04-22 20:35:56] Searching: Philipp Willmertinger @ Stadtwerke München
+[2026-04-22 20:36:08]   [candidates] 2 found. Top: 'Philipp Willmertinger 
+ • 2nd
+
+Lead Cloud Technolo' score=0.74
+[2026-04-22 20:36:37]   -> Falling back to Xing for Philipp Willmertinger
+[2026-04-22 20:36:44] Searching: Torsten Eymann @ University of Bayreuth
+[2026-04-22 20:36:53]   [candidates] 4 found. Top: 'Torsten Eymann 
+ • 2nd
+
+Passionate in research and' score=0.33
+[2026-04-22 20:36:53]   -> Falling back to Xing for Torsten Eymann
+[2026-04-22 20:37:02] Searching: Jochen Röhr @ ZEPPELIN
+[2026-04-22 20:37:14]   [candidates] 3 found. Top: 'Jochen Roehr 
+ • 2nd
+
+Digital Executive | curious ' score=0.64
+[2026-04-22 20:37:14]   -> Falling back to Xing for Jochen Röhr
+[2026-04-22 20:37:22] Searching: Sonia Yonga @ Airbus Defence And Space
+[2026-04-22 20:37:34]   [candidates] 3 found. Top: 'Sonia Yonga • 2nd
+
+Strategic Portfolio, Product Ma' score=0.64
+[2026-04-22 20:37:34]   -> Falling back to Xing for Sonia Yonga
+[2026-04-22 20:37:42] Searching: Swarna Nayak @ Allianz Commercial
+[2026-04-22 20:37:51]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:38:00]   [DEBUG] Saved failing page HTML to debug_no_results_Nayak.html
+[2026-04-22 20:38:00]   -> Falling back to Xing for Swarna Nayak
+[2026-04-22 20:38:08] Searching: Arnold Aschbauer @ BIP
+[2026-04-22 20:38:19]   [candidates] 3 found. Top: 'Arnold Aschbauer 
+ • 2nd
+
+Senior Manager @ BIP | I' score=0.71
+[2026-04-22 20:38:45]   -> Falling back to Xing for Arnold Aschbauer
+[2026-04-22 20:38:54] Searching: Sebastian Saft @ BMW Group
+[2026-04-22 20:39:07]   [candidates] 3 found. Top: 'Sebastian Saft 
+ • 2nd
+
+Product Owner Analytics & ' score=0.57
+[2026-04-22 20:39:07]   -> Falling back to Xing for Sebastian Saft
+[2026-04-22 20:39:14] Searching: Drazenka Klescic @ MSD Deutschland
+[2026-04-22 20:39:25]   [candidates] 2 found. Top: 'Drazenka Klescic 
+ • 2nd
+
+Chapter Lead Data & Anal' score=0.70
+[2026-04-22 20:39:52]   -> Falling back to Xing for Drazenka Klescic
+[2026-04-22 20:39:58] [BREAK] Human-like pause for 169s after 60 profiles.
+[2026-04-22 20:42:47] Searching: Aymeric Gerardin @ Reconomy
+[2026-04-22 20:42:58]   [candidates] 3 found. Top: 'Aymeric Gerardin 
+ • 2nd
+
+EVP Technology & Enginee' score=0.60
+[2026-04-22 20:42:58]   -> Falling back to Xing for Aymeric Gerardin
+[2026-04-22 20:43:06] Searching: Paul Voigt @ Taylor Wessing
+[2026-04-22 20:43:16]   [candidates] 3 found. Top: 'Paul Voigt 
+ • 2nd
+
+Attorney at law | Partner and ' score=0.63
+[2026-04-22 20:43:16]   -> Falling back to Xing for Paul Voigt
+[2026-04-22 20:43:26] Searching: Oliver Kalscheuer @ Versicherungskammer Bayern
+[2026-04-22 20:43:35]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-22 20:43:45]   [DEBUG] Saved failing page HTML to debug_no_results_Kalscheuer.html
+[2026-04-22 20:43:45]   -> Falling back to Xing for Oliver Kalscheuer
+[2026-04-22 20:43:53] Closing browser.
+[2026-04-22 20:43:54] [DONE] Results saved to verified.xlsx
+[2026-04-23 16:53:57] Loaded checkpoint with 63 prior results.
+[2026-04-23 16:53:57]   Status breakdown: {'candidate': 10, 'not_found': 53}
+[2026-04-23 16:53:58] Browser: UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb..., viewport={'width': 1920, 'height': 1080}, locale=en-US, tz=Europe/Berlin
+[2026-04-23 16:53:58] [OK] Loaded 52 cookies (0 skipped).
+[2026-04-23 16:53:58] [Preflight] Checking login status via linkedin.com/feed...
+[2026-04-23 16:54:07] [OK] Logged in — cookies are valid.
+[2026-04-23 16:54:17] [Google-fallback] Audrey Gerardin
+[2026-04-23 16:54:17] [Google] Audrey Gerardin: query #1: site:linkedin.com/in/ "Audrey Gerardin" "MSD Deutschland"
+[2026-04-23 16:54:24]   [Google] no linkedin hits for query #1
+[2026-04-23 16:54:28] [Google] Audrey Gerardin: query #2: site:linkedin.com/in/ "Audrey Gerardin"
+[2026-04-23 16:54:34]   [Google] no linkedin hits for query #2
+[2026-04-23 16:54:34] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:54:37] [Google-fallback] Denesh Murugesan
+[2026-04-23 16:54:37] [Google] Denesh Murugesan: query #1: site:linkedin.com/in/ "Denesh Murugesan" "General Motors Company"
+[2026-04-23 16:54:46]   [Google] no linkedin hits for query #1
+[2026-04-23 16:54:48] [Google] Denesh Murugesan: query #2: site:linkedin.com/in/ "Denesh Murugesan"
+[2026-04-23 16:54:57] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:55:01] [Google-fallback] Ofelia Szebin
+[2026-04-23 16:55:01] [Google] Ofelia Szebin: query #1: site:linkedin.com/in/ "Ofelia Szebin" "Jabil"
+[2026-04-23 16:55:09] [Google] Ofelia Szebin: query #2: site:linkedin.com/in/ "Ofelia Szebin"
+[2026-04-23 16:55:15] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:55:18] [SKIP] Bernd Mayer — already candidate.
+[2026-04-23 16:55:18] [Google-fallback] Mark Beregi
+[2026-04-23 16:55:18] [Google] Mark Beregi: query #1: site:linkedin.com/in/ "Mark Beregi" "BayWa R.e. Global"
+[2026-04-23 16:55:25] [Google] Mark Beregi: query #2: site:linkedin.com/in/ "Mark Beregi"
+[2026-04-23 16:55:32] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:55:35] [SKIP] René Lorenz Knebel — already candidate.
+[2026-04-23 16:55:35] [Google-fallback] Michael Huber
+[2026-04-23 16:55:35] [Google] Michael Huber: query #1: site:linkedin.com/in/ "Michael Huber" "Faber-Castell AG"
+[2026-04-23 16:55:42] [Google] Michael Huber: query #2: site:linkedin.com/in/ "Michael Huber"
+[2026-04-23 16:55:50] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:55:53] [Google-fallback] Alexander Zhitenev
+[2026-04-23 16:55:54] [Google] Alexander Zhitenev: query #1: site:linkedin.com/in/ "Alexander Zhitenev" "IFCO"
+[2026-04-23 16:56:01] [Google] Alexander Zhitenev: query #2: site:linkedin.com/in/ "Alexander Zhitenev"
+[2026-04-23 16:56:10] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:56:14] [Google-fallback] Andreas Horn-Fink
+[2026-04-23 16:56:14] [Google] Andreas Horn-Fink: query #1: site:linkedin.com/in/ "Andreas Horn-Fink" "Korian"
+[2026-04-23 16:56:21] [Google] Andreas Horn-Fink: query #2: site:linkedin.com/in/ "Andreas Horn-Fink"
+[2026-04-23 16:56:26] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:56:30] [Google-fallback] Krishnan Venkatasubramanian
+[2026-04-23 16:56:30] [Google] Krishnan Venkatasubramanian: query #1: site:linkedin.com/in/ "Krishnan Venkatasubramanian" "MediaMarktSaturn"
+[2026-04-23 16:56:38] [Google] Krishnan Venkatasubramanian: query #2: site:linkedin.com/in/ "Krishnan Venkatasubramanian"
+[2026-04-23 16:56:46] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:56:51] [Google-fallback] Birgit Biondi
+[2026-04-23 16:56:51] [Google] Birgit Biondi: query #1: site:linkedin.com/in/ "Birgit Biondi" "Munich Re"
+[2026-04-23 16:56:58] [Google] Birgit Biondi: query #2: site:linkedin.com/in/ "Birgit Biondi"
+[2026-04-23 16:57:05] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:57:09] [Google-fallback] Arian Jakub Saliu
+[2026-04-23 16:57:09] [Google] Arian Jakub Saliu: query #1: site:linkedin.com/in/ "Arian Jakub Saliu" "Pfandbriefbank"
+[2026-04-23 16:57:18]   [Google] no linkedin hits for query #1
+[2026-04-23 16:57:22] [Google] Arian Jakub Saliu: query #2: site:linkedin.com/in/ "Arian Jakub Saliu"
+[2026-04-23 16:57:29] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:57:34] [Google-fallback] Sven Limberg
+[2026-04-23 16:57:34] [Google] Sven Limberg: query #1: site:linkedin.com/in/ "Sven Limberg" "Philip Morris International"
+[2026-04-23 16:57:42] [Google] Sven Limberg: query #2: site:linkedin.com/in/ "Sven Limberg"
+[2026-04-23 16:57:50] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:57:52] [Google-fallback] Shamanth Prasad
+[2026-04-23 16:57:53] [Google] Shamanth Prasad: query #1: site:linkedin.com/in/ "Shamanth Prasad" "Westwing"
+[2026-04-23 16:58:03] [Google] Shamanth Prasad: query #2: site:linkedin.com/in/ "Shamanth Prasad"
+[2026-04-23 16:58:11] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:58:15] [Google-fallback] Michael Helisch
+[2026-04-23 16:58:15] [Google] Michael Helisch: query #1: site:linkedin.com/in/ "Michael Helisch" "Allianz Technology"
+[2026-04-23 16:58:25] [Google] Michael Helisch: query #2: site:linkedin.com/in/ "Michael Helisch"
+[2026-04-23 16:58:30] [WARN] Could not write incremental Excel: [Errno 13] Permission denied: 'verified.xlsx'
+[2026-04-23 16:58:30] [BREAK] Human-like pause for 111s after 15 profiles.
+[2026-04-23 17:00:21] [Google-fallback] Stefan Boesl
+[2026-04-23 17:00:21] [Google] Stefan Boesl: query #1: site:linkedin.com/in/ "Stefan Boesl" "Ammega"
+[2026-04-23 17:00:29] [Google] Stefan Boesl: query #2: site:linkedin.com/in/ "Stefan Boesl"
+[2026-04-23 17:00:43] [Google-fallback] Theresa Edelbroich
+[2026-04-23 17:00:43] [Google] Theresa Edelbroich: query #1: site:linkedin.com/in/ "Theresa Edelbroich" "Faber-Castell AG"
+[2026-04-23 17:00:53] [Google] Theresa Edelbroich: query #2: site:linkedin.com/in/ "Theresa Edelbroich"
+[2026-04-23 17:01:04] [Google-fallback] Polly Gitau
+[2026-04-23 17:01:04] [Google] Polly Gitau: query #1: site:linkedin.com/in/ "Polly Gitau" "Global Council for Responsible AI"
+[2026-04-23 17:01:11]   [Google] no linkedin hits for query #1
+[2026-04-23 17:01:14] [Google] Polly Gitau: query #2: site:linkedin.com/in/ "Polly Gitau"
+[2026-04-23 17:01:19]   [Google] no linkedin hits for query #2
+[2026-04-23 17:01:23] [Google-fallback] Claire Ribiere
+[2026-04-23 17:01:23] [Google] Claire Ribiere: query #1: site:linkedin.com/in/ "Claire Ribiere" "Mytheresa"
+[2026-04-23 17:01:29]   [Google] no linkedin hits for query #1
+[2026-04-23 17:01:32] [Google] Claire Ribiere: query #2: site:linkedin.com/in/ "Claire Ribiere"
+[2026-04-23 17:01:39]   [Google] no linkedin hits for query #2
+[2026-04-23 17:01:42] [Google-fallback] Michele De Donno
+[2026-04-23 17:01:42] [Google] Michele De Donno: query #1: site:linkedin.com/in/ "Michele De Donno" "Munich Re"
+[2026-04-23 17:01:50]   [Google] no linkedin hits for query #1
+[2026-04-23 17:01:53] [Google] Michele De Donno: query #2: site:linkedin.com/in/ "Michele De Donno"
+[2026-04-23 17:01:58]   [Google] no linkedin hits for query #2
+[2026-04-23 17:02:01] [Google-fallback] Irina Seifert
+[2026-04-23 17:02:01] [Google] Irina Seifert: query #1: site:linkedin.com/in/ "Irina Seifert" "Allianz SE"
+[2026-04-23 17:02:07]   [Google] no linkedin hits for query #1
+[2026-04-23 17:02:12] [Google] Irina Seifert: query #2: site:linkedin.com/in/ "Irina Seifert"
+[2026-04-23 17:02:19]   [Google] no linkedin hits for query #2
+[2026-04-23 17:02:22] [Google-fallback] Niklas Gutheil
+[2026-04-23 17:02:22] [Google] Niklas Gutheil: query #1: site:linkedin.com/in/ "Niklas Gutheil" "FIM Research Center"
+[2026-04-23 17:02:30]   [Google] no linkedin hits for query #1
+[2026-04-23 17:02:33] [Google] Niklas Gutheil: query #2: site:linkedin.com/in/ "Niklas Gutheil"
+[2026-04-23 17:02:40]   [Google] no linkedin hits for query #2
+[2026-04-23 17:02:46] [Google-fallback] Valentin Mayer
+[2026-04-23 17:02:46] [Google] Valentin Mayer: query #1: site:linkedin.com/in/ "Valentin Mayer" "FIM Research Center"
+[2026-04-23 17:02:53]   [Google] no linkedin hits for query #1
+[2026-04-23 17:02:56] [Google] Valentin Mayer: query #2: site:linkedin.com/in/ "Valentin Mayer"
+[2026-04-23 17:03:02]   [Google] no linkedin hits for query #2
+[2026-04-23 17:03:06] [SKIP] Marios Menexiadis — already candidate.
+[2026-04-23 17:03:06] [SKIP] Alejandro Martin Soto — already candidate.
+[2026-04-23 17:03:06] [SKIP] Thomas Wiedenmann — already candidate.
+[2026-04-23 17:03:06] [Google-fallback] Swarna Nayak
+[2026-04-23 17:03:06] [Google] Swarna Nayak: query #1: site:linkedin.com/in/ "Swarna Nayak" "Allianz Commercial"
+[2026-04-23 17:03:13]   [Google] no linkedin hits for query #1
+[2026-04-23 17:03:16] [Google] Swarna Nayak: query #2: site:linkedin.com/in/ "Swarna Nayak"
+[2026-04-23 17:03:25]   [Google] no linkedin hits for query #2
+[2026-04-23 17:03:29] [Google-fallback] Marcus Zappe
+[2026-04-23 17:03:29] [Google] Marcus Zappe: query #1: site:linkedin.com/in/ "Marcus Zappe" "Allianz Commercial"
+[2026-04-23 17:03:37]   [Google] no linkedin hits for query #1
+[2026-04-23 17:03:41] [Google] Marcus Zappe: query #2: site:linkedin.com/in/ "Marcus Zappe"
+[2026-04-23 17:03:46]   [Google] no linkedin hits for query #2
+[2026-04-23 17:03:49] [Google-fallback] Claudia Preis
+[2026-04-23 17:03:49] [Google] Claudia Preis: query #1: site:linkedin.com/in/ "Claudia Preis" "Allianz SE"
+[2026-04-23 17:03:57]   [Google] no linkedin hits for query #1
+[2026-04-23 17:04:00] [Google] Claudia Preis: query #2: site:linkedin.com/in/ "Claudia Preis"
+[2026-04-23 17:04:06]   [Google] no linkedin hits for query #2
+[2026-04-23 17:04:10] [Google-fallback] Khurram Lodi
+[2026-04-23 17:04:10] [Google] Khurram Lodi: query #1: site:linkedin.com/in/ "Khurram Lodi" "Amer Sports"
+[2026-04-23 17:04:19]   [Google] no linkedin hits for query #1
+[2026-04-23 17:04:22] [Google] Khurram Lodi: query #2: site:linkedin.com/in/ "Khurram Lodi"
+[2026-04-23 17:04:31]   [Google] no linkedin hits for query #2
+[2026-04-23 17:04:31] [BREAK] Human-like pause for 97s after 30 profiles.
+[2026-04-23 17:06:07] [Google-fallback] Peter Boujev
+[2026-04-23 17:06:07] [Google] Peter Boujev: query #1: site:linkedin.com/in/ "Peter Boujev" "BNP Paribas Real Estate"
+[2026-04-23 17:06:13]   [Google] no linkedin hits for query #1
+[2026-04-23 17:06:17] [Google] Peter Boujev: query #2: site:linkedin.com/in/ "Peter Boujev"
+[2026-04-23 17:06:24]   [Google] no linkedin hits for query #2
+[2026-04-23 17:06:27] [Google-fallback] Gernot Möller
+[2026-04-23 17:06:27] [Google] Gernot Möller: query #1: site:linkedin.com/in/ "Gernot Möller" "DRÄXLMAIER Group"
+[2026-04-23 17:06:35]   [Google] no linkedin hits for query #1
+[2026-04-23 17:06:39] [Google] Gernot Möller: query #2: site:linkedin.com/in/ "Gernot Möller"
+[2026-04-23 17:06:45]   [Google] no linkedin hits for query #2
+[2026-04-23 17:06:49] [Google-fallback] Uwe Jacobsen
+[2026-04-23 17:06:49] [Google] Uwe Jacobsen: query #1: site:linkedin.com/in/ "Uwe Jacobsen" "DZ BANK"
+[2026-04-23 17:06:57]   [Google] no linkedin hits for query #1
+[2026-04-23 17:07:01] [Google] Uwe Jacobsen: query #2: site:linkedin.com/in/ "Uwe Jacobsen"
+[2026-04-23 17:07:06]   [Google] no linkedin hits for query #2
+[2026-04-23 17:07:11] [Google-fallback] Ibiere Addey
+[2026-04-23 17:07:11] [Google] Ibiere Addey: query #1: site:linkedin.com/in/ "Ibiere Addey" "Daiichi-Sankyo"
+[2026-04-23 17:07:19]   [Google] no linkedin hits for query #1
+[2026-04-23 17:07:24] [Google] Ibiere Addey: query #2: site:linkedin.com/in/ "Ibiere Addey"
+[2026-04-23 17:07:32]   [Google] no linkedin hits for query #2
+[2026-04-23 17:07:35] [Google-fallback] Jens Aberer
+[2026-04-23 17:07:35] [Google] Jens Aberer: query #1: site:linkedin.com/in/ "Jens Aberer" "Eterna MODE Gmbh"
+[2026-04-23 17:07:43]   [Google] no linkedin hits for query #1
+[2026-04-23 17:07:45] [Google] Jens Aberer: query #2: site:linkedin.com/in/ "Jens Aberer"
+[2026-04-23 17:07:55]   [Google] no linkedin hits for query #2
+[2026-04-23 17:07:58] [Google-fallback] Michael Kohlert
+[2026-04-23 17:07:58] [Google] Michael Kohlert: query #1: site:linkedin.com/in/ "Michael Kohlert" "Litens Automotive Group"
+[2026-04-23 17:08:07]   [Google] no linkedin hits for query #1
+[2026-04-23 17:08:09] [Google] Michael Kohlert: query #2: site:linkedin.com/in/ "Michael Kohlert"
+[2026-04-23 17:08:16]   [Google] no linkedin hits for query #2
+[2026-04-23 17:08:19] [Google-fallback] Patrick Becker
+[2026-04-23 17:08:19] [Google] Patrick Becker: query #1: site:linkedin.com/in/ "Patrick Becker" "MoldTecs"
+[2026-04-23 17:08:24]   [Google] no linkedin hits for query #1
+[2026-04-23 17:08:29] [Google] Patrick Becker: query #2: site:linkedin.com/in/ "Patrick Becker"
+[2026-04-23 17:08:37]   [Google] no linkedin hits for query #2
+[2026-04-23 17:08:39] [Google-fallback] Karan Dewan
+[2026-04-23 17:08:39] [Google] Karan Dewan: query #1: site:linkedin.com/in/ "Karan Dewan" "OESL"
+[2026-04-23 17:08:47]   [Google] no linkedin hits for query #1
+[2026-04-23 17:08:52] [Google] Karan Dewan: query #2: site:linkedin.com/in/ "Karan Dewan"
+[2026-04-23 17:09:00]   [Google] no linkedin hits for query #2
+[2026-04-23 17:09:04] [Google-fallback] Nawid Sayed
+[2026-04-23 17:09:04] [Google] Nawid Sayed: query #1: site:linkedin.com/in/ "Nawid Sayed" "PAYBACK"
+[2026-04-23 17:09:09]   [Google] no linkedin hits for query #1
+[2026-04-23 17:09:14] [Google] Nawid Sayed: query #2: site:linkedin.com/in/ "Nawid Sayed"
+[2026-04-23 17:09:23]   [Google] no linkedin hits for query #2
+[2026-04-23 17:09:28] [Google-fallback] Stefan Markgraf
+[2026-04-23 17:09:28] [Google] Stefan Markgraf: query #1: site:linkedin.com/in/ "Stefan Markgraf" "PAYONE"
+[2026-04-23 17:09:34]   [Google] no linkedin hits for query #1
+[2026-04-23 17:09:38] [Google] Stefan Markgraf: query #2: site:linkedin.com/in/ "Stefan Markgraf"
+[2026-04-23 17:09:47]   [Google] no linkedin hits for query #2
+[2026-04-23 17:09:50] [Google-fallback] Aymeric Gerardin
+[2026-04-23 17:09:50] [Google] Aymeric Gerardin: query #1: site:linkedin.com/in/ "Aymeric Gerardin" "Reconomy"
+[2026-04-23 17:09:57]   [Google] no linkedin hits for query #1
+[2026-04-23 17:10:00] [Google] Aymeric Gerardin: query #2: site:linkedin.com/in/ "Aymeric Gerardin"
+[2026-04-23 17:10:05]   [Google] no linkedin hits for query #2
+[2026-04-23 17:10:08] [Google-fallback] Frank French
+[2026-04-23 17:10:08] [Google] Frank French: query #1: site:linkedin.com/in/ "Frank French" "SAP"
+[2026-04-23 17:10:14]   [Google] no linkedin hits for query #1
+[2026-04-23 17:10:19] [Google] Frank French: query #2: site:linkedin.com/in/ "Frank French"
+[2026-04-23 17:10:26]   [Google] no linkedin hits for query #2
+[2026-04-23 17:10:31] [Google-fallback] Jennifer Bath
+[2026-04-23 17:10:31] [Google] Jennifer Bath: query #1: site:linkedin.com/in/ "Jennifer Bath" "SES"
+[2026-04-23 17:10:37]   [Google] no linkedin hits for query #1
+[2026-04-23 17:10:42] [Google] Jennifer Bath: query #2: site:linkedin.com/in/ "Jennifer Bath"
+[2026-04-23 17:10:48]   [Google] no linkedin hits for query #2
+[2026-04-23 17:10:51] [SKIP] Philipp Willmertinger — already candidate.
+[2026-04-23 17:10:51] [Google-fallback] Ali Baccouche
+[2026-04-23 17:10:51] [Google] Ali Baccouche: query #1: site:linkedin.com/in/ "Ali Baccouche" "Texas Instruments"
+[2026-04-23 17:10:56]   [Google] no linkedin hits for query #1
+[2026-04-23 17:11:01] [Google] Ali Baccouche: query #2: site:linkedin.com/in/ "Ali Baccouche"
+[2026-04-23 17:11:08]   [Google] no linkedin hits for query #2
+[2026-04-23 17:11:08] [BREAK] Human-like pause for 64s after 45 profiles.
+[2026-04-23 17:12:11] [Google-fallback] Farell Folly
+[2026-04-23 17:12:12] [Google] Farell Folly: query #1: site:linkedin.com/in/ "Farell Folly" "TÜV Rheinland"
+[2026-04-23 17:12:17]   [Google] no linkedin hits for query #1
+[2026-04-23 17:12:21] [Google] Farell Folly: query #2: site:linkedin.com/in/ "Farell Folly"
+[2026-04-23 17:12:28]   [Google] no linkedin hits for query #2
+[2026-04-23 17:12:31] [Google-fallback] Torsten Eymann
+[2026-04-23 17:12:31] [Google] Torsten Eymann: query #1: site:linkedin.com/in/ "Torsten Eymann" "University of Bayreuth"
+[2026-04-23 17:12:39]   [Google] no linkedin hits for query #1
+[2026-04-23 17:12:43] [Google] Torsten Eymann: query #2: site:linkedin.com/in/ "Torsten Eymann"
+[2026-04-23 17:12:52]   [Google] no linkedin hits for query #2
+[2026-04-23 17:12:55] [Google-fallback] Jochen Röhr
+[2026-04-23 17:12:56] [Google] Jochen Röhr: query #1: site:linkedin.com/in/ "Jochen Röhr" "ZEPPELIN"
+[2026-04-23 17:13:02]   [Google] no linkedin hits for query #1
+[2026-04-23 17:13:08] [Google] Jochen Röhr: query #2: site:linkedin.com/in/ "Jochen Röhr"
+[2026-04-23 17:13:16]   [Google] no linkedin hits for query #2
+[2026-04-23 17:13:20] [Google-fallback] Parag Barua
+[2026-04-23 17:13:20] [Google] Parag Barua: query #1: site:linkedin.com/in/ "Parag Barua" "Amer Sports"
+[2026-04-23 17:13:27]   [Google] no linkedin hits for query #1
+[2026-04-23 17:13:30] [Google] Parag Barua: query #2: site:linkedin.com/in/ "Parag Barua"
+[2026-04-23 17:13:38]   [Google] no linkedin hits for query #2
+[2026-04-23 17:13:41] [SKIP] Victoria Pysarenko — already candidate.
+[2026-04-23 17:13:41] [Google-fallback] Sebastian Saft
+[2026-04-23 17:13:41] [Google] Sebastian Saft: query #1: site:linkedin.com/in/ "Sebastian Saft" "BMW Group"
+[2026-04-23 17:13:47]   [Google] no linkedin hits for query #1
+[2026-04-23 17:13:50] [Google] Sebastian Saft: query #2: site:linkedin.com/in/ "Sebastian Saft"
+[2026-04-23 17:13:56]   [Google] no linkedin hits for query #2
+[2026-04-23 17:14:00] [SKIP] Drazenka Klescic — already candidate.
+[2026-04-23 17:14:00] [Google-fallback] Masoud Arbabi
+[2026-04-23 17:14:01] [Google] Masoud Arbabi: query #1: site:linkedin.com/in/ "Masoud Arbabi" "PAYBACK"
+[2026-04-23 17:14:06]   [Google] no linkedin hits for query #1
+[2026-04-23 17:14:09] [Google] Masoud Arbabi: query #2: site:linkedin.com/in/ "Masoud Arbabi"
+[2026-04-23 17:14:16]   [Google] no linkedin hits for query #2
+[2026-04-23 17:14:19] [Google-fallback] Tilmann Kloppe
+[2026-04-23 17:14:19] [Google] Tilmann Kloppe: query #1: site:linkedin.com/in/ "Tilmann Kloppe" "Siemens"
+[2026-04-23 17:14:27]   [Google] no linkedin hits for query #1
+[2026-04-23 17:14:31] [Google] Tilmann Kloppe: query #2: site:linkedin.com/in/ "Tilmann Kloppe"
+[2026-04-23 17:14:38]   [Google] no linkedin hits for query #2
+[2026-04-23 17:14:41] [Google-fallback] Antonio Carbone
+[2026-04-23 17:14:42] [Google] Antonio Carbone: query #1: site:linkedin.com/in/ "Antonio Carbone" "Stadtwerke München"
+[2026-04-23 17:14:47]   [Google] no linkedin hits for query #1
+[2026-04-23 17:14:51] [Google] Antonio Carbone: query #2: site:linkedin.com/in/ "Antonio Carbone"
+[2026-04-23 17:14:57]   [Google] no linkedin hits for query #2
+[2026-04-23 17:15:00] [Google-fallback] Sonia Yonga
+[2026-04-23 17:15:01] [Google] Sonia Yonga: query #1: site:linkedin.com/in/ "Sonia Yonga" "Airbus Defence And Space"
+[2026-04-23 17:15:07]   [Google] no linkedin hits for query #1
+[2026-04-23 17:15:10] [Google] Sonia Yonga: query #2: site:linkedin.com/in/ "Sonia Yonga"
+[2026-04-23 17:15:16]   [Google] no linkedin hits for query #2
+[2026-04-23 17:15:19] [SKIP] Rahul Ramachandran — already candidate.
+[2026-04-23 17:15:19] [SKIP] Arnold Aschbauer — already candidate.
+[2026-04-23 17:15:19] [Google-fallback] Konstantin Fast
+[2026-04-23 17:15:19] [Google] Konstantin Fast: query #1: site:linkedin.com/in/ "Konstantin Fast" "Fresenius"
+[2026-04-23 17:15:26]   [Google] no linkedin hits for query #1
+[2026-04-23 17:15:29] [Google] Konstantin Fast: query #2: site:linkedin.com/in/ "Konstantin Fast"
+[2026-04-23 17:15:37]   [Google] no linkedin hits for query #2
+[2026-04-23 17:15:42] [Google-fallback] Ahmed Magdy
+[2026-04-23 17:15:42] [Google] Ahmed Magdy: query #1: site:linkedin.com/in/ "Ahmed Magdy" "PAYBACK"
+[2026-04-23 17:15:49]   [Google] no linkedin hits for query #1
+[2026-04-23 17:15:52] [Google] Ahmed Magdy: query #2: site:linkedin.com/in/ "Ahmed Magdy"
+[2026-04-23 17:15:58]   [Google] no linkedin hits for query #2
+[2026-04-23 17:15:58] [BREAK] Human-like pause for 61s after 60 profiles.
+[2026-04-23 17:17:00] [Google-fallback] Michael Paci
+[2026-04-23 17:17:00] [Google] Michael Paci: query #1: site:linkedin.com/in/ "Michael Paci" "State Street"
+[2026-04-23 17:17:05]   [Google] no linkedin hits for query #1
+[2026-04-23 17:17:07] [Google] Michael Paci: query #2: site:linkedin.com/in/ "Michael Paci"
+[2026-04-23 17:17:13]   [Google] no linkedin hits for query #2
+[2026-04-23 17:17:16] [Google-fallback] Paul Voigt
+[2026-04-23 17:17:16] [Google] Paul Voigt: query #1: site:linkedin.com/in/ "Paul Voigt" "Taylor Wessing"
+[2026-04-23 17:17:23]   [Google] no linkedin hits for query #1
+[2026-04-23 17:17:27] [Google] Paul Voigt: query #2: site:linkedin.com/in/ "Paul Voigt"
+[2026-04-23 17:17:35]   [Google] no linkedin hits for query #2
+[2026-04-23 17:17:38] [Google-fallback] Oliver Kalscheuer
+[2026-04-23 17:17:38] [Google] Oliver Kalscheuer: query #1: site:linkedin.com/in/ "Oliver Kalscheuer" "Versicherungskammer Bayern"
+[2026-04-23 17:17:46]   [Google] no linkedin hits for query #1
+[2026-04-23 17:17:49] [Google] Oliver Kalscheuer: query #2: site:linkedin.com/in/ "Oliver Kalscheuer"
+[2026-04-23 17:17:57]   [Google] no linkedin hits for query #2
+[2026-04-23 17:18:03] Closing browser.
+[2026-04-23 17:18:04] [DONE] Results saved to verified.xlsx
+[2026-04-23 22:07:09] Loaded checkpoint with 63 prior results.
+[2026-04-23 22:07:09]   Status breakdown: {'candidate': 10, 'not_found': 53}
+[2026-04-23 22:07:10] Browser: UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb..., viewport={'width': 1920, 'height': 1080}, locale=en-US, tz=Europe/Berlin
+[2026-04-23 22:07:11] [OK] Loaded 52 cookies (0 skipped).
+[2026-04-23 22:07:11] [Preflight] Checking login status via linkedin.com/feed...
+[2026-04-23 22:07:21] [OK] Logged in — cookies are valid.
+[2026-04-23 22:07:33] Searching: Audrey Gerardin @ MSD Deutschland
+[2026-04-23 22:07:42]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:07:51]   -> Falling back to Xing for Audrey Gerardin
+[2026-04-23 22:08:01] Searching: Denesh Murugesan @ General Motors Company
+[2026-04-23 22:08:14]   [candidates] 1 found. Top: 'Dinesh Murugesan 
+ • 3rd+
+
+Senior Software Enginee' score=0.23
+[2026-04-23 22:08:14]   -> Falling back to Xing for Denesh Murugesan
+[2026-04-23 22:08:23] Searching: Ofelia Szebin @ Jabil
+[2026-04-23 22:08:39]   [candidates] 3 found. Top: 'Ofelia Szebin 
+ • 1st
+
+Business Information Securi' score=0.56
+[2026-04-23 22:08:39]   -> Falling back to Xing for Ofelia Szebin
+[2026-04-23 22:08:48] Searching: Bernd Mayer @ Allianz Technology
+[2026-04-23 22:09:01]   [candidates] 6 found. Top: 'Irina Seifert' score=0.29
+[2026-04-23 22:09:01]   -> Falling back to Xing for Bernd Mayer
+[2026-04-23 22:09:12] Searching: Mark Beregi @ BayWa R.e. Global
+[2026-04-23 22:09:23]   [candidates] 3 found. Top: 'Mark Beregi 
+ • 2nd
+
+Director of IT & Digital Serv' score=0.65
+[2026-04-23 22:09:23]   -> Falling back to Xing for Mark Beregi
+[2026-04-23 22:09:33] Searching: René Lorenz Knebel @ DZ BANK
+[2026-04-23 22:09:45]   [candidates] 3 found. Top: 'René Lorenz Knebel 
+ • 1st
+
+CISSP | CISM | CISA | ' score=0.71
+[2026-04-23 22:09:49] Searching: Michael Huber @ Faber-Castell AG
+[2026-04-23 22:09:58]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:10:09]   -> Falling back to Xing for Michael Huber
+[2026-04-23 22:10:18] Searching: Alexander Zhitenev @ IFCO
+[2026-04-23 22:10:32]   [candidates] 3 found. Top: 'Alexander Z. 
+ • 2nd
+
+IT Executive | Helping globa' score=0.57
+[2026-04-23 22:10:32]   -> Falling back to Xing for Alexander Zhitenev
+[2026-04-23 22:10:42] Searching: Andreas Horn-Fink @ Korian
+[2026-04-23 22:10:55]   [candidates] 1 found. Top: 'Andreas Horn-Fink 
+ • 2nd
+
+Head of IT Applications' score=0.50
+[2026-04-23 22:10:55]   -> Falling back to Xing for Andreas Horn-Fink
+[2026-04-23 22:11:04] Searching: Krishnan Venkatasubramanian @ MediaMarktSaturn
+[2026-04-23 22:11:13]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:11:21]   -> Falling back to Xing for Krishnan Venkatasubramanian
+[2026-04-23 22:11:31] Searching: Birgit Biondi @ Munich Re
+[2026-04-23 22:11:45]   [candidates] 3 found. Top: 'Birgit Biondi • 1st
+
+Head of Global Third Party Ma' score=0.61
+[2026-04-23 22:11:45]   -> Falling back to Xing for Birgit Biondi
+[2026-04-23 22:11:55] Searching: Arian Jakub Saliu @ Pfandbriefbank
+[2026-04-23 22:12:04]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:12:14]   -> Falling back to Xing for Arian Jakub Saliu
+[2026-04-23 22:12:24] Searching: Sven Limberg @ Philip Morris International
+[2026-04-23 22:12:36]   [candidates] 2 found. Top: 'Sven Limberg 
+ • 2nd
+
+Director IT Global Markets C' score=0.65
+[2026-04-23 22:12:36]   -> Falling back to Xing for Sven Limberg
+[2026-04-23 22:12:46] Searching: Shamanth Prasad @ Westwing
+[2026-04-23 22:12:57]   [candidates] 1 found. Top: 'Shamanth Prasad 
+ • 2nd
+
+Chief of Staff to the CTO' score=0.69
+[2026-04-23 22:12:57]   -> Falling back to Xing for Shamanth Prasad
+[2026-04-23 22:13:07] Searching: Michael Helisch @ Allianz Technology
+[2026-04-23 22:13:20]   [candidates] 3 found. Top: 'Michael Helisch 
+ • 2nd
+
+Be aware and care
+
+Unterf' score=0.69
+[2026-04-23 22:13:20]   -> Falling back to Xing for Michael Helisch
+[2026-04-23 22:13:27] [BREAK] Human-like pause for 100s after 15 profiles.
+[2026-04-23 22:15:07] Searching: Stefan Boesl @ Ammega
+[2026-04-23 22:15:19]   [candidates] 3 found. Top: 'Stefan Boesl 
+ • 2nd
+
+Global Head of Digital Trans' score=0.65
+[2026-04-23 22:15:19]   -> Falling back to Xing for Stefan Boesl
+[2026-04-23 22:15:31] Searching: Theresa Edelbroich @ Faber-Castell AG
+[2026-04-23 22:15:41]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:15:48]   -> Falling back to Xing for Theresa Edelbroich
+[2026-04-23 22:15:59] Searching: Polly Gitau @ Global Council for Responsible AI
+[2026-04-23 22:16:11]   [candidates] 3 found. Top: 'Polly Gitau 
+ • 2nd
+
+Top Cybersecurity Woman of th' score=0.53
+[2026-04-23 22:16:11]   -> Falling back to Xing for Polly Gitau
+[2026-04-23 22:16:19] Searching: Claire Ribiere @ Mytheresa
+[2026-04-23 22:16:32]   [candidates] 1 found. Top: 'Claire Ribiere 
+ • 3rd+
+
+Head of AI Applications |' score=0.69
+[2026-04-23 22:16:33]   -> Falling back to Xing for Claire Ribiere
+[2026-04-23 22:16:42] Searching: Michele De Donno @ Munich Re
+[2026-04-23 22:16:53]   [candidates] 2 found. Top: 'Michelle Glithero de Acha • 3rd+
+
+Surety Expert (C' score=0.48
+[2026-04-23 22:16:54]   -> Falling back to Xing for Michele De Donno
+[2026-04-23 22:17:04] Searching: Irina Seifert @ Allianz SE
+[2026-04-23 22:17:16]   [candidates] 3 found. Top: 'Irina Seifert 
+ • 1st
+
+Cluster Lead | Global IT Po' score=0.66
+[2026-04-23 22:17:16]   -> Falling back to Xing for Irina Seifert
+[2026-04-23 22:17:27] Searching: Niklas Gutheil @ FIM Research Center
+[2026-04-23 22:17:36]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:17:47]   -> Falling back to Xing for Niklas Gutheil
+[2026-04-23 22:17:55] Searching: Valentin Mayer @ FIM Research Center
+[2026-04-23 22:18:04]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:18:13]   -> Falling back to Xing for Valentin Mayer
+[2026-04-23 22:18:25] Searching: Marios Menexiadis @ Aegean Airlines
+[2026-04-23 22:18:38]   [candidates] 3 found. Top: 'Dr Marios Menexiadis 
+ • 2nd
+
+GROUP INTERNAL AUDIT' score=0.57
+[2026-04-23 22:18:38]   -> Falling back to Xing for Marios Menexiadis
+[2026-04-23 22:18:48] Searching: Alejandro Martin Soto @ Airbus Defence And Space
+[2026-04-23 22:19:00]   [candidates] 3 found. Top: 'Alejandro Martín Soto 
+ • 2nd
+
+Head of Digital Sec' score=0.72
+[2026-04-23 22:19:05] Searching: Thomas Wiedenmann @ Airbus Defence And Space
+[2026-04-23 22:19:16]   [candidates] 3 found. Top: 'Thomas Wiedenmann 
+ • 2nd
+
+CISSP | Program Directo' score=0.71
+[2026-04-23 22:19:23] Searching: Swarna Nayak @ Allianz Commercial
+[2026-04-23 22:19:32]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:19:40]   -> Falling back to Xing for Swarna Nayak
+[2026-04-23 22:19:50] Searching: Marcus Zappe @ Allianz Commercial
+[2026-04-23 22:20:00]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:20:10]   -> Falling back to Xing for Marcus Zappe
+[2026-04-23 22:20:19] Searching: Claudia Preis @ Allianz SE
+[2026-04-23 22:20:28]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:20:39]   -> Falling back to Xing for Claudia Preis
+[2026-04-23 22:20:49] Searching: Khurram Lodi @ Amer Sports
+[2026-04-23 22:21:03]   [candidates] 3 found. Top: 'Khurram Lodi 
+ • 2nd
+
+Empowering Excellence in Cyb' score=0.59
+[2026-04-23 22:21:03]   -> Falling back to Xing for Khurram Lodi
+[2026-04-23 22:21:09] [BREAK] Human-like pause for 65s after 30 profiles.
+[2026-04-23 22:22:14] Searching: Peter Boujev @ BNP Paribas Real Estate
+[2026-04-23 22:22:24]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:22:31]   -> Falling back to Xing for Peter Boujev
+[2026-04-23 22:22:40] Searching: Gernot Möller @ DRÄXLMAIER Group
+[2026-04-23 22:22:53]   [candidates] 3 found. Top: 'Gernot Möller 
+ • 2nd
+
+VP IT at DRÄXLMAIER Group
+
+' score=0.56
+[2026-04-23 22:22:54]   -> Falling back to Xing for Gernot Möller
+[2026-04-23 22:23:03] Searching: Uwe Jacobsen @ DZ BANK
+[2026-04-23 22:23:15]   [candidates] 2 found. Top: 'Uwe Jacobsen 
+ • 2nd
+
+Managing Director, Capital M' score=0.55
+[2026-04-23 22:23:15]   -> Falling back to Xing for Uwe Jacobsen
+[2026-04-23 22:23:24] Searching: Ibiere Addey @ Daiichi-Sankyo
+[2026-04-23 22:23:37]   [candidates] 3 found. Top: 'Ibiere Addey 
+ • 2nd
+
+Enterprise Governance & Stra' score=0.65
+[2026-04-23 22:23:37]   -> Falling back to Xing for Ibiere Addey
+[2026-04-23 22:23:45] Searching: Jens Aberer @ Eterna MODE Gmbh
+[2026-04-23 22:23:56]   [candidates] 3 found. Top: 'Jens Aberer 
+ • 2nd
+
+Strategist | Transformer | Pr' score=0.54
+[2026-04-23 22:23:56]   -> Falling back to Xing for Jens Aberer
+[2026-04-23 22:24:05] Searching: Michael Kohlert @ Litens Automotive Group
+[2026-04-23 22:24:16]   [candidates] 3 found. Top: 'Dr. Michael Kohlert 
+ • 2nd
+
+Vice President IT | G' score=0.70
+[2026-04-23 22:24:17]   -> Falling back to Xing for Michael Kohlert
+[2026-04-23 22:24:26] Searching: Patrick Becker @ MoldTecs
+[2026-04-23 22:24:38]   [candidates] 2 found. Top: 'Patrick Becker 
+ • 2nd
+
+Director of IT MoldTecs Gm' score=0.68
+[2026-04-23 22:24:38]   -> Falling back to Xing for Patrick Becker
+[2026-04-23 22:24:45] Searching: Karan Dewan @ OESL
+[2026-04-23 22:24:58]   [candidates] 3 found. Top: 'Karan Dewan 
+ • 2nd
+
+LEADERSHIP | CYBERSECURITY | ' score=0.58
+[2026-04-23 22:24:59]   -> Falling back to Xing for Karan Dewan
+[2026-04-23 22:25:09] Searching: Nawid Sayed @ PAYBACK
+[2026-04-23 22:25:21]   [candidates] 3 found. Top: 'Nawid Sayed 
+ • 2nd
+
+Chief Information Security Of' score=0.64
+[2026-04-23 22:25:22]   -> Falling back to Xing for Nawid Sayed
+[2026-04-23 22:25:31] Searching: Stefan Markgraf @ PAYONE
+[2026-04-23 22:25:44]   [candidates] 3 found. Top: 'Stefan Markgraf 
+ • 2nd
+
+Navigating AI Risks while' score=0.63
+[2026-04-23 22:25:44]   -> Falling back to Xing for Stefan Markgraf
+[2026-04-23 22:25:52] Searching: Aymeric Gerardin @ Reconomy
+[2026-04-23 22:26:04]   [candidates] 3 found. Top: 'Aymeric Gerardin 
+ • 2nd
+
+EVP Technology & Enginee' score=0.60
+[2026-04-23 22:26:04]   -> Falling back to Xing for Aymeric Gerardin
+[2026-04-23 22:26:12] Searching: Frank French @ SAP
+[2026-04-23 22:26:25]   [candidates] 8 found. Top: 'Frank F. 
+ • 2nd
+
+Making the magic with SAP
+
+Heide' score=0.48
+[2026-04-23 22:26:26]   -> Falling back to Xing for Frank French
+[2026-04-23 22:26:36] Searching: Jennifer Bath @ SES
+[2026-04-23 22:26:50]   [candidates] 4 found. Top: 'Jennifer Bath 
+ • 2nd
+
+VP Customer Program Transfo' score=0.61
+[2026-04-23 22:26:50]   -> Falling back to Xing for Jennifer Bath
+[2026-04-23 22:27:00] Searching: Philipp Willmertinger @ Stadtwerke München
+[2026-04-23 22:27:13]   [candidates] 2 found. Top: 'Philipp Willmertinger 
+ • 2nd
+
+Lead Cloud Technolo' score=0.74
+[2026-04-23 22:27:17] Searching: Ali Baccouche @ Texas Instruments
+[2026-04-23 22:27:33]   [candidates] 4 found. Top: 'Ali Baccouche 
+ • 2nd
+
+Regional Information Securi' score=0.56
+[2026-04-23 22:27:33]   -> Falling back to Xing for Ali Baccouche
+[2026-04-23 22:27:38] [BREAK] Human-like pause for 69s after 45 profiles.
+[2026-04-23 22:28:48] Searching: Farell Folly @ TÜV Rheinland
+[2026-04-23 22:28:57]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:29:07]   -> Falling back to Xing for Farell Folly
+[2026-04-23 22:29:16] Searching: Torsten Eymann @ University of Bayreuth
+[2026-04-23 22:29:30]   [candidates] 4 found. Top: 'Torsten Eymann 
+ • 2nd
+
+Passionate in research and' score=0.33
+[2026-04-23 22:29:31]   -> Falling back to Xing for Torsten Eymann
+[2026-04-23 22:29:39] Searching: Jochen Röhr @ ZEPPELIN
+[2026-04-23 22:29:50]   [candidates] 3 found. Top: 'Jochen Roehr 
+ • 2nd
+
+Digital Executive | curious ' score=0.64
+[2026-04-23 22:29:50]   -> Falling back to Xing for Jochen Röhr
+[2026-04-23 22:29:57] Searching: Parag Barua @ Amer Sports
+[2026-04-23 22:30:13]   [candidates] 3 found. Top: 'Parag Barua 
+ • 2nd
+
+Cyber Security Architect bei ' score=0.64
+[2026-04-23 22:30:13]   -> Falling back to Xing for Parag Barua
+[2026-04-23 22:30:21] Searching: Victoria Pysarenko @ BMW
+[2026-04-23 22:30:34]   [candidates] 3 found. Top: 'Victoria Pysarenko, MBA 
+ • 1st
+
+Executive Advisor' score=0.71
+[2026-04-23 22:30:38] Searching: Sebastian Saft @ BMW Group
+[2026-04-23 22:30:54]   [candidates] 3 found. Top: 'Sebastian Saft 
+ • 2nd
+
+Product Owner Analytics & ' score=0.57
+[2026-04-23 22:30:54]   -> Falling back to Xing for Sebastian Saft
+[2026-04-23 22:31:03] Searching: Drazenka Klescic @ MSD Deutschland
+[2026-04-23 22:31:17]   [candidates] 2 found. Top: 'Drazenka Klescic 
+ • 2nd
+
+Chapter Lead Data & Anal' score=0.70
+[2026-04-23 22:31:22] Searching: Masoud Arbabi @ PAYBACK
+[2026-04-23 22:31:34]   [candidates] 3 found. Top: 'Masoud A. 
+ • 2nd
+
+Senior Cyber Security Engineer ' score=0.67
+[2026-04-23 22:31:35]   -> Falling back to Xing for Masoud Arbabi
+[2026-04-23 22:31:45] Searching: Tilmann Kloppe @ Siemens
+[2026-04-23 22:31:59]   [candidates] 2 found. Top: 'Tilmann Kloppe 
+ • 2nd
+
+Manager Digital Transforma' score=0.67
+[2026-04-23 22:31:59]   -> Falling back to Xing for Tilmann Kloppe
+[2026-04-23 22:32:08] Searching: Antonio Carbone @ Stadtwerke München
+[2026-04-23 22:32:22]   [candidates] 3 found. Top: 'Antonio Carbone 
+ • 2nd
+
+Cloud Security Architect
+' score=0.63
+[2026-04-23 22:32:22]   -> Falling back to Xing for Antonio Carbone
+[2026-04-23 22:32:32] Searching: Sonia Yonga @ Airbus Defence And Space
+[2026-04-23 22:32:46]   [candidates] 3 found. Top: 'Sonia Yonga • 2nd
+
+Strategic Portfolio, Product Ma' score=0.64
+[2026-04-23 22:32:47]   -> Falling back to Xing for Sonia Yonga
+[2026-04-23 22:32:55] Searching: Rahul Ramachandran @ Allianz Technology
+[2026-04-23 22:33:05]   [candidates] 4 found. Top: 'Rahul Ramachandran 
+ • 2nd
+
+IT Architect | Senior ' score=0.71
+[2026-04-23 22:33:11] Searching: Arnold Aschbauer @ BIP
+[2026-04-23 22:33:26]   [candidates] 3 found. Top: 'Arnold Aschbauer 
+ • 2nd
+
+Senior Manager @ BIP | I' score=0.71
+[2026-04-23 22:33:30] Searching: Konstantin Fast @ Fresenius
+[2026-04-23 22:33:43]   [candidates] 2 found. Top: 'Konstantin Fast, MBA • 2nd
+
+Way to go.
+
+Bad Schwal' score=0.69
+[2026-04-23 22:33:43]   -> Falling back to Xing for Konstantin Fast
+[2026-04-23 22:33:53] Searching: Ahmed Magdy @ PAYBACK
+[2026-04-23 22:34:08]   [candidates] 3 found. Top: 'Ahmed Magdy 
+ • 2nd
+
+Information Security Expert| ' score=0.63
+[2026-04-23 22:34:09]   -> Falling back to Xing for Ahmed Magdy
+[2026-04-23 22:34:15] [BREAK] Human-like pause for 167s after 60 profiles.
+[2026-04-23 22:37:02] Searching: Michael Paci @ State Street
+[2026-04-23 22:37:14]   [candidates] 3 found. Top: 'Michael Paci, PMP, CISM, CISA, CRISC, CGEIT 
+ • 2n' score=0.65
+[2026-04-23 22:37:14]   -> Falling back to Xing for Michael Paci
+[2026-04-23 22:37:23] Searching: Paul Voigt @ Taylor Wessing
+[2026-04-23 22:37:32]   [candidates] 3 found. Top: 'Paul Voigt 
+ • 2nd
+
+Attorney at law | Partner and ' score=0.63
+[2026-04-23 22:37:32]   -> Falling back to Xing for Paul Voigt
+[2026-04-23 22:37:39] Searching: Oliver Kalscheuer @ Versicherungskammer Bayern
+[2026-04-23 22:37:48]   [info] Results didn't appear within 8s — checking for challenge/empty page
+[2026-04-23 22:37:56]   -> Falling back to Xing for Oliver Kalscheuer
+[2026-04-23 22:38:05] Closing browser.
+[2026-04-23 22:38:06] [DONE] Results saved to verified.xlsx

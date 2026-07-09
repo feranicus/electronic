@@ -1,0 +1,71 @@
+# Local observability stack for the `assess-bot` Telegram container.
+# Mirrors a typical DigitalOcean droplet stack: Loki (logs) + promtail
+# (Docker service discovery) + Grafana (provisioned dashboard).
+#
+#   cd obs && docker compose up -d
+#   open http://localhost:3000  (admin / admin)  ->  "Colt Assessment Bot"
+#
+# Works on Docker Desktop for Windows (WSL2 backend).
+
+services:
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: obs-loki
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks:
+      - obs
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: obs-promtail
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - colt_events:/logs:ro            # shared volume with assess-bot (reliable file-watch)
+      - promtail-data:/tmp/promtail
+    depends_on:
+      - loki
+    networks:
+      - obs
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: obs-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Anonymous viewing for local use (no login to look at the dashboard).
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_LOG_LEVEL=warn
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+    networks:
+      - obs
+    restart: unless-stopped
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge
+
+volumes:
+  loki-data:
+  promtail-data:
+  grafana-data:
+  colt_events:
+    external: true          # shared with the assess-bot stack; create once: docker volume create colt_events
