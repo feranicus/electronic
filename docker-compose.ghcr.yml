@@ -1,0 +1,55 @@
+# Registry deploy — pulls pre-built, Trivy-scanned images from GHCR (no build on the droplet).
+# Needs env: IMAGE_OWNER (e.g. ghcr.io/feranicus/electronic), IMAGE_TAG (git sha), LOKI_URL, LOKI_NETWORK.
+# One-command rollback: set IMAGE_TAG to a previous sha and `up -d`.
+name: colt-stack
+
+services:
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: colt-promtail
+    command: -config.file=/etc/promtail/promtail-reuse.yml -config.expand-env=true
+    environment:
+      - LOKI_URL=${LOKI_URL:?set LOKI_URL}
+    volumes:
+      - ./obs/promtail-reuse.yml:/etc/promtail/promtail-reuse.yml:ro
+      - colt_events:/logs:ro
+      - promtail-data:/tmp/promtail
+    networks: [lokinet]
+    restart: unless-stopped
+
+  colttechbot:
+    image: ${IMAGE_OWNER:?set IMAGE_OWNER}/colttechbot:${IMAGE_TAG:-latest}
+    container_name: colt-assessbot
+    restart: unless-stopped
+    env_file: assess-bot/.env
+    environment:
+      - EVENTS_LOG=/var/log/colt/events.log
+    volumes:
+      - colt_events:/var/log/colt
+      - ./shodan-out:/root/work
+    networks: [colt]
+    depends_on: [promtail]
+
+  cassandra:
+    image: ${IMAGE_OWNER:?set IMAGE_OWNER}/cassandra:${IMAGE_TAG:-latest}
+    container_name: colt-cassandra
+    restart: unless-stopped
+    env_file: cassandra-bot/.env
+    environment:
+      - EVENTS_LOG=/var/log/colt/events.log
+    volumes:
+      - colt_events:/var/log/colt
+    networks: [colt]
+    depends_on: [promtail]
+
+networks:
+  colt:
+    name: colt-net
+    driver: bridge
+  lokinet:
+    external: true
+    name: ${LOKI_NETWORK:?set LOKI_NETWORK}
+
+volumes:
+  promtail-data:
+  colt_events:

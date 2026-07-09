@@ -133,6 +133,31 @@ def deploy_full(grafana_port, assume_yes):
     ssh("cd %s && docker compose -p %s ps" % (REMOTE, PROJECT), check=False)
     print("\nGrafana on 127.0.0.1:%d — tunnel:  ssh %s@%s -L %d:localhost:%d" % (grafana_port, USER, HOST, grafana_port, grafana_port))
 
+def deploy_ghcr(tag, owner, assume_yes):
+    """Deploy pre-built, scanned GHCR images (no build on the droplet). Rollback = pass an older tag."""
+    if not owner:
+        sys.exit("!! --image-owner required, e.g. ghcr.io/feranicus/electronic")
+    print("\n=== PRE-FLIGHT (read-only) ==="); inspect()
+    name, net = discover_loki()
+    loki_url = ("http://%s:3100/loki/api/v1/push" % name) if name else os.environ.get("LOKI_URL", "")
+    loki_net = net or os.environ.get("LOKI_NETWORK", "")
+    if not (loki_url and loki_net):
+        sys.exit("!! could not resolve the existing Loki; set LOKI_URL / LOKI_NETWORK")
+    print("\nDeploy: %s/{colttechbot,cassandra}:%s  ->  Loki %s (net %s)" % (owner, tag, loki_url, loki_net))
+    if not assume_yes and input("Proceed (pull scanned images, no build)? [y/N] ").strip().lower() != "y":
+        print("Aborted."); return
+    ensure_docker(); ensure_swap(); upload()
+    # optional private-registry login (public packages need no auth)
+    tok, usr = os.environ.get("GHCR_TOKEN", ""), os.environ.get("GHCR_USER", "")
+    if tok and usr:
+        ssh("echo '%s' | docker login ghcr.io -u '%s' --password-stdin" % (tok, usr))
+    ssh("cd %s && printf 'LOKI_URL=%s\\nLOKI_NETWORK=%s\\nIMAGE_OWNER=%s\\nIMAGE_TAG=%s\\n' > .env && cat .env"
+        % (REMOTE, loki_url, loki_net, owner, tag))
+    ssh("cd %s && docker compose -f docker-compose.ghcr.yml -p %s pull && docker compose -f docker-compose.ghcr.yml -p %s up -d"
+        % (REMOTE, PROJECT, PROJECT))
+    ssh("cd %s && docker compose -f docker-compose.ghcr.yml -p %s ps" % (REMOTE, PROJECT), check=False)
+    print("\nDeployed tag %s. Rollback: python deploy.py --ghcr <older-sha> --image-owner %s" % (tag, owner))
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--inspect", action="store_true")
@@ -141,10 +166,13 @@ def main():
     ap.add_argument("--loki-url", default=os.environ.get("LOKI_URL", ""))
     ap.add_argument("--loki-network", default=os.environ.get("LOKI_NETWORK", ""))
     ap.add_argument("--grafana-port", type=int, default=int(os.environ.get("GRAFANA_PORT", "3000")))
+    ap.add_argument("--ghcr", metavar="TAG", help="deploy pre-built GHCR images with this tag (no build)")
+    ap.add_argument("--image-owner", default=os.environ.get("IMAGE_OWNER", ""))
     ap.add_argument("--yes", action="store_true")
     a = ap.parse_args()
     print("Target: %s@%s  project=%s  remote=%s" % (USER, HOST, PROJECT, REMOTE))
-    if a.reuse: deploy_reuse(a.loki_url, a.loki_network, a.yes)
+    if a.ghcr: deploy_ghcr(a.ghcr, a.image_owner, a.yes)
+    elif a.reuse: deploy_reuse(a.loki_url, a.loki_network, a.yes)
     elif a.deploy: deploy_full(a.grafana_port, a.yes)
     elif a.inspect: inspect()
     else: ap.print_help()
