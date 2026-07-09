@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars. Auth via env:  export DIGITALOCEAN_TOKEN=dop_v1_xxx
+create_droplet       = false                 # keep false -> does NOT touch the existing shared droplet
+region               = "fra1"
+droplet_size         = "s-2vcpu-4gb"
+ssh_key_fingerprints = ["aa:bb:cc:dd:..."]   # from: doctl compute ssh-key list
+ssh_allow_cidrs      = ["203.0.113.4/32"]    # your IP; avoid 0.0.0.0/0 in production
+dns_domain           = ""                    # e.g. "example.com" if managed in DO DNS
+dns_record           = "bots"

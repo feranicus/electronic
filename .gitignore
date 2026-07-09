@@ -21,3 +21,22 @@ uploads/
 *.bak2
 *.bak3
 node_modules/
+
+# ===================== OpenTofu / Terraform =====================
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!*.tfvars.example
+
+# --- hygiene (added automatically) ---
+venv/
+linkedin_cookies.json
+debug_no_results_*.html
+*.sarif
+results.sarif
+*.pdf
+feranicus/
+jobhuntwow.com/
