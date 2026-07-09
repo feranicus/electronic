@@ -1,5 +1,5 @@
 # Runtime deps (also fed to Dependabot + Trivy + pip-audit). Dockerfiles install these.
-python-telegram-bot>=21,<22
+python-telegram-bot>=22.8,<23
 shodan
 google-auth
 requests
