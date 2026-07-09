@@ -1,0 +1,10 @@
+# gitleaks config — extend the built-in rules, but don't flag placeholder docs.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders and documentation (no real secrets)"
+paths = [
+  '''.*\.env\.example$''',
+  '''README\.md$''',
+]
