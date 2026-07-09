@@ -32,7 +32,7 @@ jobs:
           exit-code: '0'    # report only at first; flip to '1' once clean
 
       - name: Hadolint - Dockerfile lint
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.3.0
         with:
           recursive: true
           failure-threshold: error
