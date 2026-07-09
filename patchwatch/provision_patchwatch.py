@@ -199,7 +199,7 @@ def main():
         "OPENAI_BASE_URL": shared.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1"),
         "PATCH_LLM_MODEL": shared.get("ENRICH_MODEL", "deepseek-3.2"),
         "PATCH_TG_TOKEN": bot_token, "PATCH_TG_CHAT": chat,
-        "PATCH_EVENTS_LOG": "/opt/colt-stack/observe/events.log",
+        "PATCH_EVENTS_LOG": "/var/lib/docker/volumes/colt-stack_colt_events/_data/events.log",
     }
     # OPENAI_API_KEY: only write it if not already inherited from colt-stack .env
     if not shared.get("OPENAI_API_KEY") and os.environ.get("OPENAI_API_KEY"):

@@ -60,7 +60,8 @@ LLM_TIMEOUT = int(env("PATCH_LLM_TIMEOUT", "120"))
 TG_TOKEN  = env("PATCH_TG_TOKEN", env("BOT_TOKEN"))
 TG_CHAT   = env("PATCH_TG_CHAT")                    # your Telegram numeric chat id
 
-EVENTS_LOG = env("PATCH_EVENTS_LOG", "/opt/colt-stack/observe/events.log")
+# Write to the SAME file promtail tails (the colt_events docker volume), so events reach Loki/Grafana.
+EVENTS_LOG = env("PATCH_EVENTS_LOG", "/var/lib/docker/volumes/colt-stack_colt_events/_data/events.log")
 
 # ----------------------------------------------------------------------------- helpers
 def log(evt, **kw):
