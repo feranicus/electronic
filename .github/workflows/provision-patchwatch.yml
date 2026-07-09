@@ -1,0 +1,52 @@
+name: Provision patchwatch
+# Zero-touch setup/refresh of the droplet auto-patcher. Everything from the repo.
+# Secrets live ONLY as encrypted GitHub Actions secrets (never in the code).
+on:
+  workflow_dispatch:
+    inputs:
+      first_reboot_mode:
+        description: "Reboot policy for THIS provisioning run"
+        type: choice
+        default: notify
+        options: [notify, auto]
+      final_reboot_mode:
+        description: "Reboot policy to leave in place afterwards"
+        type: choice
+        default: auto
+        options: [notify, auto]
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet boto3
+      - name: Install SSH deploy key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DROPLET_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Provision patchwatch
+        env:
+          DO_API_TOKEN: ${{ secrets.DO_API_TOKEN }}
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+          SSH_KEY: /home/runner/.ssh/deploy_key
+          SPACES_KEY: ${{ secrets.SPACES_KEY }}
+          SPACES_SECRET: ${{ secrets.SPACES_SECRET }}
+          SPACES_REGION: ${{ vars.SPACES_REGION || 'fra1' }}
+          SPACES_BUCKET: ${{ vars.SPACES_BUCKET || 'colt-backups' }}
+          PATCH_TG_CHAT: ${{ secrets.PATCH_TG_CHAT }}
+        run: |
+          python patchwatch/provision_patchwatch.py \
+            --first-reboot-mode "${{ github.event.inputs.first_reboot_mode }}" \
+            --final-reboot-mode "${{ github.event.inputs.final_reboot_mode }}"

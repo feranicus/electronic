@@ -60,8 +60,10 @@ def main():
     ssh("chmod 600 /etc/patchwatch/patchwatch.env")
 
     print("=== 3) dependencies (boto3 for Spaces) ===")
-    ssh("python3 -m pip install --quiet --break-system-packages boto3 requests 2>/dev/null || "
-        "pip3 install --quiet boto3 requests")
+    # Prefer distro packages (no pip needed); fall back to pip if a package is missing.
+    ssh("export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && "
+        "apt-get install -y python3-boto3 python3-requests "
+        "|| (apt-get install -y python3-pip && python3 -m pip install --break-system-packages boto3 requests)")
 
     print("=== 4) enable timer ===")
     ssh("systemctl daemon-reload && systemctl enable --now patchwatch.timer")
