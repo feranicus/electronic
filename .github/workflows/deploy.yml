@@ -37,7 +37,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # ---- colttechbot: build (load) -> Trivy scan -> push (only if clean) ----
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: assess-bot/Dockerfile
@@ -57,7 +57,7 @@ jobs:
           docker push "$IMAGE_BASE/colttechbot:latest"
 
       # ---- cassandra: build (load) -> Trivy scan -> push (only if clean) ----
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: cassandra-bot/Dockerfile
