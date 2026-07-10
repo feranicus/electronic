@@ -4,10 +4,12 @@
   --purple:#8b6cff;--red:#F20C36;--ink:#eaf1fb;--mut:#93a9ce;
   --ease:cubic-bezier(.2,.7,.2,1);
 }
+h1,h2,h3,.brand{font-family:'Space Grotesk','Segoe UI',sans-serif
+}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--navy);color:var(--ink);
-  font:16px/1.6 "Segoe UI",DM Sans,system-ui,Arial,sans-serif;overflow-x:hidden}
+  font:16px/1.6 'Manrope','Segoe UI',system-ui,Arial,sans-serif;overflow-x:hidden}
 a{color:var(--teal);text-decoration:none}
 .chev{color:var(--teal);font-weight:800}
 button{font-family:inherit}
@@ -136,19 +138,51 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 @media(max-width:900px){.demo{grid-template-columns:1fr}.grid2,.grid3{grid-template-columns:1fr}}
 
 /* ---------- LOGIN ---------- */
-.auth-shell{min-height:100vh;display:grid;place-items:center;position:relative;overflow:hidden}
-.auth-shell #dust{position:absolute}
-.auth-card{position:relative;z-index:1;width:min(420px,92vw);background:var(--card);
-  border:1px solid var(--line);border-radius:20px;padding:30px 28px;
-  box-shadow:0 30px 80px rgba(0,0,0,.5)}
-.auth-card .brand{font-size:24px;margin-bottom:6px}
-.auth-card h2{margin:6px 0 2px;font-size:22px}
-.auth-card .sub2{color:var(--mut);font-size:14px;margin:0 0 8px}
-.auth-card .btn{width:100%;justify-content:center;margin-top:18px}
-.auth-back{display:inline-block;margin-top:16px;color:var(--mut);font-size:13px}
-.steps{display:flex;gap:8px;margin:14px 0 4px}
-.steps .s{flex:1;height:4px;border-radius:3px;background:var(--line)}
-.steps .s.on{background:var(--teal)}
+.iam{min-height:100vh;display:grid;grid-template-columns:1.05fr 1fr;background:var(--navy)}
+/* LEFT brand panel — Colt IAM */
+.iam-brand{position:relative;overflow:hidden;padding:44px 46px;display:flex;flex-direction:column;
+  color:#eafffb;background:
+    radial-gradient(900px 500px at 12% -10%,rgba(0,178,169,.55),transparent 60%),
+    radial-gradient(700px 500px at 110% 120%,rgba(12,84,78,.9),transparent 55%),
+    linear-gradient(150deg,#0c544e 0%,#063f3a 55%,#04302c 100%)}
+.iam-brand:before{content:"";position:absolute;inset:0;
+  background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);
+  background-size:34px 34px;mask:radial-gradient(700px 500px at 20% 10%,#000,transparent 75%)}
+.iam-brand>*{position:relative;z-index:1}
+.iam-brand-top{display:flex;align-items:center;justify-content:space-between}
+.iam-brand .brand{font-size:26px;font-weight:800;letter-spacing:.5px}
+.iam-brand .chev{color:var(--gold)}
+.iam-tag{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;
+  color:#bff5ec;border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:5px 11px}
+.iam-brand-mid{margin:auto 0}
+.iam-brand-mid h1{font-size:40px;line-height:1.08;margin:0 0 14px;font-weight:800;letter-spacing:-.5px}
+.iam-brand-mid p{color:#bfeee6;font-size:15.5px;max-width:30ch;margin:0 0 26px}
+.iam-steps{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}
+.iam-steps li{display:flex;gap:13px;align-items:flex-start}
+.iam-steps li span{flex:none;width:28px;height:28px;border-radius:9px;display:grid;place-items:center;
+  font-weight:800;font-size:14px;color:#04302c;background:linear-gradient(135deg,var(--gold),#e0ad1f)}
+.iam-steps li div{font-size:13.5px;color:#d7f4ee}
+.iam-steps li b{display:block;color:#fff;font-size:14.5px;margin-bottom:1px}
+.iam-brand-foot{font-size:12px;color:#8fd7cc;letter-spacing:.06em}
+/* RIGHT sign-in */
+.iam-form{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;
+  background:radial-gradient(700px 500px at 80% 0%,rgba(0,178,169,.06),transparent 60%),var(--navy)}
+.iam-card{width:min(400px,94vw);background:var(--card);border:1px solid var(--line);
+  border-radius:20px;padding:32px 30px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.iam-prog{display:flex;align-items:center;gap:10px;margin-bottom:20px;font-size:12px;font-weight:800;
+  text-transform:uppercase;letter-spacing:.1em;color:var(--mut)}
+.iam-prog span.on{color:var(--teal)}
+.iam-prog i{flex:1;height:2px;background:var(--line);border-radius:2px}
+.iam-card h2{margin:0 0 4px;font-size:23px;font-weight:800}
+.iam-sub{color:var(--mut);font-size:14px;margin:0 0 6px}
+.iam-card .btn{width:100%;justify-content:center;margin-top:20px}
+.input.otp{letter-spacing:.5em;font-size:22px;text-align:center;font-weight:700}
+.iam-back{display:inline-block;margin-top:16px;color:var(--mut);font-size:13px;
+  background:none;border:0;cursor:pointer;padding:0}
+.iam-back:hover{color:var(--teal)}
+.iam-legal{margin-top:18px;font-size:11.5px;color:var(--mut);letter-spacing:.04em}
+@media(max-width:860px){.iam{grid-template-columns:1fr}.iam-brand{display:none}}
 
 /* ---------- CABINET ---------- */
 .cab{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
