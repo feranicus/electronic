@@ -462,6 +462,9 @@ def main():
     ap.add_argument("--net", action="append", default=[])
     ap.add_argument("--org", action="append", default=[]); ap.add_argument("--brand", action="append", default=[])
     ap.add_argument("--domain", action="append", default=[]); ap.add_argument("--favicon", action="append", default=[])
+    ap.add_argument("--issuer", "--internal-ca", dest="issuer", action="append", default=[])
+    ap.add_argument("--cert-org", dest="cert_org", action="append", default=[])
+    ap.add_argument("--jarm", action="append", default=[]); ap.add_argument("--cpe", action="append", default=[])
     ap.add_argument("--from-findings"); ap.add_argument("--company")
     ap.add_argument("--outdir", default="."); ap.add_argument("--audience")
     a = ap.parse_args()
@@ -492,7 +495,8 @@ def main():
         for n in a.net:
             if n not in ident["nets"]: ident["nets"].append(n)
             ident["org_is_cdn"]=False
-        R.merge_variants(ident, a.org, a.brand, a.domain, a.favicon)
+        R.merge_variants(ident, a.org, a.brand, a.domain, a.favicon,
+                         issuers=a.issuer, cert_orgs=a.cert_org, jarms=a.jarm, cpes=a.cpe)
         F = R.build_filters(ident)
         open(os.path.join(a.outdir,"filters.md"),"w").write(R.filters_md(ident,F))
         if not os.environ.get("SHODAN_API_KEY"):
