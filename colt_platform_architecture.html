@@ -87,13 +87,31 @@ h2{font-size:clamp(24px,3.6vw,36px);margin:0 0 6px;font-weight:800}h2 .g{color:v
 .hood code{background:#0a1730;border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:#bfe6e3;font-size:12px}
 .foot{padding:40px 0;color:var(--mut);font-size:13px;text-align:center;border-top:1px solid var(--line)}.foot .g{color:var(--teal);letter-spacing:3px}
 @media(max-width:900px){.demo{grid-template-columns:1fr}}
+
+/* ---- login CTA ---- */
+.loginbtn{background:linear-gradient(90deg,var(--teal),#0a8c86);color:#04211f!important;font-weight:800;
+ padding:9px 16px;border-radius:999px;font-size:14px;box-shadow:0 8px 22px rgba(0,178,169,.3);transition:.2s}
+.loginbtn:hover{transform:translateY(-2px)}
+.hero .loginbig{display:inline-flex;gap:10px;align-items:center;margin:22px 10px 0;background:var(--gold);color:#1a1400!important;
+ font-weight:800;font-size:18px;padding:14px 26px;border-radius:999px;box-shadow:0 12px 34px rgba(247,200,68,.3);transition:.2s}
+.hero .loginbig:hover{transform:translateY(-3px)}
+.access{background:linear-gradient(100deg,#0f2f52,#0f1e39);border:1px solid var(--teal);border-radius:22px;padding:34px;text-align:center;margin-top:10px}
+.access h2{margin:0 0 6px}.access .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:22px 0}
+.access .st{background:rgba(0,0,0,.18);border:1px solid var(--line);border-radius:14px;padding:18px}
+.access .st .n{width:34px;height:34px;border-radius:50%;background:var(--teal);color:#04211f;font-weight:900;display:grid;place-items:center;margin:0 auto 10px}
+.access .st b{color:var(--teal)}.access .st p{color:var(--mut);margin:6px 0 0;font-size:14px}
+.access .go{display:inline-flex;gap:10px;align-items:center;background:var(--teal);color:#04211f;font-weight:900;font-size:20px;
+ padding:16px 34px;border-radius:999px;box-shadow:0 14px 40px rgba(0,178,169,.35);transition:.2s;margin-top:6px}
+.access .go:hover{transform:translateY(-3px)}
+.access .small{color:var(--mut);font-size:13px;margin-top:14px}
+@media(max-width:700px){.access .steps{grid-template-columns:1fr}}
 </style></head><body>
 <div class="cur"></div><div class="ring"></div>
 
 <header id="hd"><div class="wrap">
  <span class="brand"><span class="chev">❯</span> colt</span>
  <nav><a href="#demo">See it live</a><a href="#map">The machine</a><a href="#deep">Deep dive</a>
- <a href="#secure">Security</a><a href="#heal">Self-healing</a></nav>
+ <a href="#secure">Security</a><a href="#heal">Self-healing</a><a href="/login" class="loginbtn">🔐 Log in</a></nav>
 </div></header>
 
 <section class="hero">
@@ -103,9 +121,22 @@ h2{font-size:clamp(24px,3.6vw,36px);margin:0 0 6px;font-weight:800}h2 .g{color:v
   <h1>Type a company name.<br><span class="g">Four boardroom decks.</span> Two minutes.</h1>
   <p class="sub">A robot that turns one word — a prospect's name — into a full external cyber-risk assessment,
    priced in euros. So 30+ sales people are ready for any meeting, hands-free.</p>
+  <div><a href="/login" class="loginbig">🔐 Log in to the portal →</a></div>
   <div class="pill">▶ Watch it work — scroll down</div>
  </div>
 </section>
+
+<section id="access"><div class="wrap reveal"><div class="access">
+ <h2>👉 <span class="g">Log in</span> to use the portal</h2>
+ <p class="lede" style="margin:0 auto;max-width:640px">Any Colt AE — no account to create. Just your Colt email and the shared password.</p>
+ <div class="steps">
+  <div class="st"><div class="n">1</div><b>Email + password</b><p>Enter your <b>name.familyname@colt.net</b> and the shared access password.</p></div>
+  <div class="st"><div class="n">2</div><b>Check your inbox</b><p>We email a <b>6-digit code</b> to your Colt mailbox — only you can read it.</p></div>
+  <div class="st"><div class="n">3</div><b>You're in</b><p>Use the portal: run assessments, chat with the assistant, download decks.</p></div>
+ </div>
+ <a href="/login" class="go">🔐 Log in now →</a>
+ <div class="small">Same zero-trust gate as the Telegram bots · your email is your identity · the code proves it's you.</div>
+</div></div></section>
 
 <!-- LIVE DEMO -->
 <section id="demo"><div class="wrap reveal">
