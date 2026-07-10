@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/node && cd /opt/node && npm init -y >/dev/null 2>&1 && npm install pptxgenjs@^4 --no-audit --no-fund
 ENV NODE_PATH=/opt/node/node_modules
-RUN pip3 install --no-cache-dir --break-system-packages shodan python-telegram-bot
+RUN pip3 install --no-cache-dir --break-system-packages shodan python-telegram-bot mmh3
 RUN pip3 install --no-cache-dir --break-system-packages google-auth requests
 # engine (recon + 3 deck generators) + the bot
 COPY hermes-skills/shodan-assessment /opt/shodan-skill

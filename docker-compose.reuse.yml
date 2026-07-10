@@ -43,7 +43,36 @@ services:
     volumes:
       - colt_events:/var/log/colt
     networks: [colt]
+
+  web:
+    build: {context: ., dockerfile: webapp/Dockerfile}
+    image: colt-web
+    container_name: colt-web
+    env_file: [.env]
+    environment:
+      - ENGINE=/opt/shodan-skill/scripts/run_assessment.py
+      - ALLOWED_EMAIL_DOMAIN=colt.net
+    volumes:
+      - colt_events:/data/observe      # so /assess events land in the promtail-tailed volume too
+      - colt_webdata:/data
+    ports:
+      - "127.0.0.1:8090:8000"          # existing reverse proxy forwards cybergod.ai here (no 80/443 grab)
+    networks: [colt]
+    restart: unless-stopped
+
     depends_on: [promtail]
+
+  caddy:
+    image: caddy:2
+    container_name: colt-caddy
+    profiles: ["edge"]                 # only started by provision_web.py when nothing else owns 80/443
+    ports: ["80:80","443:443"]
+    volumes:
+      - ./webapp/Caddyfile:/etc/caddy/Caddyfile:ro
+      - colt_caddydata:/data
+      - colt_caddycfg:/config
+    networks: [colt]
+    restart: unless-stopped
 
 networks:
   colt:
@@ -56,3 +85,6 @@ networks:
 volumes:
   promtail-data:
   colt_events:
+  colt_webdata:
+  colt_caddydata:
+  colt_caddycfg:

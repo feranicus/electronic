@@ -1,0 +1,7 @@
+# runtime data (sessions, history db, per-user job dirs, decks)
+data/
+*.sqlite
+*.sqlite-journal
+web_authorized.json
+__pycache__/
+*.pyc

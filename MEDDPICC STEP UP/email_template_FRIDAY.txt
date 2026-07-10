@@ -1,0 +1,20 @@
+Subject: MEDDPICC STEP UP — end-of-week status (July/August security deals)
+
+Hi «FirstName»,
+
+Quick end-of-week check-in for MEDDPICC STEP UP.
+
+Please reply with a short status on your July/August security deals (DDoS · SD-WAN · SASE, or anything security-adjacent):
+  • What moved this week?
+  • Any new blockers?
+  • Where do you need my help to push it toward close — security assessment, C-BIQ risk report, exec sponsor, pricing, or a joint Fortinet/partner motion?
+
+Just reply to this email. Thanks, and have a good weekend.
+
+Best,
+Jev
+
+Jev Vainsteins
+Client Partner (CP), DACH — Security
+Colt Technology Services
+jevgenijs.vainsteins@colt.net

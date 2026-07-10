@@ -48,3 +48,13 @@ the Shodan sweep's cert issuers). NEVER require the operator to hand-feed `--asn
 --cert-org/--favicon` — those exist only as optional overrides. `run_assessment.py` calls
 `shodan_recon.autodiscover()`, not bare `merge_variants()`. If a future change makes the operator
 type infrastructure details, it's wrong — auto-resolve it.
+
+## Web vector — cybergod.ai (ADDITIVE, all via CI/CD)
+The Telegram bots stay. `webapp/` is a SECOND front door: FastAPI backend (reuses `colt_auth` +
+`run_assessment.py` engine + cassandra's assistant) serving a React cabinet (landing + zero-trust
+login + New-Assessment/Assistant/History). Container `colt-web` runs in the isolated `colt-stack`
+on `127.0.0.1:8090`. Deploy is 100% CI/CD: pushing `webapp/**` triggers `web-deploy.yml` →
+Tailscale → `deploy.py --reuse` (builds colt-web) → `webapp/provision_web.py`, which sets DNS via
+the DO API and AUTO-DETECTS the droplet's reverse proxy to wire `cybergod.ai` with TLS WITHOUT
+disturbing VideoDead. NEVER ask the operator to SSH in and edit a proxy/DNS by hand — provision_web
+figures it out. cybergod.ai is served from the droplet, not GitHub.

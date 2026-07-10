@@ -1,0 +1,41 @@
+name: Deploy web (cybergod.ai)
+on:
+  push:
+    branches: [main]
+    paths: ["webapp/**", "hermes-skills/**", "colt_auth.py", "docker-compose.reuse.yml", ".github/workflows/web-deploy.yml"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Connect to Tailscale (reach the firewalled droplet)
+        uses: tailscale/github-action@v3
+        with: {authkey: "${{ secrets.TS_AUTHKEY }}", version: latest}
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ vars.TAILNET_HOST || '100.78.224.75' }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Build + deploy colt-stack (incl. colt-web) over Tailscale
+        env:
+          DROPLET_HOST: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+          SSH_KEY: /home/runner/.ssh/deploy_key
+        run: python deploy.py --reuse --yes
+      - name: Publish cybergod.ai (DNS + proxy, auto)
+        env:
+          DO_API_TOKEN: ${{ secrets.DO_API_TOKEN }}
+          DROPLET_HOST: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+          SSH_KEY: /home/runner/.ssh/deploy_key
+          DROPLET_PUBLIC_IP: ${{ vars.DROPLET_PUBLIC_IP || '64.225.108.200' }}
+          DOMAIN: cybergod.ai
+        run: python webapp/provision_web.py

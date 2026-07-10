@@ -1,0 +1,6 @@
+SHELL=/bin/bash
+# MEDDPICC STEP UP — Monday & Friday at 09:00 (container TZ). Logs to container stdout.
+# m h dom mon dow user command
+0 9 * * 1 root . /etc/environment; cd /app && python send.py monday >> /proc/1/fd/1 2>&1
+0 9 * * 5 root . /etc/environment; cd /app && python send.py friday >> /proc/1/fd/1 2>&1
+# (empty trailing line required by cron)

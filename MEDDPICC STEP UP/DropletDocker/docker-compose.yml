@@ -1,0 +1,10 @@
+services:
+  meddpicc:
+    build: .
+    image: meddpicc-stepup
+    env_file: .env
+    volumes:
+      - ./secrets:/secrets:ro          # token.json (Gmail OAuth) lives here
+      - ./data:/data:ro                # the .pptx to attach lives here
+      - ./recipients.json:/app/recipients.json:ro
+    restart: unless-stopped
