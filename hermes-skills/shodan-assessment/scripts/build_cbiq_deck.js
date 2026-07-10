@@ -67,7 +67,7 @@ pres.author = "Colt Sales Engineering";
 pres.title = cust + " " + EMDASH + " C-BIQ Business Impact Quantification";
 
 let pageNum = 0;
-const TOTAL = 13;
+const TOTAL = 17;
 const R = () => pres.shapes.RECTANGLE;
 
 // ---------- loose-JSON coercion / number helpers ----------
@@ -428,8 +428,34 @@ function distSlide() {
 // ==================================================================
 // SLIDE 9 -- SEVEN CASH BUCKETS (bar)
 // ==================================================================
+// infer the customer sector from the deck data so the 7 buckets are tilted to what the
+// board actually fears (labels come straight from d.buckets).
+function inferSector() {
+  const hay = ((d.sector || "") + " " + (cust || "") + " " + (d.remediationSuite || "")
+    + " " + (d.buckets || []).map(b => (b.name || "") + " " + (b.surface || "")).join(" ")).toLowerCase();
+  if (/auto|vehicle|automob|powertrain|volkswag|audi|porsche|bmw|mercedes|daimler/.test(hay)) return "automotive";
+  if (/bank|financ|trading|treasur|insur|payment|correspond/.test(hay)) return "finance";
+  if (/energy|oil|gas|refin|utility|grid|kraftwerk|petro/.test(hay)) return "energy";
+  if (/health|patient|pharma|clinic|hospital|care/.test(hay)) return "healthcare";
+  if (/retail|e-?commerce|checkout|pci/.test(hay)) return "retail";
+  if (/manufactur|industr|production|factory|line|carbon|chemical/.test(hay)) return "manufacturing";
+  return "manufacturing";
+}
+// sector -> buckets the board fears most (Deloitte §G tilt) + a plain-English note.
+const SECTOR_TILT = {
+  automotive:    { hot: ["L3", "L7", "L4"], note: "Automotive: line-halt (L3), recall/warranty & funding (L7) and IP loss (L4) dominate " + EMDASH + " R155/TISAX raise the regulatory floor." },
+  manufacturing: { hot: ["L3", "L6", "L7"], note: "Manufacturing/OT: production downtime (L3), OT/IT rebuild (L6) and capital/warranty (L7) dominate " + EMDASH + " NIS2/IEC 62443 apply." },
+  finance:       { hot: ["L4", "L5", "L7"], note: "Finance: customer & revenue (L4), reputation/trust (L5) and capital/funding (L7) dominate " + EMDASH + " DORA up to 2% turnover." },
+  energy:        { hot: ["L3", "L2", "L7"], note: "Energy/utility: operational downtime (L3), regulatory/safety (L2) and capital (L7) dominate " + EMDASH + " NIS2/KRITIS apply." },
+  healthcare:    { hot: ["L1", "L2", "L3"], note: "Healthcare: response (L1), regulatory/legal (L2) and care-delivery downtime (L3) dominate " + EMDASH + " patient-safety is paramount." },
+  retail:        { hot: ["L4", "L1", "L5"], note: "Retail: customer & revenue (L4), response (L1) and reputation (L5) dominate " + EMDASH + " GDPR + PCI-DSS apply." },
+};
 function bucketsSlide() {
-  const s = content("Loss magnitude", "The seven cash buckets (L1" + EMDASH + "L7) " + EMDASH + " what a cyber event actually costs");
+  const sector = inferSector();
+  const tilt = SECTOR_TILT[sector] || SECTOR_TILT.manufacturing;
+  const hot = new Set(tilt.hot);
+  const s = content("Loss magnitude " + MIDDOT + " " + sector.toUpperCase() + "-tilted",
+    "The seven cash buckets (L1" + EMDASH + "L7) " + EMDASH + " what a cyber event actually costs " + cust);
   const buckets = (d.buckets && d.buckets.length) ? d.buckets : [
     { id: "L1", name: "Response & investigation" }, { id: "L2", name: "Notification & legal" },
     { id: "L3", name: "Business interruption" }, { id: "L4", name: "Regulatory fines" },
@@ -441,14 +467,17 @@ function bucketsSlide() {
   findings.forEach(f => { if (f.lmBuckets) Object.entries(f.lmBuckets).forEach(([k, v]) => { sums[k] = (sums[k] || 0) + PERT(v); }); });
   const anyData = Object.values(sums).some(v => v > 0);
   const items = buckets.map((b, i) => ({
-    label: b.id + "  " + (b.name || ""),
+    label: b.id + "  " + (b.name || "") + (hot.has(b.id) ? "  " + RAQUO : ""),
     v: anyData ? sums[b.id] : (7 - i),
     vlabel: anyData ? money(sums[b.id]) : "",
-    color: (b.id === "L3") ? C.crit : (i < 2 ? C.high : C.tealDark),
+    bold: hot.has(b.id),
+    // sector-hot buckets in crit red; the rest teal-dark
+    color: hot.has(b.id) ? C.crit : C.tealDark,
   }));
-  barChart(s, items, { x: 0.4, y: 1.5, w: 9.2, barH: 0.34, gap: 0.15, labW: 3.2, valW: 1.4 });
-  s.addText("Bars are the summed most-likely (PERT) loss per bucket, across all priced findings. For most operators the below-surface buckets (L3" + EMDASH + "L7) dwarf the incident-response invoice (L1).",
-    { x: 0.4, y: 5.0, w: 9.2, h: 0.3, fontSize: 8.4, fontFace: FB, color: C.tealDark, italic: true, margin: 0 });
+  barChart(s, items, { x: 0.4, y: 1.5, w: 9.2, barH: 0.34, gap: 0.15, labW: 3.6, valW: 1.4 });
+  s.addText(tilt.note, { x: 0.4, y: 4.94, w: 9.2, h: 0.34, fontSize: 8.4, fontFace: FB, color: C.tealDark, italic: true, bold: true, margin: 0 });
+  s.addText("Bars are the summed most-likely (PERT) loss per bucket across all priced findings; " + RAQUO + " marks the buckets this sector's board fears most. The below-surface buckets (L3" + EMDASH + "L7) typically dwarf the incident-response invoice (L1).",
+    { x: 0.4, y: 5.24, w: 9.2, h: 0.3, fontSize: 7.4, fontFace: FB, color: C.inkMuted, italic: true, margin: 0 });
 }
 
 // ==================================================================
@@ -633,20 +662,129 @@ function lossScenariosSlide() {
     { x: 0.4, y: 4.98, w: 9.4, h: 0.3, fontSize: 7.8, fontFace: FB, color: C.inkMuted, italic: true, margin: 0 });
 }
 
+// ==================================================================
+// SLIDE (NEW) -- WHY COLT MEASURES IT  (Scanner/ASM vs Big-Four vs Colt C-BIQ)
+// ==================================================================
+function whyColtSlide() {
+  const s = content("Why Colt measures it", "Three ways to look at cyber risk " + EMDASH + " only one closes the loop");
+  const cols = [
+    ["SCANNER / ASM", C.dark,
+      ["Lists what is exposed", "Severity labels (CVSS)", "No " + WORD + " figure", "No board narrative", "Cannot remediate"],
+      "Tells you the door is open."],
+    ["BIG-FOUR CRQ", C.gold,
+      ["Prices risk in " + WORD, "FAIR / Monte-Carlo", "Board-ready report", "Advisory only", "Hands back a slide, not a fix"],
+      "Tells you what the open door costs."],
+    ["COLT C-BIQ", C.tealDark,
+      ["Prices risk in " + WORD, "FAIR / Monte-Carlo", "Board-ready + ROSI", "Retires the finding", "Then keeps watching (live)"],
+      "Closes the door, prices it while doing so, keeps watching."],
+  ];
+  let cx = 0.4; const cw = 3.0, cg = 0.15;
+  cols.forEach(([head, col, items, foot], ci) => {
+    const lead = ci === 2;
+    s.addShape(R(), { x: cx, y: 1.34, w: cw, h: 3.3, fill: { color: lead ? C.light : C.white }, line: { color: C.divider, width: 1 } });
+    s.addShape(R(), { x: cx, y: 1.34, w: cw, h: 0.42, fill: { color: col }, line: { type: "none" } });
+    s.addText(head, { x: cx, y: 1.34, w: cw, h: 0.42, fontSize: 11, fontFace: FB, bold: true, color: (col === C.gold ? C.black : C.white), align: "center", valign: "middle", charSpacing: 1, margin: 0 });
+    items.forEach((it, i) => {
+      const iy = 1.94 + i * 0.42;
+      const ok = (ci === 2) || (ci === 1 && i < 3) ;
+      s.addText((lead ? "\u2713  " : (ci === 1 && i < 3 ? "\u2713  " : "\u2022  ")) + it,
+        { x: cx + 0.16, y: iy, w: cw - 0.28, h: 0.4, fontSize: 8.6, fontFace: FB,
+          color: lead ? C.tealDark : C.ink, bold: lead, valign: "middle", margin: 0 });
+    });
+    s.addShape(R(), { x: cx, y: 4.24, w: cw, h: 0.4, fill: { color: lead ? C.tealDark : C.light }, line: { type: "none" } });
+    s.addText(foot, { x: cx + 0.12, y: 4.24, w: cw - 0.24, h: 0.4, fontSize: 7.8, fontFace: FB, italic: true,
+      color: lead ? C.white : C.inkMuted, valign: "middle", margin: 0 });
+    cx += cw + cg;
+  });
+  s.addText("A scanner tells you the door is open; a consultant tells you what an open door costs; Colt closes the door, prices the risk while doing it, and keeps watching " + EMDASH + " one accountable contract.",
+    { x: 0.4, y: 4.86, w: 9.3, h: 0.34, fontSize: 8.4, fontFace: FB, color: C.tealDark, bold: true, italic: true, margin: 0 });
+}
+
+// ==================================================================
+// SLIDE (NEW) -- STAGED WATERFALL TO ZERO  (renders portfolio.waterfall)
+// ==================================================================
+function waterfallSlide() {
+  const s = content("Staged waterfall to " + APPROX + " 0", "Each Colt control removes a slice of the portfolio ALE");
+  const p = d.portfolio || {};
+  const wf = Array.isArray(p.waterfall) ? p.waterfall : [];
+  const startAle = (p.aleRange && p.aleRange[1]) || p.aleLikely || 0;
+  if (!startAle || !wf.length) {
+    s.addText("No portfolio waterfall data supplied.", { x: 0.4, y: 2.6, w: 9, h: 0.4, fontSize: 12, fontFace: FB, color: C.inkMuted, margin: 0 });
+    return;
+  }
+  s.addText("Start at the portfolio ALE; each managed control retires a slice of internet-facing risk. SASE/ZTNA removes the most because it retires several exposed assets at once " + EMDASH + " the compounding a box-by-box patch list cannot match.",
+    { x: 0.4, y: 1.28, w: 9.3, h: 0.5, fontSize: 9, fontFace: FB, color: C.ink, valign: "top", margin: 0, lineSpacingMultiple: 1.03 });
+  // horizontal descending bars: remaining ALE after each stage
+  const x0 = 2.9, w = 6.4, barH = 0.34, gap = 0.20, y0 = 1.94;
+  const scale = v => Math.max(0.05, (v / startAle) * w);
+  // stage 0 = full ALE
+  let remaining = startAle;
+  const stages = [{ label: "Portfolio ALE (before)", cut: 0, svc: "" }].concat(wf);
+  let y = y0;
+  stages.forEach((st, i) => {
+    remaining = Math.max(0, remaining - num(st.cut));
+    const shown = i === 0 ? startAle : remaining;
+    s.addText(i === 0 ? "BEFORE" : (st.label || ("stage " + i)), { x: 0.4, y, w: 2.4, h: barH, fontSize: 8.4, fontFace: FB,
+      color: C.ink, bold: i === 0, valign: "middle", margin: 0 });
+    s.addShape(R(), { x: x0, y: y + 0.03, w, h: barH - 0.06, fill: { color: C.light }, line: { type: "none" } });
+    s.addShape(R(), { x: x0, y: y + 0.03, w: scale(shown), h: barH - 0.06, fill: { color: i === 0 ? C.crit : (i === stages.length - 1 ? C.green : C.tealMid) }, line: { type: "none" } });
+    s.addText(money(shown), { x: x0 + scale(shown) + 0.08, y, w: 1.5, h: barH, fontSize: 8.4, fontFace: FM, color: C.ink, valign: "middle", margin: 0 });
+    if (i > 0 && st.svc) s.addText(EMDASH + " " + st.svc, { x: x0, y: y + barH - 0.02, w, h: 0.16, fontSize: 6.6, fontFace: FB, color: C.inkMuted, italic: true, margin: 0 });
+    y += barH + gap + (i > 0 ? 0.06 : 0);
+  });
+  s.addText([{ text: "Residual " + APPROX + " " + money(remaining) + ".  ", options: { bold: true, color: C.green } },
+    { text: "\u201cZero\u201d means the modelled internet-facing surface after every asset is removed or placed behind a Colt control " + EMDASH + " internal risk is out of scope.", options: { color: C.inkMuted, italic: true } }],
+    { x: 0.4, y: 5.0, w: 9.3, h: 0.3, fontSize: 8, fontFace: FB, margin: 0 });
+}
+
+// ==================================================================
+// SLIDE (NEW) -- TERMS DEFINED  (TERM / WHAT IT IS / HOW WE CALCULATE IT + worked line)
+// ==================================================================
+function glossarySlide() {
+  const s = content("Terms defined", "Every acronym, and exactly how we calculate it");
+  const rows = [
+    ["TEF", "Threat Event Frequency", "Credible attempts / yr, from KEV activity + EPSS + exposure"],
+    ["Vuln", "Vulnerability", "Probability one attempt succeeds (0" + EMDASH + "1), from patch state + controls"],
+    ["LEF", "Loss Event Frequency", "LEF = TEF " + TIMES + " Vuln " + EMDASH + " loss events / yr (the ARO)"],
+    ["LM", "Loss Magnitude", "One event's cost = " + SIGMA + " of 7 cash buckets, PERT (min+4" + TIMES + "lik+max)/6"],
+    ["ALE", "Annualised Loss Expectancy", "ALE = LEF " + TIMES + " mean LM " + EMDASH + " the BUDGET number"],
+    ["PML", "Probable Maximum Loss", APPROX + " 95th-pct single event " + EMDASH + " the CAPITAL / insurance number"],
+    ["CoD", "Cost of Delay", "CoD = ALE / 12 " + EMDASH + " burned every month un-remediated, rising"],
+    ["ROSI", "Return on Security Investment", "(ALE_before " + EMDASH + " ALE_after " + EMDASH + " cost) / cost"],
+  ].map(r => [{ text: r[0], mono: true, bold: true, color: C.teal, align: "center" }, { text: r[1], bold: true, color: C.tealDark }, { text: r[2] }]);
+  drawTable(s, 0.4, 1.36, [1.2, 3.0, 5.1], ["TERM", "WHAT IT IS", "HOW WE CALCULATE IT"], rows,
+    { rowH: 0.40, hH: 0.30, fs: 8.2, hfs: 7.8 });
+  // worked numeric line from the top CRIT finding
+  const crit = findings.find(f => f.tier === "CRIT") || findings[0];
+  s.addShape(R(), { x: 0.4, y: 4.74, w: 9.3, h: 0.5, fill: { color: C.evBg }, line: { type: "none" } });
+  s.addShape(R(), { x: 0.4, y: 4.74, w: 0.06, h: 0.5, fill: { color: C.teal }, line: { type: "none" } });
+  if (crit) {
+    const worked = "Worked: TEF " + (crit.tef != null ? crit.tef : EMDASH) + " " + TIMES + " Vuln " + (crit.vuln != null ? Number(crit.vuln).toFixed(2) : EMDASH)
+      + " = LEF " + (crit.lef != null ? Number(crit.lef).toFixed(2) : EMDASH) + "/yr " + TIMES + " mean LM " + (crit.meanLM != null ? money(crit.meanLM) : EMDASH)
+      + " = ALE " + (crit.aleMid != null ? money(crit.aleMid) : EMDASH) + "/yr " + MIDDOT + " CoD " + APPROX + " " + (crit.codRange ? moneyRange(crit.codRange) : EMDASH) + "/mo.";
+    s.addText([{ text: "How it works, on " + (crit.id || "the top finding") + ":  ", options: { bold: true, color: C.teal } },
+      { text: worked, options: { color: C.evInk } }],
+      { x: 0.58, y: 4.74, w: 9.0, h: 0.5, fontSize: 8.2, fontFace: FB, valign: "middle", margin: 0 });
+  }
+}
+
 titleSlide();          // 1
 dividerSlide();        // 2
-threeNumbersSlide();   // 3
-standardsSlide();      // 4
-engineSlide();         // 5
-fairMathSlide();       // 6
-lecSlide();            // 7
-distSlide();           // 8
-bucketsSlide();        // 9
-rosiSlide();           // 10
-pricedTableSlide();    // 11
-lossScenariosSlide();  // 12  (NEW: loss scenario + real precedent per finding)
-workedExampleSlide();  // 13
-closerSlide();         // 14
+whyColtSlide();        // 3  (NEW: Scanner/ASM vs Big-Four vs Colt C-BIQ)
+threeNumbersSlide();   // 4
+standardsSlide();      // 5
+engineSlide();         // 6
+fairMathSlide();       // 7
+glossarySlide();       // 8  (NEW: terms-defined glossary + worked numeric line)
+lecSlide();            // 9
+distSlide();           // 10
+bucketsSlide();        // 11
+waterfallSlide();      // 12 (NEW: staged waterfall to ~0 from portfolio.waterfall)
+rosiSlide();           // 13
+pricedTableSlide();    // 14
+lossScenariosSlide();  // 15 (loss scenario + real precedent per finding)
+workedExampleSlide();  // 16
+closerSlide();         // 17
 
 pres.writeFile({ fileName: OUT })
   .then(fn => console.log("WROTE " + fn + "  slides: " + pageNum))

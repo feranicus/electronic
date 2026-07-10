@@ -43,6 +43,54 @@ const asLines = v => Array.isArray(v) ? v.filter(x => x != null).map(String)
 const asText = v => Array.isArray(v) ? v.filter(x => x != null).map(String).join(" ")
   : (v == null ? "" : String(v));
 const num = v => (v == null || v === "" || Number.isNaN(Number(v))) ? 0 : Number(v);
+// tag map for VENDOR/COLT/PSF/OSS remediation rows (mirrors build_geopol_deck.js)
+const tagMap = { VENDOR: ["FF7900", "FFFFFF"], COLT: ["00D7BD", "121212"], PSF: ["0C544E", "FFFFFF"], OSS: ["474946", "FFFFFF"] };
+// dedup repeated IP:port evidence lines (keeps first occurrence, preserves order)
+const IPPORT = /\b\d{1,3}(?:\.\d{1,3}){3}:\d{1,5}\b/;
+function dedupEvidence(lines) {
+  const seen = new Set(); const out = [];
+  for (const raw of (lines || [])) {
+    const l = String(raw);
+    const m = l.match(IPPORT);
+    const key = m ? m[0] + "|" + l.replace(IPPORT, "").trim() : l.trim();
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(l);
+  }
+  return out;
+}
+// pull a CVE id or a coarse "family" label from a finding for the index CVE/FAMILY column
+function cveFamily(f) {
+  const hay = [f.title, ...(asLines(f.refs)), ...(asLines(f.evidence))].join(" ");
+  const cve = hay.match(/CVE-\d{4}-\d{3,7}/i);
+  if (cve) return cve[0].toUpperCase();
+  const t = String(f.title || "").toLowerCase();
+  if (/rdp/.test(t)) return "RDP / T1133";
+  if (/vpn|firewall mgmt/.test(t)) return "VPN / edge";
+  if (/database|db\b|mongo|redis|elastic/.test(t)) return "Data-tier";
+  if (/ics|scada|ot protocol/.test(t)) return "ICS / OT";
+  if (/tls|certificate|cert/.test(t)) return "TLS";
+  if (/panel|owa|admin|login/.test(t)) return "Panel / T1190";
+  if (/vuln|cve/.test(t)) return "KEV / vuln";
+  if (/banner|version/.test(t)) return "Banner";
+  return "\u2014";
+}
+// remediation rows -> tagged {tag,title,body}. Accepts already-structured rows or plain strings.
+function remRows(f) {
+  const rem = f.rem;
+  if (Array.isArray(rem) && rem.length && typeof rem[0] === "object") {
+    return rem.map(r => ({ tag: String(r.tag || "COLT").toUpperCase(), title: r.title || "", body: r.body || "" }));
+  }
+  // infer a tag from plain-string remediation lines
+  const TAGWORDS = [["COLT", /\bcolt\b|sase|ztna|ip guardian|managed (fw|firewall|ndr|waf|detection)/i],
+                    ["PSF", /segment|immutable|backup|air-gap|psf/i],
+                    ["OSS", /sigma|edr|open.?source|anycast|cdn|dmarc|rate-limit/i]];
+  return asLines(rem).slice(0, 5).map(line => {
+    let tag = "VENDOR";
+    for (const [tg, re] of TAGWORDS) { if (re.test(line)) { tag = tg; break; } }
+    return { tag, title: line, body: "" };
+  });
+}
+
 
 // ---------- presentation ----------
 const pres = new pptxgen();
@@ -68,10 +116,18 @@ let pageNum = 0;
 const order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const bySev = Object.fromEntries(order.map(sev =>
   [sev, findings.filter(f => (f.sev || "").toUpperCase() === sev)]));
-let TOTAL = 3;
-for (const sev of order) if (bySev[sev].length) TOTAL += 1 + bySev[sev].length;
+const hasInventory = Array.isArray(sum.inventory) && sum.inventory.length > 0;
+let TOTAL = 3; // title + exec + index
+TOTAL += 1; // methodology & data scope
+if (hasInventory) TOTAL += 1; // asset inventory
+for (const sev of order) {
+  if (!bySev[sev].length) continue;
+  if (sev === "LOW") TOTAL += 2;                 // divider + ONE combined LOW slide
+  else TOTAL += 1 + bySev[sev].length;           // divider + N cards
+}
 if (strengths.length) TOTAL += 1;
 if (mitigation.length) TOTAL += 1;
+TOTAL += 2; // caveats & confidence + next seven days
 
 // ---------- helpers (copied from VIP builder) ----------
 function corner(slide, color = C.black, size = 18) {
@@ -260,6 +316,7 @@ function drawTable(slide, rows, opts) {
     { text: "SEV", options: { fill: C.tealDark, color: C.white, bold: true } },
     { text: "ID", options: { fill: C.tealDark, color: C.white, bold: true } },
     { text: "FINDING", options: { fill: C.tealDark, color: C.white, bold: true } },
+    { text: "CVE / FAMILY", options: { fill: C.tealDark, color: C.white, bold: true } },
     { text: "EVIDENCE ANCHOR", options: { fill: C.tealDark, color: C.white, bold: true } },
   ]];
 
@@ -273,6 +330,7 @@ function drawTable(slide, rows, opts) {
       { text: sev, options: { fill: sevFill[sev] || C.low, color: sevFg[sev] || C.white, bold: true, fontSize: 7.2, align: "center" } },
       { text: String(f.id || ""), options: { fill: zebra, bold: true, fontSize: 7.6 } },
       { text: String(f.title || "Finding"), options: { fill: zebra, fontSize: 7.6 } },
+      { text: cveFamily(f), options: { fill: zebra, fontSize: 7.2, fontFace: FM, color: C.tealDark, bold: true } },
       { text: anchor, options: { fill: zebra, fontSize: 7.2, fontFace: FM, color: C.inkMuted } },
     ]);
   });
@@ -280,11 +338,104 @@ function drawTable(slide, rows, opts) {
     rows.push([{ text: EMDASH, options: { align: "center" } },
       { text: "", options: {} },
       { text: "No findings recorded", options: {} },
+      { text: EMDASH, options: {} },
       { text: EMDASH, options: {} }]);
   }
 
   const rowH = Math.max(0.16, Math.min(0.30, 3.9 / Math.max(rows.length, 1)));
-  drawTable(s, rows, { x: 0.4, y: 1.30, w: 9.3, colW: [0.95, 0.55, 5.55, 2.25], rowH });
+  drawTable(s, rows, { x: 0.4, y: 1.30, w: 9.3, colW: [0.85, 0.5, 4.3, 1.55, 2.1], rowH });
+  footer(s); tracer(s);
+})();
+
+// ===================================================================
+// METHODOLOGY & DATA SCOPE  (raw -> filtered host counts, filters, frameworks)
+// ===================================================================
+(function methodology() {
+  const s = content("METHODOLOGY & DATA SCOPE", "How this surface was measured " + EMDASH + " passive, filtered, framework-mapped");
+  const raw = num(sum.records);
+  const filt = num(sum.unique_ips);
+  const dropped = num(sum.dropped_false_positives);
+  // funnel stat tiles: raw host-records -> filtered unique IPs -> findings
+  const nF = findings.length;
+  const tiles = [
+    [raw ? String(raw) : EMDASH, "RAW HOST RECORDS", "Shodan matches before filtering", C.inkMuted],
+    [filt ? String(filt) : EMDASH, "FILTERED UNIQUE IPs", "after CDN/carrier + FP removal", C.tealDark],
+    [dropped ? String(dropped) : "0", "DROPPED FALSE-POS", "carrier / CDN / noise removed", C.high],
+    [String(nF), "FINDINGS RAISED", "mapped to severity + remediation", C.crit],
+  ];
+  let tx = 0.4; const tw = 2.24, tg = 0.18;
+  tiles.forEach(([n, l, sub, col]) => {
+    s.addShape(pres.shapes.RECTANGLE, { x: tx, y: 1.34, w: tw, h: 1.16, fill: { color: C.light }, line: { type: "none" } });
+    s.addShape(pres.shapes.RECTANGLE, { x: tx, y: 1.34, w: tw, h: 0.08, fill: { color: col }, line: { type: "none" } });
+    s.addText(String(n), { x: tx, y: 1.46, w: tw, h: 0.5, fontSize: 26, fontFace: FH, bold: true, color: col, align: "center", valign: "middle", margin: 0 });
+    s.addText(l, { x: tx, y: 1.98, w: tw, h: 0.22, fontSize: 8, fontFace: FB, bold: true, color: C.ink, align: "center", charSpacing: 1, margin: 0 });
+    s.addText(sub, { x: tx + 0.08, y: 2.20, w: tw - 0.16, h: 0.26, fontSize: 7, fontFace: FB, color: C.inkMuted, align: "center", valign: "top", margin: 0 });
+    tx += tw + tg;
+  });
+  // filters + frameworks columns
+  s.addText("FILTERS APPLIED", { x: 0.4, y: 2.70, w: 4.6, h: 0.22, fontSize: 9, fontFace: FB, bold: true, color: C.teal, charSpacing: 2, margin: 0 });
+  const filters = (Array.isArray(t.filters) && t.filters.length) ? t.filters.map(String) : [
+    "org / ASN / net scoping to the target estate",
+    "CDN + carrier ASNs excluded (shared infra, not target)",
+    "CRITICAL-severity elevation on KEV / exposed data-tier",
+    "dedup by IP:port; false-positive banners dropped",
+    "passive only " + EMDASH + " Shodan host-records, no active scanning",
+  ];
+  s.addText(filters.map((x, i) => ({ text: x, options: { breakLine: i < filters.length - 1, fontSize: 8.4, fontFace: FB, color: C.ink, bullet: { code: "2022", indent: 10 } } })),
+    { x: 0.4, y: 2.92, w: 4.6, h: 1.9, valign: "top", margin: 0, paraSpaceAfter: 3 });
+  s.addText("FRAMEWORKS MAPPED", { x: 5.15, y: 2.70, w: 4.6, h: 0.22, fontSize: 9, fontFace: FB, bold: true, color: C.teal, charSpacing: 2, margin: 0 });
+  const fw = [
+    "BSI TR-02102 " + EMDASH + " crypto / TLS baselines (DE)",
+    "CISA KEV " + EMDASH + " known-exploited vulnerabilities",
+    "ISO/IEC 27001 " + EMDASH + " control-objective mapping",
+    "TISAX " + EMDASH + " automotive information-security assurance",
+    "UNECE R155 " + EMDASH + " vehicle cyber-security type-approval",
+  ];
+  s.addText(fw.map((x, i) => ({ text: x, options: { breakLine: i < fw.length - 1, fontSize: 8.4, fontFace: FB, color: C.ink, bullet: { code: "2022", indent: 10 } } })),
+    { x: 5.15, y: 2.92, w: 4.6, h: 1.9, valign: "top", margin: 0, paraSpaceAfter: 3 });
+  s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.86, w: 9.3, h: 0.42, fill: { color: C.light }, line: { type: "none" } });
+  s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.86, w: 0.07, h: 0.42, fill: { color: C.teal }, line: { type: "none" } });
+  s.addText([{ text: "Passive, non-intrusive.  ", options: { bold: true, color: C.tealDark } },
+    { text: "Every finding derives from public Shodan host-records " + EMDASH + " no packets sent to the target. Visible is not the same as vulnerable.", options: { color: C.ink } }],
+    { x: 0.58, y: 4.86, w: 9.0, h: 0.42, fontSize: 8.4, fontFace: FB, valign: "middle", margin: 0 });
+  footer(s); tracer(s);
+})();
+
+// ===================================================================
+// ASSET INVENTORY  (stat tiles + operator / ASN / country / role / host-count table)
+// ===================================================================
+(function inventory() {
+  if (!Array.isArray(sum.inventory) || !sum.inventory.length) return;
+  const inv = sum.inventory;
+  const s = content("ASSET INVENTORY", "The internet-facing estate " + EMDASH + " by operator, ASN, country and role");
+  const totalHosts = inv.reduce((a, r) => a + num(r.hosts), 0);
+  const nAsn = new Set(inv.map(r => r.asn).filter(Boolean)).size;
+  const nCountry = new Set(inv.map(r => r.country).filter(Boolean)).size;
+  const tiles = [[String(totalHosts), "HOSTS"], [String(inv.length), "OPERATORS"], [String(nAsn), "ASNs"], [String(nCountry), "COUNTRIES"]];
+  let tx = 0.4; const tw = 2.24, tg = 0.18;
+  tiles.forEach(([n, l]) => {
+    s.addShape(pres.shapes.RECTANGLE, { x: tx, y: 1.34, w: tw, h: 0.9, fill: { color: C.tealDark }, line: { type: "none" } });
+    s.addText(n, { x: tx, y: 1.42, w: tw, h: 0.52, fontSize: 28, fontFace: FH, bold: true, color: C.teal, align: "center", valign: "middle", margin: 0 });
+    s.addText(l, { x: tx, y: 1.96, w: tw, h: 0.24, fontSize: 8, fontFace: FB, bold: true, color: C.white, align: "center", charSpacing: 2, margin: 0 });
+    tx += tw + tg;
+  });
+  const hopt = { fill: C.tealDark, color: C.white, bold: true, fontSize: 7.6 };
+  const rows = [[
+    { text: "OPERATOR / HOLDER", options: hopt }, { text: "ASN", options: hopt },
+    { text: "COUNTRY", options: hopt }, { text: "ROLE", options: hopt }, { text: "HOSTS", options: hopt },
+  ]];
+  inv.slice(0, 12).forEach((r, i) => {
+    const zebra = i % 2 === 1 ? C.light : C.white;
+    rows.push([
+      { text: String(r.holder || r.operator || EMDASH), options: { fill: zebra, fontSize: 7.6, color: C.tealDark, bold: true } },
+      { text: String(r.asn || EMDASH), options: { fill: zebra, fontSize: 7.4, fontFace: FM } },
+      { text: String(r.country || EMDASH), options: { fill: zebra, fontSize: 7.4, align: "center" } },
+      { text: String(r.role || "hosting / edge"), options: { fill: zebra, fontSize: 7.4, color: C.inkMuted } },
+      { text: String(r.hosts == null ? EMDASH : r.hosts), options: { fill: zebra, fontSize: 7.6, fontFace: FM, bold: true, align: "center" } },
+    ]);
+  });
+  const rowH = Math.max(0.22, Math.min(0.34, 2.6 / Math.max(rows.length, 1)));
+  drawTable(s, rows, { x: 0.4, y: 2.44, w: 9.3, colW: [3.5, 1.6, 1.2, 2.0, 1.0], rowH });
   footer(s); tracer(s);
 })();
 
@@ -336,7 +487,7 @@ function findingCard(f) {
 
   s.addText("EVIDENCE", { x: 0.4, y: 3.26, w: 4.5, h: 0.18, fontSize: 8.5, fontFace: FB,
     color: C.tealDark, bold: true, charSpacing: 2, margin: 0 });
-  evidenceBlock(s, asLines(f.evidence), 0.4, 3.46, 4.55, 1.14);
+  evidenceBlock(s, dedupEvidence(asLines(f.evidence)), 0.4, 3.46, 4.55, 1.14);
 
   s.addText("WHY IT MATTERS", { x: 0.4, y: 4.64, w: 4.5, h: 0.18, fontSize: 8.5, fontFace: FB,
     color: C.tealDark, bold: true, charSpacing: 2, margin: 0 });
@@ -347,17 +498,47 @@ function findingCard(f) {
   s.addText("REMEDIATION  &  COLT FIT", { x: 5.21, y: 1.70, w: 4.5, h: 0.24, fontSize: 10, fontFace: FB,
     color: C.ink, bold: true, charSpacing: 2, valign: "middle", margin: 0 });
 
-  const rem = asLines(f.rem);
+  const rem = remRows(f);
   const startY = 2.06, rowH = 0.62;
-  (rem.length ? rem : [EMDASH]).slice(0, 5).forEach((r, i) => {
+  (rem.length ? rem : [{ tag: "VENDOR", title: EMDASH, body: "" }]).slice(0, 5).forEach((r, i) => {
     const y = startY + i * rowH;
-    s.addShape(pres.shapes.RECTANGLE, { x: 5.05, y: y + 0.03, w: 0.30, h: 0.22, fill: { color: C.teal }, line: { type: "none" } });
-    s.addText(String(i + 1), { x: 5.05, y: y + 0.03, w: 0.30, h: 0.22, fontSize: 9, fontFace: FB,
-      bold: true, color: C.black, align: "center", valign: "middle", margin: 0 });
-    s.addText(r, { x: 5.45, y, w: 4.25, h: rowH - 0.06, fontSize: 9.0, fontFace: FB,
-      color: C.ink, valign: "middle", margin: 0 });
+    const [bg, fg] = tagMap[r.tag] || tagMap.VENDOR;
+    s.addShape(pres.shapes.RECTANGLE, { x: 5.05, y: y + 0.03, w: 0.72, h: 0.24, fill: { color: bg }, line: { type: "none" } });
+    s.addText(r.tag, { x: 5.05, y: y + 0.03, w: 0.72, h: 0.24, fontSize: 8, fontFace: FB,
+      bold: true, color: fg, align: "center", valign: "middle", charSpacing: 1, margin: 0 });
+    s.addText(r.title, { x: 5.85, y: r.body ? y - 0.01 : y, w: 3.85, h: r.body ? 0.24 : rowH - 0.06,
+      fontSize: 8.6, fontFace: FB, color: C.ink, bold: !!r.body, valign: "middle", margin: 0 });
+    if (r.body) s.addText(r.body, { x: 5.85, y: y + 0.22, w: 3.85, h: 0.30, fontSize: 7.4, fontFace: FB,
+      color: C.inkMuted, valign: "top", margin: 0 });
   });
 
+  footer(s); tracer(s);
+}
+
+// ---------- combined LOW slide (collapse all LOW findings onto ONE slide) ----------
+function lowCombinedSlide(items) {
+  const s = content("LOW " + MIDDOT + " BASELINE & HYGIENE",
+    items.length + " low-severity item" + (items.length === 1 ? "" : "s") + " " + EMDASH + " noted, not urgent");
+  const clip = (t, n) => { t = String(t || ""); return t.length > n ? t.slice(0, n - 1) + "\u2026" : t; };
+  const hopt = { fill: C.tealDark, color: C.white, bold: true, fontSize: 7.6 };
+  const rows = [[
+    { text: "ID", options: hopt }, { text: "FINDING", options: hopt },
+    { text: "WHY (BASELINE NOTE)", options: hopt }, { text: "ACTION", options: hopt },
+  ]];
+  items.slice(0, 10).forEach((f, i) => {
+    const zebra = i % 2 === 1 ? C.light : C.white;
+    const rem = remRows(f)[0];
+    rows.push([
+      { text: String(f.id || ""), options: { fill: zebra, bold: true, fontSize: 7.4, color: C.tealDark, align: "center" } },
+      { text: clip(f.title, 60), options: { fill: zebra, fontSize: 7.4 } },
+      { text: clip(asText(f.why), 60), options: { fill: zebra, fontSize: 7.2, color: C.inkMuted } },
+      { text: clip(rem ? (rem.tag + ": " + rem.title) : EMDASH, 44), options: { fill: zebra, fontSize: 7.2, color: C.tealDark } },
+    ]);
+  });
+  const rowH = Math.max(0.24, Math.min(0.40, 3.6 / Math.max(rows.length, 1)));
+  drawTable(s, rows, { x: 0.4, y: 1.34, w: 9.3, colW: [0.55, 3.6, 3.1, 2.05], rowH });
+  s.addText("Low-severity items are collapsed here: baseline exposure and hygiene notes to track for drift, not urgent remediation.",
+    { x: 0.4, y: 5.02, w: 9.3, h: 0.24, fontSize: 7.8, fontFace: FB, color: C.inkMuted, italic: true, margin: 0 });
   footer(s); tracer(s);
 }
 
@@ -367,7 +548,8 @@ for (const sev of order) {
   if (!items.length) continue;
   const bg = { CRITICAL: C.crit, HIGH: C.high, MEDIUM: C.med, LOW: C.low }[sev];
   sectionDivider(sev, bg);
-  items.forEach(f => findingCard(f));
+  if (sev === "LOW") { lowCombinedSlide(items); }
+  else { items.forEach(f => findingCard(f)); }
 }
 
 // ===================================================================
@@ -432,8 +614,60 @@ function mitigationSlide() {
 }
 
 // ---------- emit optional strengths + mitigation slides ----------
+// ===================================================================
+// CAVEATS & CONFIDENCE
+// ===================================================================
+function caveatsSlide() {
+  const s = content("CAVEATS & CONFIDENCE", "What this assessment is " + EMDASH + " and what it is not");
+  const hopt = { fill: C.tealDark, color: C.white, bold: true, fontSize: 7.8 };
+  const rows = [[{ text: "TOPIC", options: hopt }, { text: "POSITION", options: hopt }]];
+  const items = [
+    ["Passive, point-in-time", "Public Shodan host-records only; no active scanning. A snapshot that decays " + EMDASH + " re-scan for drift."],
+    ["Visible \u2260 vulnerable", "An exposed service is an attack-surface observation, not proof of a working exploit path."],
+    ["Severity is triage", "CRITICAL/HIGH/MED/LOW reflect exposure + exploitability signals (KEV/EPSS), not a penetration test."],
+    ["No credentials used", "Findings are external-perspective only; internal/enterprise risk is out of scope here."],
+    ["Confidence graded", "KEV-listed + banner-confirmed findings are high-confidence; version-only inferences are lower."],
+    ["Internal pursuit material", "Colt / S4Biz confidential " + EMDASH + " not an audit finding; do not forward to the customer as fact."],
+  ];
+  items.forEach(([tt, b], i) => {
+    const zebra = i % 2 === 1 ? C.light : C.white;
+    rows.push([{ text: tt, options: { fill: zebra, bold: true, color: C.tealDark, fontSize: 8 } },
+      { text: b, options: { fill: zebra, fontSize: 8, color: C.ink } }]);
+  });
+  const rowH = Math.max(0.4, Math.min(0.58, 3.6 / Math.max(rows.length, 1)));
+  drawTable(s, rows, { x: 0.4, y: 1.36, w: 9.3, colW: [2.6, 6.7], rowH });
+  footer(s); tracer(s);
+}
+
+// ===================================================================
+// NEXT SEVEN DAYS  (immediate action plan)
+// ===================================================================
+function nextSevenDaysSlide() {
+  const s = content("NEXT SEVEN DAYS", "The immediate moves " + EMDASH + " highest-leverage first");
+  const nCrit = num(sum.critical), nHigh = num(sum.high);
+  const acts = [
+    ["DAY 1", "Triage CRITICAL exposures (" + nCrit + ")", "Remove KEV-listed / data-tier hosts from the internet or place behind a Colt control today."],
+    ["DAY 2\u20133", "Close HIGH exposures (" + nHigh + ")", "Enforce MFA on remote access, retire exposed panels/VPN, rotate certificates."],
+    ["DAY 4\u20135", "Confirm & validate", "Re-scan the estate to confirm exposures are gone; verify no shadow assets remain."],
+    ["DAY 6\u20137", "Stand up continuous watch", "Enable ongoing Shodan/Censys re-scan so the surface stays measured, not point-in-time."],
+  ];
+  let ay = 1.5; const ah = 0.86;
+  acts.forEach(([when, title, body]) => {
+    s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: ay, w: 9.3, h: ah - 0.12, fill: { color: C.light }, line: { type: "none" } });
+    s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: ay, w: 0.08, h: ah - 0.12, fill: { color: C.teal }, line: { type: "none" } });
+    s.addShape(pres.shapes.RECTANGLE, { x: 0.6, y: ay + 0.14, w: 1.35, h: 0.42, fill: { color: C.tealDark }, line: { type: "none" } });
+    s.addText(when, { x: 0.6, y: ay + 0.14, w: 1.35, h: 0.42, fontSize: 10, fontFace: FB, bold: true, color: C.teal, align: "center", valign: "middle", charSpacing: 1, margin: 0 });
+    s.addText(title, { x: 2.15, y: ay + 0.08, w: 7.35, h: 0.28, fontSize: 11, fontFace: FB, bold: true, color: C.tealDark, valign: "middle", margin: 0 });
+    s.addText(body, { x: 2.15, y: ay + 0.36, w: 7.35, h: 0.34, fontSize: 8.8, fontFace: FB, color: C.ink, valign: "top", margin: 0 });
+    ay += ah;
+  });
+  footer(s); tracer(s);
+}
+
 if (strengths.length) strengthsSlide();
 if (mitigation.length) mitigationSlide();
+caveatsSlide();
+nextSevenDaysSlide();
 
 // ---------- write ----------
 pres.writeFile({ fileName: OUT })

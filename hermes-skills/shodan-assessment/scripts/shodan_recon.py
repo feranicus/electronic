@@ -83,7 +83,8 @@ CIDR_RE = re.compile(r'^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$')
 
 def resolve_identity(seed):
     ident = {"seed": seed, "asns": [], "nets": [], "org": None, "brand": None,
-             "asn_holder": None, "domains": [], "org_is_carrier": False, "org_is_cdn": False, "assignment_netname": None}
+             "asn_holder": None, "domains": [], "org_is_carrier": False, "org_is_cdn": False, "assignment_netname": None,
+             "internal_cas": [], "cert_orgs": [], "jarms": [], "cpes": []}
     s = seed.strip()
     if re.match(r'(?i)^AS?\d+$', s):                                   # ---- ASN
         asn = "AS" + re.sub(r'(?i)^AS?', '', s); holder = _ripe_holder(asn)
@@ -122,10 +123,13 @@ def resolve_identity(seed):
 def company_name(ident):
     return ident.get("brand") or ident.get("org") or ident.get("asn_holder") or ident["seed"]
 
-def merge_variants(ident, orgs=None, brands=None, domains=None, favicons=None):
-    """Fold in org-name / brand / domain / favicon variants (playbook #3-#7) so recon
-    searches the target's IDENTITY across ALL ASNs, not just the seed ASN's sweep."""
+def merge_variants(ident, orgs=None, brands=None, domains=None, favicons=None,
+                   issuers=None, cert_orgs=None, jarms=None, cpes=None):
+    """Fold in org-name / brand / domain / favicon / internal-CA / cert-org / JARM / CPE variants
+    (playbook Part 2 §1-§4) so recon searches the target's IDENTITY across ALL ASNs, not just the
+    seed ASN's sweep. The internal-CA issuer pivot is the single most productive of these."""
     orgs = orgs or []; brands = brands or []; domains = domains or []; favicons = favicons or []
+    issuers = issuers or []; cert_orgs = cert_orgs or []; jarms = jarms or []; cpes = cpes or []
     base_o = [ident["org"]] if ident.get("org") else []
     ident["org_variants"] = list(dict.fromkeys([o for o in (base_o + orgs) if o]))
     base_b = [ident["brand"]] if ident.get("brand") else []
@@ -134,6 +138,10 @@ def merge_variants(ident, orgs=None, brands=None, domains=None, favicons=None):
         dd = _clean_domain(d)
         if dd and dd not in ident["domains"]: ident["domains"].append(dd)
     ident["favicons"] = list(dict.fromkeys([str(h).strip() for h in favicons if str(h).strip()]))
+    ident["internal_cas"] = list(dict.fromkeys([str(c).strip() for c in issuers if str(c).strip()]))
+    ident["cert_orgs"]    = list(dict.fromkeys([str(o).strip() for o in cert_orgs if str(o).strip()]))
+    ident["jarms"]        = list(dict.fromkeys([str(j).strip() for j in jarms if str(j).strip()]))
+    ident["cpes"]         = list(dict.fromkeys([str(p).strip() for p in cpes if str(p).strip()]))
     return ident
 
 # ----------------------------------------------------------- canonical filters ---
@@ -142,8 +150,16 @@ P_RDP_WINRM = "3389,3390,5985,5986,5900,5800"
 P_VPN_MGMT  = "443,4433,8443,10443,4443,500,4500,1194"
 P_ICS       = "102,502,4840,44818,20000,1911,47808,789,9600,2404,20547"
 P_MAIL      = "25,587,465,143,993,110,995"
+P_CHECKPOINT = "264,18264"                         # Check Point SecuRemote topology + ICA mgmt
 PROD_ICS    = '"Modbus","Siemens S7","BACnet","DNP3","IEC-104","OPC-UA"'
-PROD_PANEL  = '"Citrix","Fortinet","Pulse Secure","Palo Alto","OpenVPN","SonicWall","Sophos","Cisco ASA"'
+PROD_PANEL  = '"Citrix","Fortinet","Pulse Secure","Palo Alto","OpenVPN","SonicWall","Sophos","Cisco ASA","Ivanti","Check Point"'
+PROD_DB     = '"MySQL","PostgreSQL","MongoDB","Redis","Elasticsearch"'   # DBs never public
+PROD_WEBAPP = '"Grafana","Jenkins","Kibana","phpMyAdmin"'               # admin UIs
+# CISA-KEV edge-appliance CVEs the playbook checks: Citrix Bleed, Check Point info-disc, F5 iControl, HTTP/2 Rapid Reset
+KEV_CVES    = "CVE-2023-4966,CVE-2024-24919,CVE-2022-1388,CVE-2023-44487"
+CLOUD_HOSTERS = ("Amazon", "Microsoft Azure", "Akamai", "Cloudflare")   # brand-on-3rd-party pivot
+# named edge appliances whose exposed mgmt plane is CRITICAL (KEV-heavy), not just HIGH
+CRIT_APPLIANCES = ("citrix", "netscaler", "ivanti", "pulse secure", "check point", "fortinet", "palo alto")
 
 def build_filters(ident):
     asns = ",".join(ident["asns"]); nets = ",".join(ident["nets"])
@@ -181,6 +197,17 @@ def build_filters(ident):
         add(15, "HTTP body (branded)", f'http.html:"{b}"', run=True, note="branded body content / shadow IT")
     for h in favicons:                   # #7 favicon hash (branded icon, any host)
         add(16, "Favicon hash", f'http.favicon.hash:{h}', run=True, note="every host serving the branded icon")
+    # ---- §3 advanced identity pivots (the *super* part) ----
+    for ca in ident.get("internal_cas", []):   # internal-CA issuer — THE killer pivot: whole estate, any IP/cloud
+        add(17, "Internal-CA issuer (estate pivot)", f'ssl.cert.issuer.cn:"{ca}"', run=True,
+            note="every host fronted by the org's private issuing CA — across ANY ASN/cloud (highest-yield pivot)")
+    for o in ident.get("cert_orgs", []):        # cert subject Organisation (distinct from CN)
+        add(18, "TLS cert subject O", f'ssl.cert.subject.o:"{o}"', run=True, note="cert subject organisation across any ASN")
+    for b in brands[:1]:                        # cloud/hosting overlap — brand assets on 3rd-party infra
+        for h in CLOUD_HOSTERS:
+            add(19, f"Cloud overlap · {h}", f'ssl:"{b}" org:"{h}"', run=True, note="brand assets on cloud/CDN infra the ASN misses")
+    for j in ident.get("jarms", []):            # JARM — cluster identical TLS stacks (appliance/LB fleet); paid facet
+        add(20, "JARM TLS-stack cluster", f'ssl.jarm:{j}', run=False, note="rest of the appliance/LB fleet (paid Shodan facet)")
     if scope:
         add(7, "Remote-access & DB ports", f"{scope} port:{P_REMOTE_DB}", note="RDP/SSH/Telnet/VNC/SMB/DB/FTP")
         add(8, "VPN / firewall mgmt", f"{scope} port:{P_VPN_MGMT} product:{PROD_PANEL}", note="edge-VPN = top ransomware vector")
@@ -192,6 +219,18 @@ def build_filters(ident):
             note="CISA KEV = CRITICAL")
         add(13, "Logins / panels / non-prod",
             f'{scope} http.title:"login","admin","portal","vpn","dashboard","phpMyAdmin","Webmin"', note="forgotten admin UIs")
+        add(21, "Check Point mgmt plane", f"{scope} port:{P_CHECKPOINT}", note="SecuRemote topology + ICA mgmt")
+        add(22, "Databases (never public)", f"{scope} port:3306,5432,27017,6379,9200,1433 product:{PROD_DB}", note="direct data-exfil path")
+        add(23, "Admin UIs / web apps",
+            f'{scope} product:{PROD_WEBAPP}  |  {scope} http.component:"Outlook Web App"', note="Grafana/Jenkins/Kibana/phpMyAdmin/OWA")
+        add(24, "KEV edge-appliance CVEs", f"{scope} vuln:{KEV_CVES}", note="Citrix Bleed / Check Point / F5 / HTTP-2 Rapid Reset — CISA KEV (paid facet)")
+        add(25, "Weak keys / full cert inventory",
+            f"{scope} ssl.cert.pubkey.bits:1024  |  {scope} ssl.cert.subject.cn:*", note="1024-bit keys + full TLS inventory")
+        for c in ident.get("cpes", []):
+            add(27, "CPE inventory", f'{scope} cpe:"{c}"', note="pin an exact platform/appliance across hosts")
+    for b in brands[:1]:                         # non-prod / brand-fragmentation discovery (any host)
+        add(26, "Non-prod / brand fragmentation",
+            f'ssl.cert.subject.cn:*{b}* hostname:dev-,test-,staging-,sandbox-,qs-', note="dev/test/staging portals carrying the brand")
     return F
 
 def filters_md(ident, F):
@@ -209,12 +248,35 @@ def filters_md(ident, F):
           f"- ASN holder: {ident.get('asn_holder') or '—'}",
           f"- Netblocks: {', '.join(ident['nets']) or '—'}",
           f"- Brand/Org: {company_name(ident)}",
-          f"- Domains: {', '.join(ident['domains']) or '—'}", "", "## Super filters", ""]
+          f"- Domains: {', '.join(ident['domains']) or '—'}",
+          f"- Internal CA(s): {', '.join(ident.get('internal_cas') or []) or '—'}",
+          f"- Cert subject O: {', '.join(ident.get('cert_orgs') or []) or '—'}", "", "## Super filters", ""]
     for f in F:
         L.append(f"### {f['n']}. {f['name']}")
         if f["note"]: L.append(f"_{f['note']}_")
         L += ["```", f["clause"], "```", ""]
+    L += cross_engine_dorks(ident)
     return "\n".join(L)
+
+def cross_engine_dorks(ident):
+    """§5 — equivalent dorks on other scan engines (different scanners see different hosts)."""
+    org = company_name(ident); asn0 = (ident["asns"] or ["AS0"])[0].replace("AS", "")
+    dom = (ident["domains"] or ["example.com"])[0]
+    ca = (ident.get("internal_cas") or [""])[0]
+    fav = (ident.get("favicons") or [""])[0]
+    L = ["## Cross-engine dorks (§5 — cross-check; each scanner sees different hosts)", "",
+         "**Censys** (`search.censys.io`)", "```",
+         f'services.tls.certificates.leaf_data.subject.organization: "{org}"',
+         f'services.tls.certificates.leaf_data.issuer.common_name: "{ca}"' if ca else "# (add internal-CA to enable issuer dork)",
+         f"autonomous_system.asn: {asn0}", "```", "",
+         "**FOFA** (`fofa.info`)", "```",
+         f'cert="{org}" || org="{org}" || asn="{asn0}"' + (f' || icon_hash="{fav}"' if fav else ""), "```", "",
+         "**ZoomEye** (`zoomeye.hk`)", "```",
+         f'ssl:"{org}" +ssl.cert:"{dom}"' + (f' +asn:"{asn0}"' if asn0 != "0" else ""), "```", "",
+         "**Netlas** (`app.netlas.io`)", "```",
+         f'certificate.subject.organization:"{org}"' + (f'  ·  certificate.issuer.common_name:"{ca}"' if ca else ""), "```", "",
+         f"**CT harvest** → `https://crt.sh/?q=%25.{dom}` (feed SANs back into `hostname:`/`net:`)", ""]
+    return L
 
 # ------------------------------------------------------------------ classify ---
 DB_PORTS = {27017:"MongoDB",9200:"Elasticsearch",6379:"Redis",5432:"PostgreSQL",3306:"MySQL",
@@ -231,6 +293,8 @@ def classify(m):
     if "ics" in tags or "scada" in tags or port in ICS_PORTSET: return "CRITICAL","ics"
     if port in DB_PORTS:  return "CRITICAL","db_exposed"
     if port in (3389, 3390): return "CRITICAL","rdp"
+    if port in (264, 18264) or _is(prod, CRIT_APPLIANCES):   # exposed edge-appliance mgmt plane = KEV-heavy, CRITICAL
+        return "CRITICAL","edge_appliance"
     if vulns:             return "HIGH","vuln_tagged"
     if port in VPN_PORTS or re.search(r'(?i)fortinet|pulse|palo alto|sonicwall|citrix|cisco asa|openvpn|sophos', prod):
         return "HIGH","vpn_appliance"
@@ -250,6 +314,7 @@ TEMPLATES = {
  "db_exposed": ("Exposed database", ["Direct data-exfiltration path","Often unauthenticated"], ["Colt Managed Firewall — remove the DB from the internet","Colt DPI/NDR — detect exfiltration attempts"], ["MITRE T1190"]),
  "ics":        ("Exposed ICS/OT protocol", ["Safety/availability impact","NIS2 / ISO 27001 driver"], ["Colt Managed Firewall + IT/OT segmentation","Colt SD-WAN secure OT transport; Colt IP Guardian (DDoS)"], ["MITRE ICS","NIS2 Art.21"]),
  "vuln_tagged":("Shodan-tagged vulnerabilities (CVE)", ["Pre-mapped exploit paths; check CISA KEV"], ["Colt WAF — virtual-patch the exposed CVE","Colt Managed Security — KEV/EPSS-prioritised patch orchestration"], ["Shodan vulns","CISA KEV"]),
+ "edge_appliance":("Exposed edge-appliance mgmt (Citrix/Ivanti/Check Point/Fortinet)", ["KEV-heavy edge — Citrix Bleed / CVE-2024-24919 class; #1 ransomware entry"], ["Colt SASE / ZTNA — retire the internet-facing appliance mgmt plane","Colt Managed Firewall — restrict mgmt to allowlist + MFA","Colt Managed Security — KEV/EPSS-prioritised virtual patch"], ["CISA KEV","MITRE T1133"]),
  "vpn_appliance":("Exposed VPN / firewall mgmt", ["Edge-appliance CVEs = top ransomware vector"], ["Colt SASE / ZTNA — replace the legacy VPN","Colt Managed Firewall — restrict mgmt to allowlist + MFA"], ["CISA KEV"]),
  "remote_admin":("Exposed remote-admin (Telnet/VNC/WinRM/SMB)", ["Brute-force / cleartext protocols"], ["Colt SASE / ZTNA — broker admin access","Colt Managed Firewall — block cleartext admin ports"], ["MITRE T1133"]),
  "exposed_panel":("Exposed login / admin / OWA panel", ["Credential attacks; panel-CVE surface"], ["Colt WAF — shield the panel + rate-limit","Colt SASE — identity-broker + geofence"], ["OWASP"]),
@@ -266,7 +331,7 @@ def run(ident, F, audience, limit_per_query=500):
     import shodan
     api = shodan.Shodan(os.environ["SHODAN_API_KEY"])
     own_asns = set(ident["asns"])
-    hosts = {}; asns=set(); countries=set(); records=0; dropped=0
+    hosts = {}; asns=set(); countries=set(); records=0; dropped=0; inv={}
     for f in [f for f in F if f.get("run")]:
         q = f["clause"]; cat = f.get("cat", "sweep")
         n = 0
@@ -274,17 +339,18 @@ def run(ident, F, audience, limit_per_query=500):
             for m in api.search_cursor(q):
                 tags = m.get("tags") or []
                 if "honeypot" in tags: dropped += 1; continue
-                # FP drop applies ONLY to broad sweeps (asn:/net:). Identity matches
-                # (org/ssl/hostname/http/favicon) ARE the target by name/cert — always keep,
-                # even on a hoster/cloud ASN. This is how we catch the cross-ASN estate
-                # (e.g. a Cisco ASA VPN on a hoster that the target's own ASN sweep misses).
                 if cat == "sweep":
                     horg = (m.get("org") or "") + " " + (m.get("isp") or "")
                     masn = ("AS" + str(m.get("asn"))) if str(m.get("asn") or "").isdigit() else (m.get("asn") or "")
                     if _is(horg, CDNS) and (own_asns and masn not in own_asns): dropped += 1; continue
                 hosts.setdefault(m.get("ip_str"), []).append(m)
-                if m.get("asn"): asns.add(m["asn"])
-                c = (m.get("location") or {}).get("country_code")
+                ma = m.get("asn"); c = (m.get("location") or {}).get("country_code")
+                if ma:
+                    asns.add(ma)
+                    e = inv.setdefault(ma, {"holder": None, "cc": set(), "ips": set()})
+                    e["holder"] = e["holder"] or (m.get("org") or m.get("isp"))
+                    if c: e["cc"].add(c)
+                    e["ips"].add(m.get("ip_str"))
                 if c: countries.add(c)
                 n += 1
                 if n >= limit_per_query: break
@@ -328,6 +394,10 @@ def run(ident, F, audience, limit_per_query=500):
             "summary": {"records": records, "unique_ips": len(hosts), "asns": len(asns) or len(ident["asns"]),
                         "countries": len(countries), "dropped_false_positives": dropped,
                         "behind_cdn": ident["org_is_cdn"],
+                        "inventory": sorted(
+                            ({"asn": ("AS"+str(a)) if str(a).isdigit() else str(a), "holder": e["holder"] or "—",
+                              "country": ",".join(sorted(e["cc"])) or "—", "hosts": len(e["ips"])} for a, e in inv.items()),
+                            key=lambda r: -r["hosts"])[:12],
                         "critical": counts["CRITICAL"], "high": counts["HIGH"], "medium": counts["MEDIUM"], "low": counts["LOW"]},
             "findings": findings}
 
@@ -351,12 +421,17 @@ def main():
     ap.add_argument("--brand", action="append", default=[], help="brand / ssl free-text variant (repeatable)")
     ap.add_argument("--domain", action="append", default=[], help="extra domain for cert/hostname (repeatable)")
     ap.add_argument("--favicon", action="append", default=[], help="favicon mmh3 hash (repeatable)")
+    ap.add_argument("--issuer", "--internal-ca", dest="issuer", action="append", default=[],
+                    help="internal/issuing-CA CN — the killer estate pivot (repeatable)")
+    ap.add_argument("--cert-org", dest="cert_org", action="append", default=[], help="cert subject Organisation (repeatable)")
+    ap.add_argument("--jarm", action="append", default=[], help="JARM hash to cluster the TLS-stack fleet (repeatable)")
+    ap.add_argument("--cpe", action="append", default=[], help="CPE to pin a platform across hosts (repeatable)")
     ap.add_argument("--audience"); ap.add_argument("--outdir", default=".")
     ap.add_argument("--print-filters", action="store_true")
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     ident = resolve_identity(a.seed)
-    for asn in a.asn:                                   # manual real-ASN injection (e.g. behind CDN)
+    for asn in a.asn:
         asn = "AS" + re.sub(r'(?i)^AS?', '', asn)
         if asn not in ident["asns"]:
             ident["asns"].append(asn)
@@ -367,7 +442,8 @@ def main():
     for n in a.net:
         if n not in ident["nets"]: ident["nets"].append(n)
         ident["org_is_cdn"] = False
-    merge_variants(ident, a.org, a.brand, a.domain, a.favicon)
+    merge_variants(ident, a.org, a.brand, a.domain, a.favicon,
+                   issuers=a.issuer, cert_orgs=a.cert_org, jarms=a.jarm, cpes=a.cpe)
     F = build_filters(ident)
     open(os.path.join(a.outdir, "filters.md"), "w").write(filters_md(ident, F))
     print(f"✓ identity: ASNs={ident['asns']} holder={ident.get('asn_holder')!r} cdn={ident['org_is_cdn']} carrier={ident['org_is_carrier']} nets={len(ident['nets'])} domains={ident['domains']}")

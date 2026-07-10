@@ -78,14 +78,18 @@ const TIER_RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
 // ---- group actors by band (fixed order) ----
 const actors = Array.isArray(d.actors) ? d.actors : [];
+// BUG 3 FIX: compare uppercased-to-uppercased. "ORGANISED eCRIME".toUpperCase() is
+// "ORGANISED ECRIME", so matching against the raw literal ("...eCRIME") silently dropped
+// every eCrime actor. Uppercase BOTH sides so the band grouping is exact.
 const byBand = Object.fromEntries(BANDS.map(b =>
-  [b, actors.filter(a => String(a.band || "").toUpperCase() === b)]));
+  [b, actors.filter(a => String(a.band || "").toUpperCase() === b.toUpperCase())]));
 
 // ---- TOTAL page count, computed up-front so the tracer reads N / TOTAL correctly ----
 // 1 title + 1 verdict + 1 methodology + 1 exposure map + 1 landscape
 // + per band present: 1 divider + N actor cards
 // + probability index + kill-chain + C-BIQ bridge + caveats
 let TOTAL = 5;
+if (d.anchorCase) TOTAL += 1; // anchor case slide
 for (const b of BANDS) if (byBand[b].length) TOTAL += 1 + byBand[b].length;
 TOTAL += 4;
 
@@ -341,9 +345,10 @@ pageNum++;
     ["CVSS + EPSS + CISA KEV " + EMDASH + " exploit triage", "Admiralty (NATO AJP-2.1) " + EMDASH + " A" + EMDASH + "F " + TIMES + " 1" + EMDASH + "6",
      "FAIR " + EMDASH + " bridge to euro loss (C-BIQ)", "Relevance tier = Intent " + TIMES + " Capability " + TIMES,
      "  Exposure-fit " + ARROW + " C/H/M/L"]);
-  col(6.70, 3.0, "REGULATOR BRIDGE",
-    ["TIBER-EU (ECB) " + MIDDOT + " DORA TLPT", "BSI / BaFin (Germany)", "ENISA Threat Landscape " + MIDDOT + " NIS2",
-     "CISA KEV + joint advisories", "NCSC-UK " + MIDDOT + " NIST"], C.tealMid);
+  col(6.70, 3.0, "RED-TEAM BRIDGE",
+    ["TIBER-EU (ECB) " + MIDDOT + " DORA TLPT", "TISAX " + MIDDOT + " UNECE R155 (automotive)",
+     "BSI / BaFin " + MIDDOT + " ENISA " + MIDDOT + " NIS2", "CBEST " + MIDDOT + " CISA KEV + advisories",
+     "GEOPOL " + ARROW + " intel-led test (the sale)"], C.tealMid);
   s.addShape(R(), { x: 0.4, y: 4.62, w: 9.3, h: 0.6, fill: { color: C.light }, line: { type: "none" } });
   s.addShape(R(), { x: 0.4, y: 4.62, w: 0.07, h: 0.6, fill: { color: C.teal }, line: { type: "none" } });
   s.addText([{ text: "Three layers:  ", options: { bold: true, color: C.tealDark } },
@@ -354,20 +359,58 @@ pageNum++;
 
 // ============================================================ 4 GEOPOLITICAL EXPOSURE MAP
 (function () {
-  const s = content("Geopolitical Exposure Map", "Why " + cust + " is targeted");
+  const s = content("Geopolitical Exposure Map", "Why " + cust + " is targeted " + EMDASH + " drivers + named entities");
   const em = (d.exposureMap || []);
   const rows = (em.length ? em : [{ driver: EMDASH, attracts: EMDASH, why: EMDASH }]).map(r => [
-    { text: r.driver || EMDASH, bold: true, color: C.tealDark }, r.attracts || EMDASH, r.why || EMDASH,
+    { text: r.driver || EMDASH, bold: true, color: C.tealDark, fs: 7.6 }, { text: r.attracts || EMDASH, fs: 7.6 }, { text: r.why || EMDASH, fs: 7.4 },
   ]);
-  drawTable(s, 0.4, 1.34, [2.3, 3.6, 3.4], ["DRIVER", "WHO IT ATTRACTS", "WHY"], rows,
-    { rowH: 0.66, hH: 0.30, fs: 8.0, hfs: 7.6 });
-  if (d.sectorContext) {
-    s.addShape(R(), { x: 0.4, y: 4.74, w: 9.3, h: 0.5, fill: { color: C.evBg }, line: { type: "none" } });
-    s.addShape(R(), { x: 0.4, y: 4.74, w: 0.06, h: 0.5, fill: { color: C.teal }, line: { type: "none" } });
-    s.addText([{ text: "Sector context:  ", options: { bold: true, color: C.teal } },
-      { text: asText(d.sectorContext), options: { color: C.evInk } }],
-      { x: 0.6, y: 4.74, w: 9.0, h: 0.5, fontSize: 8.2, fontFace: FB, valign: "middle", margin: 0 });
-  }
+  drawTable(s, 0.4, 1.30, [2.3, 3.3, 3.7], ["DRIVER", "WHO IT ATTRACTS", "WHY"], rows,
+    { rowH: 0.52, hH: 0.26, fs: 7.6, hfs: 7.4 });
+  // per-jurisdiction / named-entity table (§F): Jurisdiction | Entity | Distinct exposure
+  const ent = (d.exposureEntities || []);
+  const eb = 1.30 + 0.26 + rows.length * 0.52 + 0.18;
+  s.addText("PER-JURISDICTION EXPOSURE " + EMDASH + " NAMED ENTITIES", { x: 0.4, y: eb, w: 9.3, h: 0.2,
+    fontSize: 8.5, fontFace: FB, bold: true, color: C.teal, charSpacing: 2, margin: 0 });
+  const erows = (ent.length ? ent : [{ jurisdiction: EMDASH, entity: EMDASH, exposure: EMDASH }]).map(r => [
+    { text: r.jurisdiction || EMDASH, bold: true, color: C.tealDark, align: "center", fs: 8 },
+    { text: r.entity || EMDASH, bold: true, color: C.ink, fs: 7.6 },
+    { text: r.exposure || EMDASH, color: C.inkMuted, fs: 7.4 },
+  ]);
+  drawTable(s, 0.4, eb + 0.24, [1.1, 3.0, 5.2], ["JURISDICTION", "ENTITY", "DISTINCT EXPOSURE"], erows,
+    { rowH: 0.42, hH: 0.26, fs: 7.6, hfs: 7.2 });
+})();
+
+// ============================================================ 4b ANCHOR CASE
+(function () {
+  const ac = d.anchorCase;
+  if (!ac) return;
+  const s = content("Anchor Case", ac.title || "The sourced intrusion this report is built around");
+  // headline strip: actor / sponsor / admiralty grade
+  s.addShape(R(), { x: 0.4, y: 1.30, w: 9.3, h: 0.5, fill: { color: C.evBg }, line: { type: "none" } });
+  s.addShape(R(), { x: 0.4, y: 1.30, w: 0.06, h: 0.5, fill: { color: C.crit }, line: { type: "none" } });
+  s.addText([
+    { text: (ac.actor || EMDASH) + "   ", options: { bold: true, color: C.teal } },
+    { text: (ac.sponsor ? (MIDDOT + " " + ac.sponsor + "   ") : ""), options: { color: C.evInk } },
+    { text: (ac.admiraltyGrade ? (MIDDOT + " Admiralty " + ac.admiraltyGrade) : ""), options: { color: C.evInk, italic: true } },
+  ], { x: 0.58, y: 1.30, w: 9.0, h: 0.5, fontSize: 9, fontFace: FB, valign: "middle", margin: 0 });
+  s.addText(asText(ac.summary), { x: 0.4, y: 1.92, w: 9.3, h: 0.82, fontSize: 9, fontFace: FB,
+    color: C.ink, valign: "top", margin: 0, lineSpacingMultiple: 1.03 });
+  // phased ACCESS -> PERSIST -> COLLECT -> EXFIL, tied to finding IDs
+  const phases = Array.isArray(ac.phases) ? ac.phases : [];
+  let y = 2.86; const h = 0.5;
+  phases.slice(0, 4).forEach((p, i) => {
+    const last = i === phases.length - 1;
+    s.addShape(R(), { x: 0.4, y, w: 1.7, h: h - 0.08, fill: { color: last ? C.crit : C.tealDark }, line: { type: "none" } });
+    s.addText(String(p.phase || ("STEP " + (i + 1))).toUpperCase(), { x: 0.4, y, w: 1.7, h: h - 0.08,
+      fontSize: 9.5, fontFace: FB, bold: true, color: C.white, align: "center", valign: "middle", charSpacing: 1, margin: 0 });
+    s.addText(asText(p.body), { x: 2.25, y, w: 6.2, h: h - 0.08, fontSize: 8.4, fontFace: FB, color: C.ink, valign: "middle", margin: 0 });
+    if (p.linkedFindingId) s.addText(ARROW + " " + p.linkedFindingId, { x: 8.55, y, w: 1.15, h: h - 0.08,
+      fontSize: 8, fontFace: FM, bold: true, color: C.tealDark, align: "right", valign: "middle", margin: 0 });
+    y += h;
+  });
+  if (ac.refs) s.addText([{ text: "Sources:  ", options: { bold: true, color: C.tealDark } },
+    { text: asText(ac.refs), options: { color: C.inkMuted, italic: true } }],
+    { x: 0.4, y: 5.0, w: 9.3, h: 0.24, fontSize: 8, fontFace: FB, margin: 0 });
 })();
 
 // ============================================================ 5 THREAT LANDSCAPE AT A GLANCE

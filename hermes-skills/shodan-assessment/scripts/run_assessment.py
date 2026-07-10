@@ -61,6 +61,12 @@ BUCKETS = [("L1","Response & forensics","above"),("L2","Regulatory & legal","abo
            ("L7","Capital & funding","below")]
 
 def derive_cbiq(fj):
+    # BUG 1 FIX: the CBIQ_DEF tables and derived buckets are authored in € MILLIONS
+    # (e.g. lm=[0.1,0.4,2.0,...], pml=[25,80]).  build_cbiq_deck.js money() formats RAW
+    # euros (3.0 -> "€3"), so every monetary field must be scaled to ABSOLUTE euros
+    # (× 1e6) exactly ONCE, at emission, before it lands in cbiq.json.  Non-monetary
+    # fields (tef, vuln, lef, rosiPct, asset C/I/A) are NOT scaled.
+    M = 1_000_000
     cur = {"code":"EUR","symbol":"€","word":"euros"}
     findings = []
     for f in fj["findings"]:
@@ -68,33 +74,43 @@ def derive_cbiq(fj):
         d = CBIQ_DEF.get(ftype(f["title"]))
         if not d: continue
         lef = round(d["tef"]*d["vuln"], 2)
-        meanLM = sum(_pert(d["lm"][i:i+3]) for i in (0,3,5) if False)  # placeholder
-        # 7 buckets from lm scaled roughly: treat lm as [L1min,L1lik,L1max, L3.. ] simplified:
-        lm = {"L1":[d["lm"][0],d["lm"][1],d["lm"][2]],"L2":[0.0,0.1,1.0],
+        # 7 buckets from lm scaled roughly (values in €M): treat lm as [L1min,L1lik,L1max, L3.. ]
+        lm_m = {"L1":[d["lm"][0],d["lm"][1],d["lm"][2]],"L2":[0.0,0.1,1.0],
               "L3":[0.1,d["lm"][3]*0.4,d["lm"][3]],"L4":[0.1,d["lm"][4]*0.4,d["lm"][4]],
               "L5":[0.0,0.3,2.0],"L6":[0.0,d["lm"][5],d["lm"][6]],"L7":[0.0,0.1,1.0]}
-        meanLM = sum(_pert(v) for v in lm.values())
-        ale = round(lef*meanLM, 2)
+        meanLM = sum(_pert(v) for v in lm_m.values())   # in €M
+        ale = round(lef*meanLM, 2)                       # in €M
+        # scale ALL monetary fields to absolute euros exactly once (× 1e6):
+        lm = {k:[round(x*M) for x in v] for k,v in lm_m.items()}
+        aleRange = [round(ale*0.6*M), round(ale*1.6*M)]
+        aleMid   = round(ale*M)
+        pmlRange = [round(d["pml"][0]*M), round(d["pml"][1]*M)]
+        codRange = [round(ale*0.6/12*M), round(ale*1.6/12*M)]
+        controlCost = round(d["cc"]*M)
+        aleAfter    = round(d["after"]*M)
         findings.append({"id":f["id"],"tier":("CRIT" if f["sev"]=="CRITICAL" else "HIGH"),
             "label":f["title"],"asset":{"C":4,"I":4,"A":5},
             "lossScenario":(f["why"][0] if f.get("why") else f["title"]),
             "realComparable":(f.get("realComparable") or REAL_INCIDENTS.get(ftype(f["title"])) or REAL_INCIDENTS["other"]),
             "tef":d["tef"],"vuln":d["vuln"],"lef":lef,"lmBuckets":lm,
-            "aleRange":[round(ale*0.6,1),round(ale*1.6,1)],"aleMid":ale,
-            "pmlRange":d["pml"],"codRange":[round(ale*0.6/12,2),round(ale*1.6/12,2)],
-            "coltControl":d["ctl"],"controlCost":d["cc"],"aleAfter":d["after"],
+            "aleRange":aleRange,"aleMid":aleMid,
+            "pmlRange":pmlRange,"codRange":codRange,
+            "coltControl":d["ctl"],"controlCost":controlCost,"aleAfter":aleAfter,
             "rosiPct":int(((ale-d["after"]-d["cc"])/d["cc"])*100) if d["cc"] else 0})
-    aleLo=round(sum(x["aleRange"][0] for x in findings),1); aleHi=round(sum(x["aleRange"][1] for x in findings),1)
-    aleLik=round(sum(x["aleMid"] for x in findings),1)
+    # portfolio roll-up — all monetary sums are already in absolute euros:
+    aleLo=int(sum(x["aleRange"][0] for x in findings)); aleHi=int(sum(x["aleRange"][1] for x in findings))
+    aleLik=int(sum(x["aleMid"] for x in findings))
     pmls=sorted(({"id":x["id"],"pml":x["pmlRange"][1]} for x in findings), key=lambda z:-z["pml"])[:2]
     ctrls=[]; seen=set()
+    nctrl=max(len(set(y['coltControl'] for y in findings)),1)
     for x in findings:
         c=x["coltControl"]
-        if c not in seen: seen.add(c); ctrls.append({"label":"− "+c.split(" /")[0].split(" +")[0],"cut":round(aleHi/max(len(set(y['coltControl'] for y in findings)),1),2),"svc":c})
+        if c not in seen: seen.add(c); ctrls.append({"label":"− "+c.split(" /")[0].split(" +")[0],"cut":round(aleHi/nctrl),"svc":c})
+    codAvoidedLo=round(aleLik/12*0.7); codAvoidedHi=round(aleHi/12)
     portfolio={"aleRange":[aleLo,aleHi],"aleLikely":aleLik,"largestPmls":pmls or [{"id":"—","pml":0}],
         "waterfall":ctrls or [{"label":"− SASE","cut":aleHi,"svc":"SASE / ZTNA"}],
         "rosiPct": int(sum(x["rosiPct"] for x in findings)/len(findings)) if findings else 0,
-        "payback":"< 3 months","codAvoided":f"€{round(aleLik/12*0.7,1)}–{round(aleHi/12,1)}M/mo"}
+        "payback":"< 3 months","codAvoided":codAvoidedHi}
     return {"customer":fj["target"]["company"],"currency":cur,
         "classification":"INTERNAL — COLT CONFIDENTIAL · ILLUSTRATIVE MODEL OUTPUT · NOT FOR EXTERNAL DISTRIBUTION",
         "frameworks":["FAIR","NIST IR 8286D"],"method":"Monte-Carlo CRQ (10k runs)","remediationSuite":"DDoS · WAF · Mgd FW · SASE",
@@ -106,12 +122,29 @@ def derive_cbiq(fj):
                       {"label":"DORA penalty (critical ICT)","value":"up to 2% turnover","source":"EU DORA"}],
         "findings":findings if findings else [{"id":"—","tier":"HIGH","label":"No priced findings",
             "asset":{"C":3,"I":3,"A":3},"lossScenario":"No CRIT/HIGH exposures priced.","realComparable":"—",
-            "tef":1,"vuln":0.01,"lef":0.01,"lmBuckets":{k:[0,0.1,0.5] for k in ("L1","L2","L3","L4","L5","L6","L7")},
-            "aleRange":[0,0.1],"aleMid":0.05,"pmlRange":[0,1],"codRange":[0,0.01],"coltControl":"—","controlCost":0.1,"aleAfter":0.05,"rosiPct":0}],
+            "tef":1,"vuln":0.01,"lef":0.01,"lmBuckets":{k:[0,100_000,500_000] for k in ("L1","L2","L3","L4","L5","L6","L7")},
+            "aleRange":[0,100_000],"aleMid":50_000,"pmlRange":[0,1_000_000],"codRange":[0,10_000],"coltControl":"—","controlCost":100_000,"aleAfter":50_000,"rosiPct":0}],
         "portfolio":portfolio,
         "lossExceedance":{"thresholds":["€1M","€5M","€10M","€20M","€40M"],"before":[97,66,44,25,11],"after":[6,1.5,0.6,0.2,0.05]}}
 
 # ---------------- geopol actor catalog (real, public, sourced) ----------------
+# BUG 2 FIX: build_geopol_deck.js relevancePct() multiplies score.intent × capability ×
+# exposureFit numerically (High/Med/Low strings -> NaN).  Map the words to 1-10 numbers so
+# the RELEVANCE % and the INTENT/CAPAB/FIT probability-index columns are numeric.  We keep a
+# parallel display label ({intent,capability,exposureFit,*Label}) for any word-based rendering.
+_SCORE_MAP = {"high":9, "med":6, "medium":6, "low":3, "very high":10, "very low":1}
+def _score_num(v):
+    if isinstance(v,(int,float)): return v
+    return _SCORE_MAP.get(str(v).strip().lower(), 6)
+def _numeric_score(score):
+    """{'intent':'High',...} -> {'intent':9,...,'intentLabel':'High',...} (numeric + label)."""
+    out = {}
+    for k in ("intent","capability","exposureFit"):
+        raw = score.get(k)
+        out[k] = _score_num(raw)
+        out[k + "Label"] = (str(raw) if not isinstance(raw,(int,float)) else raw)
+    return out
+
 CATALOG = [
  dict(trig=["vpn","vuln","panel","remote"], band="ORGANISED eCRIME", sponsor="RUSSIA-BASED RaaS", tier="CRITICAL",
    eyebrow="Most-active RaaS 2025-26", title="Qilin (Agenda) — RaaS exploiting exposed VPN/edge appliances",
@@ -152,6 +185,23 @@ CATALOG = [
    rem=[("PSF","IT/OT segmentation + immutable backup","Air-gap OT; no direct internet path."),
         ("COLT","Colt Managed Firewall + IP Guardian","Filter + DDoS-protect the perimeter."),
         ("OSS","Dragos / Sigma OT monitoring","Detect ICS protocol anomalies.")]),
+ # BUG 4: automotive / manufacturing IP-espionage actor — the "who wants the IP" thesis.
+ # Keyed by SECTOR (not finding type) so it selects for manufacturing/automotive targets.
+ dict(trig=["*"], sectors=["automotive","manufacturing","mfg","auto","industrial"],
+   band="NATION-STATE", sponsor="CHINA MSS", tier="CRITICAL",
+   eyebrow="IP / source-code espionage", title="APT41 (Winnti / Brass Typhoon) — automotive & manufacturing IP theft",
+   pills=["MITRE G0096","WINNTI","T1195"],
+   what=["China MSS dual-mission group; supply-chain implants + signed-driver rootkits for long-dwell access.",
+         "Systematically exfiltrates EV/battery/powertrain IP and source code from German industry."],
+   evidence=["CAMPAIGN: German-industry espionage (Winnti)","TARGETS: BASF · Bayer · Thyssenkrupp · Covestro",
+             "VW 2024: ~19,000 dev docs (EV/engine/DSG)","ATT&CK: G0096 · T1195 supply-chain · T1505.003",
+             "ATTRIB: BfV (DE) + Mandiant   Grade A2"],
+   why="The crown jewels here are EV/battery/powertrain IP — precisely what China-nexus actors collect; exposed dev/cloud estates and edge are the collection footholds.",
+   refs="MITRE G0096 · BfV · Mandiant APT41 · Cisco Talos", admiralty="A2",
+   score=dict(intent="High",capability="High",exposureFit="High"), like="Likely — sustained IP-collection interest",
+   rem=[("COLT","Colt Managed Detection & Response","Block-mode EDR + egress-anomaly on dev/build estates."),
+        ("PSF","Segment source / build / OT","Isolate the IP crown jewels from internet-reachable planes."),
+        ("OSS","SBOM + Sigma detections","Detect supply-chain implants + signed-driver abuse.")]),
  dict(trig=["panel","vuln","remote"], band="NATION-STATE", sponsor="RUSSIA GRU (Unit 26165)", tier="HIGH",
    eyebrow="Credential & panel access", title="APT28 (Fancy Bear) — credential theft & exposed-panel access",
    pills=["MITRE G0007","APT28","Creds"],
@@ -232,41 +282,171 @@ CATALOG_ALIGNED = [
         ("OSS","Anycast / CDN fronting","Distribute + hide origins.")]),
 ]
 
-def derive_geopol(fj, ident):
+# euro formatter for the GEOPOL C-BIQ bridge (values arrive as ABSOLUTE euros post-BUG-1)
+def _eur(n):
+    try: n = float(n)
+    except Exception: return "—"
+    a = abs(n)
+    if a >= 1e9: return f"€{n/1e9:.1f}bn"
+    if a >= 1e6: return f"€{n/1e6:.0f}M" if a >= 1e7 else f"€{n/1e6:.1f}M"
+    if a >= 1e3: return f"€{n/1e3:.0f}k"
+    return f"€{round(n)}"
+def _eur_range(r):
+    return (_eur(r[0]) + "–" + _eur(r[1])) if isinstance(r,(list,tuple)) and len(r)==2 else "—"
+
+# infer the customer's SECTOR (drives sector-keyed actor selection, e.g. APT41 for automotive)
+_SECTOR_MARKERS = {
+ "automotive": ("automotive","automobil","vehicle","volkswagen","audi","porsche","bmw","mercedes","daimler","bosch","continental","zf ","powertrain"),
+ "manufacturing": ("manufactur","industrial","werk","gmbh","carbon","chemical","chemie","material","factory","machine","engineering"),
+ "energy": ("energy","energie","oil","gas","petro","refin","utility","kraftwerk","grid","rosneft","gazprom"),
+ "finance": ("bank","financ","capital","invest","insur","versicherung"),
+ "healthcare": ("health","medic","pharma","hospital","klinik","care"),
+}
+def _infer_sector(fj, ident):
+    hay = " ".join(str(ident.get(k) or "") for k in ("asn_holder","brand","org","seed")).lower()
+    hay += " " + str(fj.get("target",{}).get("company") or "").lower()
+    hay += " " + str(fj.get("target",{}).get("sector") or "").lower()
+    hay += " " + " ".join(str(d) for d in (ident.get("domains") or [])).lower()
+    for sec, markers in _SECTOR_MARKERS.items():
+        if any(m in hay for m in markers): return sec
+    if any(ftype(f["title"])=="ics" for f in fj["findings"]): return "energy"
+    return "manufacturing"   # default for the industrial pursuit base
+
+def derive_geopol(fj, ident, cj=None):
     types = {ftype(f["title"]) for f in fj["findings"] if f["sev"] in ("CRITICAL","HIGH")}
+    sector = _infer_sector(fj, ident)
     # map a finding id per type for linkedFindingId
     tid = {}
     for f in fj["findings"]:
         tid.setdefault(ftype(f["title"]), f["id"])
+    # index priced C-BIQ findings by id so the bridge can read REAL euro ALE/PML (BUG 5)
+    cbiq_by_id = {}
+    for x in ((cj or {}).get("findings") or []):
+        if x.get("id") and x["id"] != "—": cbiq_by_id[x["id"]] = x
     actors = []
     _cat = CATALOG_ALIGNED if _adversary_aligned(ident) else CATALOG
     for a in _cat:
-        if "*" in a["trig"] or (types & set(a["trig"])):
-            link = next((tid[t] for t in a["trig"] if t in tid), None)
-            actors.append({"band":a["band"],"sponsor":a["sponsor"],"tier":a["tier"],"eyebrow":a["eyebrow"],
-                "title":a["title"],"pills":a["pills"],"what":a["what"],"evidence":a["evidence"],"why":a["why"],
-                "refs":a["refs"],"admiraltyGrade":a["admiralty"],"score":a["score"],"likelihood12mo":a["like"],
-                "linkedFindingId":link,
-                "rem":[{"tag":t,"title":ti,"body":bo} for (t,ti,bo) in a["rem"]]})
+        sect_ok = ("sectors" not in a) or (sector in a["sectors"])
+        trig_ok = ("*" in a["trig"]) or bool(types & set(a["trig"]))
+        if not (sect_ok and trig_ok):
+            continue
+        # linked finding: prefer a real finding-type match; else fall back to the top CRIT id
+        link = next((tid[t] for t in a["trig"] if t in tid), None)
+        if not link:
+            link = next((f["id"] for f in fj["findings"] if f["sev"]=="CRITICAL"),
+                        (fj["findings"][0]["id"] if fj["findings"] else None))
+        actors.append({"band":a["band"],"sponsor":a["sponsor"],"tier":a["tier"],"eyebrow":a["eyebrow"],
+            "title":a["title"],"pills":a["pills"],"what":a["what"],"evidence":a["evidence"],"why":a["why"],
+            "refs":a["refs"],"admiraltyGrade":a["admiralty"],
+            "score":_numeric_score(a["score"]),"likelihood12mo":a["like"],
+            "linkedFindingId":link,
+            "rem":[{"tag":t,"title":ti,"body":bo} for (t,ti,bo) in a["rem"]]})
+    # BUG 3: guarantee the top / CRITICAL actor always renders a card — sort so the highest
+    # tier leads, and if selection somehow yielded nothing, force the catalog's top CRIT actor.
+    _rank = {"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}
+    actors.sort(key=lambda a: -_rank.get(str(a["tier"]).upper(),1))
+    if not actors and _cat:
+        a = _cat[0]
+        actors.append({"band":a["band"],"sponsor":a["sponsor"],"tier":a["tier"],"eyebrow":a["eyebrow"],
+            "title":a["title"],"pills":a["pills"],"what":a["what"],"evidence":a["evidence"],"why":a["why"],
+            "refs":a["refs"],"admiraltyGrade":a["admiralty"],"score":_numeric_score(a["score"]),
+            "likelihood12mo":a["like"],"linkedFindingId":None,
+            "rem":[{"tag":t,"title":ti,"body":bo} for (t,ti,bo) in a["rem"]]})
     top = next((f for f in fj["findings"] if f["sev"]=="CRITICAL"), fj["findings"][0] if fj["findings"] else None)
-    kc = {"scenarioTitle": f"Ransomware via {top['title']}" if top else "Opportunistic intrusion",
-          "steps":["Recon — attacker finds the exposed host on Shodan",
+    top_actor = actors[0] if actors else None
+    top_id = (top["id"] if top else (top_actor.get("linkedFindingId") if top_actor else "—"))
+    # BUG 4: anchorCase — the sourced intrusion the report is built around, tied to finding IDs,
+    # phased ACCESS -> PERSIST -> COLLECT -> EXFIL (for automotive/mfg it's the 2024 VW/Winnti case).
+    anchorCase = None
+    if sector in ("automotive","manufacturing") and any(str(x.get("title","")).startswith("APT41") for x in actors):
+        anchorCase = {
+            "title":"2024 Volkswagen / Winnti IP-espionage case",
+            "actor":"APT41 (Winnti / Brass Typhoon)","admiraltyGrade":"B2","sponsor":"China MSS",
+            "summary":"~19,000 internal development documents (EV, engine and DSG gearbox source/design) "
+                      "were exfiltrated from Volkswagen Group over a multi-year China-nexus campaign - the "
+                      "canonical 'who wants the IP' precedent for German automotive/manufacturing.",
+            "phases":[
+                {"phase":"ACCESS","body":"Foothold via internet-exposed dev/cloud estate + supply-chain implant.","linkedFindingId":top_id},
+                {"phase":"PERSIST","body":"Signed-driver rootkit + valid accounts for multi-year low-and-slow dwell.","linkedFindingId":top_id},
+                {"phase":"COLLECT","body":"Stage EV/battery/powertrain source, CAD and process IP from build systems.","linkedFindingId":top_id},
+                {"phase":"EXFIL","body":"~19,000 documents siphoned to China-nexus infrastructure over time.","linkedFindingId":top_id},
+            ],
+            "refs":"BfV (DE) · Mandiant APT41 · public reporting (2024)",
+            "linkedFindingId":top_id}
+    else:
+        anchorCase = {
+            "title":f"Representative intrusion via {top['title']}" if top else "Opportunistic intrusion",
+            "actor":(top_actor["title"] if top_actor else "—"),
+            "admiraltyGrade":(top_actor.get("admiraltyGrade") if top_actor else "—"),
+            "sponsor":(top_actor.get("sponsor") if top_actor else "—"),
+            "summary":(top_actor.get("why") if top_actor else "The most-relevant selected adversary rides the top exposed finding into the estate."),
+            "phases":[
+                {"phase":"ACCESS","body":"Attacker rides the exposed edge/VPN/panel into the estate.","linkedFindingId":top_id},
+                {"phase":"PERSIST","body":"Valid accounts + tooling establish durable access.","linkedFindingId":top_id},
+                {"phase":"COLLECT","body":"Stage the crown-jewel data / position for impact.","linkedFindingId":top_id},
+                {"phase":"EXFIL","body":"Exfiltration and/or encryption; extortion + data leak.","linkedFindingId":top_id},
+            ],
+            "refs":(top_actor.get("refs") if top_actor else "—"),
+            "linkedFindingId":top_id}
+    # kill-chain steps tied to named finding IDs where possible
+    kc = {"scenarioTitle": (f"{top_actor['title'].split(' — ')[0]} via {top['title']}"
+                            if (top and top_actor) else "Opportunistic intrusion"),
+          "steps":[f"Recon — attacker finds the exposed host on Shodan ({top_id})",
                    "Weaponise — pair with a KEV-listed exploit / stolen creds",
-                   "Deliver — hit the exposed VPN/panel/service",
+                   f"Deliver — hit the exposed VPN/panel/service ({top_id})",
                    "Exploit — gain valid access, disable MFA gaps",
-                   "Impact — lateral movement, encryption / OT disruption",
+                   "Impact — lateral movement, encryption / OT disruption / IP collection",
                    "Monetise — extortion + data leak"]}
-    bridge = [{"scenario":a["title"].split(" — ")[0],"ale":"see C-BIQ","pml":"see C-BIQ",
-               "note":a["eyebrow"],"linkedFindingId":a["linkedFindingId"]} for a in actors[:4]]
+    # BUG 5: C-BIQ bridge reads REAL euro ALE/PML from the priced C-BIQ finding (fallback to text)
+    bridge = []
+    for a in actors[:4]:
+        fid = a.get("linkedFindingId")
+        cx = cbiq_by_id.get(fid)
+        bridge.append({
+            "scenario": a["title"].split(" — ")[0],
+            "ale": (_eur_range(cx["aleRange"]) if cx and cx.get("aleRange") else "see C-BIQ"),
+            "pml": (_eur_range(cx["pmlRange"]) if cx and cx.get("pmlRange") else "see C-BIQ"),
+            "note": a["eyebrow"], "linkedFindingId": fid})
+    # exposure map: per-jurisdiction / named-entity rows (§F). Prefer real identity data.
+    entity = ident.get("brand") or ident.get("org") or ident.get("asn_holder") or fj["target"]["company"]
+    exposureMap = [
+        {"driver":f"German {sector} / KRITIS-adjacent","attracts":"eCrime RaaS + hacktivists",
+         "why":f"{entity}: high-value, internet-exposed OT/IT surface"},
+        {"driver":"EU / NATO alignment","attracts":"Russia-nexus APTs (GRU/hacktivist)",
+         "why":"Sanctions posture + arms-to-Ukraine draw disruptive interest"}]
+    if sector in ("automotive","manufacturing"):
+        exposureMap.insert(1, {"driver":"China market dependency + EV/IP crown jewels",
+            "attracts":"China-nexus IP theft (APT41/Winnti)",
+            "why":"EV/battery/powertrain IP is precisely what China-MSS actors collect"})
+    # per-jurisdiction / named-entity exposure rows (§F): one row per jurisdiction+entity.
+    countries = []
+    for f in fj["findings"]:
+        for ev in (f.get("evidence") or []):
+            for cc in ("DE","AT","CH","NL","US","SG","FR","GB","CN","PL","CZ"):
+                if f" {cc}" in f" {ev} " and cc not in countries: countries.append(cc)
+    hq = (countries[0] if countries else "DE")
+    _reg = {"automotive":"UNECE R155 · TISAX · NIS2","manufacturing":"NIS2 · IEC 62443",
+            "energy":"NIS2 · KRITIS · IEC 62443","finance":"DORA · BaFin/BAIT","healthcare":"NIS2 · GDPR",
+            "retail":"GDPR · PCI-DSS"}.get(sector,"NIS2")
+    exposureEntities = [
+        {"jurisdiction":hq,"entity":entity,
+         "exposure":f"HQ estate · {_reg} · internet-facing {sector} OT/IT is the primary target surface"}]
+    for cc in countries[1:4]:
+        exposureEntities.append({"jurisdiction":cc,"entity":f"{entity} ({cc} operations)",
+            "exposure":f"Regional {sector} assets · data-residency + local-CERT exposure ({cc})"})
+    if sector in ("automotive","manufacturing"):
+        exposureEntities.append({"jurisdiction":"CN","entity":f"{entity} — China market dependency",
+            "exposure":"Largest-market pull raises China-nexus IP-espionage exposure (crown-jewel collection)"})
     return {"customer":fj["target"]["company"],"date":datetime.date.today().isoformat(),
         "classification":"INTERNAL — CONFIDENTIAL · THREAT LANDSCAPE (SECTOR-LEVEL, ILLUSTRATIVE)",
         "frameworks":["MITRE ATT&CK","Diamond","Kill-Chain","Admiralty","CVSS/EPSS/KEV"],"shelfLifeMonths":6,
-        "exposureMap":[{"driver":"German industrial / KRITIS-adjacent","attracts":"eCrime RaaS + hacktivists","why":"High-value, internet-exposed OT/IT"},
-                       {"driver":"EU / NATO alignment","attracts":"Russia-nexus APTs","why":"Espionage + disruption interest"}],
+        "sector":sector,
+        "exposureMap":exposureMap,
+        "exposureEntities":exposureEntities,
         "sectorContext":(fj.get("target",{}).get("geopol_context") or
             "BSI 2025: Germany is among the most-targeted nations; many KRITIS operators lack full detection coverage."),
         "likelihoodBands":{"Likely":[0.3,1],"Plausible":[0.1,0.3],"Routine":[1,4]},
-        "actors":actors,"killChain":kc,"cbiqBridge":bridge}
+        "actors":actors,"anchorCase":anchorCase,"killChain":kc,"cbiqBridge":bridge}
 
 # ---------------- orchestration ----------------
 def _node_build(script, in_json, out_pptx):
@@ -350,7 +530,7 @@ def main():
 
     _pg("Building 3 VIP decks (Shodan / C-BIQ / GEOPOL)")
     # 2) DERIVE cbiq + geopol (deterministic — no LLM)
-    cj = derive_cbiq(fj); gj = derive_geopol(fj, ident)
+    cj = derive_cbiq(fj); gj = derive_geopol(fj, ident, cj)
     json.dump(cj, open(os.path.join(a.outdir,"cbiq.json"),"w"), indent=2, ensure_ascii=False)
     json.dump(gj, open(os.path.join(a.outdir,"geopol.json"),"w"), indent=2, ensure_ascii=False)
 
@@ -385,7 +565,7 @@ def main():
     print("==== ASSESSMENT COMPLETE ====")
     print(f"Company: {co}   scope: {fj['target']['scope']}")
     print(f"Findings: CRIT {s['critical']} · HIGH {s['high']} · MED {s['medium']} · LOW {s['low']}  (IPs {s['unique_ips']}, dropped {s.get('dropped_false_positives',0)} FP)")
-    print(f"Priced findings (C-BIQ): {len([x for x in cj['findings'] if x['id']!='—'])}  · portfolio ALE €{cj['portfolio']['aleRange'][0]}–{cj['portfolio']['aleRange'][1]}M")
+    print(f"Priced findings (C-BIQ): {len([x for x in cj['findings'] if x['id']!='—'])}  · portfolio ALE {_eur(cj['portfolio']['aleRange'][0])}–{_eur(cj['portfolio']['aleRange'][1])}")
     print(f"Threat actors (GEOPOL): {len(gj['actors'])}")
     print("DECKS:")
     _decks=[(ok1,d1),(ok2,d2),(ok3,d3)]
