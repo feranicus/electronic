@@ -495,8 +495,8 @@ def main():
         for n in a.net:
             if n not in ident["nets"]: ident["nets"].append(n)
             ident["org_is_cdn"]=False
-        R.merge_variants(ident, a.org, a.brand, a.domain, a.favicon,
-                         issuers=a.issuer, cert_orgs=a.cert_org, jarms=a.jarm, cpes=a.cpe)
+        R.autodiscover(ident, a.org, a.brand, a.domain, a.favicon,
+                       issuers=a.issuer, cert_orgs=a.cert_org, jarms=a.jarm, cpes=a.cpe)
         F = R.build_filters(ident)
         open(os.path.join(a.outdir,"filters.md"),"w").write(R.filters_md(ident,F))
         if not os.environ.get("SHODAN_API_KEY"):

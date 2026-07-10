@@ -39,3 +39,12 @@ after that, everything is automated and re-runnable from the Actions tab.
 `DROPLET_SSH_KEY`, `DROPLET_HOST`, `DROPLET_USER`, `DO_API_TOKEN`, `SPACES_KEY`, `SPACES_SECRET`,
 `PATCH_TG_CHAT` (optional; else auto-discovered). Repo *variables* (non-secret): `SPACES_REGION`,
 `SPACES_BUCKET`. Set them with `gh secret set NAME` / `gh variable set NAME`.
+
+## Assessment bot UX — KEEP IT SIMPLE (KISS, standing rule)
+The user gives **one input: a company name or domain.** The engine resolves the *entire* recon
+anchor block itself — ASNs + prefixes (bgpview.io + RIPEstat), brand domains & subdomains (crt.sh
+CT logs), cert subject-O, favicon hash, and the internal-CA issuer pivot (auto-harvested live from
+the Shodan sweep's cert issuers). NEVER require the operator to hand-feed `--asn/--net/--issuer/
+--cert-org/--favicon` — those exist only as optional overrides. `run_assessment.py` calls
+`shodan_recon.autodiscover()`, not bare `merge_variants()`. If a future change makes the operator
+type infrastructure details, it's wrong — auto-resolve it.

@@ -18,7 +18,7 @@ Usage:
     python3 shodan_recon.py --seed "keb.de" --outdir /root/work
     python3 shodan_recon.py --seed "KEB Automation" --asn AS3320 --net 212.184.104.224/27 --outdir /root/work
 """
-import os, re, sys, json, socket, argparse, datetime, urllib.request
+import os, re, sys, json, socket, argparse, datetime, urllib.request, urllib.parse
 
 UA = {"User-Agent": "colt-shodan-recon/1.2"}
 # ISPs/telcos: the assigned netblock IS the target's — net: sweep is valid.
@@ -143,6 +143,82 @@ def merge_variants(ident, orgs=None, brands=None, domains=None, favicons=None,
     ident["jarms"]        = list(dict.fromkeys([str(j).strip() for j in jarms if str(j).strip()]))
     ident["cpes"]         = list(dict.fromkeys([str(p).strip() for p in cpes if str(p).strip()]))
     return ident
+
+# ------------------------------------------------------------ auto-discovery ---
+# KISS: from ONE input (a company name or domain) resolve the whole recon anchor block.
+PUBLIC_CAS = ("let's encrypt","digicert","globalsign","sectigo","comodo","entrust","godaddy",
+              "amazon","google trust","microsoft","cloudflare","actalis","buypass","zerossl",
+              "starfield","geotrust","thawte","rapidssl","certum","ssl.com","isrg","baltimore",
+              "quovadis","identrust","d-trust","t-systems","telesec","swisssign","letsencrypt")
+
+def _bgpview_asns(term, cap=12):
+    """Company name -> ASNs (bgp.he.net-equivalent, via the bgpview.io JSON API)."""
+    try:
+        d = _get_json("https://api.bgpview.io/search?query_term=" + urllib.parse.quote(term), timeout=20)
+        toks = [t for t in re.split(r'\W+', term.lower()) if len(t) > 2]
+        out = []
+        for a in (d.get("data", {}) or {}).get("asns", []):
+            nm = ((a.get("name") or "") + " " + (a.get("description") or "")).lower()
+            if any(t in nm for t in toks):
+                out.append("AS" + str(a["asn"]))
+        return list(dict.fromkeys(out))[:cap]
+    except Exception as e:
+        print(f"[warn] bgpview {term}: {e}", file=sys.stderr); return []
+
+def _crtsh_domains(domain=None, org=None, cap=60):
+    """CT-log harvest (crt.sh) -> brand domains & subdomains on any cloud/CDN."""
+    doms = set(); urls = []
+    if domain: urls.append("https://crt.sh/?q=%25." + urllib.parse.quote(domain) + "&output=json")
+    if org:    urls.append("https://crt.sh/?O=" + urllib.parse.quote(org) + "&output=json")
+    for u in urls:
+        try:
+            for row in (_get_json(u, timeout=30) or [])[:500]:
+                for nm in (row.get("name_value", "") or "").split("\n"):
+                    nm = nm.strip().lstrip("*.").lower()
+                    if nm and "." in nm and " " not in nm and not nm.endswith(".arpa"):
+                        doms.add(nm)
+        except Exception as e:
+            print(f"[warn] crt.sh {u}: {e}", file=sys.stderr)
+    return sorted(doms)[:cap]
+
+def _favicon_hash(domain):
+    """Favicon MurmurHash3 for the http.favicon.hash pivot (best-effort; needs mmh3)."""
+    try:
+        import mmh3, codecs
+        req = urllib.request.Request("https://www." + domain + "/favicon.ico", headers=UA)
+        with urllib.request.urlopen(req, timeout=12) as r:
+            return str(mmh3.hash(codecs.encode(r.read(), "base64")))
+    except Exception:
+        return None
+
+def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
+                 issuers=None, cert_orgs=None, jarms=None, cpes=None):
+    """One input in, full anchor block out. Resolves ASNs+prefixes (bgpview + RIPE),
+    brand domains (crt.sh CT logs), cert subject O, and favicon — then folds in any manual
+    overrides. The internal-CA issuer pivot is auto-harvested live during the sweep (run())."""
+    orgs=list(orgs or []); brands=list(brands or []); domains=list(domains or [])
+    favicons=list(favicons or []); cert_orgs=list(cert_orgs or [])
+    name = ident.get("org") or ident.get("brand") or ident["seed"]
+    is_name = bool(name) and not CIDR_RE.match(str(name))
+    if is_name:                                              # 1) ASNs from bgpview org search
+        for a in _bgpview_asns(name):
+            if a not in ident["asns"]:
+                ident["asns"].append(a); ident["asn_holder"] = ident["asn_holder"] or _ripe_holder(a)
+    if not ident.get("org_is_cdn"):                          # 2) prefixes for every ASN we now hold
+        for a in ident["asns"]:
+            for p in _ripe_prefixes(a):
+                if p not in ident["nets"]: ident["nets"].append(p)
+    seed_dom = ident["domains"][0] if ident["domains"] else None   # 3) brand domains from CT logs
+    for d in _crtsh_domains(domain=seed_dom, org=(name if (is_name and not seed_dom) else None)):
+        if d not in domains and d not in ident["domains"]: domains.append(d)
+    if is_name and name not in cert_orgs: cert_orgs.append(name)   # 4) cert-org + favicon
+    dom0 = (domains + ident["domains"])
+    if dom0:
+        fh = _favicon_hash(_apex(dom0[0]))
+        if fh and fh not in favicons: favicons.append(fh)
+    print(f"[auto] asns={len(ident['asns'])} nets={len(ident['nets'])} +ct_domains={len(domains)} cert_orgs={cert_orgs}", file=sys.stderr)
+    return merge_variants(ident, orgs, brands, domains, favicons,
+                          issuers=issuers, cert_orgs=cert_orgs, jarms=jarms, cpes=cpes)
 
 # ----------------------------------------------------------- canonical filters ---
 P_REMOTE_DB = "3389,22,23,5900,445,3306,1433,5432,6379,27017,9200,21"
@@ -358,6 +434,27 @@ def run(ident, F, audience, limit_per_query=500):
                 if n >= limit_per_query: break
         except shodan.APIError as e:
             print(f"[warn] query {q!r}: {e}", file=sys.stderr)
+    # auto-harvest the internal-CA issuer pivot: private issuers seen on the estate -> re-pivot
+    seen_iss = {}
+    for _ms in hosts.values():
+        for _m in _ms:
+            _cn = (((_m.get("ssl") or {}).get("cert") or {}).get("issuer") or {}).get("CN")
+            if _cn and not _is(_cn, PUBLIC_CAS): seen_iss[_cn] = seen_iss.get(_cn, 0) + 1
+    for _cn in [c for c, n in sorted(seen_iss.items(), key=lambda x: -x[1]) if n >= 2][:3]:
+        if _cn in ident.get("internal_cas", []): continue
+        ident.setdefault("internal_cas", []).append(_cn)
+        print(f"[auto] internal-CA pivot on {_cn!r}", file=sys.stderr)
+        try:
+            k = 0
+            for _m in api.search_cursor(f'ssl.cert.issuer.cn:"{_cn}"'):
+                ip2 = _m.get("ip_str")
+                if ip2 and ip2 not in hosts:
+                    hosts.setdefault(ip2, []).append(_m)
+                    if _m.get("asn"): asns.add(_m["asn"])
+                k += 1
+                if k >= limit_per_query: break
+        except shodan.APIError:
+            pass
     buckets = {}
     for ip, ms in hosts.items():
         for m in ms:
@@ -444,8 +541,8 @@ def main():
     for n in a.net:
         if n not in ident["nets"]: ident["nets"].append(n)
         ident["org_is_cdn"] = False
-    merge_variants(ident, a.org, a.brand, a.domain, a.favicon,
-                   issuers=a.issuer, cert_orgs=a.cert_org, jarms=a.jarm, cpes=a.cpe)
+    autodiscover(ident, a.org, a.brand, a.domain, a.favicon,
+                 issuers=a.issuer, cert_orgs=a.cert_org, jarms=a.jarm, cpes=a.cpe)
     F = build_filters(ident)
     open(os.path.join(a.outdir, "filters.md"), "w").write(filters_md(ident, F))
     print(f"✓ identity: ASNs={ident['asns']} holder={ident.get('asn_holder')!r} cdn={ident['org_is_cdn']} carrier={ident['org_is_carrier']} nets={len(ident['nets'])} domains={ident['domains']}")

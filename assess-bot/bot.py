@@ -78,7 +78,11 @@ async def assess(update, ctx):
     if not ctx.args:
         await update.message.reply_text("Usage: /assess <company / domain / ASN>")
         return
-    seed = ctx.args[0]; extra = ctx.args[1:]
+    _args = list(ctx.args)
+    _i = next((k for k, t in enumerate(_args) if t.startswith('--')), len(_args))
+    seed = ' '.join(_args[:_i]).strip(); extra = _args[_i:]   # multi-word company names -> one seed
+    if not seed:
+        await update.message.reply_text('Usage: /assess <company / domain / ASN>'); return
     _log(evt="assess_start", company=seed, user=str(uid), email=AUTH.authed.get(str(uid), {}).get("email", ""), ts=int(time.time()))
     status = await update.message.reply_text("⏳ Assessing %s ..." % seed)
     steps = []
