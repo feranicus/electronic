@@ -207,7 +207,7 @@ def build_filters(ident):
         for h in CLOUD_HOSTERS:
             add(19, f"Cloud overlap · {h}", f'ssl:"{b}" org:"{h}"', run=True, note="brand assets on cloud/CDN infra the ASN misses")
     for j in ident.get("jarms", []):            # JARM — cluster identical TLS stacks (appliance/LB fleet); paid facet
-        add(20, "JARM TLS-stack cluster", f'ssl.jarm:{j}', run=False, note="rest of the appliance/LB fleet (paid Shodan facet)")
+        add(20, "JARM TLS-stack cluster", f'ssl.jarm:{j}', run=True, note="rest of the appliance/LB fleet (paid)")
     if scope:
         add(7, "Remote-access & DB ports", f"{scope} port:{P_REMOTE_DB}", note="RDP/SSH/Telnet/VNC/SMB/DB/FTP")
         add(8, "VPN / firewall mgmt", f"{scope} port:{P_VPN_MGMT} product:{PROD_PANEL}", note="edge-VPN = top ransomware vector")
@@ -223,7 +223,9 @@ def build_filters(ident):
         add(22, "Databases (never public)", f"{scope} port:3306,5432,27017,6379,9200,1433 product:{PROD_DB}", note="direct data-exfil path")
         add(23, "Admin UIs / web apps",
             f'{scope} product:{PROD_WEBAPP}  |  {scope} http.component:"Outlook Web App"', note="Grafana/Jenkins/Kibana/phpMyAdmin/OWA")
-        add(24, "KEV edge-appliance CVEs", f"{scope} vuln:{KEV_CVES}", note="Citrix Bleed / Check Point / F5 / HTTP-2 Rapid Reset — CISA KEV (paid facet)")
+        add(24, "KEV edge-appliance CVEs", f"{scope} vuln:{KEV_CVES}", run=True, note="Citrix Bleed / Check Point / F5 / HTTP-2 Rapid Reset — CISA KEV (paid)")
+        add(28, "Vulnerable hosts (has_vuln)", f"{scope} has_vuln:true", run=True, note="every host with a Shodan-tagged CVE across the estate (paid)")
+        add(29, "ICS/OT tagged hosts", f"{scope} tag:ics", run=True, note="industrial systems across the estate (paid)")
         add(25, "Weak keys / full cert inventory",
             f"{scope} ssl.cert.pubkey.bits:1024  |  {scope} ssl.cert.subject.cn:*", note="1024-bit keys + full TLS inventory")
         for c in ident.get("cpes", []):
