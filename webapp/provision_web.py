@@ -21,6 +21,8 @@ KEY    = os.environ.get("SSH_KEY", os.path.expanduser("~/.ssh/id_ed25519"))
 PORT   = os.environ.get("WEB_PORT", "8090")
 TOKEN  = os.environ.get("DO_API_TOKEN", "")
 PUBIP  = os.environ.get("DROPLET_PUBLIC_IP", "64.225.108.200")   # A-record target (public IP, not tailnet)
+GD_KEY = os.environ.get("GODADDY_API_KEY", "")
+GD_SEC = os.environ.get("GODADDY_API_SECRET", "")
 
 SSH = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"]
 if os.path.exists(KEY): SSH += ["-i", KEY]
@@ -37,10 +39,30 @@ def do_api(method, path, body=None):
         with urllib.request.urlopen(req, timeout=40) as r: return r.status, json.loads(r.read() or "{}")
     except urllib.error.HTTPError as e: return e.code, json.loads(e.read() or "{}")
 
+def _gd(method, path, body=None):
+    req = urllib.request.Request("https://api.godaddy.com/v1" + path,
+        data=json.dumps(body).encode() if body is not None else None, method=method,
+        headers={"Authorization": "sso-key %s:%s" % (GD_KEY, GD_SEC), "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=40) as r: return r.status, (r.read().decode() or "")
+    except urllib.error.HTTPError as e: return e.code, e.read().decode()
+
+def godaddy_dns():
+    """Point cybergod.ai (GoDaddy zone) at the droplet. Replaces the GitHub-Pages A/@ records
+    and the www CNAME. PUT replaces ALL records of that type+name, so the old 185.199.x set is gone."""
+    ok = True
+    for typ, name, data in (("A", "@", PUBIP), ("CNAME", "www", DOMAIN)):
+        st, txt = _gd("PUT", "/domains/%s/records/%s/%s" % (DOMAIN, typ, name), [{"data": data, "ttl": 600}])
+        print("  [dns/godaddy] %s %s -> %s : HTTP %s %s" % (typ, name, data, st, (txt[:100] or "ok")))
+        ok = ok and st in (200, 204)
+    return ok
+
 # ---------- 1) DNS via DO API ----------
 def ensure_dns():
+    if GD_KEY and GD_SEC:
+        print("  [dns] GoDaddy zone detected — updating via GoDaddy API"); godaddy_dns(); return
     if not TOKEN:
-        print("  [dns] no DO_API_TOKEN — skipping (point cybergod.ai A -> %s yourself once)" % PUBIP); return
+        print("  [dns] no GoDaddy/DO creds — set GODADDY_API_KEY+SECRET (or move DNS to DO)."); return
     st, j = do_api("GET", "/v2/domains/" + DOMAIN)
     if st == 404:
         do_api("POST", "/v2/domains", {"name": DOMAIN, "ip_address": PUBIP})
@@ -83,14 +105,29 @@ def wire_proxy():
     print(f"          add one vhost: {DOMAIN} -> 127.0.0.1:{PORT}  (nginx: proxy_pass; traefik: labels)")
     return False
 
+def expose_funnel():
+    """Publish colt-web to the public internet over HTTPS via Tailscale Funnel — NO DNS, NO new key,
+    NO open ports (the droplet is already on Tailscale). The captive portal + cabinet go live here."""
+    ssh(f"tailscale funnel --bg {PORT} 2>&1 | head -3 || true")
+    _, name, _ = ssh("tailscale status --json 2>/dev/null | "
+                     "python3 -c 'import sys,json;print(json.load(sys.stdin)[\"Self\"][\"DNSName\"].rstrip(\".\"))' 2>/dev/null")
+    name = name.strip()
+    if name:
+        print(f"  [funnel] PUBLIC APP + CAPTIVE PORTAL: https://{name}/  (login at https://{name}/login)")
+        return f"https://{name}"
+    print("  [funnel] enable Funnel once for this tailnet (Tailscale admin prints a one-click link on first run), then re-run.")
+    return ""
+
 def main():
     print(f"=== provision cybergod.ai on {USER}@{HOST} ===")
     print("--- 1) DNS ---");  ensure_dns()
     print("--- 2) proxy ---"); ok = wire_proxy()
+    print("--- 2b) Tailscale Funnel (public URL, no DNS) ---"); furl = expose_funnel()
     print("--- 3) verify ---")
     rc, out, _ = ssh(f"curl -sko /dev/null -w '%{{http_code}}' https://127.0.0.1:{PORT}/api/me || true")
     print(f"  colt-web local health: HTTP {out.strip() or '?'} (401 = up, auth working)")
-    print("\nDONE." + (f" https://{DOMAIN} will serve once DNS + Let's Encrypt settle (~1–2 min)." if ok else " Manual vhost needed (see above)."))
+    print("\n" + ("PUBLIC (no DNS, no key): " + furl if furl else ""))
+    print("DONE." + (f" https://{DOMAIN} will serve once DNS + Let's Encrypt settle (~1–2 min)." if ok else " Manual vhost needed (see above)."))
 
 if __name__ == "__main__":
     main()

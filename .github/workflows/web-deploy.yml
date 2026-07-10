@@ -37,5 +37,7 @@ jobs:
           DROPLET_USER: ${{ secrets.DROPLET_USER }}
           SSH_KEY: /home/runner/.ssh/deploy_key
           DROPLET_PUBLIC_IP: ${{ vars.DROPLET_PUBLIC_IP || '64.225.108.200' }}
+          GODADDY_API_KEY: ${{ secrets.GODADDY_API_KEY }}
+          GODADDY_API_SECRET: ${{ secrets.GODADDY_API_SECRET }}
           DOMAIN: cybergod.ai
         run: python webapp/provision_web.py

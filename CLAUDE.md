@@ -58,3 +58,13 @@ Tailscale → `deploy.py --reuse` (builds colt-web) → `webapp/provision_web.py
 the DO API and AUTO-DETECTS the droplet's reverse proxy to wire `cybergod.ai` with TLS WITHOUT
 disturbing VideoDead. NEVER ask the operator to SSH in and edit a proxy/DNS by hand — provision_web
 figures it out. cybergod.ai is served from the droplet, not GitHub.
+
+## cybergod.ai DNS — REMEMBERED (do not re-ask)
+DNS is at **GoDaddy** (ns07/ns08.domaincontrol.com); the apex A-records point to **GitHub Pages**
+(185.199.108-111.153) and it serves the `feranicus.github.io` repo. So:
+- The **landing** is published to GitHub Pages with `publish_landing.py` — a plain git push to the
+  Pages repo. NO api key, NO DNS change. Use this to update cybergod.ai's visible page instantly.
+- The **interactive app** (login/cabinet) is a backend and MUST run on the droplet. Pointing the
+  domain at the droplet is the ONE thing no script can do without a DNS credential — that is the
+  internet's ownership model, not a code limit. It needs either a GoDaddy API key OR nameservers
+  moved to DigitalOcean, ONCE. Do not keep offering both every turn — state it once and move on.
