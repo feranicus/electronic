@@ -1,5 +1,6 @@
-# Promtail: tail the assess-bot event log file -> Loki.
-# (docker_sd doesn't work on Docker Desktop — API version mismatch — so we tail a file.)
+# Promtail: tail the shared colt event log -> Loki. The assess-bot, cassandra, AND colt-web
+# all append JSON lines to this one file (colt_events volume); the `bot`/`service` labels
+# separate them in Grafana. (docker_sd is avoided — API mismatch on some hosts — so we tail a file.)
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
@@ -9,20 +10,24 @@ positions:
 clients:
   - url: http://loki:3100/loki/api/v1/push
 scrape_configs:
-  - job_name: assessbot
+  - job_name: colt-events
     static_configs:
       - targets: [localhost]
         labels:
-          container: assess-bot
-          job: assessbot
+          container: assess-bot   # legacy bucket label — existing dashboards match {container=~".*assess-bot.*"}
+          job: colt
           __path__: /logs/events.log
     pipeline_stages:
       - json:
           expressions:
             evt: evt
             bot: bot
+            service: service
             company: company
             status: status
+            user: user
       - labels:
           evt:
           bot:
+          service:
+          status:

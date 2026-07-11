@@ -73,20 +73,20 @@ jobs:
       - name: Ship compose + Caddy snippet to the droplet
         env:
           H: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
-          U: ${{ secrets.DROPLET_USER }}
+          U: ${{ secrets.DROPLET_USER || 'root' }}
         run: |
-          ssh -i ~/.ssh/deploy_key "$U@$H" 'mkdir -p /opt/colt-stack/deploy/caddy'
-          scp -i ~/.ssh/deploy_key docker-compose.web.yml       "$U@$H:/opt/colt-stack/docker-compose.web.yml"
-          scp -i ~/.ssh/deploy_key deploy/caddy/cybergod.caddy  "$U@$H:/opt/colt-stack/deploy/caddy/cybergod.caddy"
+          ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ~/.ssh/deploy_key "$U@$H" 'mkdir -p /opt/colt-stack/deploy/caddy'
+          scp -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ~/.ssh/deploy_key docker-compose.web.yml       "$U@$H:/opt/colt-stack/docker-compose.web.yml"
+          scp -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ~/.ssh/deploy_key deploy/caddy/cybergod.caddy  "$U@$H:/opt/colt-stack/deploy/caddy/cybergod.caddy"
 
       - name: Pull image + (re)start colt-web + wire Caddy (idempotent)
         env:
           H: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
-          U: ${{ secrets.DROPLET_USER }}
+          U: ${{ secrets.DROPLET_USER || 'root' }}
           TAG: ${{ github.sha }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ssh -i ~/.ssh/deploy_key "$U@$H" "WEB_TAG='$TAG' GHCR_TOKEN='$GHCR_TOKEN' bash -s" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ~/.ssh/deploy_key "$U@$H" "WEB_TAG='$TAG' GHCR_TOKEN='$GHCR_TOKEN' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/colt-stack
 

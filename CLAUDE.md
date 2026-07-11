@@ -117,3 +117,11 @@ After finishing ANY piece of work that the user must trigger, end the reply with
 "Run this:" block containing the exact command(s), copy-paste ready, with the right working directory
 (e.g. `cd "C:\Python SW\Linkedin Scraper"` then `python ship_web.py`). No vague "you can deploy now" —
 give the literal command. If there is genuinely nothing to run, say "Nothing to run." explicitly.
+
+## cybergod.ai — web observability (remember)
+colt-web emits JSON events (logins via colt_auth, assess_request, assist_query) to
+`/var/log/colt/events.log` on the shared `colt_events` volume (`EVENTS_LOG`, `SERVICE=colt-web`);
+colt-promtail already tails it -> Loki -> Grafana. Dashboard `obs/grafana/dashboards/webapp.json`
+auto-imports via import-dashboards.yml. Labels: service=colt-web, bot=webapp, evt=*. The
+web-deploy.yml ssh/scp MUST carry `-o StrictHostKeyChecking=accept-new` (host-key verify was the
+"Ship compose" failure). docker-compose.web.yml mounts colt_events + sets EVENTS_LOG/SERVICE.

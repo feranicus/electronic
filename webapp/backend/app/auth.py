@@ -20,12 +20,25 @@ import colt_auth  # noqa: E402
 _STORE_PATH = str(DATA_DIR / "web_authorized.json")
 
 
+_EVENTS_LOG = os.environ.get("EVENTS_LOG", "")
+_SERVICE = os.environ.get("SERVICE", "colt-web")
+
 def _log(**k):
+    # one JSON event -> stdout AND the shared events.log (promtail -> Loki -> Grafana)
     k.setdefault("bot", "webapp")
+    k.setdefault("service", _SERVICE)
+    k.setdefault("ts", time.time())
+    line = json.dumps(k)
     try:
-        print(json.dumps(k), flush=True)
+        print(line, flush=True)
     except Exception:
         pass
+    if _EVENTS_LOG:
+        try:
+            with open(_EVENTS_LOG, "a", encoding="utf-8") as _f:
+                _f.write(line + "\n")
+        except Exception:
+            pass
 
 
 AUTH = colt_auth.Auth("webapp", _STORE_PATH, log=_log)

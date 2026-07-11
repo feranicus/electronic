@@ -53,7 +53,8 @@ target's whole footprint itself (see *KISS rule* in `CLAUDE.md`).
 
 ## Observability
 Structured events → `events.log` → **promtail → Loki → your existing Grafana** (`godeyes.ai/observe`).
-Dashboards: per-bot activity, auth audit trail, and a **patchwatch deep-dive**. Import with
+Dashboards: per-bot activity, auth audit trail, **colt-web / cybergod.ai** (logins, assessments,
+assistant, live stream), and a **patchwatch deep-dive**. Import with
 `python import_dashboard.py --all` (or the `import-dashboards.yml` workflow).
 
 ## Self-patching (`patchwatch/`)

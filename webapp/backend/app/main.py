@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import store, assistant
-from .auth import AUTH, make_session, read_session, email_ok
+from .auth import AUTH, make_session, read_session, email_ok, _log
 from .settings import (
     ENGINE, JOBS_DIR, FRONTEND_DIST, SESSION_COOKIE, SESSION_MAX_AGE,
     SESSION_COOKIE_SECURE, CORS_ORIGINS,
@@ -137,6 +137,7 @@ def assess(req: AssessReq, request: Request):
     job_id = uuid.uuid4().hex
     _job_dir(email, job_id)  # pre-create owner-scoped dir
     store.create_job(job_id, email, company)
+    _log(evt="assess_request", user=email, company=company, job=job_id)
     return {"job_id": job_id}
 
 
@@ -279,6 +280,7 @@ async def assist(req: AssistReq, request: Request):
     message = (req.message or "").strip()
     if not message:
         return {"reply": "(say something and I'll help)"}
+    _log(evt="assist_query", chars=len(message))
     try:
         reply = await asyncio.to_thread(assistant.assist, message)
     except Exception as e:

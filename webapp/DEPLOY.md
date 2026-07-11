@@ -62,3 +62,17 @@ Rollback = re-run the workflow pinned to an older image `:<sha>`.
 - Do **not** run `publish_landing.py` for cybergod.ai anymore — it re-adds the GitHub-Pages CNAME
   and re-claims the domain (that was the 404/502 flip-flop). The landing is served by the droplet.
 - Do **not** hand-edit the Caddyfile on the droplet — change `deploy/caddy/cybergod.caddy` and push.
+
+
+## Observability (Grafana)
+
+`colt-web` emits one JSON event per meaningful action — logins (via `colt_auth`), `assess_request`,
+`assist_query` — to `/var/log/colt/events.log` on the shared `colt_events` volume (env `EVENTS_LOG`,
+`SERVICE=colt-web`). The existing `colt-promtail` already tails that file, so events flow to
+**Loki -> Grafana** with no extra agent. Labels: `service=colt-web`, `bot=webapp`, `evt=...`.
+
+- Dashboard: `obs/grafana/dashboards/webapp.json` ("Colt Web (cybergod.ai)") — logins/denials,
+  assessments, assistant queries, and a live event stream. It auto-imports on push via
+  `.github/workflows/import-dashboards.yml`. Manual: `python import_dashboard.py --all`.
+- Queries use `{container=~".*assess-bot.*"} | json | service=` + "`colt-web`" so they parse the JSON at
+  query time (works regardless of which promtail labels are live).
