@@ -1,0 +1,25 @@
+# cybergod.ai web app (colt-web). Image is BUILT IN CI and pushed to GHCR — never built
+# on the droplet. Deployed by .github/workflows/web-deploy.yml into project 'colt-stack'.
+# Joins the EXISTING videodead network so the shared videodead-caddy (which owns :443)
+# can reach it as http://colt-web:8000. Does NOT touch VideoDead / Amnezia / joplin.
+services:
+  web:
+    image: ghcr.io/feranicus/colt-web:${WEB_TAG:-latest}
+    container_name: colt-web
+    env_file: [.env]
+    environment:
+      - ENGINE=/opt/shodan-skill/scripts/run_assessment.py
+      - ALLOWED_EMAIL_DOMAIN=colt.net
+    volumes:
+      - colt_webdata:/data
+    ports:
+      - "127.0.0.1:8090:8000"     # local health only; public traffic comes via videodead-caddy
+    networks: [videodead_appnet]
+    restart: unless-stopped
+
+volumes:
+  colt_webdata: {}
+
+networks:
+  videodead_appnet:
+    external: true               # the network videodead-caddy is already on

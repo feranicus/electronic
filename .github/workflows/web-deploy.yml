@@ -1,43 +1,118 @@
 name: Deploy web (cybergod.ai)
+
+# Build the colt-web image IN GitHub, push to GHCR, then ship it to the droplet.
+# Nothing is built on the droplet. The cybergod.ai vhost comes from the committed
+# snippet deploy/caddy/cybergod.caddy. VideoDead / Amnezia / joplin are never touched.
+
 on:
   push:
     branches: [main]
-    paths: ["webapp/**", "hermes-skills/**", "colt_auth.py", "docker-compose.reuse.yml", ".github/workflows/web-deploy.yml"]
+    paths:
+      - "webapp/**"
+      - "hermes-skills/**"
+      - "colt_auth.py"
+      - "docker-compose.web.yml"
+      - "deploy/caddy/**"
+      - ".github/workflows/web-deploy.yml"
   workflow_dispatch: {}
 
 concurrency:
-  group: prod-deploy
+  group: prod-web-deploy
   cancel-in-progress: false
 
+env:
+  IMAGE: ghcr.io/feranicus/colt-web
+
 jobs:
-  web:
+  # ---------------------------------------------------------------- build + push
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write            # push to GHCR with the built-in GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build + push colt-web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: webapp/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/feranicus/electronic
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------- deploy to droplet
+  deploy:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
+
       - name: Connect to Tailscale (reach the firewalled droplet)
         uses: tailscale/github-action@v3
-        with: {authkey: "${{ secrets.TS_AUTHKEY }}", version: latest}
+        with: { authkey: "${{ secrets.TS_AUTHKEY }}", version: latest }
+
       - name: Install SSH key
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ vars.TAILNET_HOST || '100.78.224.75' }}" >> ~/.ssh/known_hosts 2>/dev/null || true
-      - name: Build + deploy colt-stack (incl. colt-web) over Tailscale
+
+      - name: Ship compose + Caddy snippet to the droplet
         env:
-          DROPLET_HOST: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
-          DROPLET_USER: ${{ secrets.DROPLET_USER }}
-          SSH_KEY: /home/runner/.ssh/deploy_key
-        run: python deploy.py --reuse --yes
-      - name: Publish cybergod.ai (DNS + proxy, auto)
+          H: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
+          U: ${{ secrets.DROPLET_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$U@$H" 'mkdir -p /opt/colt-stack/deploy/caddy'
+          scp -i ~/.ssh/deploy_key docker-compose.web.yml       "$U@$H:/opt/colt-stack/docker-compose.web.yml"
+          scp -i ~/.ssh/deploy_key deploy/caddy/cybergod.caddy  "$U@$H:/opt/colt-stack/deploy/caddy/cybergod.caddy"
+
+      - name: Pull image + (re)start colt-web + wire Caddy (idempotent)
         env:
-          DO_API_TOKEN: ${{ secrets.DO_API_TOKEN }}
-          DROPLET_HOST: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
-          DROPLET_USER: ${{ secrets.DROPLET_USER }}
-          SSH_KEY: /home/runner/.ssh/deploy_key
-          DROPLET_PUBLIC_IP: ${{ vars.DROPLET_PUBLIC_IP || '64.225.108.200' }}
-          GODADDY_API_KEY: ${{ secrets.GODADDY_API_KEY }}
-          GODADDY_API_SECRET: ${{ secrets.GODADDY_API_SECRET }}
-          DOMAIN: cybergod.ai
-        run: python webapp/provision_web.py
+          H: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
+          U: ${{ secrets.DROPLET_USER }}
+          TAG: ${{ github.sha }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$U@$H" "WEB_TAG='$TAG' GHCR_TOKEN='$GHCR_TOKEN' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/colt-stack
+
+          # 1) pull the CI-built image. If the GHCR package is private, log in; if public, this is a no-op.
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u feranicus --password-stdin >/dev/null 2>&1 || true
+          export WEB_TAG
+          docker compose -p colt-stack -f docker-compose.web.yml pull
+          docker compose -p colt-stack -f docker-compose.web.yml up -d
+
+          # 2) wire cybergod.ai into the shared videodead-caddy from the committed snippet (idempotent).
+          CADDY_CT="$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)"
+          CF="$(docker inspect "$CADDY_CT" --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{end}}{{end}}')"
+          if [ -n "$CF" ]; then
+            sed -i '/# colt:cybergod BEGIN/,/# colt:cybergod END/d' "$CF"
+            cat deploy/caddy/cybergod.caddy >> "$CF"
+            docker exec "$CADDY_CT" caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
+              || docker exec "$CADDY_CT" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
+              || docker restart "$CADDY_CT"
+            echo "[caddy] wired cybergod.ai -> colt-web:8000 in $CF (via $CADDY_CT)"
+          else
+            echo "[caddy] WARN: could not find the Caddyfile mount on $CADDY_CT"; exit 1
+          fi
+
+          # 3) verify locally on the droplet
+          sleep 3
+          code="$(curl -k -s -o /dev/null -w '%{http_code}' https://localhost/api/me -H 'Host: cybergod.ai' || true)"
+          echo "[verify] https://cybergod.ai/api/me (from droplet) -> $code   (401 = up + auth working)"
+          docker compose -p colt-stack -f docker-compose.web.yml ps
+          REMOTE

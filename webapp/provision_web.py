@@ -12,7 +12,7 @@ Runs in CI (over Tailscale) or locally. It:
               * nginx/traefik detected -> print the exact one-liner (rare; still no guesswork)
 Env: DO_API_TOKEN, DROPLET_HOST, DROPLET_USER, SSH_KEY, DOMAIN(=cybergod.ai), WEB_PORT(=8090).
 """
-import os, sys, json, subprocess, urllib.request, urllib.error
+import os, sys, json, base64, subprocess, urllib.request, urllib.error
 
 DOMAIN = os.environ.get("DOMAIN", "cybergod.ai")
 HOST   = os.environ.get("DROPLET_HOST", "64.225.108.200")
@@ -79,8 +79,11 @@ def ensure_dns():
             do_api("POST", f"/v2/domains/{DOMAIN}/records", {"type": "A", "name": name, "data": PUBIP, "ttl": 300}); print(f"  [dns] added {name} -> {PUBIP}")
 
 # ---------- 2) detect proxy + wire cybergod.ai ----------
-CADDY_BLOCK = (f"\n# --- cybergod.ai (colt-web) — managed by provision_web.py ---\n"
-               f"{DOMAIN}, www.{DOMAIN} {{\n\treverse_proxy 127.0.0.1:{PORT}\n}}\n")
+WEB_CONTAINER = os.environ.get("WEB_CONTAINER", "colt-web")
+WEB_INTERNAL_PORT = os.environ.get("WEB_INTERNAL_PORT", "8000")
+def caddy_block(upstream):
+    return ("\n# --- cybergod.ai (colt-web) managed by provision_web.py ---\n"
+            f"{DOMAIN}, www.{DOMAIN} {{\n\treverse_proxy {upstream}\n}}\n")
 
 def wire_proxy():
     _, who, _ = ssh("ss -tlnp '( sport = :443 )' 2>/dev/null | tail -n +2")
@@ -91,11 +94,24 @@ def wire_proxy():
         _, cf, _ = ssh(f"docker inspect {name} --format '{{{{range .Mounts}}}}{{{{if eq .Destination \"/etc/caddy/Caddyfile\"}}}}{{{{.Source}}}}{{{{end}}}}{{{{end}}}}'")
         cf = cf.strip()
         if cf:
-            ssh(f"grep -q '{DOMAIN} ' {cf} || printf '%s' \"{CADDY_BLOCK}\" >> {cf}")
+            # colt-web publishes only on the HOST loopback, unreachable from inside the Caddy
+            # container. Put colt-web on Caddy's network and proxy container->container.
+            _, nets, _ = ssh("docker inspect %s --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'" % name)
+            net = (nets.split()[0] if nets.split() else "")
+            if net:
+                ssh(f"docker network connect {net} {WEB_CONTAINER} 2>/dev/null || true")
+                print(f"  [proxy] attached {WEB_CONTAINER} to Caddy network '{net}'")
+            upstream = f"{WEB_CONTAINER}:{WEB_INTERNAL_PORT}"
+            b64 = base64.b64encode(caddy_block(upstream).encode()).decode()
+            # remove any previous managed block, then append fresh (base64 = no quoting hell)
+            ssh(f"sed -i '/# --- cybergod/,/^}}/d' {cf}")
+            ssh(f"echo {b64} | base64 -d >> {cf}")
             ssh(f"docker exec {name} caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || docker restart {name}")
-            print(f"  [proxy] merged into container Caddy '{name}' ({cf}) — auto-TLS for {DOMAIN}"); return True
+            print(f"  [proxy] container Caddy '{name}' -> {upstream}, auto-TLS for {DOMAIN}"); return True
     if host_caddy:                                    # host Caddy
-        ssh(f"grep -q '{DOMAIN} ' /etc/caddy/Caddyfile || printf '%s' \"{CADDY_BLOCK}\" >> /etc/caddy/Caddyfile")
+        b64 = base64.b64encode(caddy_block(f"127.0.0.1:{PORT}").encode()).decode()
+        ssh("sed -i '/# --- cybergod/,/^}/d' /etc/caddy/Caddyfile")
+        ssh(f"echo {b64} | base64 -d >> /etc/caddy/Caddyfile")
         ssh("caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl reload caddy")
         print(f"  [proxy] merged into host Caddy — auto-TLS for {DOMAIN}"); return True
     if not who.strip():                               # nothing on 443 -> run our own Caddy

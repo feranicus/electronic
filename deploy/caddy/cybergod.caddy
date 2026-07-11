@@ -1,0 +1,6 @@
+# colt:cybergod BEGIN — managed by CI (web-deploy.yml). Edit here, not on the droplet.
+cybergod.ai, www.cybergod.ai {
+	encode zstd gzip
+	reverse_proxy colt-web:8000
+}
+# colt:cybergod END

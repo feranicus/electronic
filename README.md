@@ -64,10 +64,29 @@ Telegram + Grafana → reboot in a 4am window if a kernel fix needs it. Zero-tou
 
 ## Deploy / ship
 ```bash
-python ship.py            # one command: repair + commit + push + rebuild + redeploy + verify
+python ship.py            # BOTS: repair + commit + push + rebuild + redeploy + verify
+python ship_web.py        # WEB (cybergod.ai): release Pages + push + run CI + watch + verify
 python deploy.py --reuse --yes   # just rebuild/redeploy the stack locally
 git push origin main      # CI builds + Trivy-scans + pushes image to GHCR + deploys (via Tailscale)
 ```
+
+## Web vector — cybergod.ai (browser app, no Telegram)
+A second front door: a React cabinet (**landing + zero-trust login + New-Assessment + Assistant +
+History**) served by `colt-web` (FastAPI + the same engine + `colt_auth`). Any Colt AE uses it at
+**https://cybergod.ai/login** — same auth as the bots (`@colt.net` + password + emailed 6-digit code).
+
+**How it ships (build in GitHub, run on the droplet):** push to `webapp/**` (or run `python ship_web.py`)
+→ `.github/workflows/web-deploy.yml` builds `webapp/Dockerfile`, pushes `ghcr.io/feranicus/colt-web`,
+Tailscale-SSHes the droplet, `docker compose -f docker-compose.web.yml pull && up -d`, appends the
+committed `deploy/caddy/cybergod.caddy` vhost into the shared `videodead-caddy` (idempotent, auto-TLS),
+reloads, and verifies `401`. Nothing is built on the droplet; nothing is hand-edited there.
+**Full runbook + one-time setup: [`webapp/DEPLOY.md`](webapp/DEPLOY.md).**
+
+- One host, one domain: DNS `A @/www → 64.225.108.200`; `videodead-caddy` owns `:443` and reverse-proxies
+  `cybergod.ai → colt-web:8000` over the shared `videodead_appnet`. VideoDead/Amnezia/joplin untouched.
+- **Do NOT run `publish_landing.py` for cybergod** — it re-adds the GitHub-Pages CNAME and re-claims the
+  domain (that was the 404/502 flip-flop). The landing is served by the droplet. `webapp/unpublish_pages.py`
+  releases the domain from Pages.
 
 ## Repo map
 | Path | Purpose |
@@ -78,9 +97,12 @@ git push origin main      # CI builds + Trivy-scans + pushes image to GHCR + dep
 | `patchwatch/` | self-patcher (script, systemd units, zero-touch provisioner) |
 | `obs/` | promtail + Grafana dashboards (reuse mode) |
 | `tofu/` | OpenTofu IaC (DigitalOcean) |
-| `.github/workflows/` | `ci.yml`, `security.yml`, `codeql.yml`, `deploy.yml`, `provision-patchwatch.yml`, `import-dashboards.yml`, `dependabot.yml` |
+| `.github/workflows/` | `ci.yml`, `security.yml`, `codeql.yml`, `deploy.yml`, `web-deploy.yml`, `provision-patchwatch.yml`, `import-dashboards.yml`, `dependabot.yml` |
 | `deploy.py` · `ship.py` · `provision_patchwatch.py` · `setup_github_cicd.py` · `import_dashboard.py` | ops scripts |
-| `docker-compose.reuse.yml` · `docker-compose.ghcr.yml` | isolated `colt-stack` (build-local vs registry-image) |
+| `webapp/` | the web app: React cabinet (`frontend/`) + FastAPI (`backend/`), `Dockerfile`, `DEPLOY.md`, `provision_web.py`, `unpublish_pages.py` |
+| `deploy/caddy/cybergod.caddy` | committed reverse-proxy vhost for cybergod.ai (source of truth) |
+| `ship_web.py` | one command: ship cybergod.ai end-to-end through CI |
+| `docker-compose.reuse.yml` · `docker-compose.ghcr.yml` · `docker-compose.web.yml` | isolated `colt-stack` (bots build-local vs registry-image; web = CI image) |
 | `colt_platform_architecture.html` | this architecture, explained A→Z |
 
 ## GitHub secrets (set once)

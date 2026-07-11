@@ -68,3 +68,52 @@ DNS is at **GoDaddy** (ns07/ns08.domaincontrol.com); the apex A-records point to
   domain at the droplet is the ONE thing no script can do without a DNS credential — that is the
   internet's ownership model, not a code limit. It needs either a GoDaddy API key OR nameservers
   moved to DigitalOcean, ONCE. Do not keep offering both every turn — state it once and move on.
+
+## cybergod.ai — SETTLED go-live (remember; do not re-litigate)
+`python golive.py` is THE one command. It automates end-to-end:
+  1) deploy.py --reuse  -> colt-web on the droplet (isolated colt-stack; never touches
+     VideoDead/Amnezia/joplin), 2) GoDaddy DNS via API, 3) provision_web.py proxy + Caddy
+     auto-TLS, 4) verify. Re-runnable, hands-off.
+- Droplet PUBLIC IP: **64.225.108.200**. cybergod.ai must A-record to this for /login to work.
+- WHY /login 404s otherwise: cybergod.ai's A-records point at GitHub Pages (185.199.108-111.153),
+  which serves static files only and cannot run the React login -> 404. Pointing the name at the
+  droplet is the fix; only the domain owner can do it (it needs a DNS credential — not a code limit).
+- The ONE irreducible human input = a **GoDaddy API key** (https://developer.godaddy.com/keys),
+  pasted ONCE into `golive.secrets.env` (gitignored; copy from golive.secrets.env.example). With it,
+  golive.py changes DNS automatically = zero browser steps. Without it, golive still deploys+TLS and
+  prints the exact 2-line manual GoDaddy change. Either way it's ONE script. Do NOT keep re-explaining.
+- Alternative (equivalent): subdomain app.cybergod.ai -> 64.225.108.200, leaves apex on Pages.
+
+## cybergod.ai — CI/CD SETTLED (2026-07, remember; this supersedes ad-hoc SSH)
+Build in GitHub, ship to droplet. NO building on the droplet, NO hand-editing its Caddyfile.
+- Pipeline: `.github/workflows/web-deploy.yml` = build `webapp/Dockerfile` -> push
+  `ghcr.io/feranicus/colt-web:{latest,sha}` -> Tailscale SSH to droplet ->
+  `docker compose -p colt-stack -f docker-compose.web.yml pull && up -d` -> append committed
+  `deploy/caddy/cybergod.caddy` block (markers `# colt:cybergod BEGIN/END`, idempotent) into
+  videodead's Caddyfile -> `caddy reload` -> verify 401. Triggered by push to webapp/**,
+  deploy/caddy/**, docker-compose.web.yml, colt_auth.py (or Run workflow).
+- `colt-web` joins EXISTING `videodead_appnet` (external) so videodead-caddy (owns :443) reaches
+  it as `http://colt-web:8000`. uvicorn binds 0.0.0.0:8000 (Dockerfile CMD). Do not touch VideoDead.
+- ROOT CAUSE of the 404/502 flip-flop: publish_landing.py pushed a CNAME (cybergod.ai) to the
+  GitHub Pages repo, so GitHub kept CLAIMING the domain while DNS was cached. FIX =
+  `python webapp/unpublish_pages.py` + clear Settings->Pages->Custom domain. DO NOT run
+  publish_landing.py for cybergod anymore; the landing is served by the droplet.
+- Full doc: `webapp/DEPLOY.md`. One-time human inputs: DNS A @/www -> 64.225.108.200;
+  make GHCR colt-web package public (or CI logs in); secrets TS_AUTHKEY/DROPLET_SSH_KEY/DROPLET_USER.
+- The `.dockerignore` whitelists (`*` then `!dir`) MUST include `!webapp` or the web build COPY fails.
+
+## cybergod.ai — ONE COMMAND (remember; automate, never hand-hold)
+`python ship_web.py` does the whole web deploy hands-off via `gh`: releases the domain from GitHub
+Pages (unpublish_pages.py + `gh api DELETE /repos/feranicus/feranicus/pages`), commits+pushes,
+`gh workflow run web-deploy.yml` + `gh run watch`, then verifies https://cybergod.ai/api/me == 401.
+Requirement: `gh` installed + `gh auth login` (one-time). GHCR pull needs no "make public" click —
+the image carries `org.opencontainers.image.source=…/electronic` (links to the public repo) and the
+deploy step also `docker login`s with the workflow token. Everything documented in README.md +
+webapp/DEPLOY.md. FUTURE RULE: any new ops need = a script + a README/DEPLOY.md update, never a
+list of manual steps in chat.
+
+## STANDING RULE — always end with the exact command to run
+After finishing ANY piece of work that the user must trigger, end the reply with a short, explicit
+"Run this:" block containing the exact command(s), copy-paste ready, with the right working directory
+(e.g. `cd "C:\Python SW\Linkedin Scraper"` then `python ship_web.py`). No vague "you can deploy now" —
+give the literal command. If there is genuinely nothing to run, say "Nothing to run." explicitly.

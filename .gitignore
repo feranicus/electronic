@@ -40,3 +40,8 @@ results.sarif
 *.pdf
 feranicus/
 jobhuntwow.com/
+.portal_url
+
+# golive one-time secrets (NEVER commit)
+golive.secrets.env
+.golive.env
