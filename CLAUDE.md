@@ -125,3 +125,18 @@ colt-promtail already tails it -> Loki -> Grafana. Dashboard `obs/grafana/dashbo
 auto-imports via import-dashboards.yml. Labels: service=colt-web, bot=webapp, evt=*. The
 web-deploy.yml ssh/scp MUST carry `-o StrictHostKeyChecking=accept-new` (host-key verify was the
 "Ship compose" failure). docker-compose.web.yml mounts colt_events + sets EVENTS_LOG/SERVICE.
+
+## STANDING RULE — CI is the single source of truth (no droplet SSH quick-fixes)
+When cybergod.ai/web breaks, DO NOT hand-edit the droplet over SSH. Fix the committed files
+(docker-compose.web.yml, deploy/caddy/cybergod.caddy, webapp/**, web-deploy.yml) and let CI apply
+them via `python ship_web.py`. The droplet is a deploy TARGET, never a source. colt-web runs from the
+GHCR image on `videodead_appnet` ONLY (docker-compose.web.yml) so videodead-caddy reaches it at
+colt-web:8000. The deploy job needs `permissions: packages: read` to pull the image. SSH is for
+READ-ONLY diagnostics only (docker ps/logs), never config changes.
+
+## cybergod.ai — the 502 root cause (single-network rule, remember)
+Intermittent 502 = colt-web was on TWO docker networks (colt + videodead_appnet). Docker DNS returns
+both IPs; videodead-caddy randomly dialed the unreachable colt-net IP. FIX/RULE: colt-web is defined
+ONLY in docker-compose.web.yml on ONLY videodead_appnet; web-deploy.yml does `up -d --force-recreate`.
+Removed the web+caddy services from docker-compose.reuse.yml so there is a single source. Never
+`docker network connect` colt-web to a 2nd network or define it in another compose file.

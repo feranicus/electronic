@@ -76,3 +76,10 @@ Rollback = re-run the workflow pinned to an older image `:<sha>`.
   `.github/workflows/import-dashboards.yml`. Manual: `python import_dashboard.py --all`.
 - Queries use `{container=~".*assess-bot.*"} | json | service=` + "`colt-web`" so they parse the JSON at
   query time (works regardless of which promtail labels are live).
+
+## Root cause of the 502 (single-network rule — do not break)
+A Docker container on TWO networks makes the embedded DNS return TWO IPs for its name; a reverse
+proxy (videodead-caddy) then randomly dials the unreachable one -> intermittent 502. So `colt-web`
+MUST be defined in ONE compose file (`docker-compose.web.yml`) on ONE network (`videodead_appnet`).
+CI deploys with `--force-recreate` so a stale multi-homed container is always replaced. Never add
+`colt-web` to another compose file or `docker network connect` it to a second network.
