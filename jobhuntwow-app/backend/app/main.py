@@ -4,7 +4,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 
-from . import qwen, store, scout
+from . import qwen, store, scout, llm
+from .proxy import router as proxy_router
 from .settings import CORS_ORIGINS
 
 app = FastAPI(title="JobHuntWOW API", version="0.1.0")
@@ -13,6 +14,9 @@ app.add_middleware(
     allow_origins=[o.strip() for o in CORS_ORIGINS.split(",")] if CORS_ORIGINS != "*" else ["*"],
     allow_methods=["*"], allow_headers=["*"], allow_credentials=False,
 )
+
+# OpenAI-compatible proxy the local agent points at (keeps the DO key server-side).
+app.include_router(proxy_router)
 
 # ---------- models ----------
 class Msg(BaseModel):
@@ -39,7 +43,7 @@ class ApplyReq(BaseModel):
 # ---------- health / config ----------
 @app.get("/api/health")
 def health():
-    return {"ok": True, "qwen_configured": qwen.configured()}
+    return {"ok": True, "qwen_configured": qwen.configured(), "models": llm.routing_table()}
 
 @app.get("/api/models")
 async def models():
@@ -81,7 +85,7 @@ def do_apply(req: ApplyReq):
         return {"status": "needs_confirmation",
                 "message": "Human gate: confirm before the Apply Driver submits.",
                 "job_id": req.job_id}
-    # v0.1: simulated step log. Real path = Page-Agent driving the ATS (next phase).
+    # v0.1: simulated step log. Real path = the LLM-driven agent driving the ATS (next phase).
     steps = [
         "read DOM - detected multi-step ATS form",
         "map fields to verified profile data",
@@ -91,4 +95,4 @@ def do_apply(req: ApplyReq):
         "SUBMITTED - captured confirmation number",
     ]
     return {"status": "submitted", "job_id": req.job_id, "steps": steps,
-            "note": "v0.1 simulated. Real submit runs through the Page-Agent apply driver."}
+            "note": "v0.1 simulated. Real submit runs through the LLM-driven apply agent."}

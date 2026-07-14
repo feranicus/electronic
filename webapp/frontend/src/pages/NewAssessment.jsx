@@ -1,6 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { startAssess, assessEventsUrl } from "../api.js";
 
+function asText(v) {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (typeof v === "object") {
+    // pretty severity-style objects as "key: value" lines; else JSON
+    try {
+      const ents = Object.entries(v);
+      if (ents.length && ents.every(([, x]) => typeof x !== "object"))
+        return ents.map(([k, x]) => k + ": " + x).join("   ");
+      return JSON.stringify(v, null, 2);
+    } catch { return String(v); }
+  }
+  return String(v);
+}
+
 export default function NewAssessment() {
   const [company, setCompany] = useState("");
   const [status, setStatus] = useState("idle"); // idle | running | done | error
@@ -93,7 +109,7 @@ export default function NewAssessment() {
           <div className="status-row"><span className="spinner" /> Working — this usually takes about two minutes.</div>
         )}
 
-        {status === "error" && <div className="err">{errMsg}</div>}
+        {status === "error" && <div className="err">{asText(errMsg)}</div>}
 
         {status === "done" && (
           <>
@@ -106,7 +122,7 @@ export default function NewAssessment() {
                 </a>
               ))}
             </div>
-            {summary && <div className="summary">{summary}</div>}
+            {summary && <div className="summary">{asText(summary)}</div>}
           </>
         )}
       </div>

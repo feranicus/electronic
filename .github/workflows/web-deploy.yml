@@ -97,7 +97,7 @@ jobs:
           echo "$GHCR_TOKEN" | docker login ghcr.io -u feranicus --password-stdin >/dev/null 2>&1 || true
           export WEB_TAG
           docker compose -p colt-stack -f docker-compose.web.yml pull
-          docker compose -p colt-stack -f docker-compose.web.yml up -d --force-recreate --remove-orphans
+          docker compose -p colt-stack -f docker-compose.web.yml up -d --force-recreate
 
           # 2) wire cybergod.ai into the shared videodead-caddy from the committed snippet (idempotent).
           CADDY_CT="$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)"
@@ -108,6 +108,8 @@ jobs:
             sed -i '/# colt:cybergod BEGIN/,/# colt:cybergod END/d' "$CF"
             sed -i '/cybergod/,/^}/d' "$CF"
             cat deploy/caddy/cybergod.caddy >> "$CF"
+            # normalize the cybergod site line (defeats any markdown/paste corruption)
+            sed -i 's#^cybergod.ai,.*{$#cybergod.ai, www.cybergod.ai {#' "$CF"
             # validate before reload so a bad config can never 502 the site
             if docker exec "$CADDY_CT" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null; then
               docker exec "$CADDY_CT" caddy reload --config /etc/caddy/Caddyfile --force 2>/dev/null \

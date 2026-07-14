@@ -36,12 +36,21 @@ CANDIDATE PC (Docker: jhw-agent)                     DO DROPLET (cloud, reuse cy
         residential IP, candidate's real browser              datacenter IP — text only
 ```
 
-**Local agent packaging:** Docker (`docker compose up` on the candidate PC), matching existing
-patterns. A friendlier installer can come later.
+**Local agent packaging:** Docker only (`docker compose up` on the candidate PC). No native/venv
+path — one container ships Chromium + Playwright + the agent.
 
-**AI approach:** reuse the cybergod SDK-free DeepSeek/DO client. Adapter-first filling; the LLM
-only reads the JD, tailors the resume/cover letter, and resolves ambiguous fields. `page-agent`
-stays as a *fallback* for ATS portals we haven't written an adapter for — not the foundation.
+**AI approach — LLM-driven, not selector-driven.** The agent does NOT rely on hardcoded CSS
+selectors (LinkedIn/ATS mutate their DOM to break exactly that — our first selector scrape came
+back empty for this reason). Instead, at every step the agent serialises the page (accessibility
+tree + interactive elements, plus a screenshot when a vision model is needed) and asks an LLM for
+the next action; deterministic code executes it and gates the final submit. We reuse
+**`browser-use`** (Python + Playwright agent, OpenAI-compatible) rather than writing our own loop.
+Because DO Serverless is OpenAI-compatible, the DO models drive it directly.
+
+**The DO key never leaves the droplet.** The agent runs on the candidate PC but points at a thin
+**OpenAI-compatible proxy on the droplet** (`/v1/chat/completions`, `/v1/models`) that injects the
+DO key, routes each request to the right model by role, and logs every call. So the agent needs
+only a per-candidate agent token, not your billing key.
 
 ---
 
@@ -71,26 +80,48 @@ stays as a *fallback* for ATS portals we haven't written an adapter for — not 
 | Component | Status | Source to reuse |
 |---|---|---|
 | Stealth Chromium + cookie-session login | **reuse** | `Linkedin Scraper/linkedin_verifier.py` (`create_stealth_context`, `load_cookies`, `human_*`, `detect_challenge`) |
-| SDK-free DeepSeek/DO LLM client (+fallback/retry) | **reuse** | `Linkedin Scraper/webapp/backend/app/assistant.py` (`_post_model`, `_call_llm`) + existing `backend/app/qwen.py` |
+| DO/OpenAI-compatible LLM client (+fallback/retry) | **reuse/extend** | existing `backend/app/qwen.py`; add `backend/app/llm.py` role-routing |
+| OpenAI-compatible proxy (`/v1/*`, key stays server-side) | **new** | `backend/app/proxy.py` in front of DO Serverless |
+| `browser-use` LLM-driven page agent | **new (reuse lib)** | pip `browser-use`, pointed at the proxy — replaces hardcoded selectors |
 | FastAPI + SSE + store skeleton | **reuse (exists)** | `jobhuntwow-app/backend/app/{main,store,scout}.py` |
 | Zero-trust auth (email+pw+OTP), signed sessions | **reuse (V1.1)** | `Linkedin Scraper/colt_auth.py` + `webapp/backend/app/auth.py` (generalize `@colt.net` regex) |
 | Retry/backoff state machine, per-item checkpoint | **reuse** | `oxford-dictionary-scraper/src/scraper.py` (`fetch_url`, checkpoint), `database.py` |
-| Per-selector field mapping → **per-ATS adapter config** | **new (from pattern)** | Oxford `parse_page` selector approach, generalized to a per-vendor selector map |
-| **jhw-agent** local runner (Docker, WS to cloud) | **new** | wraps the reused Playwright core |
-| **Workday adapter** | **new** | §4 |
+| **jhw-agent** local runner (Docker) | **new** | browser-use + Playwright + stealth context; points at cloud proxy |
+| Per-ATS **hints** (task prompts + known quirks) | **new** | injected into the agent goal, not selectors |
 | Resume/cover-letter tailoring (`tailor.py`) | **new** | uses LLM client + `pdf` skill for output |
 | CRM Kanban board | **reuse/adapt** | `jobhuntwow.com/docker-jobhuntwow/frontend` Kanban components; existing `Pipeline.jsx` |
 | Docker/Caddy deploy, GHCR CI, obs | **reuse** | `webapp/Dockerfile`, `docker-compose.web.yml`, `ship_web.py`, `obs/` |
 
 ---
 
-## 4. Workday adapter (V1's one adapter)
+## 3.5. Model routing (DO Serverless)
 
-Workday application flow is consistent across tenants (`*.myworkdayjobs.com`), which is exactly
-why it's the highest-ROI first adapter. Adapter = an ordered list of steps, each a selector map +
-a fill/action, with the LLM only consulted for free-text/ambiguous answers.
+One proxy, one routing table (`backend/app/llm.py`). Each task gets the cheapest model that's
+reliable for it; the agent driver gets the best tool-caller because a wrong click costs a real
+application. All ids are exact DO Serverless slugs.
 
-Canonical Workday steps the adapter must handle:
+| Role | Model (DO slug) | Why |
+|---|---|---|
+| `driver` — browser navigation (LinkedIn + every ATS) | `anthropic-claude-4.6-sonnet` | Best tool-calling + vision + 200K ctx; reliability is the whole point |
+| `vision` — screenshot fallback on hard pages | `nemotron-nano-12b-v2-vl` | Cheap 12B vision-language for routine "what's on screen" |
+| `content` — resume + cover-letter writing | `deepseek-3.2` | Strong writer, far cheaper than Claude for long-form |
+| `extract` — JD→requirements, profile→fields (JSON) | `llama3.3-70b-instruct` | Fast, cheap, solid JSON-mode structured output |
+| `chat` — Hermes assistant | `deepseek-3.2` | Good general chat at low cost |
+
+Cost note: the driver is the expensive path (many calls per application). V1 = correctness first
+with Claude Sonnet; a later optimisation runs a cheap model (`nemotron-nano`/`llama3.3`) for
+routine steps and escalates to Sonnet only when it stalls. Model ids live in env, so swapping
+`driver` to Opus 4.8 or DeepSeek V4 is a one-line change.
+
+## 4. The apply agent (LinkedIn handoff → Workday, LLM-driven)
+
+Built on `browser-use` with the `driver` model. Not a per-tenant selector script — a goal
+("apply to this job as this candidate") the agent pursues by reading each page. Because it reads
+the page rather than matching selectors, the SAME agent handles LinkedIn, Workday, SuccessFactors,
+Personio, etc.; per-ATS knowledge is injected as *hints* (task instructions + known quirks), not
+brittle selectors. Optional recorded selector maps become a fast-path cache later.
+
+Canonical Workday steps the agent must handle:
 1. **Job page → Apply** (`Autofill with Resume` vs `Apply Manually`). Prefer Autofill with the
    tailored resume, then correct fields.
 2. **Account** — sign in or create account (email + generated password). *Credential is generated

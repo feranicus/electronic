@@ -1,0 +1,14 @@
+# Run the local agent as a container on the candidate's PC.
+#   docker compose run --rm agent scrape 4435446898 --out /out/job.json
+#   docker compose run --rm agent apply  4435446898
+services:
+  agent:
+    build: .
+    env_file: .env
+    volumes:
+      - ./linkedin_cookies.json:/agent/linkedin_cookies.json:ro
+      - ./out:/out
+    # headed Chromium needs a display; on Win11 WSLg this is provided.
+    # For a visible browser add: network_mode: host  and mount the X socket, or run native.
+    environment:
+      - HEADLESS=${HEADLESS:-true}

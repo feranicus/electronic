@@ -16,7 +16,7 @@ export default function History() {
       <h1 className="page-h">History</h1>
       <p className="page-sub">Every assessment you've run, with the decks ready to re-download.</p>
 
-      {err && <div className="err">{err}</div>}
+      {err && <div className="err">{typeof err === "string" ? err : JSON.stringify(err)}</div>}
       {rows === null && !err && (
         <div className="status-row"><span className="spinner" /> Loading…</div>
       )}

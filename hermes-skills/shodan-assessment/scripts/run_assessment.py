@@ -507,6 +507,34 @@ def main():
         open(os.path.join(a.outdir,"findings.md"),"w").write(R.findings_md(fj))
 
     _ev(evt="phase", name="recon", status="ok", company=_tag, ms=int((_t.time()-_ts)*1000))
+
+    # --- BGP / ASN resilience -> NIS2 Art 21 continuity exposure (additive, non-fatal) ---
+    try:
+        _pg("BGP/ASN resilience + NIS2 Art 21 exposure")
+        import bgp_resilience as BGP
+        _bgp = BGP.assess(ident.get("asns", []), a.org or ident.get("org") or a.seed)
+        fj.setdefault("target", {})["bgp"] = _bgp
+        json.dump(_bgp, open(os.path.join(a.outdir, "bgp.json"), "w"), indent=2, ensure_ascii=False)
+        json.dump(fj, open(os.path.join(a.outdir, "findings.json"), "w"), indent=2, ensure_ascii=False)
+        _md = ["# BGP / ASN resilience — " + str(_bgp.get("org") or ""),
+               "",
+               "**Homing:** %s (%s) — %s" % (_bgp.get("rag"), _bgp.get("homing_status"), _bgp.get("why")),
+               "**Origin ASNs:** %s   |   **Distinct upstreams:** %d   |   **IX presence:** %d" % (
+                   (", ".join("AS%d" % x for x in _bgp.get("origin_asns", [])) or "none (uses ISP ASN)"),
+                   _bgp.get("homing_degree", 0), _bgp.get("ix_presence", 0)),
+               "",
+               "## NIS2 exposure",
+               "- Control: " + _bgp["nis2"]["control"],
+               "- " + _bgp["nis2"]["finding"],
+               "- Fine band: essential up to EUR 10M / 2%% turnover; important up to EUR 7M / 1.4%% (group turnover).",
+               "",
+               "## Colt remediation",
+               ] + ["- " + r for r in _bgp.get("colt_remediation", [])]
+        open(os.path.join(a.outdir, "bgp_resilience.md"), "w", encoding="utf-8").write("\n".join(_md) + "\n")
+        _ev(evt="bgp", company=_tag, homing=_bgp.get("homing_status"), rag=_bgp.get("rag"),
+            upstreams=_bgp.get("homing_degree"))
+    except Exception as _e:
+        print("[warn] bgp_resilience: %s" % _e, file=sys.stderr)
     # optional LLM prose polish + audit (safe: falls back to templated text on any failure)
     if os.environ.get("OPENAI_API_KEY"):
         _pg("AI enrichment: improving prose + auditing vs methodology")

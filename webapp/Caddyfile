@@ -1,6 +1,2 @@
-# cybergod.ai — auto-TLS reverse proxy to the colt-web container. Used only when nothing
-# else owns 80/443 (provision_web.py detects this and otherwise merges into the existing proxy).
-cybergod.ai, www.cybergod.ai {
-	encode zstd gzip
-	reverse_proxy web:8000
-}
+# DEPRECATED — colt-web now runs behind videodead-caddy via deploy/caddy/cybergod.caddy.
+# This bundled Caddyfile is unused. Do not deploy it.

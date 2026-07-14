@@ -140,3 +140,26 @@ both IPs; videodead-caddy randomly dialed the unreachable colt-net IP. FIX/RULE:
 ONLY in docker-compose.web.yml on ONLY videodead_appnet; web-deploy.yml does `up -d --force-recreate`.
 Removed the web+caddy services from docker-compose.reuse.yml so there is a single source. Never
 `docker network connect` colt-web to a 2nd network or define it in another compose file.
+
+## HARD RULE — no one-off SSH edits, ever (they get lost)
+Every change to the droplet MUST live in a committed artifact: a docker-compose file, a Dockerfile,
+a committed config (e.g. deploy/caddy/cybergod.caddy), or a Python/GitHub-Actions script. NEVER fix
+anything with an ad-hoc `ssh root@... "sed/docker ..."` one-liner — those are invisible to the repo
+and vanish on the next deploy. If something on the droplet is wrong, fix the committed source and run
+the ONE script that applies it:
+  - via GitHub:  `python ship_web.py`   (build -> GHCR -> web-deploy.yml -> droplet)
+  - direct:      `python deploy_web_direct.py`  (build on droplet + apply committed compose/caddy)
+Both are idempotent and self-verifying (print colt-web image/networks + caddy dials + public 401).
+deploy_web_direct.py already contains the FULL fix: build colt-web single-network (--force-recreate),
+strip+rewrite the cybergod Caddy block from deploy/caddy/cybergod.caddy, normalize the site line,
+validate, --force reload, verify. SSH is READ-ONLY diagnostics only. Windows note: run from WSL or
+ensure the deploy scripts send LF bytes (never text=True) so bash isn't fed CRLF.
+
+## HARD RULE — never `--remove-orphans` on a subset compose in a shared project
+docker-compose.web.yml defines ONLY `web`, but runs in project `colt-stack` alongside the bots +
+promtail (docker-compose.reuse.yml). `docker compose -p colt-stack -f docker-compose.web.yml up
+--remove-orphans` DELETES colt-promtail + colt-assessbot + colt-cassandra (they look like orphans to
+that file). That is why Grafana went empty (promtail gone) and the Telegram bots died. NEVER use
+--remove-orphans when deploying a single service into the shared colt-stack project. Removed it from
+deploy_web_direct.py AND web-deploy.yml. To restore promtail + bots: `python deploy.py --reuse --yes`
+(reuse.yml no longer contains `web`, so it won't touch colt-web).

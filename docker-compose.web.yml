@@ -5,13 +5,17 @@
 services:
   web:
     image: ghcr.io/feranicus/colt-web:${WEB_TAG:-latest}
+    build: {context: ., dockerfile: webapp/Dockerfile}   # direct deploys build here; CI pulls the image
     container_name: colt-web
-    env_file: [.env]
+    env_file:
+      - .env               # LOKI_URL / LOKI_NETWORK (written by the deploy)
+      - assess-bot/.env    # shared runtime secrets: COLT_BOT_PASSWORD, GMAIL_SENDER, GMAIL_SA_B64, OPENAI_*
     environment:
       - ENGINE=/opt/shodan-skill/scripts/run_assessment.py
       - ALLOWED_EMAIL_DOMAIN=colt.net
       - SERVICE=colt-web
       - EVENTS_LOG=/var/log/colt/events.log   # -> the shared volume promtail ships to Loki/Grafana
+      - SESSION_COOKIE_SECURE=1                # cookies over HTTPS only
     volumes:
       - colt_webdata:/data
       - colt_events:/var/log/colt             # same volume the bots + promtail use
