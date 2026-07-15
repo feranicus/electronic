@@ -5,12 +5,30 @@ and a Colt mitigation-mapping, writes exec_summary + a QA audit verdict. No Herm
 never changed. Safe fallback. Emits token/cost telemetry as a JSON event for Grafana/Loki."""
 import os, sys, json, time, urllib.request, urllib.error
 HERE  = os.path.dirname(os.path.abspath(__file__))
-MODEL = os.environ.get("ENRICH_MODEL", "qwen3.5-397b-a17b")
+# MODEL CHAIN — tried in order. The first model that returns contract-valid JSON wins.
+# A 429 from DO serverless is an ACCOUNT-level RPM/TPM quota (or an empty prepaid balance), so the
+# retry is worthless without a *different* model to fall over to — hence a chain, not just attempts.
+# Override per environment:  ENRICH_MODELS="deepseek-3.2,gpt-oss-120b,qwen3.5-397b-a17b"
+# NOTE: DO Tier 1/2 accounts cannot call Anthropic/OpenAI models except gpt-oss-120b / gpt-oss-20b.
+#       Run `python probe_models.py` to see what YOUR key can actually reach and which pass the
+#       JSON contract — do not guess the chain.
+_DEFAULT_CHAIN = "deepseek-3.2,gpt-oss-120b,qwen3.5-397b-a17b"
+MODELS = [m.strip() for m in os.environ.get(
+    "ENRICH_MODELS", os.environ.get("ENRICH_MODEL", _DEFAULT_CHAIN)).split(",") if m.strip()]
+MODEL = MODELS[0]                      # back-compat: telemetry/default naming
+# per-1M-token price by model (USD). Unknown models fall back to QWEN_PRICE_PER_M.
+try:
+    PRICE_MAP = json.loads(os.environ.get("ENRICH_PRICE_MAP", "{}"))
+except Exception:
+    PRICE_MAP = {}
 BASE  = os.environ.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
 KEY   = os.environ.get("OPENAI_API_KEY", "")
 PRICE = float(os.environ.get("QWEN_PRICE_PER_M", "0.65"))
 TIMEOUT  = int(os.environ.get("ENRICH_TIMEOUT", "120"))   # per-call wall budget (< pipeline subprocess timeout)
-ATTEMPTS = int(os.environ.get("ENRICH_ATTEMPTS", "1"))    # keep 1 so we never blow the pipeline budget
+ATTEMPTS = int(os.environ.get("ENRICH_ATTEMPTS", "2"))    # attempts PER MODEL (429/5xx are transient)
+BUDGET_S = int(os.environ.get("ENRICH_BUDGET_S", "230"))  # hard wall for the whole chain; run_assessment
+                                                          # kills enrich at 260s, so stop before that.
+BACKOFF  = float(os.environ.get("ENRICH_BACKOFF_S", "3")) # base for exponential backoff on 429/5xx
 
 def _bible():
     for name in ("LLM_DELTAS_BIBLE.md", "COLT_SHODAN_DECK_METHODOLOGY.md"):
@@ -53,22 +71,27 @@ def _post(payload):
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         return json.loads(r.read())
 
-def _call(text):
-    payload = {"model": MODEL, "messages": [{"role": "user", "content": text}],
+def _call(text, model=None):
+    model = model or MODEL
+    payload = {"model": model, "messages": [{"role": "user", "content": text}],
                "temperature": 0.35, "max_tokens": 5000,
                "response_format": {"type": "json_object"},
                "chat_template_kwargs": {"enable_thinking": False}}
     try:
         d = _post(payload)
-    except urllib.error.HTTPError:
-        payload.pop("response_format", None)   # model may not accept it — raw_decode still saves us
-        d = _post(payload)
+    except urllib.error.HTTPError as e:
+        if e.code in (400, 422):
+            payload.pop("response_format", None)   # model may not accept it — raw_decode still saves us
+            payload.pop("chat_template_kwargs", None)
+            d = _post(payload)
+        else:
+            raise                                   # 429/5xx must reach the retry/failover logic
     msg = d["choices"][0]["message"]
     txt = msg.get("content") or msg.get("reasoning_content") or ""
     # post-mortem log the raw model output so failures are debuggable (the "logs" to check)
     try:
         with open(os.path.join(os.environ.get("OUTDIR", "/root/work"), "enrich_last.json"), "w") as fh:
-            json.dump({"model": MODEL, "finish": d["choices"][0].get("finish_reason"),
+            json.dump({"model": model, "finish": d["choices"][0].get("finish_reason"),
                        "usage": d.get("usage", {}), "raw": txt[:8000]}, fh, indent=2)
     except Exception: pass
     return txt, d.get("usage", {}) or {}
@@ -81,10 +104,19 @@ def _json(s):
     obj, _ = json.JSONDecoder().raw_decode(s[a:])
     return obj
 
-def _emit(company, status, ti, to, cost, ms, error=""):
-    print(json.dumps({"evt": "qwen", "company": company, "model": MODEL, "status": status,
+def _emit(company, status, ti, to, cost, ms, error="", model=None, attempts=0, chain=None):
+    print(json.dumps({"evt": "qwen", "company": company, "model": model or MODEL, "status": status,
                       "tokens_in": ti, "tokens_out": to, "cost_usd": cost, "ms": ms,
-                      "error": error}), flush=True)
+                      "attempts": attempts, "chain": chain or MODELS, "error": error}), flush=True)
+
+def _price(model):
+    return float(PRICE_MAP.get(model, PRICE))
+
+def _retryable(e):
+    """429 = account RPM/TPM quota; 5xx/timeouts = transient. Both are worth a retry / failover."""
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code == 429 or 500 <= e.code < 600
+    return isinstance(e, (urllib.error.URLError, TimeoutError, OSError))
 
 def enrich(fj, lang="en"):
     company = fj["target"].get("company", "?")
@@ -97,11 +129,19 @@ def enrich(fj, lang="en"):
     prompt = PROMPT % (_bible(), (LANG_DE if str(lang).lower().startswith("de") else ""),
                        json.dumps(slim, ensure_ascii=False))
     last = ""
-    for attempt in range(ATTEMPTS):
+    t0_chain = time.time()
+    tried = 0
+    for mi, model in enumerate(MODELS):
+      for attempt in range(ATTEMPTS):
+        if time.time() - t0_chain > BUDGET_S:
+            last = last or "budget exhausted"
+            print("[warn] enrich: %ds budget exhausted — stopping chain" % BUDGET_S, file=sys.stderr)
+            break
+        tried += 1
         try:
-            t = time.time(); content, usage = _call(prompt); j = _json(content)
+            t = time.time(); content, usage = _call(prompt, model); j = _json(content)
             ti = int(usage.get("prompt_tokens", 0)); to = int(usage.get("completion_tokens", 0))
-            cost = round((ti + to) / 1e6 * PRICE, 6); ms = int((time.time() - t) * 1000)
+            cost = round((ti + to) / 1e6 * _price(model), 6); ms = int((time.time() - t) * 1000)
             def _nid(v): return "".join(ch for ch in str(v).upper() if ch.isalnum())
             by_id = {_nid(x.get("id")): x for x in j.get("findings", [])}
             for f in fj["findings"]:
@@ -120,16 +160,39 @@ def enrich(fj, lang="en"):
                     {"id": str(m.get("id","")), "finding": str(m.get("finding","")),
                      "colt": str(m.get("colt","")), "psf": str(m.get("psf","")), "oss": str(m.get("oss",""))}
                     for m in j["colt_mitigation"] if isinstance(m, dict)][:14]
-            fj["target"]["qwen"] = {"status": "ok", "model": MODEL, "tokens_in": ti, "tokens_out": to, "cost_usd": cost, "ms": ms}
-            _emit(company, "ok", ti, to, cost, ms)
-            return fj, "enriched via DELTAS BIBLE (" + MODEL + ")"
+            fj["target"]["qwen"] = {"status": "ok", "model": model, "tokens_in": ti, "tokens_out": to,
+                                    "cost_usd": cost, "ms": ms, "attempts": tried,
+                                    "failover": (mi > 0), "chain": MODELS}
+            _emit(company, "ok", ti, to, cost, ms, model=model, attempts=tried)
+            return fj, "enriched via DELTAS BIBLE (%s%s)" % (model, "  [failover]" if mi else "")
         except Exception as e:
-            import traceback; last = repr(e)
-            traceback.print_exc(file=sys.stderr)   # full reason to stderr (captured by pipeline + logs)
-            if attempt + 1 < ATTEMPTS: time.sleep(2 * (attempt + 1))
-    fj["target"]["qwen"] = {"status": "fallback", "model": MODEL, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0, "error": last[:160]}
-    _emit(company, "fallback", 0, 0, 0, 0, error=last[:160])
-    return fj, "LLM unavailable (" + last[:120] + ") — kept templated text"
+            last = repr(e)
+            code = getattr(e, "code", None)
+            print("[warn] enrich %s attempt %d/%d: %s" % (model, attempt + 1, ATTEMPTS, last[:160]),
+                  file=sys.stderr)
+            if not _retryable(e):
+                break                      # bad model name / contract error -> next model immediately
+            if attempt + 1 < ATTEMPTS:
+                # 429 = account quota: honour Retry-After when DO sends it, else exponential backoff
+                wait = BACKOFF * (2 ** attempt)
+                try:
+                    ra = e.headers.get("Retry-After") if hasattr(e, "headers") and e.headers else None
+                    if ra: wait = min(float(ra), 30)
+                except Exception: pass
+                left = BUDGET_S - (time.time() - t0_chain)
+                if wait >= left: break     # no point sleeping past the budget -> fail over now
+                print("[info] enrich: %s -> retry in %.0fs" % ("429 quota" if code == 429 else "error", wait),
+                      file=sys.stderr)
+                time.sleep(wait)
+      if time.time() - t0_chain > BUDGET_S: break
+      if mi + 1 < len(MODELS):
+          print("[info] enrich: failing over %s -> %s" % (model, MODELS[mi + 1]), file=sys.stderr)
+
+    fj["target"]["qwen"] = {"status": "fallback", "model": MODELS[0], "tokens_in": 0, "tokens_out": 0,
+                            "cost_usd": 0, "attempts": tried, "chain": MODELS, "error": last[:160]}
+    _emit(company, "fallback", 0, 0, 0, 0, error=last[:160], attempts=tried)
+    return fj, "LLM unavailable across %d model(s) %s (%s) — kept templated text" % (
+        len(MODELS), MODELS, last[:120])
 
 def main():
     p = sys.argv[1]

@@ -245,3 +245,32 @@ The customer picks the language; the SAME 4 decks are produced in English or Hoc
 - Telegram: `/assess <company>` -> inline keyboard (English/Deutsch) -> `CallbackQueryHandler`;
   pending run parked in `ctx.user_data` (per-user, so two AEs can assess at once).
   Power-user shortcut, no prompt: `/assess <company> --lang de`.
+
+## LLM model chain + the "no false findings" rule (remember)
+**There is no "best model for PPT".** The 4 decks are rendered by deterministic JS (pptxgenjs); the
+LLM only returns a JSON blob of prose. So the selection criteria are ONLY: reachable on this DO
+account/tier · contract-valid JSON · usable business prose · German when asked · latency · price.
+- `enrich.py` takes a CHAIN: `ENRICH_MODELS="deepseek-3.2,gpt-oss-120b,qwen3.5-397b-a17b"`
+  (falls back to ENRICH_MODEL, then a built-in default). Per model: `ENRICH_ATTEMPTS` (2) with
+  exponential backoff honouring `Retry-After`; then FAILOVER to the next model. Whole chain is
+  bounded by `ENRICH_BUDGET_S` (230s) because run_assessment kills enrich at 260s.
+  Telemetry: the `qwen` event now carries `attempts`, `chain`, and the model that actually WON;
+  `qwen.failover=true` when the head of the chain was skipped. Cost uses `ENRICH_PRICE_MAP` per model.
+- **A 429 from DO serverless is an ACCOUNT-level RPM/TPM quota** (Tier 1/2 = 120 RPM) or an empty
+  prepaid balance — retrying the SAME model cannot fix it, only a different model or a quota/balance
+  change. **DO Tier 1/2 cannot call Anthropic/OpenAI models at all except gpt-oss-120b / gpt-oss-20b.**
+- `python probe_models.py` = the one command to pick the chain from EVIDENCE: it lists what the key
+  can actually see (`/v1/models`), calls each candidate with the REAL enrichment contract, and scores
+  json_ok / contract_ok / German / latency, then prints the exact `ENRICH_MODELS=` line to paste.
+  `--local`, `--lang de`, `--models a,b`, `--json`. Read-only (docker exec into colt-web).
+
+## HARD RULE — absence of evidence is never a finding
+`bgp_resilience.py` graded **Cogent (AS174, a tier-1 transit network)** as
+`CRITICAL / no-ASN / 0 upstreams` — purely because container DNS died, so bgpview/crt.sh returned
+nothing and `has_own_asn = bool(asns)` read the empty list as "zero routing autonomy". That is a
+false claim in a customer-facing deck.
+RULE: when a lookup FAILS, report `UNKNOWN / data-unavailable` and claim NO NIS2 gap. Only grade
+CRITICAL/HIGH from a SUCCESSFUL lookup. `assess(asns, org, discovery_ok=)` + `_FETCH_ERRORS` +
+`data_ok` in bgp.json enforce it; run_assessment passes `discovery_ok` from whether autodiscovery
+actually returned asns/nets/ct_domains, and warns loudly when data_ok is false. This applies to EVERY
+future module: never infer a customer weakness from a failed API call.

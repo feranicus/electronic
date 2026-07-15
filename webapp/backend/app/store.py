@@ -81,12 +81,18 @@ def history(email: str) -> list:
 
 
 def _row_to_dict(r) -> dict:
+    # NOTE: this hardcodes the column list, so ANY new column must be added here too — otherwise it
+    # is silently dropped between the DB and the caller. That is exactly how `lang` was lost: the
+    # POST persisted "de", the SSE stream re-read the row, got no lang, and ran the engine in English.
+    keys = r.keys()
     return {
         "job_id": r["job_id"],
         "email": r["email"],
         "company": r["company"],
         "created": r["created"],
         "status": r["status"],
+        # tolerate a pre-migration row/DB that has no lang column at all
+        "lang": (r["lang"] if "lang" in keys and r["lang"] else "en"),
         "decks": json.loads(r["decks"] or "[]"),
         "summary": json.loads(r["summary"] or "{}"),
     }

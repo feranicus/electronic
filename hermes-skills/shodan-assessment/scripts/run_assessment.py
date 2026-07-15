@@ -517,7 +517,12 @@ def main():
     try:
         _pg("BGP/ASN resilience + NIS2 Art 21 exposure")
         import bgp_resilience as BGP
-        _bgp = BGP.assess(ident.get("asns", []), a.org or ident.get("org") or a.seed)
+        # Tell the module whether ASN AUTODISCOVERY actually worked. If bgpview/crt.sh were
+        # unreachable (container DNS down, 502), an empty ASN list means "we could not look it up",
+        # NOT "this org has no routing autonomy" — the latter is a false CRITICAL in a customer deck.
+        _disc_ok = bool(ident.get("asns")) or bool(ident.get("nets")) or bool(ident.get("ct_domains"))
+        _bgp = BGP.assess(ident.get("asns", []), a.org or ident.get("org") or a.seed,
+                          discovery_ok=_disc_ok)
         fj.setdefault("target", {})["bgp"] = _bgp
         json.dump(_bgp, open(os.path.join(a.outdir, "bgp.json"), "w"), indent=2, ensure_ascii=False)
         json.dump(fj, open(os.path.join(a.outdir, "findings.json"), "w"), indent=2, ensure_ascii=False)
@@ -537,7 +542,12 @@ def main():
                ] + ["- " + r for r in _bgp.get("colt_remediation", [])]
         open(os.path.join(a.outdir, "bgp_resilience.md"), "w", encoding="utf-8").write("\n".join(_md) + "\n")
         _ev(evt="bgp", company=_tag, homing=_bgp.get("homing_status"), rag=_bgp.get("rag"),
-            upstreams=_bgp.get("homing_degree"))
+            upstreams=_bgp.get("homing_degree"), data_ok=_bgp.get("data_ok"),
+            lookup_errors=len(_bgp.get("lookup_errors") or []))
+        if not _bgp.get("data_ok"):
+            print("[warn] BGP resilience NOT determined (lookup failed) — reported as UNKNOWN, "
+                  "no NIS2 gap claimed. Fix container DNS / retry before using this slide.",
+                  file=sys.stderr)
     except Exception as _e:
         print("[warn] bgp_resilience: %s" % _e, file=sys.stderr)
     # optional LLM prose polish + audit (safe: falls back to templated text on any failure)

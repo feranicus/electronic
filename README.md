@@ -160,3 +160,20 @@ Audit which strings are not yet translated:
 DECK_LANG=de DECK_I18N_AUDIT=1 DECK_I18N_AUDIT_OUT=/tmp/audit.json \
   node hermes-skills/shodan-assessment/scripts/build_cbiq_deck.js cbiq.json /tmp/out.pptx
 ```
+
+## Choosing the enrichment model (and surviving a 429)
+The LLM writes only the deck PROSE (JSON); the slides themselves are deterministic JS. So pick the
+model on: reachable on your DO tier, contract-valid JSON, German quality, latency, price.
+
+```
+python probe_models.py            # what your key can reach + which pass the real contract
+python probe_models.py --lang de  # also check the German output
+```
+
+It prints an `ENRICH_MODELS="a,b,c"` line — put it in `assess-bot/.env` on the droplet. enrich.py
+retries each model with backoff (honouring `Retry-After`), then fails over to the next, inside a
+230s budget.
+
+A `429` from DO serverless is an **account** RPM/TPM quota (Tier 1/2 = 120 RPM) or an empty prepaid
+balance — not a model fault. Tier 1/2 cannot use Anthropic/OpenAI models except `gpt-oss-*`.
+Check https://cloud.digitalocean.com/limits.
