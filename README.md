@@ -111,3 +111,25 @@ reloads, and verifies `401`. Nothing is built on the droplet; nothing is hand-ed
 `GRAFANA_TOKEN`, `TS_AUTHKEY`, `PATCH_TG_CHAT` (optional). Repo variables: `SPACES_REGION`, `SPACES_BUCKET`,
 `GRAFANA_URL`, `TAILNET_HOST`. Runtime app secrets (bot tokens, Shodan/DO keys, `COLT_BOT_PASSWORD`,
 `GMAIL_SA_B64`) live **only** in the droplet's `.env` — never in git.
+
+## Cost tracking (per assessment / per day / all-time)
+Every completed assessment is appended to a persistent SQLite ledger on the droplet's shared
+`colt_events` volume (`/var/log/colt/cost_ledger.sqlite`) by
+`hermes-skills/shodan-assessment/scripts/cost_ledger.py`. Unlike Loki (which ages out with
+retention), the ledger is the books-of-record for spend.
+
+```
+python cost_report.py                 # lifetime + per-day + per-company (read-only over SSH)
+python cost_report.py --json          # machine-readable
+python cost_report.py --no-backfill   # skip seeding history from events.log
+python cost_report.py --local ledger.sqlite
+```
+
+Grafana ("Colt Bots Observability"):
+- **Cost** row — cost today (24h), cost over the selected range, avg/assessment, cost per day (bars),
+  cost per assessment by company (table). Bounded by Loki retention.
+- **Lifetime (persistent ledger)** row — true all-time cost/assessments/avg/tokens, from the ledger's
+  cumulative `cost_snapshot` event. Not bounded by retention.
+
+Cost covers AI inference (DeepSeek/QWEN, ~$0.0065 per assessment). The Shodan plan and the droplet
+are flat subscriptions and are intentionally out of scope.

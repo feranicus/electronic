@@ -590,9 +590,24 @@ def main():
     s=fj["summary"]
     if fj.get("target",{}).get("qa_note"): print(fj["target"]["qa_note"])
     q = fj.get("target", {}).get("qwen", {}) or {}
+    _ms = int((_t.time()-_t0)*1000)
     _ev(evt="assess_done", company=co, crit=s["critical"], high=s["high"], med=s["medium"], low=s["low"],
         decks=sum(1 for x in (ok1, ok2, ok3) if x), qwen_used=(q.get("status") == "ok"),
-        qwen_model=q.get("model"), qwen_cost_usd=q.get("cost_usd", 0), total_ms=int((_t.time()-_t0)*1000))
+        qwen_model=q.get("model"), qwen_cost_usd=q.get("cost_usd", 0), total_ms=_ms)
+    # --- persistent cost ledger (survives Loki retention) + lifetime snapshot for Grafana ---
+    try:
+        import cost_ledger as _CL
+        _tot = _CL.record(company=co, cost_usd=q.get("cost_usd", 0),
+                          tokens_in=q.get("tokens_in", 0), tokens_out=q.get("tokens_out", 0),
+                          model=q.get("model"), crit=s["critical"], high=s["high"],
+                          med=s["medium"], low=s["low"], total_ms=_ms,
+                          user=os.environ.get("COLT_USER"), source=os.environ.get("SERVICE", "bot"))
+        if _tot:
+            # cumulative values -> a single snapshot line lets Grafana show TRUE lifetime totals
+            # (last_over_time) no matter how much history Loki has already aged out.
+            _ev(evt="cost_snapshot", ledger=_CL.LEDGER, **_tot)
+    except Exception as _e:
+        print(f"[warn] cost ledger: {_e}", file=sys.stderr)
     _pg("AI enrichment: " + (f"{q.get('status')} - {q.get('model')} - {q.get('tokens_in',0)+q.get('tokens_out',0)} tok - ~${q.get('cost_usd',0):.4f}" if q else "not used"))
     print("==== ASSESSMENT COMPLETE ====")
     print(f"Company: {co}   scope: {fj['target']['scope']}")

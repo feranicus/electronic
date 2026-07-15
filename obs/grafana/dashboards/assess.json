@@ -1780,6 +1780,207 @@
           "expr": "sum by (company) (sum_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` | unwrap qwen_cost_usd [$__range]))"
         }
       ]
+    },
+    {
+      "id": 23,
+      "type": "row",
+      "title": "Lifetime (persistent ledger \u2014 survives Loki retention)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Cost \u2014 LIFETIME (all time, ledger)",
+      "description": "TRUE all-time spend, read from the persistent SQLite ledger on the colt_events volume. Each assessment appends a cumulative `cost_snapshot`, so this is correct even after Loki has aged out the original lines. Source of truth: `python cost_report.py`.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 63
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "last_over_time({container=~\".*assess-bot.*\"} | json | evt=`cost_snapshot` | unwrap lifetime_usd [$__range])",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "Assessments \u2014 LIFETIME (ledger)",
+      "description": "Total assessments ever run, from the persistent ledger.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 63
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "last_over_time({container=~\".*assess-bot.*\"} | json | evt=`cost_snapshot` | unwrap assessments_total [$__range])",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Avg cost / assessment \u2014 LIFETIME",
+      "description": "Lifetime spend / lifetime assessment count, from the ledger.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 63
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "last_over_time({container=~\".*assess-bot.*\"} | json | evt=`cost_snapshot` | unwrap avg_usd [$__range])",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Tokens out \u2014 LIFETIME",
+      "description": "Cumulative QWEN/DeepSeek output tokens, from the ledger.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 63
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "last_over_time({container=~\".*assess-bot.*\"} | json | evt=`cost_snapshot` | unwrap tokens_out_total [$__range])",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      }
     }
   ]
 }

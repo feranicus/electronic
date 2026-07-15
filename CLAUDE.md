@@ -195,3 +195,20 @@ Grafana "Colt Bots Observability" has a **Cost** row driven by those:
 Panel titles MUST state the window (24h vs selected range); mixing them is what looked like a
 "discrepancy". Stats set noValue="0" (so quiet != "No data") and multi-query panels name series via
 byFrameRefID overrides (else Grafana shows "Value #A").
+
+## Cost ledger — TRUE all-time cost (remember; Loki is NOT the books of record)
+Loki ages out with retention, so "cost since the beginning of time" can never come from logs.
+Source of truth = **SQLite ledger** `hermes-skills/shodan-assessment/scripts/cost_ledger.py` at
+`/var/log/colt/cost_ledger.sqlite` on the PERSISTENT shared `colt_events` volume (mounted by BOTH
+the bots and colt-web) -> survives redeploys, image rebuilds and Loki retention.
+- `run_assessment.py` calls `cost_ledger.record(...)` right after `assess_done`, then emits a
+  cumulative `cost_snapshot` event (lifetime_usd, assessments_total, avg_usd, tokens_*_total).
+- Grafana shows lifetime via `last_over_time(... evt=cost_snapshot | unwrap lifetime_usd [$__range])`
+  — a CUMULATIVE snapshot, so it stays correct even after Loki drops the old lines. NO new
+  datasource/plugin needed (no Infinity/SQLite plugin, no Prometheus scrape of colt-web).
+- `python cost_report.py` = the one command: READ-ONLY ssh + `docker exec colt-web python3
+  /opt/shodan-skill/scripts/cost_ledger.py --backfill --snapshot` -> prints lifetime / per-day /
+  per-company. `--backfill` seeds pre-ledger history from events.log and is IDEMPOTENT (dedupe on
+  ts+company), so re-running never double-counts. `--json` for machines, `--local PATH` for a copy.
+- Cost = AI inference only (DeepSeek/QWEN ~$0.0065/assessment). Shodan plan + droplet are flat
+  subscriptions, not per-assessment, so they are deliberately NOT in the ledger.

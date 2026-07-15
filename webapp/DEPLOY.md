@@ -96,3 +96,15 @@ One gate for the web AND the Telegram bots: `colt_auth.email_allowed()`.
 Auth is unchanged: shared `COLT_BOT_PASSWORD` + a 6-digit OTP emailed via the Gmail API to that
 address. External partners receive the code in their own inbox, so possession of the mailbox is
 still required.
+
+## Cost ledger (all-time cost that outlives Loki retention)
+Grafana's Loki-based cost panels are bounded by log retention. The persistent record is a SQLite
+ledger on the shared `colt_events` volume: `/var/log/colt/cost_ledger.sqlite`
+(`hermes-skills/shodan-assessment/scripts/cost_ledger.py`, env `COST_LEDGER` to override).
+
+- Written by `run_assessment.py` on every completed assessment (bots AND colt-web — both mount the
+  same volume), which then emits a cumulative `cost_snapshot` event.
+- The dashboard row "Lifetime (persistent ledger)" reads that snapshot with `last_over_time(...)`,
+  so it reports true all-time totals with no extra datasource or plugin.
+- Report / backfill / refresh, all read-only on the droplet:
+  `python cost_report.py`   (add `--json`, `--no-backfill`, or `--local <path>`)
