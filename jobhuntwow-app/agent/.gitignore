@@ -5,3 +5,5 @@ linkedin_cookies.json
 .env
 __pycache__/
 credentials.json
+events.jsonl
+wd_*.json

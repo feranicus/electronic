@@ -13,7 +13,7 @@ try:
 except Exception:
     ask = None
 
-CDP_URL = os.getenv("JHW_CDP_URL", "http://localhost:9222")
+CDP_URL = os.getenv("JHW_CDP_URL", "http://127.0.0.1:9222").replace("localhost", "127.0.0.1")
 JOB_URL = "https://www.linkedin.com/jobs/view/{jid}/"
 APPLY_SEL = "button.jobs-apply-button, .jobs-s-apply button, button.jobs-apply-button--top-card"
 LOGIN_TIMEOUT = int(os.getenv("JHW_LOGIN_TIMEOUT", "480"))

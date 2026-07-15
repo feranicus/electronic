@@ -449,9 +449,12 @@ def derive_geopol(fj, ident, cj=None):
         "actors":actors,"anchorCase":anchorCase,"killChain":kc,"cbiqBridge":bridge}
 
 # ---------------- orchestration ----------------
-def _node_build(script, in_json, out_pptx):
+def _node_build(script, in_json, out_pptx, lang="en"):
+    # DECK_LANG is read by scripts/i18n/deck_i18n.js, which is installed on the pptx object inside
+    # every builder. en -> the builders behave exactly as before (zero-diff); de -> Hoch-Deutsch.
+    env = dict(os.environ, DECK_LANG=("de" if str(lang).lower().startswith("de") else "en"))
     r = subprocess.run(["node", os.path.join(HERE, script), in_json, out_pptx],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=env)
     if r.returncode != 0:
         print(f"[warn] {script}: {r.stderr.strip()[:300]}", file=sys.stderr); return False
     return True
@@ -467,6 +470,8 @@ def main():
     ap.add_argument("--jarm", action="append", default=[]); ap.add_argument("--cpe", action="append", default=[])
     ap.add_argument("--from-findings"); ap.add_argument("--company")
     ap.add_argument("--outdir", default="."); ap.add_argument("--audience")
+    ap.add_argument("--lang", default=os.environ.get("DECK_LANG", "en"),
+                    choices=["en", "de"], help="language of the 4 generated decks (en|de)")
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     import time as _t
@@ -545,9 +550,10 @@ def main():
         except Exception as e:
             print(f"[warn] findings_raw snapshot failed: {e}", file=sys.stderr)
         try:
-            r = subprocess.run(["python3", os.path.join(HERE, "enrich.py"), os.path.join(a.outdir, "findings.json")],
+            r = subprocess.run(["python3", os.path.join(HERE, "enrich.py"),
+                                os.path.join(a.outdir, "findings.json"), a.lang],
                                timeout=260, capture_output=True, text=True,
-                               env={**os.environ, "OUTDIR": a.outdir})
+                               env={**os.environ, "OUTDIR": a.outdir, "DECK_LANG": a.lang})
             if r.stdout: print(r.stdout, end="")          # enrich's own {"evt":"qwen"} + status line
             if r.returncode != 0:
                 print(f"[warn] enrich exit={r.returncode}: {r.stderr.strip()[-500:]}", file=sys.stderr)
@@ -567,15 +573,29 @@ def main():
     json.dump(gj, open(os.path.join(a.outdir,"geopol.json"),"w"), indent=2, ensure_ascii=False)
 
     # 3) build all 3 decks
-    d1=os.path.join(a.outdir,f"{safe}_Shodan_Findings.pptx")
-    d2=os.path.join(a.outdir,f"{safe}_C-BIQ.pptx")
-    d3=os.path.join(a.outdir,f"{safe}_GEOPOL.pptx")
-    ok1=_node_build("build_findings_deck.js", os.path.join(a.outdir,"findings.json"), d1)
-    ok2=_node_build("build_cbiq_deck.js",     os.path.join(a.outdir,"cbiq.json"),     d2)
-    ok3=_node_build("build_geopol_deck.js",   os.path.join(a.outdir,"geopol.json"),   d3)
+    _L = "_DE" if str(a.lang).lower().startswith("de") else ""   # EN keeps today's exact filenames
+    d1=os.path.join(a.outdir,f"{safe}_Shodan_Findings{_L}.pptx")
+    d2=os.path.join(a.outdir,f"{safe}_C-BIQ{_L}.pptx")
+    d3=os.path.join(a.outdir,f"{safe}_GEOPOL{_L}.pptx")
+    # DE: translate the engine's own deterministic English (finding titles, Colt controls, bucket
+    # names) BEFORE the decks render. LLM prose is already German (enrich.py); deck chrome is done
+    # by deck_i18n.js. All three streams read the SAME committed dictionary, so terms never diverge.
+    if str(a.lang).lower().startswith("de"):
+        try:
+            sys.path.insert(0, os.path.join(HERE, "i18n"))
+            import i18n as _I18N
+            for _f in ("findings.json", "cbiq.json", "geopol.json"):
+                _I18N.translate_file(os.path.join(a.outdir, _f), "de")
+            _pg("Sprache: Hochdeutsch — Dokumente werden auf Deutsch erzeugt")
+        except Exception as _e:
+            print(f"[warn] i18n pass: {_e}", file=sys.stderr)
+
+    ok1=_node_build("build_findings_deck.js", os.path.join(a.outdir,"findings.json"), d1, a.lang)
+    ok2=_node_build("build_cbiq_deck.js",     os.path.join(a.outdir,"cbiq.json"),     d2, a.lang)
+    ok3=_node_build("build_geopol_deck.js",   os.path.join(a.outdir,"geopol.json"),   d3, a.lang)
 
     # 3b) 4th deck — DELTAS (raw scan vs QWEN pursuit) — only when QWEN actually ran
-    d4=os.path.join(a.outdir,f"{safe}_DELTAS.pptx")
+    d4=os.path.join(a.outdir,f"{safe}_DELTAS{_L}.pptx")
     ok4=False
     if fj.get("target",{}).get("qwen",{}).get("status")=="ok":
         _pg("Building DELTAS deck (raw scan vs QWEN pursuit)")
@@ -583,7 +603,8 @@ def main():
         r=subprocess.run(["node", os.path.join(HERE,"build_deltas_deck.js"),
                           raw_fp, os.path.join(a.outdir,"findings.json"), d4,
                           os.path.join(a.outdir,"cbiq.json"), os.path.join(a.outdir,"geopol.json")],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True,
+                         env=dict(os.environ, DECK_LANG=("de" if str(a.lang).lower().startswith("de") else "en")))
         ok4=(r.returncode==0)
         if not ok4: print(f"[warn] build_deltas_deck.js: {r.stderr.strip()[:300]}", file=sys.stderr)
 
@@ -591,7 +612,7 @@ def main():
     if fj.get("target",{}).get("qa_note"): print(fj["target"]["qa_note"])
     q = fj.get("target", {}).get("qwen", {}) or {}
     _ms = int((_t.time()-_t0)*1000)
-    _ev(evt="assess_done", company=co, crit=s["critical"], high=s["high"], med=s["medium"], low=s["low"],
+    _ev(evt="assess_done", company=co, lang=a.lang, crit=s["critical"], high=s["high"], med=s["medium"], low=s["low"],
         decks=sum(1 for x in (ok1, ok2, ok3) if x), qwen_used=(q.get("status") == "ok"),
         qwen_model=q.get("model"), qwen_cost_usd=q.get("cost_usd", 0), total_ms=_ms)
     # --- persistent cost ledger (survives Loki retention) + lifetime snapshot for Grafana ---

@@ -93,7 +93,8 @@ function remRows(f) {
 
 
 // ---------- presentation ----------
-const pres = new pptxgen();
+const I18N = require("./i18n/deck_i18n");   // EN by default; DECK_LANG=de -> Hoch-Deutsch
+const pres = I18N.install(new pptxgen());   // translates every string at the pptxgenjs boundary
 pres.layout = "LAYOUT_16x9"; // 10 x 5.625"
 pres.author = "Colt Sales Engineering";
 pres.title = (t.company || "Target") + " " + EMDASH + " External Attack Surface Assessment";

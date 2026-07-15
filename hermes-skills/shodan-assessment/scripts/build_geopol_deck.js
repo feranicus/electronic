@@ -53,7 +53,8 @@ const asText = v => Array.isArray(v) ? v.filter(x => x != null).map(String).join
   : (v == null ? "" : String(v));
 
 // ---------- presentation ----------
-const pres = new pptxgen();
+const I18N = require("./i18n/deck_i18n");   // EN by default; DECK_LANG=de -> Hoch-Deutsch
+const pres = I18N.install(new pptxgen());   // translates every string at the pptxgenjs boundary
 pres.layout = "LAYOUT_16x9"; // 10 x 5.625"
 pres.author = "Colt / S4Biz Sales Engineering";
 pres.title = cust + " " + EMDASH + " GEOPOL Cyber Threat Assessment";

@@ -59,7 +59,8 @@ const cbiqRows = (Array.isArray(cbiq.findings) ? cbiq.findings : []).filter(f =>
 const geoAfter = (geopol && geopol.sectorContext) ? String(geopol.sectorContext).trim() : (et.geopol_context ? String(et.geopol_context).trim() : "");
 
 // ---------- presentation ----------
-const pres = new pptxgen();
+const I18N = require("./i18n/deck_i18n");   // EN by default; DECK_LANG=de -> Hoch-Deutsch
+const pres = I18N.install(new pptxgen());   // translates every string at the pptxgenjs boundary
 pres.layout = "LAYOUT_16x9";
 pres.author = "Colt Sales Engineering";
 pres.title = company + " " + EMDASH + " What " + BRAND + " Added (raw vs pursuit-grade)";

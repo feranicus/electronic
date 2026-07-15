@@ -11,12 +11,12 @@ from __future__ import annotations
 import argparse, asyncio, json, os, re, secrets, sys, time
 import httpx
 from browser_use import Agent, BrowserSession, BrowserProfile, ChatOpenAI, Tools
-import ask
+import ask, obs
 from flows import linkedin, workday, page_agent, llm_driver
 
 PROXY   = os.getenv("JHW_PROXY_BASE", "http://host.docker.internal:8000/v1")
 TOKEN   = os.getenv("AGENT_PROXY_TOKEN", "none")
-CDP_URL = os.getenv("JHW_CDP_URL", "http://localhost:9222")
+CDP_URL = os.getenv("JHW_CDP_URL", "http://127.0.0.1:9222").replace("localhost", "127.0.0.1")
 COOKIES = os.getenv("LINKEDIN_COOKIES", "/agent/linkedin_cookies.json")
 OUT     = os.getenv("JHW_OUT", "/agent/out")
 DATA    = os.getenv("JHW_DATA", "/agent/templates/resume_data.json")
@@ -222,27 +222,21 @@ async def run_apply(jid):
     ats = (prep.get("ats_url") or "").lower()
 
     if prep["apply_type"] == "external" and re.search(r"myworkday|workday", ats):
-        print("[i] Workday — FULLY DETERMINISTIC apply (Playwright autofill + text-only LLM for "
-              "questions). NO browser-use, NO screenshots, NO vision.")
-        wd = await workday.drive(creds, data, resume_path, llm_answer)
+        # Per RESEARCH_ATS_AUTOMATION.md: deterministic Playwright + verified selector map is the ONLY
+        # approach with a working track record. The LLM answers free text; it NEVER drives the browser.
+        print("[i] Workday — DETERMINISTIC driver: deep-link -> verified selector map (fallback chains) "
+              "-> resume upload + server-side parse wait -> Save and Continue. LLM = free-text only.")
+        obs.event("apply_start", job=jid, ats="workday")
+        _t0 = time.time()
+        wd = await workday.drive(creds, data, resume_path, llm_answer, prep.get("ats_url", ""))
+        obs.event("apply_" + ("review" if wd["stage"] == "review" else
+                              "blocked" if wd["stage"] == "blocked" else "paused"),
+                  job=jid, stage=wd["stage"], filled=len(set(wd["filled"])),
+                  ms=int((time.time() - _t0) * 1000), note=wd["note"])
         print(f"[i] Workday -> ok={wd['ok']} stage={wd['stage']} filled={sorted(set(wd['filled']))}")
         print("    " + wd["note"])
-        if wd["stage"] != "review":
-            # TIER 2: Alibaba page-agent (in-page LLM). Needs the CDN — may be blocked in the sandbox.
-            print("[i] deterministic stalled — TIER 2: Alibaba page-agent (in-page LLM) …")
-            pa = await page_agent.run(PAGEAGENT_FINISH.format(candidate=block))
-            print(f"[i] page-agent -> ok={pa['ok']} :: {pa['note']}")
-            if pa.get("ok"):
-                await ask.notify(f"Workday finished via page-agent. {pa['note']}")
-            else:
-                # TIER 3: OUR direct-LLM DOM driver (proxy, no CDN) + Telegram for missing values.
-                print("[i] page-agent unavailable — TIER 3: direct-LLM DOM driver (our proxy + Telegram) …")
-                ld = await llm_driver.run(block, resume_path)
-                print(f"[i] llm-driver -> ok={ld['ok']} steps={ld['steps']} :: {ld['note']}")
-                print("    actions: " + ", ".join(ld.get("actions", [])[:30]))
-                await ask.notify(f"Workday finish (direct-LLM, {ld['steps']} steps): {ld['note']}")
-        else:
-            await ask.notify(f"Red Hat / Workday reached Review. {wd['note']}")
+        if wd["stage"] == "review":
+            await ask.notify(f"Workday reached Review — check it and submit. {wd['note']}")
         print("\n[i] Review in noVNC (localhost:9090) and click Submit yourself if ready.")
         return
     if prep["apply_type"] == "external":

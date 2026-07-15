@@ -1,16 +1,23 @@
-"""Deterministic Workday ATS driver (Playwright over CDP) — NO LLM, NO vision.
+"""Deterministic Workday driver — built on VERIFIED research (see agent/RESEARCH_ATS_AUTOMATION.md).
 
-Workday tags every field with a stable `data-automation-id`, so the whole account + My-Information +
-resume-upload flow is deterministic and fast. We drive it to the screening-questions / Review stage and
-STOP; the LLM (agent.py) only finishes leftover custom questions. Never clicks the final Submit.
+Implements the 5 researched fixes:
+  1. RESUME PARSE WAIT — Workday parses the resume SERVER-SIDE and may overwrite fields. Delete any
+     existing attachment first (else uploads stack), upload, then WAIT for the parse to complete before
+     clicking Save and Continue. THIS was the bug that stalled every run.
+  2. DEEP-LINK to {job}/apply/applyManually — skips `adventureButton`, which reference repos had to
+     click twice (flaky). Workday bounces to auth, then returns to the apply flow.
+  3. SELECTOR MAP AS DATA with fallback chains (selectors/workday.json) — tenants run different Workday
+     UI versions; a single selector silently fails.
+  4. SELECTOR = RUNTIME ASSERTION — on an unknown page or a persistent error we HALT and tell the human
+     on Telegram. We never guess. (Kills "hallucinated success", the #1 agent failure mode.)
+  5. LLM ONLY FOR FREE TEXT — screening answers via a text-only model. The LLM NEVER drives the browser.
 
-Returned dict: {ok, stage, filled[], note, needs_llm}. `needs_llm=True` means hand the CURRENT page to
-the LLM to finish (questions/voluntary-disclosures), then a human submits in noVNC.
+Never submits. Stops at Review for the human.
 """
 from __future__ import annotations
 import asyncio, json, os, re, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # /agent (for `import ask`)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))                    # /agent/flows (for autofill)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # /agent  (import ask)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))                    # /agent/flows
 from playwright.async_api import async_playwright
 try:
     import ask
@@ -21,10 +28,89 @@ try:
 except Exception:
     autofill = None
 
-CDP_URL  = os.getenv("JHW_CDP_URL", "http://localhost:9222")
+CDP_URL  = os.getenv("JHW_CDP_URL", "http://127.0.0.1:9222").replace("localhost", "127.0.0.1")
 ACCOUNTS = os.path.join(os.getenv("JHW_OUT", "/agent/out"), "ats_accounts.json")
+SEL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selectors", "workday.json")
 
 
+def _load_selectors() -> dict:
+    try:
+        return {k: v for k, v in json.load(open(SEL_FILE, encoding="utf-8")).items() if not k.startswith("_")}
+    except Exception as e:
+        print(f"[wd] selector map missing ({e}) — using empty map", flush=True)
+        return {}
+
+
+SEL = _load_selectors()
+
+
+def _chain(key) -> list:
+    v = SEL.get(key, [])
+    return v if isinstance(v, list) else [v]
+
+
+# ---------- selector helpers (#3 fallback chains) --------------------------------------------------
+async def _first(page, key, t=1500):
+    """First VISIBLE locator in the fallback chain, else None."""
+    for s in _chain(key):
+        try:
+            loc = page.locator(s).first
+            await loc.wait_for(state="visible", timeout=t)
+            return loc
+        except Exception:
+            continue
+    return None
+
+
+async def _present(page, key):
+    """First PRESENT locator (visibility not required) — for hidden file inputs."""
+    for s in _chain(key):
+        try:
+            loc = page.locator(s)
+            if await loc.count() > 0:
+                return loc.first
+        except Exception:
+            continue
+    return None
+
+
+async def _has(page, key, t=1200) -> bool:
+    return (await _first(page, key, t)) is not None
+
+
+async def _click(page, key, t=4000) -> bool:
+    el = await _first(page, key, t)
+    if not el:
+        return False
+    try:
+        await el.click(); await page.wait_for_timeout(600); return True
+    except Exception:
+        return False
+
+
+async def _fill(page, key, value, t=4000) -> bool:
+    if not value:
+        return False
+    el = await _first(page, key, t)
+    if not el:
+        return False
+    try:
+        await el.click(); await el.fill(str(value)); return True
+    except Exception:
+        return False
+
+
+async def _click_role(page, role, name_rx, t=3000) -> bool:
+    """Text/ARIA fallback when a tenant's data-automation-id differs."""
+    try:
+        el = page.get_by_role(role, name=re.compile(name_rx, re.I)).first
+        await el.wait_for(state="visible", timeout=t); await el.click()
+        await page.wait_for_timeout(600); return True
+    except Exception:
+        return False
+
+
+# ---------- credentials ----------------------------------------------------------------------------
 def _host(url: str) -> str:
     m = re.search(r"https?://([^/]+)", url or "")
     return m.group(1).lower() if m else ""
@@ -53,122 +139,63 @@ async def _ask(q: str) -> str:
             return ""
     return ""
 
-# --- Workday stable selectors (data-automation-id) -------------------------------------------------
-S = {
-    "cookie":        "#onetrust-accept-btn-handler, [data-automation-id='legalNoticeAcceptButton']",
-    "apply":         "[data-automation-id='adventureButton'], a[data-automation-id='adventureButton']",
-    "apply_manual":  "[data-automation-id='applyManually']",
-    "email":         "[data-automation-id='email']",
-    "password":      "[data-automation-id='password']",
-    "verify_pw":     "[data-automation-id='verifyPassword']",
-    "acct_checkbox": "[data-automation-id='createAccountCheckbox']",
-    "create_link":   "[data-automation-id='createAccountLink']",
-    "signin_link":   "[data-automation-id='signInLink']",
-    "create_submit": "[data-automation-id='createAccountSubmitButton']",
-    "signin_submit": "[data-automation-id='signInSubmitButton'], [data-automation-id='click_filter']",
-    "first_name":    "[data-automation-id='legalNameSection_firstName']",
-    "last_name":     "[data-automation-id='legalNameSection_lastName']",
-    "addr1":         "[data-automation-id='addressSection_addressLine1']",
-    "city":          "[data-automation-id='addressSection_city']",
-    "postal":        "[data-automation-id='addressSection_postalCode']",
-    "phone":         "[data-automation-id='phone-number']",
-    "file_input":    "input[type='file'], input[data-automation-id='file-upload-input-ref']",
-    "next":          "[data-automation-id='pageFooterNextButton'], [data-automation-id='bottom-navigation-next-button']",
-    "error":         "[data-automation-id='errorMessage'], [data-automation-id='alertMessage']",
-}
+
+async def _notify(m: str):
+    if ask:
+        try:
+            await ask.notify(m)
+        except Exception:
+            pass
 
 
-async def _connect(pw):
-    browser = await pw.chromium.connect_over_cdp(CDP_URL)
-    ctx = browser.contexts[0] if browser.contexts else await browser.new_context()
-    # Use the MOST RECENT Workday tab (this run's), not the first stale one from earlier attempts.
-    wd = [p for p in ctx.pages if re.search(r"myworkday|workday", (p.url or ""), re.I)]
-    page = wd[-1] if wd else (ctx.pages[-1] if ctx.pages else await ctx.new_page())
-    # close older stale Workday tabs so they can't confuse future runs
-    for p in wd[:-1]:
-        try: await p.close()
-        except Exception: pass
-    return browser, ctx, page
+def _split_address(addr: str):
+    line1, postal, city = addr, "", ""
+    parts = [p.strip() for p in addr.split(",")]
+    if parts:
+        line1 = parts[0]
+    rest = " ".join(parts[1:]) if len(parts) > 1 else ""
+    m = re.search(r"\b(\d{4,6})\b", rest)
+    if m:
+        postal = m.group(1)
+        city = re.sub(r"\(.*?\)", "", rest.replace(postal, "")).strip()
+    return line1, postal, city
 
 
-# probe JS (same as flows/probe.py) — dump real fields/buttons/ids so we write selectors from truth
-_PROBE_JS = r"""
-() => {
-  const vis = (el)=>{const r=el.getBoundingClientRect();const s=getComputedStyle(el);
-    return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none';};
-  const lab=(el)=>{let t='';if(el.id){const l=document.querySelector(`label[for="${el.id}"]`);if(l)t=l.innerText;}
-    if(!t){const l=el.closest('label');if(l)t=l.innerText;}return (t||'').replace(/\s+/g,' ').trim().slice(0,80);};
-  const pick=(el)=>({tag:el.tagName.toLowerCase(),type:el.getAttribute('type')||'',
-    dai:el.getAttribute('data-automation-id')||'',name:el.getAttribute('name')||'',id:el.id||'',
-    ph:el.getAttribute('placeholder')||'',aria:el.getAttribute('aria-label')||'',label:lab(el),
-    text:(el.innerText||'').replace(/\s+/g,' ').trim().slice(0,60)});
-  return {url:location.href,
-    inputs:[...document.querySelectorAll('input,textarea,select')].filter(vis).map(pick),
-    buttons:[...document.querySelectorAll('button,[role=button],a')].filter(vis).map(pick).filter(b=>b.text||b.dai||b.aria),
-    dais:[...new Set([...document.querySelectorAll('[data-automation-id]')].map(e=>e.getAttribute('data-automation-id')))].slice(0,150)};
-}
-"""
-
-
-async def _dump(page, name: str):
-    """Write the live DOM (fields/buttons/ids) of the current page to out/wd_<name>.json — ground truth."""
+# ---------- page state -----------------------------------------------------------------------------
+async def _error_text(page) -> str:
+    el = await _first(page, "error_banner", 700)
+    if not el:
+        return ""
     try:
-        import json as _j
-        data = await page.evaluate(_PROBE_JS)
-        outdir = os.getenv("JHW_OUT", "/agent/out")
-        _j.dump(data, open(os.path.join(outdir, f"wd_{name}.json"), "w"), indent=2, ensure_ascii=False)
-        print(f"[dump] wd_{name}.json  url={data.get('url','')[:80]}  inputs={len(data.get('inputs',[]))}", flush=True)
-    except Exception as e:
-        print(f"[dump] {name} failed: {e}", flush=True)
-
-
-async def _has(page, sel, t=1500):
-    try:
-        return await page.locator(sel).first.is_visible(timeout=t)
+        return re.sub(r"\s+", " ", (await el.inner_text()))[:180]
     except Exception:
+        return "error"
+
+
+async def _past_gate(page) -> bool:
+    await page.wait_for_timeout(500)
+    if await _has(page, "error_banner", 600):
         return False
+    return not await _has(page, "password", 1200)
 
 
-async def _click(page, sel, t=6000) -> bool:
-    try:
-        el = page.locator(sel).first
-        await el.wait_for(state="visible", timeout=t)
-        await el.click(); await page.wait_for_timeout(700)
+async def _is_review(page) -> bool:
+    if "review" in (page.url or "").lower():
         return True
-    except Exception:
-        return False
-
-
-async def _fill(page, sel, value, t=5000) -> bool:
-    if not value:
-        return False
-    try:
-        el = page.locator(sel).first
-        await el.wait_for(state="visible", timeout=t)
-        await el.click(); await el.fill(""); await el.type(str(value), delay=15)
+    if await _has(page, "review_page", 600):
         return True
-    except Exception:
-        return False
-
-
-async def _click_role(page, role, name_rx, t=4000) -> bool:
-    """Click by ARIA role + visible name (robust when data-automation-id differs per tenant)."""
     try:
-        el = page.get_by_role(role, name=re.compile(name_rx, re.I)).first
-        await el.wait_for(state="visible", timeout=t); await el.click(); await page.wait_for_timeout(600)
-        return True
+        if await page.get_by_role("button", name=re.compile(r"^\s*submit", re.I)).count() > 0:
+            return True
     except Exception:
-        return False
+        pass
+    return False
 
 
 async def _check_consent(page) -> bool:
-    """Tick the required consent / terms / privacy checkbox (the 'By clicking the checkbox I consent…'
-       banner). This is the thing the old LLM kept fumbling — here it's deterministic."""
-    if await _has(page, S["acct_checkbox"], 800):
-        try:
-            await page.locator(S["acct_checkbox"]).first.check(); return True
-        except Exception:
-            pass
+    """Tick the 'By clicking the checkbox I consent…' banner deterministically."""
+    if await _click(page, "acct_checkbox", 800):
+        return True
     cbs = page.locator("input[type='checkbox']")
     try:
         n = await cbs.count()
@@ -186,10 +213,7 @@ async def _check_consent(page) -> bool:
                 if await lab.count():
                     sig = await lab.first.inner_text()
             if not sig:
-                try:
-                    sig = await el.evaluate("e => (e.closest('label,div,fieldset')?.innerText) || ''")
-                except Exception:
-                    sig = ""
+                sig = await el.evaluate("e => (e.closest('label,div,fieldset')?.innerText) || ''")
             if re.search(r"consent|agree|terms|privacy|acknowledge|certify", sig or "", re.I):
                 await el.check(); return True
         except Exception:
@@ -197,44 +221,78 @@ async def _check_consent(page) -> bool:
     return False
 
 
-def _split_address(addr: str):
-    """'Hermann-J.-Bach-Weg 16, 61169 Friedberg (Hessen)' -> (line1, postal, city). Best-effort; human reviews."""
-    line1, postal, city = addr, "", ""
-    parts = [p.strip() for p in addr.split(",")]
-    if parts:
-        line1 = parts[0]
-    rest = " ".join(parts[1:]) if len(parts) > 1 else ""
-    m = re.search(r"\b(\d{4,6})\b", rest)
-    if m:
-        postal = m.group(1)
-        city = rest.replace(postal, "").strip()
-        city = re.sub(r"\(.*?\)", "", city).strip()   # drop "(Hessen)"
-    return line1, postal, city
+# ---------- account --------------------------------------------------------------------------------
+async def _try_signin(page, email, password) -> bool:
+    if not await _click(page, "signin_link", 1200):
+        await _click_role(page, "link", r"sign\s*in", 1200) or await _click_role(page, "button", r"sign\s*in", 1200)
+    await page.wait_for_timeout(800)
+    await _fill(page, "email", email)
+    await _fill(page, "password", password)
+    if not await _click(page, "signin_submit", 2000):
+        await _click_role(page, "button", r"^\s*sign\s*in\s*$")
+    await page.wait_for_timeout(2800)
+    return await _past_gate(page)
 
 
-async def _past_gate(page) -> bool:
-    """Through the gate only if the password field is gone AND no login error is showing."""
-    await page.wait_for_timeout(500)
-    if await _has(page, S["error"], 600):       # 'wrong email or password' etc. -> NOT past
-        return False
-    return not await _has(page, S["password"], 1200)
+async def _account(page, host, email, proposed_pw, filled) -> bool:
+    acc = _load_accounts().get(host) or {}
+    stored = acc.get("password")
+    login_email = acc.get("email") or email          # account login may differ from résumé email
 
+    if stored and await _try_signin(page, login_email, stored):
+        filled.append("account:signin"); return True
 
-async def _is_review(page) -> bool:
-    """Reached the final Review/Submit stage (we STOP here; a human submits)."""
-    if "review" in (page.url or "").lower():
-        return True
-    try:
-        if await page.get_by_role("button", name=re.compile(r"^\s*submit", re.I)).count() > 0:
-            return True
-    except Exception:
-        pass
+    on_create = await _has(page, "verify_pw", 1200) or await _has(page, "acct_checkbox", 800)
+    if on_create and not stored:
+        await _fill(page, "email", email)
+        await _fill(page, "password", proposed_pw)
+        await _fill(page, "verify_pw", proposed_pw)
+        await _check_consent(page)
+        if not await _click(page, "create_submit", 2000):
+            await _click_role(page, "button", r"create\s*account")
+        await page.wait_for_timeout(2800)
+        if await _past_gate(page):
+            _save_account(host, email, proposed_pw); filled.append("account:create"); return True
+
+    pw = await _ask(f"JobHuntWOW is stuck at the Workday login for {host}. An account for {login_email} "
+                    f"seems to exist. Reply with its PASSWORD (or reset via 'Forgot your password?' and "
+                    f"reply with the new one).")
+    if pw and not pw.startswith("NO_ANSWER") and await _try_signin(page, login_email, pw.strip()):
+        _save_account(host, login_email, pw.strip()); filled.append("account:signin-human"); return True
     return False
 
 
+# ---------- #1 THE FIX: resume upload + server-side parse wait --------------------------------------
+async def _upload_resume(page, path: str, r: dict) -> bool:
+    """Workday parses the resume SERVER-SIDE. Delete any existing attachment (uploads stack otherwise),
+       upload to the HIDDEN input (set_input_files has zero actionability checks — the documented path),
+       then WAIT until it's actually attached before advancing."""
+    fi = await _present(page, "file_input")
+    if not fi:
+        return False
+    if await _has(page, "delete_file", 700):                 # existing attachment -> remove first
+        await _click(page, "delete_file", 1500)
+        await page.wait_for_timeout(1500)
+        fi = await _present(page, "file_input") or fi
+    try:
+        await fi.set_input_files(path)
+    except Exception as e:
+        r["note"] += f" upload:{e};"
+        return False
+    # WAIT for the parse: the delete-file control appearing means the file is attached & processed.
+    for _ in range(25):
+        await page.wait_for_timeout(1000)
+        if await _has(page, "delete_file", 400):
+            r["filled"].append("resume")
+            print("[wd] resume attached + parsed", flush=True)
+            return True
+    r["note"] += " resume uploaded but parse not confirmed;"
+    r["filled"].append("resume?")
+    return True
+
+
+# ---------- #5 LLM ONLY FOR FREE TEXT ---------------------------------------------------------------
 async def _answer_choices(page, profile, answer_fn) -> int:
-    """Answer required radio-group questions (work auth, sponsorship, disclosures) via a text-only LLM,
-       falling back to ask_human for anything the profile can't determine. Returns count answered."""
     if not answer_fn:
         return 0
     answered = 0
@@ -250,10 +308,8 @@ async def _answer_choices(page, profile, answer_fn) -> int:
                 continue
             radios = g.locator("input[type='radio']")
             rc = await radios.count()
-            if rc == 0:
+            if rc == 0 or any([await radios.nth(j).is_checked() for j in range(rc)]):
                 continue
-            if any([await radios.nth(j).is_checked() for j in range(rc)]):
-                continue                                   # already answered
             qtext = (await g.inner_text())[:300]
             labs = g.locator("label")
             opts = []
@@ -274,60 +330,42 @@ async def _answer_choices(page, profile, answer_fn) -> int:
     return answered
 
 
-async def _try_signin(page, email, password) -> bool:
-    # switch from the Create-Account view to Sign-In (automation-id, else the visible "Sign In" link)
-    if not await _click(page, S["signin_link"], t=1500):
-        (await _click_role(page, "link", r"sign\s*in", t=1500)
-         or await _click_role(page, "button", r"sign\s*in", t=1500))
-    await page.wait_for_timeout(800)
-    await _fill(page, S["email"], email)
-    await _fill(page, S["password"], password)
-    if not await _click(page, S["signin_submit"], t=2000):     # automation-id, else the visible button
-        await _click_role(page, "button", r"^\s*sign\s*in\s*$")
-    await page.wait_for_timeout(2800)
-    return await _past_gate(page)
+def _apply_urls(ats_url: str) -> list:
+    """Candidate deep-links. Workday's canonical apply URL carries a locale segment (/en-US/) that the
+       LinkedIn-supplied URL lacks; without it Workday bounces you back to the posting."""
+    base = ats_url.split("?")[0].rstrip("/")
+    if "/apply" in base:
+        return [base]
+    urls = []
+    m = re.match(r"(https?://[^/]+)(/.*)", base)
+    if m and "/en-US/" not in base:
+        urls.append(m.group(1) + "/en-US" + m.group(2) + "/apply/applyManually")
+    urls.append(base + "/apply/applyManually")
+    return urls
 
 
-async def _account(page, host, email, proposed_pw, filled) -> bool:
-    """Own the Workday account gate with STABLE per-host credentials. Returns True only when past it.
-       create-once then sign-in-forever; if the account exists but we lack the password, ask the human."""
-    accounts = _load_accounts()
-    acc = accounts.get(host) or {}
-    stored = acc.get("password")
-    login_email = acc.get("email") or email        # the ACCOUNT login email (may differ from résumé email)
-
-    # 1) Known account -> sign in with the stored login email + password.
-    if stored:
-        if await _try_signin(page, login_email, stored):
-            filled.append("account:signin"); return True
-
-    # 2) Fresh account -> Create Account (email, password, verify, consent) and persist the password.
-    on_create = await _has(page, S["verify_pw"]) or await _has(page, S["acct_checkbox"])
-    if on_create and not stored:
-        await _fill(page, S["email"], email)
-        await _fill(page, S["password"], proposed_pw)
-        await _fill(page, S["verify_pw"], proposed_pw)
-        await _check_consent(page)                              # tick the consent/terms banner FIRST
-        if not await _click(page, S["create_submit"], t=2000):  # automation-id, else the visible button
-            await _click_role(page, "button", r"create\s*account")
-        await page.wait_for_timeout(2800)
-        if await _past_gate(page):
-            _save_account(host, email, proposed_pw); filled.append("account:create"); return True
-
-    # 3) Account exists but our password is wrong/unknown -> ask the human once, then sign in + persist.
-    pw = await _ask(f"JobHuntWOW is stuck at the Workday login for {host}. A candidate account for "
-                    f"{login_email} seems to already exist. Reply with its PASSWORD (or use 'Forgot your "
-                    f"password?' in the browser to reset it, then reply with the new one).")
-    if pw and not pw.startswith("NO_ANSWER"):
-        if await _try_signin(page, login_email, pw.strip()):
-            _save_account(host, login_email, pw.strip()); filled.append("account:signin-human"); return True
+async def _in_apply_flow(page) -> bool:
+    """Are we actually inside the multi-step apply wizard (not bounced back to the job posting)?"""
+    if "/apply" in (page.url or "").lower():
+        return True
+    for k in ("password", "my_info_page", "my_exp_page", "review_page", "next"):
+        if await _has(page, k, 600):
+            return True
     return False
 
 
-async def drive(creds: dict, data: dict, resume_path: str = "", answer_fn=None) -> dict:
-    """Deterministically drive Workday ALL THE WAY to the Review page. NO browser-use.
-       autofill (password-manager engine) fills contact fields; answer_fn (a text-only LLM) answers
-       required choice questions; we click Next page by page and STOP at Review. Never submits."""
+async def _connect(pw):
+    browser = await pw.chromium.connect_over_cdp(CDP_URL)
+    ctx = browser.contexts[0] if browser.contexts else await browser.new_context()
+    wd = [p for p in ctx.pages if re.search(r"myworkday|workday", (p.url or ""), re.I)]
+    page = wd[-1] if wd else (ctx.pages[-1] if ctx.pages else await ctx.new_page())
+    for p in wd[:-1]:                                        # close stale tabs from earlier runs
+        try: await p.close()
+        except Exception: pass
+    return browser, ctx, page
+
+
+async def drive(creds: dict, data: dict, resume_path: str = "", answer_fn=None, ats_url: str = "") -> dict:
     r = {"ok": False, "stage": "start", "filled": [], "note": "", "needs_llm": False}
     b = data.get("basics", {})
     legal = (b.get("legal_name") or b.get("name") or "").split()
@@ -337,94 +375,117 @@ async def drive(creds: dict, data: dict, resume_path: str = "", answer_fn=None) 
     pw = await async_playwright().start(); browser = None
     try:
         browser, ctx, page = await _connect(pw)
-        if not re.search(r"myworkday|workday", (page.url or ""), re.I):
-            r["note"] = f"front tab is not Workday ({page.url}); letting LLM handle it."; return r
-        await page.bring_to_front()
-        r["stage"] = "cookie"
-        await _click(page, S["cookie"], t=3000)                       # dismiss OneTrust banner
 
-        r["stage"] = "apply"
-        if await _has(page, S["apply"], 3000):                        # job-posting page -> start apply
-            await _click(page, S["apply"])                            # adventureButton (confirmed)
-            await page.wait_for_timeout(3000)                         # Workday navigates to the auth/method page
-            await _click(page, S["apply_manual"], t=3000)             # 'Apply Manually' if a method dialog appears
-            await page.wait_for_timeout(2500)
-        await _dump(page, "after_apply")                              # ground truth: what page did Apply lead to?
+        # #2 DEEP-LINK to the manual apply flow, trying the /en-US/ locale variant first.
+        r["stage"] = "deeplink"
+        if ats_url:
+            for u in _apply_urls(ats_url):
+                try:
+                    await page.goto(u, wait_until="domcontentloaded", timeout=45000)
+                    await page.wait_for_timeout(3000)
+                except Exception as e:
+                    r["note"] += f" deeplink:{e};"; continue
+                if await _in_apply_flow(page):
+                    print(f"[wd] deep-link OK -> {page.url[:90]}", flush=True); break
+                print(f"[wd] deep-link bounced ({u[:70]}…)", flush=True)
+        if not re.search(r"myworkday|workday", (page.url or ""), re.I):
+            r["note"] = f"not on Workday ({page.url})"; return r
+        await page.bring_to_front()
+
+        r["stage"] = "cookie"
+        await _click(page, "cookie", 2500)
+        if await _has(page, "already_applied", 800):
+            r["ok"] = True; r["stage"] = "already_applied"
+            r["note"] = "Workday says you have already applied to this job."
+            return r
+
+        # VERIFY we're in the wizard; if the deep-link bounced, click through: Apply -> Apply Manually.
+        r["stage"] = "enter_flow"
+        if not await _in_apply_flow(page):
+            if await _has(page, "apply", 3000):
+                print("[wd] not in the apply flow — clicking Apply …", flush=True)
+                await _click(page, "apply")
+                await page.wait_for_timeout(3000)
+                await _click(page, "apply_manual", 4000)
+                await page.wait_for_timeout(2500)
+                print(f"[wd] after Apply -> {page.url[:90]}", flush=True)
+            if not await _in_apply_flow(page):
+                r["note"] = f"could not enter the Workday apply flow from {page.url[:90]}"
+                await _notify(r["note"]); return r
 
         r["stage"] = "account"
         host = _host(page.url)
-        # a signed-out Apply redirects to Sign In / Create Account — wait for a password field to render
-        try:
-            await page.wait_for_selector("input[type='password']", timeout=8000)
-        except Exception:
-            pass
-        await _dump(page, "account")
-        if await _has(page, "input[type='password']", 1500) or await _has(page, S["password"], 800):
+        if await _has(page, "password", 2500):
             if not await _account(page, host, creds["email"], creds["password"], r["filled"]):
-                r["needs_llm"] = False
-                r["note"] = ("Could not get past the Workday account gate for " + host +
-                             ". The account likely exists with a different password — reset it via "
-                             "'Forgot your password?' in noVNC, or reply to the Telegram prompt, then re-run apply.")
+                r["note"] = (f"Could not pass the Workday account gate for {host}. Reset the password via "
+                             "'Forgot your password?' then: python jhw.py atspw <host> '<pw>' <login-email>")
+                await _notify(r["note"])
                 return r
 
-        # PAGE LOOP — deterministic, no browser-use. Fill + answer + Next until Review.
+        # ---- page loop: fill -> upload(+parse wait) -> answer -> Save and Continue ----
         r["stage"] = "pages"
-        for _i in range(9):
-            await page.wait_for_timeout(1800)
-            # wait for the SPA page body to actually render its fields before filling
-            try:
-                await page.wait_for_selector("input, [data-automation-id$='firstName'], "
-                                             "[data-automation-id='fileUploadDropZone']", timeout=6000)
-            except Exception:
-                pass
-            if _i == 0:
-                await _dump(page, "form")                              # ground truth of the first form page
+        last_err = ""
+        for _i in range(10):
+            await page.wait_for_timeout(1500)
             if await _is_review(page):
                 r["ok"] = True; r["stage"] = "review"
-                r["note"] = ("Reached Review deterministically. Filled: " +
-                             ", ".join(sorted(set(r["filled"]))) + ". Review in noVNC and Submit yourself.")
+                r["note"] = ("Reached Review. Filled: " + ", ".join(sorted(set(r["filled"]))) +
+                             ". Submit yourself in noVNC.")
                 return r
-            # high-confidence Workday My-Information overlay (wait up to 6s for the fields to render)
-            if await _has(page, S["first_name"], 6000):
-                if await _fill(page, S["first_name"], first): r["filled"].append("first_name")
-                if await _fill(page, S["last_name"], last):   r["filled"].append("last_name")
-                if await _fill(page, S["addr1"], line1):      r["filled"].append("address")
-                if await _fill(page, S["city"], city):        r["filled"].append("city")
-                if await _fill(page, S["postal"], postal):    r["filled"].append("postal")
-                if await _fill(page, S["phone"], b.get("phone", "")): r["filled"].append("phone")
-            # generic autofill engine for everything else (email/linkedin/consent/etc.)
+
+            # My Information (only if this tenant shows it)
+            if await _has(page, "first_name", 3000):
+                if await _fill(page, "first_name", first): r["filled"].append("first_name")
+                if await _fill(page, "last_name", last):   r["filled"].append("last_name")
+                if await _fill(page, "addr1", line1):      r["filled"].append("address")
+                if await _fill(page, "city", city):        r["filled"].append("city")
+                if await _fill(page, "postal", postal):    r["filled"].append("postal")
+                if await _fill(page, "phone", b.get("phone", "")): r["filled"].append("phone")
+
+            # #1 resume BEFORE the generic autofill (Workday's parse overwrites fields)
+            if resume_path and os.path.exists(resume_path) and not any(
+                    x.startswith("resume") for x in r["filled"]):
+                await _upload_resume(page, resume_path, r)
+
             if autofill:
                 try:
-                    rep = await autofill.fill_page(page, data)
-                    r["filled"] += rep["filled"]
+                    r["filled"] += (await autofill.fill_page(page, data))["filled"]
                 except Exception as e:
                     r["note"] += f" autofill:{e};"
-            # resume upload — file inputs are usually HIDDEN behind a drop-zone, so match by COUNT
-            # (not visibility); set_input_files works on hidden inputs. Upload once.
-            if resume_path and os.path.exists(resume_path) and "resume" not in r["filled"]:
-                fi = page.locator("input[type='file']")
-                try:
-                    if await fi.count() > 0:
-                        await fi.first.set_input_files(resume_path)
-                        r["filled"].append("resume"); await page.wait_for_timeout(3000)
-                except Exception as e:
-                    r["note"] += f" upload:{e};"
-            # answer required choice questions (work auth, sponsorship, disclosures) via text-only LLM
+            await _check_consent(page)
             try:
                 a = await _answer_choices(page, data, answer_fn)
-                if a:
-                    r["filled"].append(f"answered:{a}")
+                if a: r["filled"].append(f"answered:{a}")
             except Exception as e:
                 r["note"] += f" answer:{e};"
-            # advance to the next page
-            if not await _click(page, S["next"], t=4000):
-                r["note"] += " no Next button on this page — paused for the human."
-                break
-            await page.wait_for_timeout(1500)
 
-        r["ok"] = True; r["stage"] = "paused"
-        r["note"] = ("Deterministic fill advanced through the form (" +
-                     ", ".join(sorted(set(r["filled"]))) + "). Stopped before Submit — finish/submit in noVNC.")
+
+            # advance
+            if not await _click(page, "next", 4000):
+                if not await _click_role(page, "button", r"save\s*and\s*continue|^\s*next\s*$"):
+                    r["note"] += " no Save-and-Continue button found — paused for the human."
+                    await _notify("Workday: no Save-and-Continue button found; please finish in noVNC.")
+                    break
+            await page.wait_for_timeout(2500)
+
+            # #4 assertion: a REPEATING validation error means we cannot fix it -> HALT + tell the human
+            err = await _error_text(page)
+            if err:
+                print(f"[wd] validation error: {err}", flush=True)
+                if err == last_err:
+                    r["stage"] = "blocked"
+                    r["note"] = f"Workday validation error we cannot resolve: '{err}'. Stopped for the human."
+                    await _notify(r["note"])
+                    return r
+                last_err = err
+            else:
+                last_err = ""
+
+        r["ok"] = True
+        if r["stage"] != "blocked":
+            r["stage"] = "paused"
+        r["note"] = r["note"] or ("Advanced through the form (" + ", ".join(sorted(set(r["filled"]))) +
+                                  "). Stopped before Submit — finish in noVNC.")
         return r
     except Exception as e:
         r["note"] = f"workday driver error: {e}"; return r
@@ -436,7 +497,6 @@ async def drive(creds: dict, data: dict, resume_path: str = "", answer_fn=None) 
 
 
 if __name__ == "__main__":
-    import json
     d = json.load(open(os.getenv("JHW_DATA", "/agent/templates/resume_data.json"), encoding="utf-8"))
     c = {"email": d["basics"]["email"], "password": "Test!Only1"}
     print(json.dumps(asyncio.run(drive(c, d, "/agent/out/resume.pdf")), indent=2))

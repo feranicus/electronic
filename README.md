@@ -133,3 +133,30 @@ Grafana ("Colt Bots Observability"):
 
 Cost covers AI inference (DeepSeek/QWEN, ~$0.0065 per assessment). The Shodan plan and the droplet
 are flat subscriptions and are intentionally out of scope.
+
+## Document language (English / Hoch-Deutsch)
+The same four decks (Findings · C-BIQ · GEOPOL · DELTAS) are produced in either language. The
+customer is asked; nothing else changes.
+
+```
+python hermes-skills/shodan-assessment/scripts/run_assessment.py --seed keb.de --lang de
+```
+
+- **Web** (cybergod.ai → New Assessment): a "Document language" dropdown next to the company field.
+- **Telegram**: `/assess keb.de` → tap **English** or **Deutsch**. Skip the prompt with
+  `/assess keb.de --lang de`.
+
+German decks are written with a `_DE` suffix (`ACME_C-BIQ_DE.pptx`) so both languages can coexist in
+one output folder. English output is unchanged, byte-for-byte.
+
+How it works (see `scripts/i18n/`): `deck_i18n.js` translates the deck chrome at the pptxgenjs
+boundary from the committed dictionary `de.json`; `enrich.py` asks the model to write the prose in
+German; `i18n.py` translates the engine's own deterministic strings before rendering. All three read
+the same `de.json`, so a term can never be translated two different ways. Missing translations fall
+back to English rather than failing.
+
+Audit which strings are not yet translated:
+```
+DECK_LANG=de DECK_I18N_AUDIT=1 DECK_I18N_AUDIT_OUT=/tmp/audit.json \
+  node hermes-skills/shodan-assessment/scripts/build_cbiq_deck.js cbiq.json /tmp/out.pptx
+```

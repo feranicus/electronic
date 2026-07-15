@@ -212,3 +212,36 @@ the bots and colt-web) -> survives redeploys, image rebuilds and Loki retention.
   ts+company), so re-running never double-counts. `--json` for machines, `--local PATH` for a copy.
 - Cost = AI inference only (DeepSeek/QWEN ~$0.0065/assessment). Shodan plan + droplet are flat
   subscriptions, not per-assessment, so they are deliberately NOT in the ledger.
+
+## Deck language (EN / DE) — remember; do NOT hoist strings again
+The customer picks the language; the SAME 4 decks are produced in English or Hoch-Deutsch.
+- ONE input to the engine: `run_assessment.py --lang en|de` (default en). Web + bots both pass it.
+- Three streams of text, ONE committed dictionary `scripts/i18n/de.json`:
+  1. **Deck chrome** (~530 literals hardcoded in the 4 .js builders) -> `scripts/i18n/deck_i18n.js`.
+     It does NOT hoist strings: it wraps `pptx.addSlide` and translates at the addText/addTable
+     boundary. Each builder opts in with ONE line: `const pres = I18N.install(new pptxgen())`.
+     Unknown strings fall through to English (never crash). `DECK_I18N_AUDIT=1` +
+     `DECK_I18N_AUDIT_OUT=/tmp/a.json` dumps untranslated strings — that is how de.json was harvested.
+  2. **LLM prose** (exec_summary/what/why/rem/strengths/...) -> `enrich.py` LANG_DE prompt block.
+     A dictionary can never cover this; it is per-company text.
+  3. **Engine-deterministic prose** (finding titles, Colt controls, bucket names) ->
+     `scripts/i18n/i18n.py` post-pass over findings/cbiq/geopol.json BEFORE the decks render.
+- **HARD RULE — never translate ENUM/LOOKUP keys.** `findings[].sev` ("CRITICAL"), geopol
+  `actors[].band` ("NATION-STATE"), tier/status/phase are matched by the builders for grouping and
+  colour maps. Translating them makes findings SILENTLY VANISH (findings deck fell 23 -> 8 pages).
+  They live in `i18n.py::_SKIP_KEYS` and are translated at RENDER time only (display-only).
+- German runs ~30% longer and every box has a hardcoded w/h: `deck_i18n.js::fitSize()` computes an
+  explicit smaller fontSize (deterministic, works in every renderer) and also sets `fit:"shrink"`
+  (pptxgenjs 4.0.1 emits a bare `<a:normAutofit/>` which only PowerPoint honours). Hand-set sizes for
+  the Arial Black display headlines live in `de.json.sizes`.
+- Glossary (full Eindeutschung, user's choice): ALE->SEW · PML->WHS · LEF->SEH · TEF->BEH · LM->SH ·
+  CoD->KdV · ROSI->RSI · Kill Chain->Angriffskette. Proper nouns (FAIR, MITRE ATT&CK, NIST, BSI,
+  Colt product names, CVE IDs, Shodan) are NOT translated.
+- **EN is zero-diff**: `LANG==="en"` bypasses the wrapper entirely, so English decks are byte-for-byte
+  what they were. DE decks are written with a `_DE` filename suffix so EN/DE never overwrite.
+- Web: `AssessReq.lang` -> `store.create_job(..., lang)` (persisted — the POST only registers the job,
+  the SSE stream launches the engine later and re-reads the row) -> `--lang`. The jobs table gets an
+  `ALTER TABLE ... ADD COLUMN lang` migration; without it every existing deployment 500s.
+- Telegram: `/assess <company>` -> inline keyboard (English/Deutsch) -> `CallbackQueryHandler`;
+  pending run parked in `ctx.user_data` (per-user, so two AEs can assess at once).
+  Power-user shortcut, no prompt: `/assess <company> --lang de`.

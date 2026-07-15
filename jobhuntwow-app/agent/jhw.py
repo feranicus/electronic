@@ -213,6 +213,51 @@ def cmd_inspect(_):
     print(f"[OK] full dump -> {os.path.join(HERE, 'out', 'dom_dump.json')}")
 
 
+def cmd_doctor(_):
+    """Diagnose + repair the sandbox when Chrome won't answer CDP. Shows the real logs, clears a stale
+       Chrome profile lock (a hard container recreate leaves SingletonLock behind and Chrome then
+       refuses to start), restarts, and verifies."""
+    print("[i] === sandbox logs (last 30) ===")
+    dc("logs", "--tail", "30", "jhw-agent", check=False)
+    print("\n[i] clearing any stale Chrome profile lock …")
+    for f in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+        subprocess.run(["docker", "compose", "exec", "-T", "jhw-agent",
+                        "rm", "-f", f"/home/chrome-user/chrome-data/{f}"], cwd=HERE, capture_output=True)
+    print("[i] restarting the sandbox …")
+    dc("restart", "jhw-agent", check=False)
+    if _wait_chrome(45):
+        print("[OK] Chrome is back. Now run:  python jhw.py apply <job>")
+        return
+    print("\n[ERR] Chrome still down — logs again so we can see why:")
+    dc("logs", "--tail", "40", "jhw-agent", check=False)
+
+
+def cmd_scan(_):
+    """DevSecOps gate (CLAUDE.md standing rule): Trivy = Aqua Security's OSS scanner.
+       Scans: dependency/OS CVEs + hardcoded SECRETS + Dockerfile/compose misconfiguration + images.
+       Runs as a container — nothing to install. Review HIGH/CRITICAL before deploying."""
+    sev = "HIGH,CRITICAL"
+    print("[i] 1/2 repo scan (deps + secrets + Dockerfile/compose misconfig) …")
+    sh("docker", "run", "--rm", "-v", f"{ROOT}:/src:ro", "-v", "jhw_trivy:/root/.cache/trivy",
+       "aquasec/trivy:latest", "fs", "--scanners", "vuln,secret,misconfig",
+       "--severity", sev, "--exit-code", "0", "/src", cwd=ROOT, check=False)
+    print("\n[i] 2/2 image scan (built images) …")
+    for img in ("jobhuntwow-app-backend:latest", "agent-jhw-agent:latest"):
+        sh("docker", "run", "--rm", "-v", "/var/run/docker.sock:/var/run/docker.sock",
+           "-v", "jhw_trivy:/root/.cache/trivy", "aquasec/trivy:latest", "image",
+           "--severity", sev, "--exit-code", "0", "--ignore-unfixed", img, cwd=ROOT, check=False)
+    print("\n[OK] scan done. Fix HIGH/CRITICAL, or record why it is accepted (KISS rule 8).")
+
+
+def cmd_obs(_):
+    """Start observability: JSON events -> Promtail -> Loki -> Grafana. Profile-gated: never runs
+       during a normal apply."""
+    dc("-f", "docker-compose.obs.yml", "up", "-d", cwd=ROOT, check=False)
+    print("\n[OK] Grafana:  http://127.0.0.1:3000   (admin / jobhuntwow — override GRAFANA_PASSWORD)")
+    print("     Dashboard: JobHuntWOW -> Apply Pipeline")
+    print(f"     Events:    {os.path.join(HERE, 'out', 'events.jsonl')}")
+
+
 def cmd_login(_):
     ensure_prereqs()
     print("[i] ensuring LinkedIn login (auto, else one-time manual in noVNC) …")
@@ -229,13 +274,37 @@ def _healthy(t=2):
     return True
 
 
+def _wait_chrome(tries=30):
+    """Wait until Chrome's CDP answers INSIDE the sandbox. Checked from inside the container on purpose:
+       WSL cannot reliably reach Docker's published ports, so a host-side probe always times out.
+       `up -d` returns as soon as the container starts, but Chrome (Xvfb + browser) needs ~10-25s more."""
+    import time as _t
+    for i in range(tries):
+        p = subprocess.run(["docker", "compose", "exec", "-T", "jhw-agent",
+                            "curl", "-fsS", "http://127.0.0.1:9222/json/version"],
+                           cwd=HERE, capture_output=True)
+        if p.returncode == 0:
+            if i:
+                print()
+            print("[OK] sandbox Chrome ready.")
+            return True
+        print("[i] waiting for Chrome in the sandbox …" if i == 0 else ".", end="", flush=True)
+        _t.sleep(2)
+    print("\n[warn] Chrome not ready after ~60s — continuing anyway (check: python jhw.py logs).")
+    return False
+
+
 def _ensure_stack(build=False):
-    """One command: ensure backend + /v1 proxy + browser sandbox are up, then return. `up -d` already
-       blocks until the containers are running, so no health poll (WSL can't reach the published ports)."""
+    """One command: ensure backend + /v1 proxy + browser sandbox are up AND Chrome is actually
+       listening on CDP, then return."""
     ensure_prereqs()
     flags = ["up", "-d"] + (["--build", "--force-recreate"] if build else [])
     dc(*(flags + ["backend"]), cwd=ROOT, check=False)   # backend holds the DO key + model routing
     dc(*flags, check=False)                              # secure-browser sandbox (Chrome + noVNC)
+    # OBSERVABILITY comes up with the stack — one command, no separate step. Idempotent + instant once
+    # running (restart: unless-stopped). Loki + Promtail + Grafana on 127.0.0.1:3000.
+    dc("-f", "docker-compose.obs.yml", "up", "-d", cwd=ROOT, check=False)
+    _wait_chrome()                                       # <- the sandbox was 'Started', Chrome wasn't up yet
 
 
 def _wait_health():
@@ -282,6 +351,9 @@ def main():
     ap.add_argument("email", nargs="?", default=""); ap.set_defaults(fn=cmd_atspw)
     ip = sub.add_parser("import-passwords"); ip.add_argument("csv"); ip.set_defaults(fn=cmd_import_passwords)
     sub.add_parser("inspect").set_defaults(fn=cmd_inspect)
+    sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
+    sub.add_parser("scan").set_defaults(fn=cmd_scan)
+    sub.add_parser("obs").set_defaults(fn=cmd_obs)
     r = sub.add_parser("run"); r.add_argument("job"); r.set_defaults(fn=cmd_run)
     args = p.parse_args(); args.fn(args)
 

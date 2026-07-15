@@ -5,8 +5,8 @@ email (name.familyname@colt.net) + a shared 99-char access password BEFORE using
 Streams live phase progress, shows when the AI takes over (tokens + est cost), and re-emits
 structured JSON events (incl. auth audit) for the Loki/Grafana observability stack."""
 import os, json, time, asyncio, colt_auth
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 TOKEN   = os.environ["BOT_TOKEN"]
 ALLOWED = {x.strip() for x in os.environ.get("ALLOWED_USERS", "").split(",") if x.strip()}
@@ -47,7 +47,8 @@ async def start(update, ctx):
         "After authentication:\n"
         "  /assess <company / domain / ASN>\n"
         "  e.g.  /assess keb.de\n"
-        "  Behind a CDN?  /assess <company> --asn AS1234 --net 1.2.3.0/24\n\n"
+        "  Behind a CDN?  /assess <company> --asn AS1234 --net 1.2.3.0/24\n"
+        "  I will ask English or Deutsch; skip with  /assess <company> --lang de\n\n"
         "2-step: after /auth I email a 6-digit code to your Colt address; reply /verify <code>.\n"
         "⚠ Your /auth message contains a secret — delete it from this chat afterwards.")
 
@@ -68,6 +69,8 @@ async def verify(update, ctx):
     await update.message.reply_text(msg)
 
 async def assess(update, ctx):
+    """Collect the company, then ASK which language the documents should be in.
+    Power users can skip the prompt entirely with:  /assess <company> --lang de"""
     uid = update.effective_user.id
     if not AUTH.is_authed(uid, ALLOWED):
         await update.message.reply_text(
@@ -83,8 +86,45 @@ async def assess(update, ctx):
     seed = ' '.join(_args[:_i]).strip(); extra = _args[_i:]   # multi-word company names -> one seed
     if not seed:
         await update.message.reply_text('Usage: /assess <company / domain / ASN>'); return
-    _log(evt="assess_start", company=seed, user=str(uid), email=AUTH.authed.get(str(uid), {}).get("email", ""), ts=int(time.time()))
-    status = await update.message.reply_text("⏳ Assessing %s ..." % seed)
+
+    # explicit --lang de/--lang en -> run straight away, no question
+    if any(t == "--lang" or t.startswith("--lang=") for t in extra):
+        await _run_assessment(update.message, ctx, uid, seed, extra); return
+
+    # otherwise ask. The pending run is parked per-user (never global: two AEs can assess at once).
+    ctx.user_data["pending"] = {"seed": seed, "extra": extra}
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("\U0001f1ec\U0001f1e7  English", callback_data="lang:en"),
+        InlineKeyboardButton("\U0001f1e9\U0001f1ea  Deutsch", callback_data="lang:de"),
+    ]])
+    await update.message.reply_text(
+        "\U0001f30d In which language should I write the 4 documents for *%s*?\n"
+        "_Findings · C-BIQ · GEOPOL · DELTAS_" % seed,
+        reply_markup=kb, parse_mode="Markdown")
+
+
+async def on_lang(update, ctx):
+    """Language button pressed -> start the parked assessment."""
+    q = update.callback_query
+    await q.answer()
+    uid = q.from_user.id
+    if not AUTH.is_authed(uid, ALLOWED):
+        await q.edit_message_text("\U0001f512 Not authenticated."); return
+    lang = "de" if q.data.endswith(":de") else "en"
+    pending = (ctx.user_data or {}).pop("pending", None)
+    if not pending:
+        await q.edit_message_text("That request expired \u2014 send /assess <company> again."); return
+    await q.edit_message_text("%s Language: %s \u2014 starting the assessment for %s ..." % (
+        ("\U0001f1e9\U0001f1ea" if lang == "de" else "\U0001f1ec\U0001f1e7"),
+        ("Hochdeutsch" if lang == "de" else "English"), pending["seed"]))
+    await _run_assessment(q.message, ctx, uid, pending["seed"], pending["extra"] + ["--lang", lang])
+
+
+async def _run_assessment(msg, ctx, uid, seed, extra):
+    lang = "de" if "de" in [str(x).lower().replace("--lang=", "") for x in extra] else "en"
+    _log(evt="assess_start", company=seed, user=str(uid), lang=lang,
+         email=AUTH.authed.get(str(uid), {}).get("email", ""), ts=int(time.time()))
+    status = await msg.reply_text("⏳ Assessing %s ..." % seed)
     steps = []
 
     cmd = ["python3", ENGINE, "--seed", seed, "--outdir", OUTDIR] + list(extra)
@@ -110,7 +150,7 @@ async def assess(update, ctx):
 
     if "ASSESSMENT COMPLETE" not in out:
         _log(evt="error", company=seed, msg="pipeline failed")
-        await update.message.reply_text("❌ Failed:\n" + (out[-1500:] or "no output"))
+        await msg.reply_text("❌ Failed:\n" + (out[-1500:] or "no output"))
         return
 
     summary = "\n".join(l for l in lines
@@ -131,14 +171,14 @@ async def assess(update, ctx):
         else:
             stat = "\n\U0001f9e0 AI enrichment: %s [%s] (templated text used - deck still valid)" % (
                 qwen.get("status", "off"), (qwen.get("error", "") or "")[:120])
-    await update.message.reply_text("✅ Done.\n" + summary + stat)
+    await msg.reply_text("✅ Done.\n" + summary + stat)
 
     decks = [l.split("OK", 1)[1].strip() for l in lines
              if l.strip().startswith("OK") and l.strip().endswith(".pptx")]
     for path in decks:
         if os.path.exists(path):
             with open(path, "rb") as fh:
-                await update.message.reply_document(fh, filename=os.path.basename(path))
+                await msg.reply_document(fh, filename=os.path.basename(path))
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -146,6 +186,7 @@ def main():
     app.add_handler(CommandHandler("auth", auth))
     app.add_handler(CommandHandler("verify", verify))
     app.add_handler(CommandHandler("assess", assess))
+    app.add_handler(CallbackQueryHandler(on_lang, pattern=r"^lang:(en|de)$"))
     print("colttechbot polling (zero-trust auth enabled)...", flush=True)
     app.run_polling()
 

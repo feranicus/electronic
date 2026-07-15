@@ -19,11 +19,33 @@ def _bible():
     return "Add Colt pursuit deltas: architecture, business context, strengths, Colt-product remediation."
 
 PROMPT = """%s
-
+%s
 === RAW FINDINGS (facts verified — reframe, never alter) ===
 %s
 
 Now return ONLY the strict JSON from the OUTPUT CONTRACT above. No text around it."""
+
+# The deck CHROME is translated by scripts/i18n/deck_i18n.js from a committed dictionary. The PROSE
+# (exec_summary, what/why/rem, strengths, colt_mitigation, realComparable, geopol_context) is written
+# by the model, so the language instruction has to go in the prompt — a dictionary can never cover it.
+LANG_DE = """
+=== SPRACHE / LANGUAGE — VERBINDLICH ===
+Schreibe ALLE Fliesstexte AUSSCHLIESSLICH auf Hochdeutsch (formell, "Sie"-Form, Business-Register
+fuer CISO/CFO). Das gilt fuer JEDEN Wert der Felder: exec_summary, what, why, rem, strengths,
+colt_mitigation, realComparable, lossScenario, geopol_context, qa_note.
+Uebersetze auch die Fachbegriffe ins Deutsche:
+  ALE -> Schadenserwartungswert (SEW) · PML -> Wahrscheinlicher Hoechstschaden (WHS)
+  LEF -> Schadensereignishaeufigkeit (SEH) · TEF -> Bedrohungsereignishaeufigkeit (BEH)
+  Loss Magnitude -> Schadenshoehe (SH) · Cost of Delay -> Kosten der Verzoegerung (KdV)
+  ROSI -> Rendite der Sicherheitsinvestition (RSI) · Kill Chain -> Angriffskette
+  finding -> Befund · exposure -> Exposition · remediation -> Behebung
+NICHT uebersetzen (Eigennamen/IDs): Colt-Produktnamen (Colt SASE, ZTNA, WAF, Managed Firewall,
+IP Guardian, DPI/NDR, SD-WAN), Rahmenwerksnamen (FAIR, MITRE ATT&CK, NIST, BSI, ISO, TISAX, NIS2,
+DORA, Admiralty, Monte-Carlo, Shodan, CISA KEV, EPSS, CVSS), CVE-Kennungen, Hostnamen, IPs, Ports,
+Protokollnamen (RDP, Telnet, TLS, VPN) und Firmennamen.
+Die JSON-SCHLUESSEL bleiben unveraendert englisch — nur die WERTE sind deutsch.
+Fakten, Zahlen, IDs und Nachweise bleiben unveraendert.
+"""
 
 def _post(payload):
     req = urllib.request.Request(BASE + "/chat/completions", data=json.dumps(payload).encode(),
@@ -64,7 +86,7 @@ def _emit(company, status, ti, to, cost, ms, error=""):
                       "tokens_in": ti, "tokens_out": to, "cost_usd": cost, "ms": ms,
                       "error": error}), flush=True)
 
-def enrich(fj):
+def enrich(fj, lang="en"):
     company = fj["target"].get("company", "?")
     if not KEY:
         fj["target"]["qwen"] = {"status": "skipped", "model": MODEL, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0}
@@ -72,7 +94,8 @@ def enrich(fj):
     slim = {"company": company, "scope": fj["target"].get("scope", ""),
             "findings": [{"id": f["id"], "sev": f["sev"], "title": f["title"],
                           "evidence": f.get("evidence", [])} for f in fj["findings"]]}
-    prompt = PROMPT % (_bible(), json.dumps(slim, ensure_ascii=False))
+    prompt = PROMPT % (_bible(), (LANG_DE if str(lang).lower().startswith("de") else ""),
+                       json.dumps(slim, ensure_ascii=False))
     last = ""
     for attempt in range(ATTEMPTS):
         try:
@@ -110,8 +133,10 @@ def enrich(fj):
 
 def main():
     p = sys.argv[1]
+    # language: 2nd positional arg wins, else DECK_LANG (run_assessment passes it in the env)
+    lang = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("DECK_LANG", "en")
     os.environ.setdefault("OUTDIR", os.path.dirname(os.path.abspath(p)))
-    fj = json.load(open(p)); fj, status = enrich(fj)
+    fj = json.load(open(p)); fj, status = enrich(fj, lang)
     json.dump(fj, open(p, "w"), indent=2, ensure_ascii=False)
     print("enrich:", status)
     if fj.get("target", {}).get("qa_note"): print(fj["target"]["qa_note"])

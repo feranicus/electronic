@@ -32,9 +32,13 @@ async def _telegram(question: str, timeout: int) -> str:
                 last = max(last, u["update_id"])
         except Exception:
             pass
-        await c.get(f"{base}/sendMessage", params={
+        _r = await c.get(f"{base}/sendMessage", params={
             "chat_id": TG_CHAT,
             "text": f"🤖 JobHuntWOW needs your input:\n\n{question}\n\nReply here with the value."})
+        if _r.status_code != 200:
+            print(f"[ask_human] TELEGRAM API {_r.status_code}: {_r.text[:200]} — check "
+                  f"TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID (verify: python jhw.py telegram)", flush=True)
+            return ""
         offset, deadline = last + 1, time.time() + timeout
         while time.time() < deadline:
             try:
@@ -83,7 +87,13 @@ async def notify(message: str) -> None:
     base = f"https://api.telegram.org/bot{TG_TOKEN}"
     try:
         async with httpx.AsyncClient(timeout=20) as c:
-            await c.get(f"{base}/sendMessage", params={"chat_id": TG_CHAT, "text": f"🤖 JobHuntWOW: {message}"})
+            resp = await c.get(f"{base}/sendMessage",
+                               params={"chat_id": TG_CHAT, "text": f"🤖 JobHuntWOW: {message}"})
+        # NEVER fail silently: a bad token (401) / bad chat id (400) must be visible.
+        if resp.status_code != 200:
+            print(f"[notify] TELEGRAM API {resp.status_code}: {resp.text[:200]} — check "
+                  f"TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID in agent/.env "
+                  f"(verify with: python jhw.py telegram)", flush=True)
     except Exception as e:
         print(f"[notify] send failed: {e}", flush=True)
 

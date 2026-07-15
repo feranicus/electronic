@@ -46,6 +46,59 @@ Watch the browser live at **http://localhost:9090/vnc.html** while scrape/apply 
 noVNC window. The agent never auto-submits (project standing rule).
 
 ## Change log
+- 2026-07-15  ENTERPRISE HARDENING — observability + DevSecOps + Secure by Design (see the CLAUDE.md
+  standing rule "containers: Docker + Google best practices, Secure by Design, KISS").
+  * **CRITICAL FIX — port exposure.** Chrome CDP :9222 was published on 0.0.0.0. CDP is UNAUTHENTICATED
+    remote control of a browser holding a live LinkedIn session + ATS accounts — anyone on the LAN could
+    drive it. Now 9222/9090/5900 are bound to 127.0.0.1 ONLY. Backend :8000 (the LLM proxy holding the DO
+    key) and frontend :8090 likewise.
+  * **Least privilege:** `no-new-privileges:true` on every service, `cap_drop: ALL` where the process
+    allows, resource limits (agent 4g/2cpu, backend 1g/1cpu), healthchecks, bounded json-file logs.
+  * **DevSecOps — `python jhw.py scan`:** Trivy (Aqua Security's OSS scanner) in a container, nothing to
+    install. Scans dependency/OS CVEs + hardcoded SECRETS + Dockerfile/compose misconfiguration, then the
+    built images. Review HIGH/CRITICAL before deploy.
+  * **Observability — `python jhw.py obs`:** JSON events (agent/obs.py) -> Promtail -> Loki -> Grafana at
+    http://127.0.0.1:3000, auto-provisioned datasource + "JobHuntWOW — Apply Pipeline" dashboard
+    (applies started / reached Review / blocked / errors + a live log stream). Profile-gated: it never
+    runs during a normal apply. obs.py SCRUBS secret-ish keys and truncates long values — no secrets/PII
+    in events. Promtail does NOT get the docker socket (root-equivalent); it reads the event files
+    read-only.
+  * events.jsonl + wd_*.json added to .gitignore.
+  * KNOWN TRADE-OFFS (KISS rule 8 — write down what we skipped and why): (a) base images pinned by TAG
+    not digest — digest pinning is a real maintenance burden for a local tool, and `jhw.py scan` catches
+    the CVEs instead; (b) supervisord runs as root in the agent image because it must spawn Chrome as
+    chrome-user — the container is the boundary, hence the strict port/caps posture; (c) Chrome runs
+    --no-sandbox (unavoidable in-container) — same reasoning; (d) backend :8000 is bound to 127.0.0.1 and
+    jhw-agent reaches it via host.docker.internal (Docker Desktop proxies to the host loopback) — if the
+    LLM proxy ever fails to connect, that binding is the first thing to check.
+- 2026-07-14  RESEARCH-DRIVEN REWRITE — see **RESEARCH_ATS_AUTOMATION.md** (verified against primary
+  sources + 4 real Workday repos). All 5 researched fixes implemented in flows/workday.py:
+  1. **RESUME PARSE WAIT (the bug that stalled every run)** — Workday parses the resume SERVER-SIDE.
+     We now delete any existing attachment first (uploads stack otherwise), upload to the hidden input
+     (`set_input_files` has zero actionability checks — the documented path), then WAIT until it's
+     attached (`delete-file` appears) BEFORE clicking Save and Continue. Previously we clicked while
+     Workday was still parsing, so the required-file validation never cleared -> 9 empty loops -> paused.
+  2. **DEEP-LINK** to `{job}/apply/applyManually` — skips `adventureButton` (reference repos had to click
+     it twice; flaky). Workday bounces to auth then returns.
+  3. **SELECTOR MAP AS DATA** — flows/selectors/workday.json, FALLBACK CHAINS. Tenants run different
+     Workday UI versions: two working repos use different sign-in submits (`signInSubmitButton` vs
+     `click_filter`), and our own dump proves Red Hat runs a NEWER UI (`pageFooterNextButton`,
+     `add-button`, `applyFlowMyExpPage`) than the repos (`bottom-navigation-next-button`, `Add`,
+     `myExperiencePage`). Both kept. Never hardcode tenant WIDs.
+  4. **SELECTOR = RUNTIME ASSERTION** — a repeating validation error or an unknown page HALTS and pings
+     Telegram. We never guess. Kills "hallucinated success" (the #1 agent failure mode: the user thinks
+     they applied and didn't).
+  5. **LLM ONLY FOR FREE TEXT** — the LLM never drives the browser. Evidence: Skyvern 64.4% on
+     write-heavy WebBench (best-in-class, still poor) + 4-5 min for 6 fields; browser-use's 89%
+     WebVoyager invalid by their own admission ("removed 55 tasks", "not actually testing correct
+     things"); OpenAI DISCONTINUED Operator ("computer-use models don't yet work reliably enough in
+     production"). browser-use + page-agent REMOVED from the Workday path. page-agent is architecturally
+     wrong for third-party ATS by its own docs ("apps you own, not external or locked-down sites").
+  Also: CSP is a NON-ISSUE for Playwright/CDP (`page.evaluate` runs outside CSP — proven by Playwright's
+  own test suite), Workday has NO shadow DOM (Canvas Kit = React+Emotion), and there is NO Workday apply
+  API (browser automation is mandatory; but `POST /wday/cxs/{tenant}/{site}/jobs` is clean JSON for Scout).
+  FIXED: null bytes were being appended to agent.py (757) and flows/workday.py (2604) by file writes —
+  Python cannot import a file containing null bytes. All files stripped + compile-verified.
 - 2026-07-14  ALIBABA PAGE-AGENT wired in + ONE command + consent-banner rule.
   * flows/page_agent.py injects Alibaba page-agent (https://github.com/alibaba/page-agent) — an
     in-page, text-DOM GUI agent (NO screenshots, NO vision) — into the ATS tab over CDP and drives it
@@ -117,32 +170,4 @@ noVNC window. The agent never auto-submits (project standing rule).
   Optional LINKEDIN_EMAIL/PASSWORD (preferred) or GOOGLE_EMAIL/PASSWORD enable agent re-login on a
   login wall; 2FA/CAPTCHA is routed to the candidate via ask_human. (Google discouraged: master
   account, blocks automation, and creds reach the LLM API when a login page is read.)
-- 2026-07-14  Human-in-the-loop: agent gained an `ask_human` tool (ask.py). When a field's value
-  isn't in the candidate data, the LLM asks the candidate via Telegram (TELEGRAM_BOT_TOKEN +
-  TELEGRAM_CHAT_ID) and uses the reply. `python jhw.py telegram` discovers the chat id. Channel
-  abstraction (JHW_ASK_CHANNEL) leaves a seam for the V2 React web cabinet ('web').
-- 2026-07-14  Vision driver + fallback chain: apply driver = Llama 4 Maverick (multimodal, sees &
-  clicks) -> Nemotron Nano VL -> DeepSeek 3.2, restarting on the SAME live Chrome page (persistent
-  CDP) if a model can't reach Review (max_failures=3 + step cap; browser-use fallback_llm on 403).
-  Upgraded models: content=deepseek-v4-pro, extract=deepseek-4-flash, with deepseek-3.2 fallback.
-- 2026-07-14  V1 apply wired: agent.py `apply` loads templates/resume_data.json + the tailored
-  resume.pdf, mints a per-company ATS password (out/credentials.json, gitignored), drives LinkedIn
-  Apply -> company ATS (Workday), creates/sign-in, fills every field from real data, uploads the
-  resume via browser-use available_file_paths, and STOPS at Review (human submits in noVNC).
-- 2026-07-14  tailor.py now tailors the master templates/resume_data.json to each JD (extract) +
-  writes the cover letter (content), renders templates/resume.html + cover_letter.html with the
-  tailored content and prints them to PDF via the container's Chrome. Added templates/ (mounted).
-  Replaces the old reportlab output. Beautiful + ATS-safe, resume<=2p, cover<=1p.
-- 2026-07-14  Driver proven end-to-end on deepseek-3.2 (Anthropic tier gave 403). Added tailor.py:
-  extract (jhw-extract/llama3.3-70b) pulls JD requirements + candidate fields from Profile.pdf;
-  content (jhw-content/deepseek-3.2) writes the tailored resume + cover letter; renders both to PDF
-  in out/. Mounted tailor.py + ../Profile.pdf; added `jhw.py tailor` + `jhw.py backend`.
-- 2026-07-14  Install browser-use into an isolated venv (/opt/venv) in the image — Ubuntu's
-  apt-managed Python packages can't be uninstalled by pip, which broke `pip install` of browser-use's
-  pinned deps. Agent runs via the venv python (PATH set in the image).
-- 2026-07-14  Rebased the agent onto the cybergodai secure-browser sandbox (real Google Chrome in
-  Xvfb + noVNC) after browser-use's own Chromium launcher hung in the Playwright image and the
-  bundled Chromium crashed on modern flags. Agent now connects to the sandbox Chrome over CDP
-  (cdp_url) instead of launching its own. Added jhw.py ops CLI; removed the shell-blob workflow.
-- 2026-07-14  Added the OpenAI-compatible proxy + model routing on the backend (llm.py, proxy.py) so
-  the DO key stays server-side and the agent uses role aliases.
+- 2026-07-14  Human-in-the-loop

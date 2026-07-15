@@ -54,6 +54,7 @@ class VerifyReq(BaseModel):
 
 class AssessReq(BaseModel):
     company: str
+    lang: str = "en"          # "en" | "de" — language of the 4 generated decks
 
 
 class AssistReq(BaseModel):
@@ -134,10 +135,11 @@ def assess(req: AssessReq, request: Request):
     company = (req.company or "").strip()
     if not company:
         raise HTTPException(status_code=400, detail="company required")
+    lang = "de" if str(req.lang or "en").lower().startswith("de") else "en"
     job_id = uuid.uuid4().hex
     _job_dir(email, job_id)  # pre-create owner-scoped dir
-    store.create_job(job_id, email, company)
-    _log(evt="assess_request", user=email, company=company, job=job_id)
+    store.create_job(job_id, email, company, lang)
+    _log(evt="assess_request", user=email, company=company, job=job_id, lang=lang)
     return {"job_id": job_id}
 
 
@@ -164,7 +166,8 @@ async def _assess_stream(job_id: str, email: str):
         yield _sse({"evt": "error", "message": f"engine not found at {ENGINE}"})
         return
 
-    cmd = ["python3", ENGINE, "--seed", company, "--outdir", str(jobdir)]
+    lang = (job.get("lang") or "en")
+    cmd = ["python3", ENGINE, "--seed", company, "--outdir", str(jobdir), "--lang", lang]
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,

@@ -24,21 +24,30 @@ def _init():
                 created  INTEGER NOT NULL,
                 status   TEXT NOT NULL,
                 decks    TEXT NOT NULL DEFAULT '[]',
-                summary  TEXT NOT NULL DEFAULT '{}'
+                summary  TEXT NOT NULL DEFAULT '{}',
+                lang     TEXT NOT NULL DEFAULT 'en'
             )"""
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_jobs_email ON jobs(email)")
+        # MIGRATION: the droplet already has a jobs table, and CREATE TABLE IF NOT EXISTS will not
+        # add a column to it. Without this, every existing deployment 500s on the first assess.
+        cols = {r[1] for r in c.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "lang" not in cols:
+            c.execute("ALTER TABLE jobs ADD COLUMN lang TEXT NOT NULL DEFAULT 'en'")
 
 
 _init()
 
 
-def create_job(job_id: str, email: str, company: str) -> dict:
+def create_job(job_id: str, email: str, company: str, lang: str = "en") -> dict:
+    # `lang` MUST be persisted: the POST only registers the job, the engine is launched later by the
+    # SSE stream, which re-reads the row. An in-memory value would not survive that hop.
     with _LOCK, _conn() as c:
         c.execute(
-            "INSERT OR REPLACE INTO jobs(job_id,email,company,created,status,decks,summary) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (job_id, email.lower(), company, int(time.time()), "running", "[]", "{}"),
+            "INSERT OR REPLACE INTO jobs(job_id,email,company,created,status,decks,summary,lang) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (job_id, email.lower(), company, int(time.time()), "running", "[]", "{}",
+             "de" if str(lang).lower().startswith("de") else "en"),
         )
     return get_job(job_id)
 

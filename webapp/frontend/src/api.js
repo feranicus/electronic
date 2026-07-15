@@ -25,7 +25,7 @@ export const authLogout = ()                => postJSON("/api/auth/logout", {});
 export const getMe      = ()                => getJSON("/api/me");
 
 // ---- Assessment ----
-export const startAssess = (company) => postJSON("/api/assess", { company });
+export const startAssess = (company, lang = "en") => postJSON("/api/assess", { company, lang });
 export const assessEventsUrl = (jobId) => `/api/assess/${encodeURIComponent(jobId)}/events`;
 
 // ---- Assistant ----

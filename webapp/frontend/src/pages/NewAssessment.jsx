@@ -19,6 +19,7 @@ function asText(v) {
 
 export default function NewAssessment() {
   const [company, setCompany] = useState("");
+  const [lang, setLang] = useState("en");   // language of the 4 generated documents
   const [status, setStatus] = useState("idle"); // idle | running | done | error
   const [lines, setLines] = useState([]);
   const [decks, setDecks] = useState([]);
@@ -40,7 +41,7 @@ export default function NewAssessment() {
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
     if (esRef.current) esRef.current.close();
 
-    const { ok, data } = await startAssess(name);
+    const { ok, data } = await startAssess(name, lang);
     if (!ok || !data.job_id) {
       setStatus("error");
       setErrMsg(data.message || "Could not start the assessment.");
@@ -82,7 +83,7 @@ export default function NewAssessment() {
     <>
       <h1 className="page-h">New assessment</h1>
       <p className="page-sub">One input: a company name or domain. The engine resolves the entire footprint,
-        sweeps Shodan, and writes the four boardroom decks. No IPs, ASNs or certs to type.</p>
+        sweeps Shodan, and writes the four boardroom decks — in English or Hoch-Deutsch. No IPs, ASNs or certs to type.</p>
 
       <div className="panel">
         <form className="assess-row" onSubmit={run}>
@@ -91,6 +92,14 @@ export default function NewAssessment() {
             <input className="input" placeholder="e.g. Volkswagen AG"
               value={company} onChange={(e) => setCompany(e.target.value)}
               disabled={status === "running"} />
+          </div>
+          <div className="fld fld-lang">
+            <div className="label">Document language</div>
+            <select className="input" value={lang} onChange={(e) => setLang(e.target.value)}
+              disabled={status === "running"}>
+              <option value="en">English</option>
+              <option value="de">Deutsch (Hochdeutsch)</option>
+            </select>
           </div>
           <button className="btn" type="submit" disabled={status === "running" || !company.trim()}>
             {status === "running" ? <><span className="spinner" /> Assessing…</> : "Assess"}

@@ -14,7 +14,7 @@ import asyncio, os
 import httpx
 from playwright.async_api import async_playwright
 
-CDP_URL = os.getenv("JHW_CDP_URL", "http://localhost:9222")
+CDP_URL = os.getenv("JHW_CDP_URL", "http://127.0.0.1:9222").replace("localhost", "127.0.0.1")
 PROXY   = os.getenv("JHW_PROXY_BASE", "http://host.docker.internal:8000/v1")
 TOKEN   = os.getenv("AGENT_PROXY_TOKEN", "none")
 MODEL   = os.getenv("JHW_PAGEAGENT_MODEL", "jhw-driver")   # proxy alias -> reliable tool-caller

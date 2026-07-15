@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio, json, os
 from playwright.async_api import async_playwright
 
-CDP_URL = os.getenv("JHW_CDP_URL", "http://localhost:9222")
+CDP_URL = os.getenv("JHW_CDP_URL", "http://127.0.0.1:9222").replace("localhost", "127.0.0.1")
 OUT = os.getenv("JHW_OUT", "/agent/out")
 
 JS = r"""
