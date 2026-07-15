@@ -1,164 +1,303 @@
-"""jhw-agent — the LLM-driven browser agent (runs on the CANDIDATE's machine).
+"""jhw-agent — deterministic-first browser agent.
 
-Replaces the brittle selector scraper. Uses `browser-use` to pursue a GOAL by reading each page
-(accessibility tree + screenshot) and letting the LLM decide the next action. The LLM is served by
-the DO models through the droplet proxy (see backend/app/proxy.py) — the DO key never lands here.
-
-Two goals for V1:
-    scrape  <job>   -> read a LinkedIn job posting, return structured JD JSON
-    apply   <job>   -> drive LinkedIn Apply -> company ATS, fill, STOP at Review (human submits)
-
-Usage:
-    python agent.py scrape 4435446898 --out job.json
-    python agent.py apply  4435446898        (V1 step 4 — fills through Review, never submits)
+  scrape <job>  read a LinkedIn job -> out/job.json   (LLM, fast)
+  apply  <job>  STAGE 1 (Playwright, deterministic): check LinkedIn login, open job, click Apply,
+                detect Easy-Apply vs external ATS.  On Workday, STAGE 1b (Playwright) also drives the
+                cookie/Apply/account/My-Information/resume steps — NO LLM.  STAGE 2 (LLM/browser-use,
+                governance) only fills the remaining screening questions, ask_human for unknowns, and
+                STOPS at Review. The LLM never navigates LinkedIn or creates a LinkedIn account.
 """
 from __future__ import annotations
+import argparse, asyncio, json, os, re, secrets, sys, time
+import httpx
+from browser_use import Agent, BrowserSession, BrowserProfile, ChatOpenAI, Tools
+import ask
+from flows import linkedin, workday, page_agent, llm_driver
 
-import argparse
-import asyncio
-import json
-import os
-import re
-import sys
+PROXY   = os.getenv("JHW_PROXY_BASE", "http://host.docker.internal:8000/v1")
+TOKEN   = os.getenv("AGENT_PROXY_TOKEN", "none")
+CDP_URL = os.getenv("JHW_CDP_URL", "http://localhost:9222")
+COOKIES = os.getenv("LINKEDIN_COOKIES", "/agent/linkedin_cookies.json")
+OUT     = os.getenv("JHW_OUT", "/agent/out")
+DATA    = os.getenv("JHW_DATA", "/agent/templates/resume_data.json")
+JOB_URL = "https://www.linkedin.com/jobs/view/{jid}/"
 
-# browser-use ships its own Playwright integration; we feed it a stealth browser + our proxy LLM.
-try:
-    from browser_use import Agent, Browser, ChatOpenAI
-except Exception as e:  # pragma: no cover
-    sys.exit(
-        "[ERR] browser-use not installed. It's in requirements.txt — run the Docker build, "
-        f"or `pip install browser-use`. ({e})"
-    )
-
-# ---- config (all overridable via env / .env) ----
-PROXY_BASE = os.getenv("JHW_PROXY_BASE", "http://localhost:8000/v1")  # droplet /v1 in prod
-AGENT_TOKEN = os.getenv("AGENT_PROXY_TOKEN", "")                      # per-candidate token
-COOKIES_PATH = os.getenv("LINKEDIN_COOKIES", "linkedin_cookies.json")
-HEADLESS = os.getenv("HEADLESS", "false").lower() in ("1", "true", "yes")
-
-JOB_URL = "https://www.linkedin.com/jobs/view/{job_id}/"
+# LLM chain used ONLY for the form fill (Stage 2). (alias, use_vision) — match model capability.
+APPLY_CHAIN = [("jhw-driver", False), ("jhw-driver2", True), ("jhw-driver3", False)]
+STEPS_PER_TRY = int(os.getenv("JHW_STEPS_PER_TRY", "40"))
 
 
-def parse_job_id(arg: str) -> str:
-    m = re.search(r"(\d{6,})", arg)
+def parse_jid(a):
+    m = re.search(r"(\d{6,})", a)
     if not m:
-        sys.exit(f"[ERR] Could not find a job id in '{arg}'")
+        sys.exit(f"[ERR] no job id in '{a}'")
     return m.group(1)
 
 
-def _llm(role_alias: str) -> "ChatOpenAI":
-    """A ChatOpenAI pointed at OUR proxy; the alias (jhw-driver/jhw-vision) is routed server-side."""
-    if not AGENT_TOKEN:
-        print("[WARN] AGENT_PROXY_TOKEN not set — the proxy will reject calls.", file=sys.stderr)
-    return ChatOpenAI(model=role_alias, base_url=PROXY_BASE, api_key=AGENT_TOKEN or "none")
-
-
-def _load_cookie_json() -> list[dict]:
+def load_cookies():
     try:
-        with open(COOKIES_PATH, encoding="utf-8") as f:
-            return json.load(f)
+        raw = json.load(open(COOKIES, encoding="utf-8"))
     except FileNotFoundError:
-        print(f"[WARN] no cookies at {COOKIES_PATH} — LinkedIn will authwall.", file=sys.stderr)
-        return []
+        return None
+    ss = {"strict": "Strict", "lax": "Lax", "none": "None", "no_restriction": "None", "unspecified": "Lax", "": "Lax"}
+    ck = []
+    for c in raw:
+        if not c.get("name") or c.get("value") is None:
+            continue
+        ck.append({"name": c["name"], "value": c["value"], "domain": c.get("domain", ".linkedin.com"),
+                   "path": c.get("path", "/"), "expires": -1 if c.get("session") else float(c.get("expirationDate", c.get("expires", -1)) or -1),
+                   "httpOnly": bool(c.get("httpOnly", False)), "secure": bool(c.get("secure", True)),
+                   "sameSite": ss.get(str(c.get("sameSite", "")).lower().strip(), "Lax")})
+    out = "/tmp/jhw_storage_state.json"
+    json.dump({"cookies": ck, "origins": []}, open(out, "w"))
+    return out
 
 
-async def _make_browser() -> "Browser":
-    """Stealth Chromium with the candidate's LinkedIn session preloaded."""
-    browser = Browser(
-        headless=HEADLESS,
-        user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"),
-        args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-    )
-    await browser.start()
-    cookies = _load_cookie_json()
-    if cookies:
-        # browser-use exposes the Playwright context; add the real session cookies.
-        ctx = browser.playwright_context
-        norm = []
-        ss = {"strict": "Strict", "lax": "Lax", "none": "None",
-              "no_restriction": "None", "unspecified": "Lax", "": "Lax"}
-        for c in cookies:
-            if not c.get("name") or c.get("value") is None:
-                continue
-            norm.append({
-                "name": c["name"], "value": c["value"],
-                "domain": c.get("domain", ".linkedin.com"), "path": c.get("path", "/"),
-                "expires": -1 if c.get("session") else c.get("expirationDate", c.get("expires", -1)),
-                "httpOnly": c.get("httpOnly", False), "secure": c.get("secure", True),
-                "sameSite": ss.get(str(c.get("sameSite", "")).lower().strip(), "Lax"),
-            })
-        await ctx.add_cookies(norm)
-        print(f"[OK] loaded {len(norm)} LinkedIn cookies")
-    return browser
+def mk_session():
+    return BrowserSession(cdp_url=CDP_URL,
+                          browser_profile=BrowserProfile(storage_state=load_cookies(), enable_default_extensions=False))
 
 
-SCRAPE_TASK = """Go to {url}. This is a LinkedIn job posting and you are logged in as the candidate.
-Read the full job. Expand any 'see more' on the description. Then return ONLY a JSON object with:
-  title, company, location, workplace_type (remote/hybrid/onsite if shown),
-  apply_type ('easy_apply' if the button says Easy Apply, else 'external'),
-  description (the full text of the role/responsibilities/requirements).
-Do not invent fields. If something isn't shown, use an empty string."""
-
-APPLY_TASK = """You are applying to the LinkedIn job at {url} on behalf of the candidate.
-Steps: click Apply. If it routes to a company ATS (e.g. Workday) in a new tab, continue there.
-Create or sign in to the candidate's account if required (ask the human for a password if needed).
-Fill My Information, Experience, Education and screening questions from the candidate profile.
-When a required field is missing from the profile, STOP and ask the human for it.
-CRITICAL: fill everything up to the final Review page, then STOP. NEVER click the final Submit —
-a human does that. Report the current state and what still needs review."""
+def make_llm(alias):
+    return ChatOpenAI(model=alias, base_url=PROXY, api_key=TOKEN, add_schema_to_system_prompt=True, timeout=120)
 
 
-async def run_scrape(job_id: str, out: str | None):
-    url = JOB_URL.format(job_id=job_id)
-    browser = await _make_browser()
+async def llm_answer(question: str, options, profile) -> str:
+    """TEXT-ONLY LLM call (no vision, no screenshots, no agent loop) to answer a screening question.
+       Returns the chosen option text / a short answer, or 'UNKNOWN' if not derivable from the facts."""
+    b = profile.get("basics", {})
+    facts = (f"Name: {b.get('name')} (legal: {b.get('legal_name')}). Location: {b.get('location')}, "
+             f"{b.get('address','')}. Currently employed in Germany at Colt Technology Services. "
+             f"Languages: {', '.join(l.get('name') for l in b.get('languages', []))}. "
+             f"Email {b.get('email')}, phone {b.get('phone')}.")
+    instr = ("Choose EXACTLY ONE option and reply with its exact text: " + " | ".join(options)) if options \
+            else "Reply with a short direct answer."
+    msgs = [
+        {"role": "system", "content": "You complete job-application questions for a candidate. Answer "
+         "truthfully and ONLY from the given facts. If the answer is not determinable (citizenship, "
+         "visa/sponsorship, exact salary, notice period, anything not in the facts), reply with exactly "
+         "UNKNOWN. Reply with the answer only — no explanation."},
+        {"role": "user", "content": f"Facts:\n{facts}\n\nQuestion: {question}\n{instr}"},
+    ]
     try:
-        agent = Agent(task=SCRAPE_TASK.format(url=url), llm=_llm("jhw-driver"), browser=browser)
-        history = await agent.run(max_steps=20)
-        final = history.final_result() if hasattr(history, "final_result") else str(history)
-        # try to parse the JSON the model returned
+        async with httpx.AsyncClient(timeout=60) as c:
+            rr = await c.post(f"{PROXY}/chat/completions",
+                              headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"},
+                              json={"model": "jhw-answer", "messages": msgs, "temperature": 0.2})
+            rr.raise_for_status()
+            return (rr.json()["choices"][0]["message"]["content"] or "").strip()
+    except Exception as e:
+        print(f"[warn] llm_answer failed: {e}"); return ""
+
+
+def build_tools():
+    tools = Tools()
+
+    @tools.action("Ask the human candidate for a value you do not have or are unsure about (postal "
+                  "address, phone, work authorization, salary, notice period, a screening answer). "
+                  "One clear question. Returns their answer, or NO_ANSWER (then leave blank + note it).")
+    async def ask_human(question: str) -> str:
+        a = await ask.ask_human(question)
+        return a or "NO_ANSWER: human did not reply; leave blank and list it for review."
+
+    return tools
+
+
+def candidate_block(d):
+    b = d.get("basics", {})
+    lines = [f"Name: {b.get('name')}", f"Email: {b.get('email')}", f"Phone: {b.get('phone')}",
+             f"Address: {b.get('address','')}", f"Location: {b.get('location','')}",
+             f"LinkedIn: {b.get('linkedin','')}", f"Website: {(b.get('websites',[]) or [''])[0]}",
+             f"Languages: {', '.join(l.get('name') for l in b.get('languages', []))}", "", "WORK EXPERIENCE:"]
+    for e in d.get("experience", []):
+        when = f"{e.get('start','')}-{e.get('end','')}".strip("-") or "-"
+        lines.append(f"- {e.get('title')} at {e.get('company')} ({when}) - {e.get('summary','')}")
+    edu = (d.get("education") or [{}])[0]
+    lines += ["", f"EDUCATION: {edu.get('credential','')}, {edu.get('org','')} ({edu.get('years','')})",
+              f"CERTIFICATIONS: {', '.join(d.get('certifications', []))}",
+              f"SKILLS: {', '.join(d.get('skills_flat', [])[:25])}"]
+    return "\n".join(lines)
+
+
+def apply_context():
+    data = json.load(open(DATA, encoding="utf-8"))
+    email = data.get("basics", {}).get("email", "")
+    pw = "Jhw!" + secrets.token_urlsafe(10).replace("-", "x").replace("_", "y") + "9"
+    creds = {"email": email, "password": pw, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    json.dump(creds, open(os.path.join(OUT, "credentials.json"), "w"), indent=2)
+    files = [p for p in [os.path.join(OUT, "resume.pdf"), os.path.join(OUT, "cover_letter.pdf")] if os.path.exists(p)]
+    if not files:
+        print("[WARN] no resume.pdf in out/ — run `jhw.py tailor` first.", file=sys.stderr)
+    return candidate_block(data), files, creds
+
+
+SCRAPE_TASK = ("Go to {url} . You are logged in. Read the full LinkedIn job, expanding any 'see more'. "
+ "Finish by outputting ONLY a JSON object: title, company, location, workplace_type, "
+ "apply_type ('easy_apply'|'external'), description (full role text). Empty strings if not shown; no invention.")
+
+# Stage-2 tasks: browser is ALREADY on the right page (Playwright got us here). No LinkedIn nav.
+APPLY_ATS = """You are on the company ATS application page (e.g. Workday) — LinkedIn is already handled, do NOT go back to LinkedIn.
+1) If THIS ATS asks to sign in / create an account, use email {email} and password {password} (this is the ATS account, NOT LinkedIn). If the account exists, sign in.
+2) If "Autofill with Resume" is offered, upload the resume, then correct fields.
+3) Fill My Information, Work Experience, Education and screening questions using ONLY this data (never invent employers/dates/authorization/salary):
+------------------------------------------------------------
+{candidate}
+------------------------------------------------------------
+Upload the resume PDF at any resume/CV upload.
+4) For any value NOT in the data (address, work authorization, sponsorship, salary, notice period, custom questions) CALL ask_human and use the reply; only leave blank if it returns NO_ANSWER. Click consent checkboxes when required.
+HUMAN GATE: fill to the final Review page then STOP. NEVER click the final Submit. Report the ATS, what you filled/uploaded, and fields still needing the human."""
+
+EASY_APPLY = """You are in LinkedIn's "Easy Apply" dialog — complete it, do NOT navigate away.
+Fill each step (contact info, resume, screening questions) using ONLY this data:
+------------------------------------------------------------
+{candidate}
+------------------------------------------------------------
+Upload the resume PDF if asked. For any value not in the data, CALL ask_human. Click Next/Review through the steps.
+HUMAN GATE: stop at the final "Submit application" — NEVER submit; a human does. Report what you filled and what still needs the human."""
+
+APPLY_RESUME = """You are PART-WAY through the application in the CURRENT tab (deterministic Playwright already did the account + My-Information + resume upload). Do NOT restart, do NOT re-enter the account, do NOT leave the page. Assess the current page and continue toward Review.
+- Fill only the REMAINING fields: screening questions, work authorization, voluntary disclosures, EEO, consent checkboxes.
+- Use ONLY this data; for any value not in it, CALL ask_human:
+------------------------------------------------------------
+{candidate}
+------------------------------------------------------------
+- ATS account (only if it asks again): email {email}, password {password}.
+- Click Next / Save and Continue to advance pages.
+HUMAN GATE: reach Review and STOP. NEVER click final Submit. Report what you filled and what still needs the human."""
+
+FULL_APPLY = """Go to {url} . You are logged in on LinkedIn. Apply to this job for the candidate.
+1) Click the job's Apply button (it may say "Apply" or "Apply on company website"). If it opens a company ATS (e.g. Workday) in a NEW TAB, switch to that tab and continue there.
+2) If the ATS asks to sign in / create an account, use email {email} and password {password} (ATS account, NOT LinkedIn).
+3) If "Autofill with Resume" is offered, upload the resume, then correct fields.
+4) Fill My Information, Experience, Education and screening questions using ONLY this data (no invention):
+------------------------------------------------------------
+{candidate}
+------------------------------------------------------------
+Upload the resume PDF at any resume/CV upload. For any value not in the data, CALL ask_human.
+HUMAN GATE: fill to the final Review page then STOP. NEVER click the final Submit. Report status."""
+
+# Handed to Alibaba page-agent (in-page LLM) when the deterministic Workday driver stalls mid-form.
+PAGEAGENT_FINISH = """You are on a Workday job application, already SIGNED IN, part way through. Finish it for the candidate. Do NOT sign out and do NOT go back to the job posting.
+Fill My Information (legal name, address, phone), Work Experience, Education, and any screening / EEO / disclosure questions using ONLY this data:
+------------------------------------------------------------
+{candidate}
+------------------------------------------------------------
+The resume file was already uploaded by the system — do NOT try to upload files. Tick any required consent/terms checkbox. Click "Save and Continue" (or Next) to advance through each page. For a value not in the data, pick the most truthful option or leave it.
+STOP at the final Review page. NEVER click Submit."""
+
+
+async def run_scrape(jid):
+    url = JOB_URL.format(jid=jid)
+    if not await linkedin.ensure_login():
+        print("[ACTION] not logged into LinkedIn — see message above."); return
+    print("[i] scrape (LLM) — watch localhost:9090")
+    agent = Agent(task=SCRAPE_TASK.format(url=url), llm=make_llm("jhw-extract"),
+                  browser_session=mk_session(), use_vision=False, max_actions_per_step=4)
+    hist = await agent.run(max_steps=15)
+    final = (hist.final_result() if hasattr(hist, "final_result") else str(hist)) or ""
+    print("\n===== RESULT =====\n" + final[:2500])
+    if final:
+        m = re.search(r"\{.*\}", final, re.S)
         data = None
-        if final:
-            m = re.search(r"\{.*\}", final, re.S)
-            if m:
-                try:
-                    data = json.loads(m.group(0))
-                except Exception:
-                    pass
-        result = data or {"raw": final, "job_id": job_id, "url": url}
-        result.setdefault("job_id", job_id)
-        result.setdefault("url", url)
-        print(json.dumps(result, indent=2, ensure_ascii=False)[:1500])
-        if out:
-            with open(out, "w", encoding="utf-8") as f:
-                json.dump(result, f, indent=2, ensure_ascii=False)
-            print(f"[OK] wrote {out}")
-    finally:
-        await browser.stop()
+        if m:
+            try: data = json.loads(m.group(0))
+            except Exception: pass
+        data = data or {"raw": final}
+        data.setdefault("job_id", jid); data.setdefault("url", url)
+        json.dump(data, open(os.path.join(OUT, "job.json"), "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+        print(f"[OK] wrote {OUT}/job.json")
 
 
-async def run_apply(job_id: str):
-    url = JOB_URL.format(job_id=job_id)
-    browser = await _make_browser()
-    try:
-        agent = Agent(task=APPLY_TASK.format(url=url), llm=_llm("jhw-driver"), browser=browser)
-        history = await agent.run(max_steps=60)
-        print(history.final_result() if hasattr(history, "final_result") else str(history))
-    finally:
-        await browser.stop()
+async def run_apply(jid):
+    block, files, creds = apply_context()
+    print("[i] Stage 1: deterministic LinkedIn (Playwright, no LLM) …")
+    prep = await linkedin.prepare_application(jid)
+    print(f"[i] LinkedIn -> status={prep['status']} apply_type={prep['apply_type']} :: {prep['note']}")
+    if prep["status"] != "logged_in":
+        print("[ACTION] " + (prep.get("note") or "Log into LinkedIn at http://localhost:9090/vnc.html, then re-run apply."))
+        return
+
+    data = json.load(open(DATA, encoding="utf-8"))
+    resume_path = files[0] if files else ""
+    ats = (prep.get("ats_url") or "").lower()
+
+    if prep["apply_type"] == "external" and re.search(r"myworkday|workday", ats):
+        print("[i] Workday — FULLY DETERMINISTIC apply (Playwright autofill + text-only LLM for "
+              "questions). NO browser-use, NO screenshots, NO vision.")
+        wd = await workday.drive(creds, data, resume_path, llm_answer)
+        print(f"[i] Workday -> ok={wd['ok']} stage={wd['stage']} filled={sorted(set(wd['filled']))}")
+        print("    " + wd["note"])
+        if wd["stage"] != "review":
+            # TIER 2: Alibaba page-agent (in-page LLM). Needs the CDN — may be blocked in the sandbox.
+            print("[i] deterministic stalled — TIER 2: Alibaba page-agent (in-page LLM) …")
+            pa = await page_agent.run(PAGEAGENT_FINISH.format(candidate=block))
+            print(f"[i] page-agent -> ok={pa['ok']} :: {pa['note']}")
+            if pa.get("ok"):
+                await ask.notify(f"Workday finished via page-agent. {pa['note']}")
+            else:
+                # TIER 3: OUR direct-LLM DOM driver (proxy, no CDN) + Telegram for missing values.
+                print("[i] page-agent unavailable — TIER 3: direct-LLM DOM driver (our proxy + Telegram) …")
+                ld = await llm_driver.run(block, resume_path)
+                print(f"[i] llm-driver -> ok={ld['ok']} steps={ld['steps']} :: {ld['note']}")
+                print("    actions: " + ", ".join(ld.get("actions", [])[:30]))
+                await ask.notify(f"Workday finish (direct-LLM, {ld['steps']} steps): {ld['note']}")
+        else:
+            await ask.notify(f"Red Hat / Workday reached Review. {wd['note']}")
+        print("\n[i] Review in noVNC (localhost:9090) and click Submit yourself if ready.")
+        return
+    if prep["apply_type"] == "external":
+        # Non-Workday ATS -> Alibaba page-agent (in-page text DOM, NO browser-use, NO screenshots)
+        task = APPLY_ATS.format(email=creds["email"], password=creds["password"], candidate=block)
+        print("[i] Non-Workday ATS — Alibaba page-agent (in-page text DOM, NO browser-use, NO screenshots) …")
+        pa = await page_agent.run(task)
+        print(f"[i] page-agent -> ok={pa['ok']} :: {pa['note']}")
+        if pa.get("result"):
+            print("    " + pa["result"][:1500])
+        await ask.notify(f"page-agent apply on {pa.get('url','ATS')}: {pa['note']}")
+        print("\n[i] Review in noVNC (localhost:9090) and Submit yourself if ready.")
+        return
+
+    # easy_apply / unknown -> legacy browser-use (LinkedIn Easy-Apply modal, or job-page fallback)
+    if prep["apply_type"] == "easy_apply":
+        first = EASY_APPLY.format(candidate=block)
+    else:
+        print("[i] deterministic Apply not found — falling back to full LLM apply from the job page.")
+        first = FULL_APPLY.format(url=JOB_URL.format(jid=jid), email=creds["email"],
+                                  password=creds["password"], candidate=block)
+
+    print("[i] Stage 2: LLM governs the form fill (fast model, deterministic Playwright already navigated) …")
+    tools = build_tools()
+    hist = None
+    for i, (alias, vis) in enumerate(APPLY_CHAIN):
+        task = first if i == 0 else APPLY_RESUME.format(email=creds["email"], password=creds["password"], candidate=block)
+        print(f"\n[i] ===== form model {i+1}/{len(APPLY_CHAIN)} : {alias} (vision={vis}) =====")
+        kw = dict(task=task, llm=make_llm(alias), browser_session=mk_session(), tools=tools,
+                  use_vision=vis, max_actions_per_step=4, max_failures=3)
+        if files:
+            kw["available_file_paths"] = files
+        if i + 1 < len(APPLY_CHAIN):
+            kw["fallback_llm"] = make_llm(APPLY_CHAIN[i + 1][0])
+        try:
+            hist = await Agent(**kw).run(max_steps=STEPS_PER_TRY)
+        except Exception as e:
+            print(f"[warn] {alias} errored: {e}"); continue
+        if hist.is_successful() is True:
+            print(f"[OK] reached Review with {alias}."); break
+        print(f"[warn] {alias} did not reach Review — next model on the same page.")
+    final = (hist.final_result() if hist and hasattr(hist, "final_result") else "") or ""
+    print("\n===== RESULT =====\n" + final[:3000])
+    print("\n[i] Review in noVNC (localhost:9090) and click Submit yourself if ready.")
 
 
 def main():
-    ap = argparse.ArgumentParser(description="jhw-agent — LLM-driven LinkedIn/ATS agent")
-    ap.add_argument("goal", choices=["scrape", "apply"])
-    ap.add_argument("job", help="LinkedIn job id or /jobs/view/ URL")
-    ap.add_argument("--out", default="", help="write scrape JSON here")
-    args = ap.parse_args()
-    job_id = parse_job_id(args.job)
-    if args.goal == "scrape":
-        asyncio.run(run_scrape(job_id, args.out or None))
-    else:
-        asyncio.run(run_apply(job_id))
+    ap = argparse.ArgumentParser()
+    ap.add_argument("goal", choices=["scrape", "apply", "login"])
+    ap.add_argument("job", nargs="?", default=""); ap.add_argument("--out", default="")
+    a = ap.parse_args()
+    if a.goal == "login":
+        asyncio.run(linkedin.ensure_login()); return
+    jid = parse_jid(a.job)
+    asyncio.run(run_scrape(jid) if a.goal == "scrape" else run_apply(jid))
 
 
 if __name__ == "__main__":

@@ -21,6 +21,11 @@
 5. **The LLM assists, it does not decide side effects.** DeepSeek (DO serverless) writes summaries,
    risk digests, and prose. It never decides whether to run `apt`, push, deploy, or reboot — those
    are deterministic code paths.
+6. **Deliver operations as scripts + document — NO command blobs.** Never hand the user long ad-hoc
+   shell/heredoc command sequences to paste ("talmud commands"). Every operational step (build, run,
+   deploy, diagnose, fix) must be a re-runnable **Python script** committed to the repo, invoked as
+   `python <script> ...`, and any change (deps, Dockerfile, flags, config, architecture) must update
+   the relevant **README.md** in the SAME change. KISS + full automation. (Applies to all projects.)
 
 ## The one irreducible human input
 Cloud credentials can only be minted by the account owner. Provide them **once** as GitHub secrets;
@@ -163,3 +168,16 @@ that file). That is why Grafana went empty (promtail gone) and the Telegram bots
 --remove-orphans when deploying a single service into the shared colt-stack project. Removed it from
 deploy_web_direct.py AND web-deploy.yml. To restore promtail + bots: `python deploy.py --reuse --yes`
 (reuse.yml no longer contains `web`, so it won't touch colt-web).
+
+## IAM — who can log in (bots + web share ONE gate)
+`colt_auth.email_allowed()` is the single source of truth used by BOTH the Telegram bots and colt-web:
+- any Colt AE matching `name.familyname@colt.net` (EMAIL_RE), OR
+- a named partner in `colt_auth.PARTNER_EMAILS`  -> currently `ud@objectale.ch` (Objectale), OR
+- anyone on a trusted domain in `colt_auth.PARTNER_DOMAINS` -> currently `s4biz.io` (whole domain).
+Emails/domains are not secrets, so the defaults are committed = auditable. Domain match is EXACT
+(`x@s4biz.io.evil.com` is rejected). Add more WITHOUT a code change via env, comma-separated, in
+assess-bot/.env on the droplet (colt-web loads the same file):
+`EXTRA_ALLOWED_EMAILS="a@x.ch,b@y.com"` and/or `EXTRA_ALLOWED_DOMAINS="foo.io,bar.com"`.
+`webapp/backend/app/auth.py::email_ok()` delegates to `colt_auth.email_allowed()` so web and bots can
+never disagree. Auth is unchanged otherwise: shared password + a 6-digit OTP emailed (Gmail API) to that
+mailbox — a partner still needs to control their own inbox AND know COLT_BOT_PASSWORD.

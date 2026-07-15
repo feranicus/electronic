@@ -45,9 +45,18 @@ AUTH = colt_auth.Auth("webapp", _STORE_PATH, log=_log)
 
 
 def email_ok(email: str) -> bool:
-    """Cheap domain guard before we even hit colt_auth (which does the strict regex + password)."""
+    """Cheap guard before we hit colt_auth (which does the strict regex + password).
+    Allows any @colt.net AE, plus the named partners in colt_auth.ALLOWED_EMAILS —
+    one source of truth, so the web and the Telegram bots can never disagree."""
     email = (email or "").strip().lower()
-    return "@" in email and email.split("@", 1)[1] == ALLOWED_EMAIL_DOMAIN.lower()
+    if "@" not in email:
+        return False
+    if email.split("@", 1)[1] == ALLOWED_EMAIL_DOMAIN.lower():
+        return True
+    try:
+        return colt_auth.email_allowed(email)      # partner / guest allowlist
+    except Exception:
+        return False
 
 
 # ---------------- signed session tokens ----------------

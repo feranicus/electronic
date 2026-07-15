@@ -10,11 +10,22 @@ from .settings import DO_BASE_URL, DO_KEY
 
 # role -> DO model slug (env override: JHW_MODEL_<ROLE>)
 DEFAULT_MODELS = {
-    "driver":  "anthropic-claude-4.6-sonnet",   # browser navigation: tool-calling + vision
-    "vision":  "nemotron-nano-12b-v2-vl",       # cheap screenshot fallback
-    "content": "deepseek-3.2",                   # resume / cover-letter writing
-    "extract": "llama3.3-70b-instruct",          # JD->requirements, profile->fields (JSON)
-    "chat":    "deepseek-3.2",                   # Hermes assistant
+    # V2 ARCHITECTURE: deterministic Playwright autofill drives the ATS; the LLM only ANSWERS
+    # free-text screening questions (plain text) and does tailoring/extraction. No browser-driving
+    # LLM in the hot path, so we pick RELIABLE instruct models over "agentic" ones.
+    # Reliability ranking (2026, first-attempt-correct): Qwen3.5 ~94% > GLM-5.2 ~91% > DeepSeek 3.2.
+    # DeepSeek-4-FLASH is a routing model and produced malformed JSON here — removed from the path.
+    "answer":  "deepseek-3.2",              # screening-question answers (proven reliable text)
+    "content": "deepseek-v4-pro",           # resume / cover-letter writing (quality)
+    "content_fb": "deepseek-3.2",
+    "extract": "deepseek-3.2",              # JD->fields structured (reliable JSON; was v4-flash)
+    "extract_fb": "glm-5.2",
+    "chat":    "deepseek-3.2",
+    # Fallback LLM chain (only used if a non-Workday ATS still needs the old browser-use path):
+    "driver":  "qwen3.5-397b-a17b",         # most reliable tool-caller
+    "driver2": "glm-5.2",                   # reliable tool-caller
+    "driver3": "deepseek-3.2",              # reliable text last resort
+    "vision":  "nemotron-nano-12b-v2-vl",
 }
 
 

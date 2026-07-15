@@ -9,6 +9,40 @@ from email.message import EmailMessage
 
 COLT_PW     = os.environ.get("COLT_BOT_PASSWORD", "")
 EMAIL_RE    = re.compile(r"^[a-z]+(?:-[a-z]+)*\.[a-z]+(?:-[a-z]+)*@colt\.net$", re.I)
+
+# --- Partner / guest access -------------------------------------------------
+# Colt AEs self-serve via EMAIL_RE (name.familyname@colt.net). Access outside colt.net is granted
+# two ways. Email addresses/domains are NOT secrets, so the defaults are committed (auditable):
+#   PARTNER_EMAILS  -> individual named people
+#   PARTNER_DOMAINS -> a whole trusted domain (anyone@that-domain)
+# Add more at runtime WITHOUT a code change:
+#   EXTRA_ALLOWED_EMAILS="a@x.ch,b@y.com"     EXTRA_ALLOWED_DOMAINS="foo.io,bar.com"
+PARTNER_EMAILS  = {"ud@objectale.ch"}          # Objectale partner
+PARTNER_DOMAINS = {"s4biz.io"}                 # S4BIZ — whole domain trusted
+
+_GENERIC_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
+
+EXTRA_ALLOWED_EMAILS  = {e.strip().lower() for e in
+                         os.environ.get("EXTRA_ALLOWED_EMAILS", "").split(",") if e.strip()}
+EXTRA_ALLOWED_DOMAINS = {d.strip().lower().lstrip("@") for d in
+                         os.environ.get("EXTRA_ALLOWED_DOMAINS", "").split(",") if d.strip()}
+ALLOWED_EMAILS  = PARTNER_EMAILS  | EXTRA_ALLOWED_EMAILS
+ALLOWED_DOMAINS = PARTNER_DOMAINS | EXTRA_ALLOWED_DOMAINS
+
+def email_allowed(email: str) -> bool:
+    """True if the address may authenticate:
+         * a Colt AE            -> name.familyname@colt.net   (EMAIL_RE)
+         * a named partner      -> ALLOWED_EMAILS
+         * a trusted domain     -> anyone@ALLOWED_DOMAINS
+    Used by BOTH the Telegram bots and the web app so they can never disagree.
+    NOTE: this only decides WHO may start auth — the shared password + a 6-digit OTP
+    delivered to that mailbox are still required."""
+    e = (email or "").strip().lower()
+    if not _GENERIC_EMAIL_RE.match(e):
+        return False
+    if EMAIL_RE.match(e) or e in ALLOWED_EMAILS:
+        return True
+    return e.split("@", 1)[1] in ALLOWED_DOMAINS
 MAX_FAILS   = int(os.environ.get("AUTH_MAX_FAILS", "5"))
 LOCK_SECS   = int(os.environ.get("AUTH_LOCK_SECS", "900"))
 OTP_TTL     = int(os.environ.get("OTP_TTL_SECS", "600"))      # 10 minutes
@@ -73,7 +107,7 @@ class Auth:
         if lk: return ("locked", "\U0001f6d1 Too many attempts. Try again in %ds." % lk)
         if not COLT_PW: return ("error", "Auth is not configured (COLT_BOT_PASSWORD).")
         email = (email or "").strip()
-        if not (EMAIL_RE.match(email) and hmac.compare_digest(pw or "", COLT_PW)):
+        if not (email_allowed(email) and hmac.compare_digest(pw or "", COLT_PW)):
             self._fail(uid)
             self.log(evt="auth", bot=self.bot, result="fail", email=email.lower()[:60], user=u, ts=int(_now()))
             return ("denied", "❌ Access denied. Requires a valid Colt email (name.familyname@colt.net) and the access password.")

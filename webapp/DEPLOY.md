@@ -83,3 +83,16 @@ proxy (videodead-caddy) then randomly dials the unreachable one -> intermittent 
 MUST be defined in ONE compose file (`docker-compose.web.yml`) on ONE network (`videodead_appnet`).
 CI deploys with `--force-recreate` so a stale multi-homed container is always replaced. Never add
 `colt-web` to another compose file or `docker network connect` it to a second network.
+
+## Who can log in (IAM)
+One gate for the web AND the Telegram bots: `colt_auth.email_allowed()`.
+- Any Colt AE: `name.familyname@colt.net` (strict regex).
+- Named partners: `colt_auth.PARTNER_EMAILS` (committed) — currently `ud@objectale.ch`.
+- Trusted domains: `colt_auth.PARTNER_DOMAINS` (committed) — currently `s4biz.io` (anyone@s4biz.io).
+  Domain match is EXACT, so a lookalike like `x@s4biz.io.evil.com` is rejected.
+- Add more without a code change: set `EXTRA_ALLOWED_EMAILS="a@x.ch,b@y.com"` and/or
+  `EXTRA_ALLOWED_DOMAINS="foo.io,bar.com"` in `assess-bot/.env` on the droplet (colt-web loads that
+  same file), then redeploy.
+Auth is unchanged: shared `COLT_BOT_PASSWORD` + a 6-digit OTP emailed via the Gmail API to that
+address. External partners receive the code in their own inbox, so possession of the mailbox is
+still required.

@@ -19,6 +19,12 @@ Do NOT reintroduce any Colt / Shodan / cybergod code here.
    what gets stored, applied, or sent.
 5. **Frontend renders safely.** Never render an unknown backend value straight into JSX — coerce to text
    (objects → readable string) so a shape change can't white-screen the cabinet.
+6. **Deliver operations as scripts + document — NO command blobs.** Never hand the user long ad-hoc
+   shell/heredoc command sequences to paste ("talmud commands"). Every operational step (build, run,
+   deploy, diagnose, fix) must be a re-runnable **Python script** committed to the repo, invoked as
+   `python <script> ...`. Whenever anything changes (deps, Dockerfile, flags, config, architecture),
+   update the relevant **README.md** in the SAME change so nothing is undocumented. KISS + full
+   automation, always. (Applies to every project — jobhuntwow-app, Linkedin Scraper, oxford-*.)
 
 ## How it runs
 - **Local:** `docker compose up --build` → app on `:8090`, backend proxied at `/api`.

@@ -4,3 +4,4 @@ linkedin_cookies.json
 !package.json
 .env
 __pycache__/
+credentials.json

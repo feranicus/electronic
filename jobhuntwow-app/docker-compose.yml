@@ -4,6 +4,7 @@ services:
     env_file: .env
     volumes: [ "jhw_data:/data" ]
     expose: [ "8000" ]
+    ports: [ "8000:8000" ]      # local dev: lets the local jhw-agent reach the /v1 proxy via host.docker.internal
     restart: unless-stopped
   frontend:
     build: ./frontend
