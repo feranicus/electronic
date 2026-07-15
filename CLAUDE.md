@@ -181,3 +181,17 @@ assess-bot/.env on the droplet (colt-web loads the same file):
 `webapp/backend/app/auth.py::email_ok()` delegates to `colt_auth.email_allowed()` so web and bots can
 never disagree. Auth is unchanged otherwise: shared password + a 6-digit OTP emailed (Gmail API) to that
 mailbox — a partner still needs to control their own inbox AND know COLT_BOT_PASSWORD.
+
+## Cost observability (remember)
+Cost data comes from the `assess_done` event: `company` + `qwen_cost_usd` (+ crit/high/med/low,
+qwen_model, total_ms). The `qwen` event (enrich.py) carries `tokens_in/tokens_out/cost_usd/status`.
+Grafana "Colt Bots Observability" has a **Cost** row driven by those:
+- Cost today (24h)         -> sum(sum_over_time(... evt=assess_done | unwrap qwen_cost_usd [1d]))
+- Cost selected range      -> same with [$__range]  (set range = Last 1 year for "all-time")
+- Avg cost / assessment    -> sum(cost[$__range]) / sum(count assess_done [$__range])
+- Cost per day             -> timeseries, panel interval pinned to 1d, bars
+- Cost per assessment      -> table, sum by (company) (... [$__range])
+"All-time" = the dashboard range (bounded by Loki retention) — there is no infinite lookback.
+Panel titles MUST state the window (24h vs selected range); mixing them is what looked like a
+"discrepancy". Stats set noValue="0" (so quiet != "No data") and multi-query panels name series via
+byFrameRefID overrides (else Grafana shows "Value #A").

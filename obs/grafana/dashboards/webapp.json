@@ -56,7 +56,9 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "blue"
-          }
+          },
+          "noValue": "0",
+          "displayName": "events"
         },
         "overrides": []
       },
@@ -103,7 +105,9 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "green"
-          }
+          },
+          "noValue": "0",
+          "displayName": "ok"
         },
         "overrides": []
       },
@@ -150,7 +154,9 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "red"
-          }
+          },
+          "noValue": "0",
+          "displayName": "denied"
         },
         "overrides": []
       },
@@ -197,7 +203,9 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "purple"
-          }
+          },
+          "noValue": "0",
+          "displayName": "assessments"
         },
         "overrides": []
       },
@@ -246,7 +254,8 @@
             "stacking": {
               "mode": "normal"
             }
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -293,7 +302,8 @@
             "stacking": {
               "mode": "normal"
             }
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },

@@ -45,7 +45,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Assessments Today",
+      "title": "Assessments (24h) \u2014 requested vs completed",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -63,8 +63,17 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` [1d]))",
-          "queryType": "instant"
+          "queryType": "instant",
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_request` [1d]))"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "instant",
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` [1d]))"
         }
       ],
       "options": {
@@ -89,15 +98,41 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "noValue": "0"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "requested"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "completed"
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "QWEN Calls (OK vs Fallback)",
+      "title": "QWEN calls (24h) \u2014 by status",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -141,7 +176,8 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "noValue": "0"
         },
         "overrides": [
           {
@@ -180,7 +216,7 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "QWEN Cost Today (USD)",
+      "title": "QWEN cost \u2014 last 24h (USD)",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -224,7 +260,9 @@
           },
           "unit": "currencyUSD",
           "decimals": 4,
-          "mappings": []
+          "mappings": [],
+          "displayName": "cost",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -232,7 +270,7 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Errors Today",
+      "title": "Errors (24h)",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -288,7 +326,9 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "displayName": "errors",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -296,7 +336,7 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "QWEN Tokens Over Time (in / out)",
+      "title": "QWEN tokens over selected range (in / out)",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -397,7 +437,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "QWEN Cost Over Time (USD)",
+      "title": "QWEN cost over selected range (USD)",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -522,7 +562,7 @@
     {
       "id": 8,
       "type": "bargauge",
-      "title": "Findings Severity (last assess_done)",
+      "title": "Findings severity (sum, 24h)",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -596,7 +636,8 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "noValue": "0"
         },
         "overrides": [
           {
@@ -656,6 +697,54 @@
                   "mode": "fixed",
                   "fixedColor": "#10B981"
                 }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Critical"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "High"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Medium"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Low"
               }
             ]
           }
@@ -744,7 +833,9 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "displayName": "ok",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -796,7 +887,9 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "displayName": "denied",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -848,7 +941,9 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "displayName": "chats",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -900,7 +995,9 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "displayName": "runs",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -1078,7 +1175,9 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "displayName": "chats",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -1130,7 +1229,9 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "displayName": "runs",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -1182,7 +1283,9 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "displayName": "errors",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -1234,7 +1337,9 @@
           },
           "unit": "short",
           "decimals": 0,
-          "mappings": []
+          "mappings": [],
+          "displayName": "ok",
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -1339,6 +1444,342 @@
         "dedupStrategy": "none",
         "sortOrder": "Descending"
       }
+    },
+    {
+      "type": "row",
+      "title": "Cost \u2014 per assessment / per day / all-time",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Cost \u2014 today (24h)",
+      "description": "AI (DeepSeek/QWEN) spend on assessments completed in the last 24h.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 60
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` | unwrap qwen_cost_usd [1d]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Cost \u2014 selected range (all-time)",
+      "description": "Spend over the dashboard's time range. Set the range to 'Last 1 year' for all-time.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 60
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` | unwrap qwen_cost_usd [$__range]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Avg cost / assessment",
+      "description": "Selected range: total AI spend divided by completed assessments.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 60
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` | unwrap qwen_cost_usd [$__range])) / sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` [$__range]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Assessments (range)",
+      "description": "Completed assessments (assess_done) in the selected range.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 60
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` [$__range]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Cost per day (USD)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "One bar per day. Uses a 1d interval regardless of zoom.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 64
+      },
+      "interval": "1d",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "noValue": "0",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "range",
+          "legendFormat": "cost/day",
+          "expr": "sum(sum_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` | unwrap qwen_cost_usd [$__interval]))"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Cost per assessment \u2014 by company (selected range)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "AI spend attributed to each company assessed. Multiple runs of the same company are summed.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 64
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "noValue": "0"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cost (USD)"
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Cost (USD)",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "company": "Company"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "instant",
+          "format": "table",
+          "expr": "sum by (company) (sum_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` | unwrap qwen_cost_usd [$__range]))"
+        }
+      ]
     }
   ]
 }
