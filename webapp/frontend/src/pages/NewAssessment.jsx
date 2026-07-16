@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { startAssess, assessEventsUrl } from "../api.js";
+import { startAssess, assessEventsUrl, ackPrivacy } from "../api.js";
+import { NOTICE, useLegalLang, LangToggle } from "../legal";
 
 function asText(v) {
   if (v == null) return "";

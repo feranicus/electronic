@@ -416,6 +416,19 @@ touch the firewall — Amnezia VPN shares this host):
   delivery failures, alert log with full forensics, auth audit).
 - Watch **"Alert delivery failures"**: non-zero means alerts are not reaching you = flying blind.
 
+## Frontend — a passing `vite build` does NOT mean the page works (remember)
+`/app` went WHITE while the build was green: NewAssessment threw `useLegalLang is not defined` at
+RUNTIME because my import line never got inserted — the real import is `from "../api.js"` (with the
+extension) and my anchor searched for `from "../api"`, so the replace silently no-op'd. esbuild/vite
+never catch that: an undefined identifier is legal JS until it executes.
+RULE: after touching a page component, prove it RENDERS, not just compiles:
+  cd webapp/frontend && mkdir -p ssrtmp && (entry.jsx that renderToString's the page)
+  ./node_modules/.bin/esbuild ssrtmp/entry.jsx --bundle --outfile=ssrtmp/out.cjs --platform=node \
+      --format=cjs --jsx=automatic --loader:.css=empty && node ssrtmp/out.cjs
+It prints "RENDER OK" or the exact crash. `ssrtmp/` is gitignored.
+Second lesson (same root cause as the store.py `lang` bug): never anchor a code edit on prose or on a
+line you did not just read — anchor on something structural, and ASSERT the replace happened.
+
 ## GDPR / privacy — the claims are load-bearing (remember)
 **ALL privacy/GDPR copy is BILINGUAL (DE + EN) and lives in ONE file: `webapp/frontend/src/legal.jsx`**
 (`PRIVACY` = the /privacy page, `NOTICE` = the Art.13 notice on the Assess screen, `useLegalLang()` +

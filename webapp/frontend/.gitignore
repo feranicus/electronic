@@ -3,3 +3,5 @@ vite.config.js.timestamp-*
 vite.config.*.timestamp-*
 dist/
 node_modules/
+# scratch dir from an SSR render check — never commit
+ssrtmp/
