@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Connect to Tailscale (reach the firewalled droplet)
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with: { authkey: "${{ secrets.TS_AUTHKEY }}", version: latest }
 
       - name: Install SSH key
