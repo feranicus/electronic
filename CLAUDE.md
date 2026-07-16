@@ -259,10 +259,24 @@ account/tier · contract-valid JSON · usable business prose · German when aske
 - **A 429 from DO serverless is an ACCOUNT-level RPM/TPM quota** (Tier 1/2 = 120 RPM) or an empty
   prepaid balance — retrying the SAME model cannot fix it, only a different model or a quota/balance
   change. **DO Tier 1/2 cannot call Anthropic/OpenAI models at all except gpt-oss-120b / gpt-oss-20b.**
-- `python probe_models.py` = the one command to pick the chain from EVIDENCE: it lists what the key
-  can actually see (`/v1/models`), calls each candidate with the REAL enrichment contract, and scores
-  json_ok / contract_ok / German / latency, then prints the exact `ENRICH_MODELS=` line to paste.
-  `--local`, `--lang de`, `--models a,b`, `--json`. Read-only (docker exec into colt-web).
+- `python probe_models.py` = the one command to pick the chain from EVIDENCE: dumps the full catalog
+  grouped by vendor, probes a curated shortlist (fast+smart only; skips embed/rerank/image), calls
+  each with the REAL enrichment contract, scores json_ok / contract_ok / German / latency, then
+  prints the exact `ENRICH_MODELS=` line. `--local`, `--lang de`, `--models a,b`, `--json`.
+- **The backup MUST be a different VENDOR.** A 429/outage is provider-wide, so deepseek->deepseek is
+  not a backup. probe_models recommends the best model PER VENDOR for exactly this reason.
+- **DEADLINE-AWARE TIMEOUT (critical).** assess-bot/.env had `ENRICH_TIMEOUT=200` with a 230s budget,
+  so a hanging DeepSeek ate the whole budget and NO backup ever ran (that is how the SGS run died).
+  Each call now gets `min(ENRICH_TIMEOUT, remaining_budget / models_left)`, floor 35s — the head is
+  capped (~76s on a 3-model chain) so the backup always has budget.
+- The account is NOT DO Tier 1/2: `/v1/models` shows 74 models incl. anthropic-claude-opus-4.8 /
+  claude-5-sonnet / fable-5. Visibility != entitlement — probe_models proves which actually answer.
+- Shodan key is fine; the PLAN is `basic` (Freelancer): `vuln:` needs Small Business+, `tag:` needs
+  Corporate. `shodan_recon.shodan_plan()` calls api-info once and SKIPS those queries on a plan that
+  cannot run them (saves query credits, kills the scary warnings). Upgrading lights them up again.
+- ASN discovery is multi-source (`asn_sources.py`): RIPE DB (authoritative for DACH) + CAIDA AS Rank
+  + PeeringDB + bgpview LAST. bgpview.io is the only host that fails to resolve in the container
+  ("Errno -5"), while stat.ripe.net answers in 1ms — never depend on one API for a load-bearing fact.
 
 ## HARD RULE — absence of evidence is never a finding
 `bgp_resilience.py` graded **Cogent (AS174, a tier-1 transit network)** as

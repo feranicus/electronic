@@ -12,9 +12,27 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # NOTE: DO Tier 1/2 accounts cannot call Anthropic/OpenAI models except gpt-oss-120b / gpt-oss-20b.
 #       Run `python probe_models.py` to see what YOUR key can actually reach and which pass the
 #       JSON contract — do not guess the chain.
-_DEFAULT_CHAIN = "deepseek-3.2,gpt-oss-120b,qwen3.5-397b-a17b"
-MODELS = [m.strip() for m in os.environ.get(
-    "ENRICH_MODELS", os.environ.get("ENRICH_MODEL", _DEFAULT_CHAIN)).split(",") if m.strip()]
+_FALLBACKS = ["deepseek-3.2", "gpt-oss-120b", "qwen3.5-397b-a17b"]
+
+def _chain():
+    """ENRICH_MODELS wins outright. Otherwise a legacy single ENRICH_MODEL becomes the HEAD of the
+    chain and the fallbacks are appended behind it — never a chain of one.
+    (Bug this fixes: assess-bot/.env sets ENRICH_MODEL=deepseek-3.2, which silently collapsed the
+    chain to ["deepseek-3.2"], so a DeepSeek read-timeout killed enrichment with no failover and the
+    German deck fell back to English templates.)"""
+    explicit = os.environ.get("ENRICH_MODELS", "").strip()
+    if explicit:
+        out = [m.strip() for m in explicit.split(",") if m.strip()]
+    else:
+        head = os.environ.get("ENRICH_MODEL", "").strip()
+        out = ([head] if head else []) + _FALLBACKS
+    seen, chain = set(), []
+    for m in out:
+        if m not in seen:
+            seen.add(m); chain.append(m)
+    return chain
+
+MODELS = _chain()
 MODEL = MODELS[0]                      # back-compat: telemetry/default naming
 # per-1M-token price by model (USD). Unknown models fall back to QWEN_PRICE_PER_M.
 try:
@@ -25,7 +43,8 @@ BASE  = os.environ.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1").rstr
 KEY   = os.environ.get("OPENAI_API_KEY", "")
 PRICE = float(os.environ.get("QWEN_PRICE_PER_M", "0.65"))
 TIMEOUT  = int(os.environ.get("ENRICH_TIMEOUT", "120"))   # per-call wall budget (< pipeline subprocess timeout)
-ATTEMPTS = int(os.environ.get("ENRICH_ATTEMPTS", "2"))    # attempts PER MODEL (429/5xx are transient)
+ATTEMPTS = max(2, int(os.environ.get("ENRICH_ATTEMPTS", "2")))  # per model; floor of 2 because
+                                                          # 429/5xx/read-timeouts are transient
 BUDGET_S = int(os.environ.get("ENRICH_BUDGET_S", "230"))  # hard wall for the whole chain; run_assessment
                                                           # kills enrich at 260s, so stop before that.
 BACKOFF  = float(os.environ.get("ENRICH_BACKOFF_S", "3")) # base for exponential backoff on 429/5xx
@@ -65,25 +84,25 @@ Die JSON-SCHLUESSEL bleiben unveraendert englisch — nur die WERTE sind deutsch
 Fakten, Zahlen, IDs und Nachweise bleiben unveraendert.
 """
 
-def _post(payload):
+def _post(payload, timeout=None):
     req = urllib.request.Request(BASE + "/chat/completions", data=json.dumps(payload).encode(),
           headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+    with urllib.request.urlopen(req, timeout=(timeout or TIMEOUT)) as r:
         return json.loads(r.read())
 
-def _call(text, model=None):
+def _call(text, model=None, timeout=None):
     model = model or MODEL
     payload = {"model": model, "messages": [{"role": "user", "content": text}],
                "temperature": 0.35, "max_tokens": 5000,
                "response_format": {"type": "json_object"},
                "chat_template_kwargs": {"enable_thinking": False}}
     try:
-        d = _post(payload)
+        d = _post(payload, timeout)
     except urllib.error.HTTPError as e:
         if e.code in (400, 422):
             payload.pop("response_format", None)   # model may not accept it — raw_decode still saves us
             payload.pop("chat_template_kwargs", None)
-            d = _post(payload)
+            d = _post(payload, timeout)
         else:
             raise                                   # 429/5xx must reach the retry/failover logic
     msg = d["choices"][0]["message"]
@@ -138,8 +157,17 @@ def enrich(fj, lang="en"):
             print("[warn] enrich: %ds budget exhausted — stopping chain" % BUDGET_S, file=sys.stderr)
             break
         tried += 1
+        # DEADLINE-AWARE TIMEOUT. With ENRICH_TIMEOUT=200 and a 230s budget, one slow model ate the
+        # ENTIRE budget and the backup never ran (that is exactly how the SGS run died with
+        # chain=[deepseek] and no failover). Each call may only use its fair share of what is left,
+        # so there is always time for the next model.
+        left = BUDGET_S - (time.time() - t0_chain)
+        models_left = max(1, len(MODELS) - mi)
+        per_call = int(max(35, min(TIMEOUT, left / models_left)))
+        if left < 30:
+            last = last or "budget exhausted"; break
         try:
-            t = time.time(); content, usage = _call(prompt, model); j = _json(content)
+            t = time.time(); content, usage = _call(prompt, model, per_call); j = _json(content)
             ti = int(usage.get("prompt_tokens", 0)); to = int(usage.get("completion_tokens", 0))
             cost = round((ti + to) / 1e6 * _price(model), 6); ms = int((time.time() - t) * 1000)
             def _nid(v): return "".join(ch for ch in str(v).upper() if ch.isalnum())
@@ -168,8 +196,9 @@ def enrich(fj, lang="en"):
         except Exception as e:
             last = repr(e)
             code = getattr(e, "code", None)
-            print("[warn] enrich %s attempt %d/%d: %s" % (model, attempt + 1, ATTEMPTS, last[:160]),
-                  file=sys.stderr)
+            print("[warn] enrich %s attempt %d/%d (timeout %ds, %ds budget left): %s"
+                  % (model, attempt + 1, ATTEMPTS, per_call, int(BUDGET_S - (time.time() - t0_chain)),
+                     last[:160]), file=sys.stderr)
             if not _retryable(e):
                 break                      # bad model name / contract error -> next model immediately
             if attempt + 1 < ATTEMPTS:

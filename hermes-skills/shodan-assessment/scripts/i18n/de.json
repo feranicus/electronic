@@ -553,9 +553,86 @@
   "Colt DPI/NDR — detect exfiltration attempts": "Colt DPI/NDR — Exfiltrationsversuche erkennen",
   "Colt SD-WAN secure OT transport; Colt IP Guardian (DDoS)": "Colt SD-WAN für sicheren OT-Transport; Colt IP Guardian (DDoS)",
   "Colt IP Guardian (DDoS) for exposed services; Colt Managed Firewall — confirm intended": "Colt IP Guardian (DDoS) für exponierte Dienste; Colt Managed Firewall — beabsichtigte Freigaben bestätigen",
-  "Shodan says what's open · C-BIQ says what it costs ·": "Shodan sagt, was offen ist · C-BIQ sagt, was es kostet ·"
+  "Shodan says what's open · C-BIQ says what it costs ·": "Shodan sagt, was offen ist · C-BIQ sagt, was es kostet ·",
+  "Internet-facing RDP": "Internetseitiges RDP",
+  "Exposed database": "Exponierte Datenbank",
+  "Exposed ICS/OT protocol": "Exponiertes ICS-/OT-Protokoll",
+  "Shodan-tagged vulnerabilities (CVE)": "Shodan-markierte Schwachstellen (CVE)",
+  "Exposed edge-appliance mgmt (Citrix/Ivanti/Check Point/Fortinet)": "Exponiertes Management von Edge-Appliances (Citrix/Ivanti/Check Point/Fortinet)",
+  "Exposed VPN / firewall mgmt": "Exponiertes VPN-/Firewall-Management",
+  "Exposed remote-admin (Telnet/VNC/WinRM/SMB)": "Exponierte Remote-Administration (Telnet/VNC/WinRM/SMB)",
+  "Exposed login / admin / OWA panel": "Exponiertes Login-/Admin-/OWA-Portal",
+  "Legacy / weak TLS (SSLv3/TLS1.0/1.1)": "Veraltetes / schwaches TLS (SSLv3/TLS1.0/1.1)",
+  "Expired TLS certificate": "Abgelaufenes TLS-Zertifikat",
+  "Self-signed certificate": "Selbstsigniertes Zertifikat",
+  "Verbose service banners": "Ausführliche Dienst-Banner",
+  "KEV-heavy edge — Citrix Bleed / CVE-2024-24919 class; #1 ransomware entry": "KEV-lastiger Edge — Klasse Citrix Bleed / CVE-2024-24919; Ransomware-Einstiegsvektor Nr. 1",
+  "Trust failure; eases MITM": "Vertrauensbruch; erleichtert MITM-Angriffe",
+  "Colt SASE / ZTNA — retire the internet-facing appliance mgmt plane": "Colt SASE / ZTNA — die internetseitige Management-Ebene der Appliance abschalten",
+  "Colt Managed Security — KEV/EPSS-prioritised virtual patch": "Colt Managed Security — KEV-/EPSS-priorisiertes virtuelles Patchen",
+  "Colt Managed Security — certificate lifecycle + monitoring": "Colt Managed Security — Zertifikats-Lebenszyklus + Überwachung"
  },
  "patterns": [
+  [
+   "^Passive external reconnaissance of (.+?) surfaced (\\d+) findings? across the internet-facing estate\\.(.*)$",
+   "Die passive externe Aufklärung von $1 hat $2 Befunde in der internetseitigen Infrastruktur zutage gefördert.$3"
+  ],
+  [
+   "^Passive external reconnaissance of (.+?) surfaced ",
+   "Die passive externe Aufklärung von $1 ergab "
+  ],
+  [
+   "^Exposed edge-appliance mgmt \\(Citrix/Ivanti/Check Point/Fortinet\\) — (.+) \\((\\d+) hosts?\\)$",
+   "Exponiertes Management von Edge-Appliances (Citrix/Ivanti/Check Point/Fortinet) — $1 ($2 Hosts)"
+  ],
+  [
+   "^Exposed login / admin / OWA panel — (.+) \\((\\d+) hosts?\\)$",
+   "Exponiertes Login-/Admin-/OWA-Portal — $1 ($2 Hosts)"
+  ],
+  [
+   "^Exposed database — (.+) \\((\\d+) hosts?\\)$",
+   "Exponierte Datenbank — $1 ($2 Hosts)"
+  ],
+  [
+   "^Legacy / weak TLS \\(SSLv3/TLS1\\.0/1\\.1\\) — (.+) \\((\\d+) hosts?\\)$",
+   "Veraltetes / schwaches TLS (SSLv3/TLS1.0/1.1) — $1 ($2 Hosts)"
+  ],
+  [
+   "^Legacy / weak TLS \\(SSLv3/TLS1\\.0/1\\.1\\) \\((\\d+) hosts?\\)$",
+   "Veraltetes / schwaches TLS (SSLv3/TLS1.0/1.1) ($1 Hosts)"
+  ],
+  [
+   "^Expired TLS certificate \\((\\d+) hosts?\\)$",
+   "Abgelaufenes TLS-Zertifikat ($1 Hosts)"
+  ],
+  [
+   "^Self-signed certificate \\((\\d+) hosts?\\)$",
+   "Selbstsigniertes Zertifikat ($1 Hosts)"
+  ],
+  [
+   "^Verbose service banners? — (.+) \\((\\d+) hosts?\\)$",
+   "Ausführliche Dienst-Banner — $1 ($2 Hosts)"
+  ],
+  [
+   "^Verbose service banners? \\((\\d+) hosts?\\)$",
+   "Ausführliche Dienst-Banner ($1 Hosts)"
+  ],
+  [
+   "^Exposed remote-admin \\(Telnet/VNC/WinRM/SMB\\) \\((\\d+) hosts?\\)$",
+   "Exponierte Remote-Administration (Telnet/VNC/WinRM/SMB) ($1 Hosts)"
+  ],
+  [
+   "^Exposed VPN / firewall mgmt \\((\\d+) hosts?\\)$",
+   "Exponiertes VPN-/Firewall-Management ($1 Hosts)"
+  ],
+  [
+   "^Exposed ICS/OT protocol \\((\\d+) hosts?\\)$",
+   "Exponiertes ICS-/OT-Protokoll ($1 Hosts)"
+  ],
+  [
+   "^Internet-facing RDP \\((\\d+) hosts?\\)$",
+   "Internetseitiges RDP ($1 Hosts)"
+  ],
   [
    "^Why (.+) is targeted — drivers \\+ named entities$",
    "Warum $1 angegriffen wird — Treiber + benannte Entitäten"

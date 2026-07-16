@@ -191,6 +191,36 @@ def _favicon_hash(domain):
     except Exception:
         return None
 
+# --- Shodan entitlement gate --------------------------------------------------------------
+# `vuln:` needs a Small Business subscription or higher; `tag:` needs Corporate. On a "basic"
+# (Freelancer) key those queries are REJECTED — they still cost a round-trip and they spam the log
+# with scary warnings that look like a broken API key. They are not: the key is fine, the PLAN
+# lacks the entitlement. So ask api-info once and simply do not build queries we cannot run.
+_PLAN = {"plan": None, "vuln": False, "tag": False, "checked": False}
+_VULN_PLANS = {"corp", "corporate", "smallbiz", "small-business", "stream-100", "edu", "academic"}
+_TAG_PLANS  = {"corp", "corporate", "stream-100"}
+
+def shodan_plan():
+    if _PLAN["checked"]:
+        return _PLAN
+    _PLAN["checked"] = True
+    key = os.environ.get("SHODAN_API_KEY", "")
+    if not key:
+        return _PLAN
+    try:
+        d = _get_json("https://api.shodan.io/api-info?key=" + key, timeout=15) or {}
+        p = str(d.get("plan") or "").lower()
+        _PLAN.update(plan=p, vuln=(p in _VULN_PLANS), tag=(p in _TAG_PLANS))
+        print("[shodan] plan=%s  vuln:=%s  tag:=%s  credits=%s"
+              % (p or "?", _PLAN["vuln"], _PLAN["tag"], d.get("query_credits")), file=sys.stderr)
+        if not _PLAN["vuln"]:
+            print("[shodan] note: 'vuln:'/'has_vuln:' need Small Business+; skipping those queries "
+                  "(saves query credits). This is a PLAN limit, not a key problem.", file=sys.stderr)
+    except Exception as e:
+        print("[warn] shodan api-info failed (%s) — assuming no paid filters" % repr(e)[:80], file=sys.stderr)
+    return _PLAN
+
+
 def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
                  issuers=None, cert_orgs=None, jarms=None, cpes=None):
     """One input in, full anchor block out. Resolves ASNs+prefixes (bgpview + RIPE),
@@ -200,8 +230,22 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     favicons=list(favicons or []); cert_orgs=list(cert_orgs or [])
     name = ident.get("org") or ident.get("brand") or ident["seed"]
     is_name = bool(name) and not CIDR_RE.match(str(name))
-    if is_name:                                              # 1) ASNs from bgpview org search
-        for a in _bgpview_asns(name):
+    if is_name:                                              # 1) ASNs: RIPE + CAIDA + PeeringDB + bgpview
+        # Was bgpview.io ONLY. That single source stopped resolving inside the container
+        # ("[Errno -5] No address associated with hostname") while stat.ripe.net answered in 1ms,
+        # so every run produced asns=0 -> no ASN scoping and an empty BGP/NIS2 slide. Now four
+        # sources are merged; RIPE DB is authoritative for the RIPE region (all of DACH).
+        try:
+            import asn_sources as _ASN
+            _res = _ASN.discover(name)
+            _found = _res["asns"]
+            if not _found and _res["errors"]:
+                print("[warn] ASN discovery: every source failed (%s) — ASNs unknown, NOT 'none'"
+                      % ", ".join(e["source"] for e in _res["errors"]), file=sys.stderr)
+        except Exception as _e:
+            print("[warn] asn_sources unavailable (%s) — falling back to bgpview only" % _e, file=sys.stderr)
+            _found = _bgpview_asns(name)
+        for a in _found:
             if a not in ident["asns"]:
                 ident["asns"].append(a); ident["asn_holder"] = ident["asn_holder"] or _ripe_holder(a)
     if not ident.get("org_is_cdn"):                          # 2) prefixes for every ASN we now hold
@@ -288,10 +332,15 @@ def build_filters(ident):
         add(7, "Remote-access & DB ports", f"{scope} port:{P_REMOTE_DB}", note="RDP/SSH/Telnet/VNC/SMB/DB/FTP")
         add(8, "VPN / firewall mgmt", f"{scope} port:{P_VPN_MGMT} product:{PROD_PANEL}", note="edge-VPN = top ransomware vector")
         add(9, "RDP / WinRM / VNC", f"{scope} port:{P_RDP_WINRM}", note="remote desktop / mgmt")
-        add(10, "OT / ICS / SCADA", f"{scope} tag:ics port:{P_ICS} product:{PROD_ICS}", note="industrial protocols")
+        _pl = shodan_plan()
+        add(10, "OT / ICS / SCADA",
+            (f"{scope} tag:ics port:{P_ICS} product:{PROD_ICS}" if _pl["tag"]
+             else f"{scope} port:{P_ICS} product:{PROD_ICS}"),          # tag: needs Corporate
+            note="industrial protocols" + ("" if _pl["tag"] else " (tag: needs Corporate — omitted)"))
         add(11, "Mail / Exchange / OWA", f"{scope} port:{P_MAIL}", note="on-prem mail + OWA")
         add(12, "Vuln & TLS/EOL hygiene",
-            f"{scope} has_vuln:true  |  {scope} ssl.cert.expired:true  |  {scope} ssl.version:sslv3,tlsv1,tlsv1.1",
+            ((f"{scope} has_vuln:true  |  " if shodan_plan()["vuln"] else "")
+             + f"{scope} ssl.cert.expired:true  |  {scope} ssl.version:sslv3,tlsv1,tlsv1.1"),
             note="CISA KEV = CRITICAL")
         add(13, "Logins / panels / non-prod",
             f'{scope} http.title:"login","admin","portal","vpn","dashboard","phpMyAdmin","Webmin"', note="forgotten admin UIs")
@@ -299,9 +348,12 @@ def build_filters(ident):
         add(22, "Databases (never public)", f"{scope} port:3306,5432,27017,6379,9200,1433 product:{PROD_DB}", note="direct data-exfil path")
         add(23, "Admin UIs / web apps",
             f'{scope} product:{PROD_WEBAPP}  |  {scope} http.component:"Outlook Web App"', note="Grafana/Jenkins/Kibana/phpMyAdmin/OWA")
-        add(24, "KEV edge-appliance CVEs", f"{scope} vuln:{KEV_CVES}", run=True, note="Citrix Bleed / Check Point / F5 / HTTP-2 Rapid Reset — CISA KEV (paid)")
-        add(28, "Vulnerable hosts (has_vuln)", f"{scope} has_vuln:true", run=True, note="every host with a Shodan-tagged CVE across the estate (paid)")
-        add(29, "ICS/OT tagged hosts", f"{scope} tag:ics", run=True, note="industrial systems across the estate (paid)")
+        if shodan_plan()["vuln"]:
+            add(24, "KEV edge-appliance CVEs", f"{scope} vuln:{KEV_CVES}", run=True, note="Citrix Bleed / Check Point / F5 / HTTP-2 Rapid Reset — CISA KEV (paid)")
+        if shodan_plan()["vuln"]:
+            add(28, "Vulnerable hosts (has_vuln)", f"{scope} has_vuln:true", run=True, note="every host with a Shodan-tagged CVE across the estate (paid)")
+        if shodan_plan()["tag"]:
+            add(29, "ICS/OT tagged hosts", f"{scope} tag:ics", run=True, note="industrial systems across the estate (paid)")
         add(25, "Weak keys / full cert inventory",
             f"{scope} ssl.cert.pubkey.bits:1024  |  {scope} ssl.cert.subject.cn:*", note="1024-bit keys + full TLS inventory")
         for c in ident.get("cpes", []):
