@@ -654,4 +654,33 @@ def main():
     if fj.get("target",{}).get("qwen",{}).get("status")=="ok": _decks.append((ok4,d4))
     for ok,p in _decks: print(("  OK  " if ok else "  FAIL")+p)
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    # OBSERVABILITY GAP (found on the Yamaha crash): an unhandled exception killed the engine before
+    # `assess_done` was ever emitted, so Grafana showed "11 requested / 1 completed" and NOTHING about
+    # WHY. A crash must be as visible as a success. Emit a structured error event, then re-raise so
+    # the exit code and traceback still reach the caller/logs unchanged.
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException as _e:
+        import traceback as _tb, time as _t
+        _co = "?"
+        try:
+            for _i, _a in enumerate(sys.argv):
+                if _a == "--seed" and _i + 1 < len(sys.argv): _co = sys.argv[_i + 1]
+        except Exception:
+            pass
+        _rec = {"evt": "assess_error", "company": _co, "error": type(_e).__name__,
+                "message": str(_e)[:300], "ts": _t.time(),
+                "bot": os.environ.get("SERVICE", "engine"),
+                "service": os.environ.get("SERVICE", "engine"),
+                "where": (_tb.format_tb(_e.__traceback__)[-1].strip()[:200] if _e.__traceback__ else "?")}
+        print(json.dumps(_rec), flush=True)                 # -> SSE stream / telegram
+        try:                                                # -> events.log -> promtail -> Loki
+            with open(os.environ.get("EVENTS_LOG", "/var/log/colt/events.log"), "a") as _fh:
+                _fh.write(json.dumps(_rec) + "\n")
+        except Exception:
+            pass
+        print("PROGRESS: [100%] FAILED — %s: %s" % (type(_e).__name__, str(_e)[:160]), flush=True)
+        raise

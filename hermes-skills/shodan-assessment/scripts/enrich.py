@@ -3,7 +3,7 @@
 pursuit-grade report: reframes prose, derives architecture/business context, adds STRENGTHS
 and a Colt mitigation-mapping, writes exec_summary + a QA audit verdict. No Hermes. Facts
 never changed. Safe fallback. Emits token/cost telemetry as a JSON event for Grafana/Loki."""
-import os, sys, json, time, urllib.request, urllib.error
+import os, re, sys, json, time, urllib.request, urllib.error
 HERE  = os.path.dirname(os.path.abspath(__file__))
 # MODEL CHAIN — tried in order. The first model that returns contract-valid JSON wins.
 # A 429 from DO serverless is an ACCOUNT-level RPM/TPM quota (or an empty prepaid balance), so the
@@ -72,6 +72,18 @@ PROMPT = """%s
 === RAW FINDINGS (facts verified — reframe, never alter) ===
 %s
 
+=== FACTUAL GUARDRAILS — a customer deck carries these claims ===
+1. CVE IDs: cite a CVE identifier ONLY if that exact ID appears in the RAW FINDINGS above. NEVER
+   write a CVE number from memory — a plausible-but-wrong ID (e.g. Log4Shell is CVE-2021-44228, not
+   CVE-2021-44244) is worse than no ID. If you want to reference an incident whose CVE you are not
+   certain of, name the incident and the YEAR and omit the CVE number entirely.
+2. realComparable MUST be a REAL, PUBLIC, DATED incident (organisation + year + recorded impact).
+   Prefer one that matches THIS finding's exposure class. If you cannot recall a genuine matching
+   incident, return a shorter answer or omit the field — NEVER invent a company, date or figure.
+3. Money figures in precedents: only well-documented public numbers. If it was a proposed/reduced
+   fine, say so (e.g. "urspruenglich angekuendigt, spaeter reduziert").
+4. Never state a vulnerability is exploited/present when the evidence only shows a version banner.
+
 Now return ONLY the strict JSON from the OUTPUT CONTRACT above. No text around it."""
 
 # The deck CHROME is translated by scripts/i18n/deck_i18n.js from a committed dictionary. The PROSE
@@ -135,6 +147,38 @@ def _json(s):
     obj, _ = json.JSONDecoder().raw_decode(s[a:])
     return obj
 
+_CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
+
+def _audit_cves(fj, j):
+    """A prompt rule is a request, not a guarantee. Cross-check every CVE the model wrote against the
+    CVEs that actually appear in the scan evidence. Anything else was recalled from memory and may be
+    wrong (deepseek-3.2 emitted CVE-2021-44244 for Log4Shell; the real ID is CVE-2021-44228).
+    We do NOT silently rewrite the prose — we strip the unverifiable ID and flag it, because a wrong
+    identifier in a customer deck is worse than no identifier."""
+    known = set()
+    for f in fj.get("findings", []):
+        blob = json.dumps(f, ensure_ascii=False)
+        known.update(x.upper() for x in _CVE_RE.findall(blob))
+    invented, checked = [], 0
+    for x in (j.get("findings") or []):
+        for k in ("realComparable", "lossScenario"):
+            v = x.get(k)
+            if not isinstance(v, str):
+                continue
+            checked += 1
+            for cve in _CVE_RE.findall(v):
+                if cve.upper() not in known:
+                    invented.append(cve.upper())
+                    # keep the sentence, drop the unverifiable identifier
+                    v = v.replace(cve, "").replace("  ", " ").replace("( )", "").replace("·  ·", "·")
+            x[k] = v.strip(" ·-")
+    if invented:
+        print("[warn] enrich: %d CVE id(s) cited from model memory, not present in the scan evidence "
+              "-> stripped from the deck: %s" % (len(invented), ", ".join(sorted(set(invented)))),
+              file=sys.stderr)
+    return sorted(set(invented))
+
+
 def _emit(company, status, ti, to, cost, ms, error="", model=None, attempts=0, chain=None):
     print(json.dumps({"evt": "qwen", "company": company, "model": model or MODEL, "status": status,
                       "tokens_in": ti, "tokens_out": to, "cost_usd": cost, "ms": ms,
@@ -182,6 +226,7 @@ def enrich(fj, lang="en"):
             t = time.time(); content, usage = _call(prompt, model, per_call); j = _json(content)
             ti = int(usage.get("prompt_tokens", 0)); to = int(usage.get("completion_tokens", 0))
             cost = round((ti + to) / 1e6 * _price(model), 6); ms = int((time.time() - t) * 1000)
+            _bad_cves = _audit_cves(fj, j)          # strip hallucinated CVE ids before they reach a slide
             def _nid(v): return "".join(ch for ch in str(v).upper() if ch.isalnum())
             by_id = {_nid(x.get("id")): x for x in j.get("findings", [])}
             for f in fj["findings"]:
@@ -202,8 +247,12 @@ def enrich(fj, lang="en"):
                     for m in j["colt_mitigation"] if isinstance(m, dict)][:14]
             fj["target"]["qwen"] = {"status": "ok", "model": model, "tokens_in": ti, "tokens_out": to,
                                     "cost_usd": cost, "ms": ms, "attempts": tried,
-                                    "failover": (mi > 0), "chain": MODELS}
+                                    "failover": (mi > 0), "chain": MODELS,
+                                    "cves_stripped": _bad_cves}
             _emit(company, "ok", ti, to, cost, ms, model=model, attempts=tried)
+            if _bad_cves:
+                print(json.dumps({"evt": "hallucination_guard", "company": company,
+                                  "model": model, "cves_stripped": _bad_cves}), flush=True)
             return fj, "enriched via DELTAS BIBLE (%s%s)" % (model, "  [failover]" if mi else "")
         except Exception as e:
             last = repr(e)

@@ -332,3 +332,46 @@ drives the engine). So:
   (that mistake made the probe skip the one usable open model). Other open-weight options present:
   glm-5/5.1/5.2, kimi-k2.5/k2.6, llama-4-maverick, minimax-m2.5, mistral-3-14B, gemma-4-31B-it,
   nvidia-nemotron-3-super-120b, deepseek-4-flash.
+
+## Bake-off RESULTS on the REAL prompt (2026-07) — supersedes the toy-probe numbers
+`compare_models.py --lang de`, same findings.json, real 10,640-char prompt, ~4,100 output tokens:
+| model | ms | cost | German | rewritten | strengths | precedents |
+|---|---|---|---|---|---|---|
+| deepseek-3.2 | **25,046** | $0.0037 | yes | 3 | 2 | 3 |
+| llama-4-maverick | **44,611** | $0.0033 | yes | 3 | 1 | 3 |
+| openai-gpt-oss-120b | http-429 (every attempt) | — | — | — | — | — |
+- **Maverick is SLOWER on the real workload (44.6s vs 25.0s)** — the opposite of the probe's toy
+  prompt (3.3s vs 12.4s). NEVER pick a model on a synthetic probe; latency ranking inverts with
+  prompt size. deepseek-3.2 stays HEAD on both speed AND quality.
+- Quality: deepseek names the actual finding (2 nginx hosts, CVE-2023-44487 on KEV) + NIS2 Art.21 /
+  DSGVO Art.32 and argues structural fixes. Maverick is generic ("mehrere Sicherheitsrisiken").
+- **deepseek HALLUCINATED a CVE**: wrote CVE-2021-44244 for Log4Shell (real: CVE-2021-44228).
+  Maverick's precedents (Norsk Hydro €70M/LockerGoga, NHS WannaCry £92M, Change Healthcare $2.45B)
+  were factually ACCURATE but generic/not tied to the findings. So: neither model is "just better".
+- `openai-gpt-oss-120b` = 429 on every attempt on this account -> useless as backup; replace it.
+
+## HARD RULE — no invented identifiers in a customer deck
+Two layers in enrich.py, because a prompt rule is a request not a guarantee:
+1. PROMPT guardrails: cite a CVE ONLY if that exact ID appears in the RAW FINDINGS; name incident +
+   year instead when unsure; never invent a company/date/figure; flag proposed-vs-final fines.
+2. `_audit_cves(fj, j)` post-check: every CVE in realComparable/lossScenario is cross-checked against
+   the CVEs actually present in the scan evidence. Unverifiable ones are STRIPPED (prose kept), a
+   `[warn]` is printed, `qwen.cves_stripped` is set and an `evt=hallucination_guard` event is emitted.
+Never "fix" a hallucination by silently rewriting prose — strip the claim and surface it.
+
+## Failures must be observable (remember)
+The Yamaha run died on `TypeError: sequence item 0: expected str instance, int found` and Grafana
+showed NOTHING — because an unhandled exception killed the engine before `assess_done` was emitted.
+That is why "11 requested / 1 completed" had no explanation.
+- `run_assessment.py` now wraps `main()` and emits `evt=assess_error` (company, error type, message,
+  source line) to BOTH stdout and EVENTS_LOG, then re-raises so the exit code/traceback are unchanged.
+  It also prints `PROGRESS: [100%] FAILED — ...` so the web progress bar resolves instead of hanging.
+- Dashboard row "Failures — why an assessment died": failed 24h / range, hallucinated-CVEs-stripped,
+  LLM fallbacks, plus a table of company | error | message | where.
+- RULE: any future long-running path must emit a structured error event. A crash has to be as visible
+  as a success, or the dashboard lies by omission.
+
+## HARD RULE — ident["asns"] holds "AS1234" STRINGS
+`build_filters` does `",".join(ident["asns"])`. `asn_sources.discover()` returns ints (clean API), so
+shodan_recon converts at the boundary: `["AS%d" % a for a in res["asns"]]`. The join is also
+defensive now. Mixing the two crashed the whole Yamaha assessment for one type slip.

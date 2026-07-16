@@ -238,7 +238,10 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
         try:
             import asn_sources as _ASN
             _res = _ASN.discover(name)
-            _found = _res["asns"]
+            # asn_sources returns ints (a clean API); ident["asns"] has always held "AS1234" STRINGS
+            # (build_filters does ",".join(ident["asns"])). Convert at the boundary — mixing the two
+            # is what crashed the Yamaha run with "expected str instance, int found".
+            _found = ["AS%d" % a for a in _res["asns"]]
             if not _found and _res["errors"]:
                 print("[warn] ASN discovery: every source failed (%s) — ASNs unknown, NOT 'none'"
                       % ", ".join(e["source"] for e in _res["errors"]), file=sys.stderr)
@@ -282,7 +285,9 @@ CLOUD_HOSTERS = ("Amazon", "Microsoft Azure", "Akamai", "Cloudflare")   # brand-
 CRIT_APPLIANCES = ("citrix", "netscaler", "ivanti", "pulse secure", "check point", "fortinet", "palo alto")
 
 def build_filters(ident):
-    asns = ",".join(ident["asns"]); nets = ",".join(ident["nets"])
+    # coerce defensively: one bad type must never take down a whole assessment (see Yamaha crash)
+    asns = ",".join(("AS%d" % a) if isinstance(a, int) else str(a) for a in ident.get("asns") or [])
+    nets = ",".join(str(n) for n in ident.get("nets") or [])
     org = ident["org"]; domains = ident["domains"]; cdn = ident["org_is_cdn"]
     own_asn = bool(ident["asns"]) and not ident["org_is_carrier"] and not cdn
     run_net = bool(nets) and not cdn
