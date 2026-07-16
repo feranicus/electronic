@@ -124,7 +124,7 @@ def _post(payload, timeout=None):
 def _call(text, model=None, timeout=None):
     model = model or MODEL
     payload = {"model": model, "messages": [{"role": "user", "content": text}],
-               "temperature": 0.35, "max_tokens": 5000,
+               "temperature": 0.35, "max_tokens": 8000,   # depth: rich rem bodies need the room
                "response_format": {"type": "json_object"},
                "chat_template_kwargs": {"enable_thinking": False}}
     try:
@@ -241,8 +241,22 @@ def enrich(fj, lang="en"):
             for f in fj["findings"]:
                 x = by_id.get(_nid(f["id"]))
                 if not x: continue
-                for k in ("what", "why", "rem"):
-                    if isinstance(x.get(k), list) and x[k]: f[k] = [str(v) for v in x[k]][:3]
+                for k in ("what", "why"):
+                    if isinstance(x.get(k), list) and x[k]:
+                        f[k] = [str(v) for v in x[k]][:3]
+                # `rem` may be rich objects {tag,title,body} — the findings deck renders title bold with
+                # the body underneath (up to 5 rows). str() would have turned them into "{'tag': ...}".
+                if isinstance(x.get("rem"), list) and x["rem"]:
+                    _rem = []
+                    for v in x["rem"][:5]:
+                        if isinstance(v, dict):
+                            _tag = str(v.get("tag", "COLT")).upper()
+                            if _tag not in ("COLT", "PSF", "OSS", "VENDOR"): _tag = "COLT"
+                            _rem.append({"tag": _tag, "title": str(v.get("title", ""))[:120],
+                                         "body": str(v.get("body", ""))[:400]})
+                        else:
+                            _rem.append(str(v))
+                    f["rem"] = _rem
                 if x.get("realComparable"): f["realComparable"] = str(x["realComparable"])
             if j.get("exec_summary"): fj["target"]["exec_summary"] = str(j["exec_summary"])
             if j.get("qa_note"):      fj["target"]["qa_note"]      = str(j["qa_note"])

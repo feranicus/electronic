@@ -375,3 +375,20 @@ That is why "11 requested / 1 completed" had no explanation.
 `build_filters` does `",".join(ident["asns"])`. `asn_sources.discover()` returns ints (clean API), so
 shodan_recon converts at the boundary: `["AS%d" % a for a in res["asns"]]`. The join is also
 defensive now. Mixing the two crashed the whole Yamaha assessment for one type slip.
+
+## Deck depth — why Colt / what you get / how (remember)
+Complaint: "the amount of text is super small, needs more meat, especially WHY COLT and what it gives
+the customer". Root cause was the CONTRACT, not the model:
+- `build_findings_deck.js` already renders up to 5 rich remediation rows `{tag,title,body}` (bold
+  title + body underneath, tag one of COLT/PSF/OSS/VENDOR). The bible only asked for
+  `"rem":["Colt product name"]` — a bare string. The slide had room nobody filled.
+- FIX: LLM_DELTAS_BIBLE.md now demands 3-5 rem OBJECTS, COLT first, each body answering in order:
+  WHY COLT (what it structurally removes, why a patch does not) · WHAT THEY GET (outcome in customer
+  terms) · HOW (delivered/operated). Plus `why` = 2-3 FULL sentences with attacker action + business
+  consequence + regulation article ("Credential attacks; panel-CVE surface" is explicitly rejected),
+  `what` = full sentences, `exec_summary` must END with the Colt hook.
+- BUG that would have silently blocked it: enrich.py did `[str(v) for v in x[k]][:3]` over
+  what/why/rem — `str()` on a dict yields "{'tag': ...}". `rem` is now handled separately, tags are
+  validated against COLT/PSF/OSS/VENDOR, capped at 5 (the deck draws 5).
+- `max_tokens` 5000 -> 8000: the richer bodies need the room (gemma used 2758 out on the thin contract).
+- Depth must never be padding: every sentence carries a fact, a number, an article or an outcome.

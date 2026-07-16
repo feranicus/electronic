@@ -89,9 +89,14 @@ PSF workshops: resilience, PKI rationalisation, China risk/compliance. OSS: crt.
   "geopol_context": "2-3 sentences: why THIS customer's sector/geography/exposure attracts the threat actors — dated, specific (e.g. BSI 2025 targeting, KRITIS status, sanctions/hacktivist angle).",
   "findings": [
     {"id":"<same id>",
-     "what":["forensic, host/version/CVE-named"],
-     "why":["business impact + NAMED regulation(article) + why it matters here"],
-     "rem":["specific Colt product(s) that structurally remove it"],
+     "what":["forensic, host/version/CVE-named — 1-2 FULL sentences per item, not a fragment"],
+     "why":["business impact + NAMED regulation(article) + why it matters HERE — 2-3 full sentences: what an attacker does with it, what it costs the business, which article it breaches"],
+     "rem":[
+       {"tag":"COLT","title":"Colt <product> — <the action, imperative>",
+        "body":"WHY COLT: what this structurally removes (not a patch). WHAT THE CUSTOMER GETS: the concrete outcome (exposure retired, MTTR, audit evidence). HOW: how it is delivered/operated (managed, per-site, policy-based). 2-3 sentences."},
+       {"tag":"PSF","title":"<PSF workshop / service>","body":"What the workshop produces for the customer and how it de-risks the change."},
+       {"tag":"OSS","title":"<open-source alternative or '—'>","body":"What it does and where it stops short — be honest, this builds credibility."}
+     ],
      "realComparable":"Dated, costed, sector-adjacent REAL incident (e.g. 'Norsk Hydro 2019 · ~$70M · LockerGoga')"}
   ],
   "strengths": ["2-4 things the customer already does right"],
@@ -101,4 +106,18 @@ PSF workshops: resilience, PKI rationalisation, China risk/compliance. OSS: crt.
 }
 ```
 Include an entry in `findings` for EVERY id you were given, each with a `realComparable`.
-Keep bullet lists tight (1-3 items) but each item full and specific. Business first, depth always.
+
+## DEPTH — the deck has room; fill it (this is the #1 complaint about thin output)
+- `rem` MUST be 3-5 OBJECTS `{tag,title,body}` with `tag` one of COLT | PSF | OSS | VENDOR. The deck
+  renders the title in bold with the body underneath — a bare product name wastes the slide.
+  Lead with COLT. Every COLT body answers three questions in this order:
+    WHY COLT   — what it structurally removes, and why a patch/firewall rule does not
+    WHAT THEY GET — the outcome in the customer's terms (exposure retired, hours saved, audit evidence,
+                    one accountable contract instead of five tools)
+    HOW        — how it is delivered and operated (managed service, per-site policy, ZTNA broker, ...)
+- `why` = 2-3 FULL sentences, not a fragment. Name the attacker action, the business consequence and
+  the regulation article. "Credential attacks; panel-CVE surface" is NOT acceptable output.
+- `what` = 1-2 full sentences per item, naming the host/version/CVE evidence.
+- `exec_summary` = 4-6 sentences and must END with the Colt hook: what Colt does about this estate.
+- Be specific to THIS customer. Generic prose that would fit any company is a failure.
+- Depth must never be padding: every sentence carries a fact, a number, an article or an outcome.

@@ -85,8 +85,19 @@ def ensure_swap():
 
 def package():
     tgz = os.path.join(tempfile.gettempdir(), "colt-stack.tgz")
-    excludes = [".git", "shodan-out", "node_modules", "__pycache__", "*.bak", "*.bak2", "*.bak3", "hermes-local", "*.tgz", "uploads"]
-    run(["tar"] + sum([["--exclude", e] for e in excludes], []) + ["-czf", tgz, "-C", LOCAL, "."])
+    # NEVER pack virtualenvs / build junk. jobhuntwow-app/agent/.venv/bin/python is a SYMLINK that
+    # Windows tar cannot stat ("Cannot stat: Invalid argument"), which killed the whole deploy and
+    # silently left the Telegram bots on the old model chain. Nothing here belongs on the droplet
+    # anyway — the images build their own deps.
+    excludes = [".git", "shodan-out", "node_modules", "__pycache__", "*.bak", "*.bak2", "*.bak3",
+                "hermes-local", "*.tgz", "uploads", ".venv", "venv", "env", "*.egg-info",
+                ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build", ".idea", ".vscode",
+                "jobhuntwow-app", "*.timestamp-*.mjs", ".DS_Store"]
+    # --ignore-failed-read: a single unreadable file must degrade, not abort the deploy
+    run(["tar", "--ignore-failed-read"] + sum([["--exclude", e] for e in excludes], []) +
+        ["-czf", tgz, "-C", LOCAL, "."], check=False)
+    if not os.path.exists(tgz) or os.path.getsize(tgz) < 10240:
+        sys.exit("[X] packaging produced no usable tarball — check the excludes above")
     print("  packaged -> %s" % tgz); return tgz
 
 def upload():

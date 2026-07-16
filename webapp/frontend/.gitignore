@@ -1,0 +1,5 @@
+# vite drops a scratch config next to vite.config.js on every reload — never commit it
+vite.config.js.timestamp-*
+vite.config.*.timestamp-*
+dist/
+node_modules/
