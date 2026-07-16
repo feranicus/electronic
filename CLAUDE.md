@@ -486,6 +486,12 @@ Mobile CSS rules that are easy to get wrong (all in styles.css @media max-width:
 - inputs MUST be >=16px or **iOS Safari zooms the whole page on focus**;
 - `100vh` is wrong on phones (hides under the URL bar) -> `100dvh`;
 - respect the notch/home indicator: `viewport-fit=cover` + `env(safe-area-inset-*)`;
+- **When repurposing a component with CSS, RESET the properties you are not overriding.** The
+  desktop `.side` sets `height:100vh`. The mobile rule changed position/bottom/flex-direction but not
+  height — so the "bottom bar" stayed 100vh tall: it COVERED .main (screen looked empty), swallowed
+  every tap (nothing clickable) and centred the icons mid-screen. One missing `height:auto` produced
+  three symptoms that each looked like a different bug. Always diff the base rule when overriding.
+- never `*{max-width:100%}` — it silently caps svgs/inputs/grid children; scope it to img,svg,pre,table
 - the sidebar becomes a fixed bottom tab bar (same DOM, CSS only — Sidebar.jsx renders a phone-only
   `.topbar` for brand+logout so the bottom bar is pure navigation);
 - never `user-scalable=no` (accessibility).

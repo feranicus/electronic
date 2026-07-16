@@ -324,8 +324,12 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .topbar .brand{font-size:18px;margin:0}
 
   /* sidebar -> bottom tab bar */
-  .side{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:50;
-    flex-direction:row;border-right:0;border-top:1px solid var(--line);
+  /* NOTE: the desktop rule sets `height:100vh` (a full-height sidebar). It MUST be reset here.
+     Without `height:auto` this "bottom bar" stayed 100vh tall: it covered .main (screen looked
+     empty), swallowed every tap (nothing clickable), and its links stretched to full height so
+     justify-content:center parked the icons in the MIDDLE of the screen. */
+  .side{position:fixed;left:0;right:0;bottom:0;top:auto;height:auto;min-height:0;z-index:50;
+    flex-direction:row;align-items:center;border-right:0;border-top:1px solid var(--line);
     padding:6px 8px;padding-bottom:calc(6px + env(safe-area-inset-bottom));
     background:rgba(13,20,38,.96);backdrop-filter:blur(12px)}
   .side .brand,.side .who{display:none}          /* they live in .topbar on a phone */
@@ -364,9 +368,10 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .lang-toggle button{padding:8px 16px;min-height:40px}
   .gdpr-head{align-items:flex-start}
 
-  /* nothing may cause a horizontal scrollbar on a 360px phone */
+  /* nothing may cause a horizontal scrollbar on a 360px phone.
+     (Do NOT use `*{max-width:100%}` — it silently caps svgs, inputs and grid children.) */
   html,body{overflow-x:hidden}
-  *{max-width:100%}
+  img,svg,video,canvas,iframe,pre,table{max-width:100%}
 }
 
 @media (max-width: 380px){
@@ -377,7 +382,7 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 
 /* landscape phones: the bottom bar eats too much height, so slim it down */
 @media (max-height: 480px) and (orientation: landscape){
-  .side{padding:2px 8px}
+  .side{padding:2px 8px;height:auto}
   .nav a{min-height:40px;flex-direction:row;gap:8px}
   .main{padding-bottom:56px}
 }
