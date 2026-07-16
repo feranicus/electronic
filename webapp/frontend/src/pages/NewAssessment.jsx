@@ -27,6 +27,7 @@ export default function NewAssessment() {
   const [lang, setLang] = useState("en");   // language of the 4 generated documents
   const [pct, setPct] = useState(0);        // last REAL milestone reported by the engine
   const [phase, setPhase] = useState("");   // human label for the current phase
+  const [notice, setNotice] = useState(""); // e.g. "model X timed out — switching to Y"
   const [shown, setShown] = useState(0);    // eased value actually drawn (never goes backwards)
   const [elapsed, setElapsed] = useState(0);
   const startedRef = useRef(0);
@@ -69,7 +70,7 @@ export default function NewAssessment() {
     const name = company.trim();
     if (!name || status === "running") return;
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
-    setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…");
+    setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…"); setNotice("");
     startedRef.current = Date.now();
     if (esRef.current) esRef.current.close();
 
@@ -92,6 +93,9 @@ export default function NewAssessment() {
         if (m) {
           if (m[1]) setPct(Number(m[1]));
           setPhase(m[2].trim());
+          // the engine announces model failover on a PROGRESS line — promote it to a banner so the
+          // operator sees "the AI stalled, we switched" instead of silently getting a poorer deck
+          if (/switching to|recovered on/i.test(m[2])) setNotice(m[2].trim());
         }
       } else if (payload.evt === "done") {
         setPct(100); setShown(100);
@@ -152,9 +156,12 @@ export default function NewAssessment() {
               <span className="prog-meta">{Math.floor(shown)}% · {fmtTime(elapsed)}</span>
             </div>
             <div className="prog-track"><div className="prog-fill" style={{ width: Math.max(2, shown) + "%" }} /></div>
+            {notice && <div className="prog-notice">⚠ {notice}</div>}
             <div className="prog-note">
-              A full assessment takes about two minutes — Shodan recon is the long part, then the AI
-              writes the prose. Keep this tab open; refreshing cancels the run.
+              {elapsed > 300
+                ? "Still working. Long runs usually mean Shodan recon found a large estate, or an AI model is slow and we are failing over to the next one — the log above says which."
+                : "Typically 3–7 minutes: Shodan recon is the long part (~2–3 min), then the AI writes the prose (~1 min)."}
+              {" "}Keep this tab open; refreshing cancels the run.
             </div>
           </div>
         )}

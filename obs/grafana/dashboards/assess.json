@@ -2216,6 +2216,270 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 34,
+      "type": "row",
+      "title": "LLM chain \u2014 who stalled, why, and what saved the deck",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 85
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "Model failovers (range)",
+      "description": "A model in the chain stalled/refused and we switched to the next one. The deck still came out full quality \u2014 this is the safety net WORKING. Table below says which model and why.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 86
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`qwen_attempt` | status=`failover` [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "Degraded decks \u2014 English templates (range)",
+      "description": "EVERY model in the chain failed -> no AI prose -> the deck fell back to templated English. This is the failure you actually feel (a German deck coming out half-English). Should be 0.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 86
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`qwen` | status=`fallback` [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 37,
+      "type": "stat",
+      "title": "Deck-quality rate (range)",
+      "description": "% of assessments where the AI actually wrote the prose. <100% means decks shipped templated.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 86
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`qwen` | status=`ok` [$__range])) / sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`qwen` [$__range])) * 100",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 38,
+      "type": "stat",
+      "title": "Runs that crashed (range)",
+      "description": "Engine died on an exception \u2014 no deck at all. See the Failures table.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 86
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_error` [$__range]))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 39,
+      "type": "table",
+      "title": "Every model attempt \u2014 model \u00b7 why it failed \u00b7 timeout \u00b7 what we switched to",
+      "description": "The 5 Ws of an LLM stall: WHICH model, WHAT happened (timeout/429/403/bad-json), WHEN (ts), HOW LONG we waited (timeout_s), and WHERE it went next (next_model). This is emitted per attempt, so a chain of 3 failures produces 3 rows.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 90
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{container=~\".*assess-bot.*\"} | json | evt=`qwen_attempt` | line_format \"{{.company}}  |  {{.model}}  |  {{.reason}}  |  waited {{.timeout_s}}s  |  -> {{.next_model}}  |  {{.error}}\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40,
+      "type": "logs",
+      "title": "Raw engine log for failed / degraded runs (the actual lines)",
+      "description": "Unfiltered stream for any run that crashed or fell back \u2014 warnings, tracebacks, model errors. This is what you would otherwise SSH for.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 99
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{container=~\".*assess-bot.*\"} |~ \"(?i)(assess_error|fallback|failover|timed out|Traceback|\\\\[warn\\\\]|429|403)\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      }
     }
   ]
 }

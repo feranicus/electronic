@@ -564,11 +564,15 @@ def main():
         except Exception as e:
             print(f"[warn] findings_raw snapshot failed: {e}", file=sys.stderr)
         try:
-            r = subprocess.run(["python3", os.path.join(HERE, "enrich.py"),
+            # NO capture_output: enrich must stream. Its PROGRESS/failover lines are useless if they
+            # only appear after the step finishes — the operator needs to see "deepseek timed out,
+            # switching to gemma" WHILE it happens, not in a post-mortem dump.
+            r = subprocess.run(["python3", "-u", os.path.join(HERE, "enrich.py"),
                                 os.path.join(a.outdir, "findings.json"), a.lang],
-                               timeout=260, capture_output=True, text=True,
-                               env={**os.environ, "OUTDIR": a.outdir, "DECK_LANG": a.lang})
-            if r.stdout: print(r.stdout, end="")          # enrich's own {"evt":"qwen"} + status line
+                               timeout=270,
+                               env={**os.environ, "OUTDIR": a.outdir, "DECK_LANG": a.lang,
+                                    "PYTHONUNBUFFERED": "1"})
+            # (stdout/stderr already streamed straight through to the caller)
             if r.returncode != 0:
                 print(f"[warn] enrich exit={r.returncode}: {r.stderr.strip()[-500:]}", file=sys.stderr)
             fj = json.load(open(os.path.join(a.outdir, "findings.json")))

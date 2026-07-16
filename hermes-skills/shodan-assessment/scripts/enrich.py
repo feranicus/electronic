@@ -12,19 +12,16 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # NOTE: DO Tier 1/2 accounts cannot call Anthropic/OpenAI models except gpt-oss-120b / gpt-oss-20b.
 #       Run `python probe_models.py` to see what YOUR key can actually reach and which pass the
 #       JSON contract — do not guess the chain.
-# CHAIN — measured on THIS account with `python probe_models.py --lang de` (2026-07). Re-probe if DO
-# changes tiers; do not guess.
-#   deepseek-3.2       ok, German OK, 12.4s (but 63s on an earlier probe -> latency swings wildly,
-#                      which is precisely why a chain exists)          <- HEAD (proven deck quality)
-#   llama-4-maverick   ok, German OK, 3.3s  -> Meta, open weights      <- backup #1 (4x faster)
-#   openai-gpt-oss-120b  Apache-2.0 open weights; the only openai id Tier 1/2 may call. Probed 429
-#                      (account quota, transient — not a model fault)  <- backup #2
-# THREE DIFFERENT VENDORS on purpose: a 429/outage is provider-wide, so deepseek -> deepseek would be
-# the same failure twice.
-# Rejected on evidence: anthropic-*/openai-gpt-5* = http-403 (Tier 1/2 cannot call them);
-# deepseek-r1-distill-llama-70b + qwen3.5-397b-a17b = bad-contract (reasoning models emit thinking,
-# not strict JSON); glm-5.1/minimax-m2.5 = not JSON.
-_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "openai-gpt-oss-120b"]
+# CHAIN — measured with `compare_models.py --lang de` on the REAL 14.6k prompt (2026-07):
+#   gemma-4-31B-it    40.7s · German · 11/11 findings rewritten · 3 strengths · precedents ACCURATE
+#                     (Capital One 2019, SolarWinds 2020, Colonial Pipeline 2021) · no invented CVE
+#                                                                         <- HEAD (Google, Apache-2.0)
+#   deepseek-3.2      25s on a 3-finding input, but TIMED OUT repeatedly on real runs; also
+#                     hallucinated CVE-2021-44244 for Log4Shell          <- backup #1 (DeepSeek)
+#   llama-4-maverick  44.6s, German, accurate but GENERIC precedents     <- backup #2 (Meta)
+# THREE VENDORS. Measured failures: qwen3-32b + glm-5.2 = 180s timeout; kimi-k2.6 = no JSON;
+# openai-gpt-oss-120b = 429 every time; anthropic-*/openai-gpt-5* = 403 on this tier.
+_FALLBACKS = ["gemma-4-31B-it", "deepseek-3.2", "llama-4-maverick"]
 
 def _chain():
     """ENRICH_MODELS wins outright. Otherwise a legacy single ENRICH_MODEL becomes the HEAD of the
@@ -55,9 +52,19 @@ BASE  = os.environ.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1").rstr
 KEY   = os.environ.get("OPENAI_API_KEY", "")
 PRICE = float(os.environ.get("QWEN_PRICE_PER_M", "0.65"))
 TIMEOUT  = int(os.environ.get("ENRICH_TIMEOUT", "120"))   # per-call wall budget (< pipeline subprocess timeout)
-ATTEMPTS = max(2, int(os.environ.get("ENRICH_ATTEMPTS", "2")))  # per model; floor of 2 because
-                                                          # 429/5xx/read-timeouts are transient
-BUDGET_S = int(os.environ.get("ENRICH_BUDGET_S", "230"))  # hard wall for the whole chain; run_assessment
+# Attempts PER MODEL. With a multi-model chain, failover IS the retry — retrying the same slow model
+# twice inside a fixed budget is what starved the chain on the Suzuki run (attempts=5, every model
+# timed out, deck fell back to English templates). So: 1 attempt each when we have >=2 models, 2 only
+# when there is nothing to fail over to.
+def _attempts(n_models):
+    env = os.environ.get("ENRICH_ATTEMPTS")
+    if env:
+        try: return max(1, int(env))
+        except ValueError: pass
+    return 1 if n_models >= 2 else 2
+
+ATTEMPTS = _attempts(len(MODELS))
+BUDGET_S = int(os.environ.get("ENRICH_BUDGET_S", "245"))  # hard wall for the whole chain; run_assessment
                                                           # kills enrich at 260s, so stop before that.
 BACKOFF  = float(os.environ.get("ENRICH_BACKOFF_S", "3")) # base for exponential backoff on 429/5xx
 
@@ -219,7 +226,9 @@ def enrich(fj, lang="en"):
         # so there is always time for the next model.
         left = BUDGET_S - (time.time() - t0_chain)
         models_left = max(1, len(MODELS) - mi)
-        per_call = int(max(35, min(TIMEOUT, left / models_left)))
+        # floor 60s: the real prompt is ~14k chars and takes 25-45s. A 35s cap guaranteed
+        # a timeout, which then LOOKED like the model was down.
+        per_call = int(max(60, min(TIMEOUT, left / models_left)))
         if left < 30:
             last = last or "budget exhausted"; break
         try:
@@ -249,6 +258,9 @@ def enrich(fj, lang="en"):
                                     "cost_usd": cost, "ms": ms, "attempts": tried,
                                     "failover": (mi > 0), "chain": MODELS,
                                     "cves_stripped": _bad_cves}
+            if mi > 0:
+                print("PROGRESS: [88%%] AI enrichment recovered on %s (%s failed) — deck stays full quality"
+                      % (model, ", ".join(MODELS[:mi])), flush=True)
             _emit(company, "ok", ti, to, cost, ms, model=model, attempts=tried)
             if _bad_cves:
                 print(json.dumps({"evt": "hallucination_guard", "company": company,
@@ -276,7 +288,19 @@ def enrich(fj, lang="en"):
                 time.sleep(wait)
       if time.time() - t0_chain > BUDGET_S: break
       if mi + 1 < len(MODELS):
-          print("[info] enrich: failing over %s -> %s" % (model, MODELS[mi + 1]), file=sys.stderr)
+          # Operator-visible on the web progress bar AND in telegram: say WHICH model died, WHY, and
+          # what we are switching to. "shitty fallback" with no explanation is what this replaces.
+          _why = ("timed out" if "timed out" in last.lower() or "timeout" in last.lower()
+                  else "rate-limited (429)" if "429" in last
+                  else "refused (403)" if "403" in last
+                  else "bad response")
+          _pct = 62 + int(26 * (mi + 1) / max(1, len(MODELS)))
+          print("PROGRESS: [%d%%] AI model %s %s after %ds — switching to %s"
+                % (_pct, model, _why, per_call, MODELS[mi + 1]), flush=True)
+          print(json.dumps({"evt": "qwen_attempt", "company": company, "model": model,
+                            "status": "failover", "reason": _why, "error": last[:200],
+                            "timeout_s": per_call, "next_model": MODELS[mi + 1],
+                            "attempt": tried, "chain": MODELS}), flush=True)
 
     fj["target"]["qwen"] = {"status": "fallback", "model": MODELS[0], "tokens_in": 0, "tokens_out": 0,
                             "cost_usd": 0, "attempts": tried, "chain": MODELS, "error": last[:160]}

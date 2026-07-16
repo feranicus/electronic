@@ -11,6 +11,14 @@ services:
       - .env               # LOKI_URL / LOKI_NETWORK (written by the deploy)
       - assess-bot/.env    # shared runtime secrets: COLT_BOT_PASSWORD, GMAIL_SENDER, GMAIL_SA_B64, OPENAI_*
     environment:
+      # LLM chain as CODE. compose `environment:` overrides `env_file:`, so this beats the stale
+      # ENRICH_MODEL=deepseek-3.2 in assess-bot/.env without anyone SSHing in to edit it.
+      # Order is MEASURED (compare_models.py --lang de, real 14.6k prompt):
+      #   gemma-4-31B-it 40.7s German, 11/11 findings, ACCURATE precedents, no invented CVE  <- head
+      #   deepseek-3.2   good prose but timed out on real runs + hallucinated a CVE          <- backup
+      #   llama-4-maverick 44.6s, accurate but generic                                       <- backup
+      - ENRICH_MODELS=gemma-4-31B-it,deepseek-3.2,llama-4-maverick
+      - ENRICH_TIMEOUT=90
       - ENGINE=/opt/shodan-skill/scripts/run_assessment.py
       - ALLOWED_EMAIL_DOMAIN=colt.net
       - SERVICE=colt-web
