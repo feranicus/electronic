@@ -9,3 +9,11 @@ createRoot(document.getElementById("root")).render(
     <App />
   </BrowserRouter>
 );
+
+// PWA: register the app-shell service worker. Prod only (a SW in dev caches your own edits and
+// makes you chase ghosts). Failure here must never affect the app — it is an enhancement.
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => { /* not fatal */ });
+  });
+}

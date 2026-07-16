@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { startAssess, assessEventsUrl, ackPrivacy } from "../api.js";
+import { startAssess, assessEventsUrl, ackPrivacy, assessStatus } from "../api.js";
 import { NOTICE, useLegalLang, LangToggle } from "../legal";
 
 function asText(v) {
@@ -72,29 +72,47 @@ export default function NewAssessment() {
 
   useEffect(() => () => { if (esRef.current) esRef.current.close(); }, []);
 
+  // Phones evict background tabs. If we left a job running, pick it back up on return instead of
+  // showing an empty form while the engine is still working.
+  useEffect(() => {
+    let stale = false;
+    (async () => {
+      let jid = null;
+      try { jid = localStorage.getItem("cg_job"); } catch { /* ignore */ }
+      if (!jid) return;
+      const { ok, data } = await assessStatus(jid);
+      if (!ok || stale) { try { localStorage.removeItem("cg_job"); } catch { /* ignore */ } return; }
+      if (data.status === "running") {
+        setCompany(data.company || "");
+        // do NOT preload lines here: a fresh EventSource sends no Last-Event-ID, so the stream
+        // replays the log from the start. Preloading would double every line.
+        setLines([]);
+        setStatus("running");
+        startedRef.current = Date.now();
+        setNotice("Reconnected to an assessment already running on the server.");
+        attach(jid);
+      } else if (data.status === "done" && (data.decks || []).length) {
+        setCompany(data.company || "");
+        setLines(data.lines || []); setDecks(data.decks || []);
+        setSummary(data.summary || ""); setStatus("done"); setPct(100); setShown(100);
+        try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
+      } else {
+        try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
+      }
+    })();
+    return () => { stale = true; };
+  }, []);
+
   function acknowledge() {
     try { localStorage.setItem("cg_privacy_ack", "1"); } catch { /* private mode */ }
     setAckd(true);
     ackPrivacy();                                   // server-side record of the acknowledgement
   }
 
-  async function run(e) {
-    e.preventDefault();
-    const name = company.trim();
-    if (!name || status === "running") return;
-    if (!ackd) { acknowledge(); }                   // first Assess click = notice was shown + accepted
-    setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
-    setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…"); setNotice("");
-    startedRef.current = Date.now();
+  // ONE place that wires the stream — used both by a fresh run and by resuming an in-flight job.
+  function attach(jobId) {
     if (esRef.current) esRef.current.close();
-
-    const { ok, data } = await startAssess(name, lang);
-    if (!ok || !data.job_id) {
-      setStatus("error");
-      setErrMsg(data.message || "Could not start the assessment.");
-      return;
-    }
-    const es = new EventSource(assessEventsUrl(data.job_id), { withCredentials: true });
+    const es = new EventSource(assessEventsUrl(jobId), { withCredentials: true });
     esRef.current = es;
 
     es.onmessage = (ev) => {
@@ -112,28 +130,48 @@ export default function NewAssessment() {
           if (/switching to|recovered on/i.test(m[2])) setNotice(m[2].trim());
         }
       } else if (payload.evt === "done") {
+        try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
         setPct(100); setShown(100);
         setDecks(payload.decks || []);
         setSummary(payload.summary || "");
         setStatus("done");
         es.close();
       } else if (payload.evt === "error") {
+        try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
         setErrMsg(payload.message || "The assessment failed.");
         setStatus("error");
         es.close();
       }
     };
     es.onerror = () => {
-      // if we never finished, surface a connection error
-      setStatus((s) => {
-        if (s === "running") {
-          setErrMsg("Lost connection to the assessment stream.");
-          return "error";
-        }
-        return s;
+      // DO NOT close. EventSource reconnects by itself and replays Last-Event-ID, so we resume
+      // exactly where we left off. The run lives on the server now — a locked phone, a tunnel or a
+      // flaky radio is a pause, not a cancellation.
+      setStatus((cur) => {
+        if (cur === "running") setNotice("Connection dropped — reconnecting… (the assessment keeps running on the server)");
+        return cur;
       });
-      es.close();
     };
+    es.onopen = () => setNotice((n) => (n.startsWith("Connection dropped") ? "" : n));
+  }
+
+  async function run(e) {
+    e.preventDefault();
+    const name = company.trim();
+    if (!name || status === "running") return;
+    if (!ackd) { acknowledge(); }                   // first Assess click = notice was shown + accepted
+    setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
+    setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…"); setNotice("");
+    startedRef.current = Date.now();
+
+    const { ok, data } = await startAssess(name, lang);
+    if (!ok || !data.job_id) {
+      setStatus("error");
+      setErrMsg(data.message || "Could not start the assessment.");
+      return;
+    }
+    try { localStorage.setItem("cg_job", data.job_id); } catch { /* ignore */ }
+    attach(data.job_id);
   }
 
   return (

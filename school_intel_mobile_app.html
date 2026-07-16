@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
+<meta name="theme-color" content="#070806">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>School Intel — Саратов · Тбилиси · Батуми</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800;900&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070806;--bg2:#0c0e08;--ink:#f3f4ea;--muted:#8d9176;
+    --lime:#c8ff00;--orange:#ff5a1f;--cyan:#38e1ff;--violet:#b08bff;--gold:#f7c844;
+    --card:#12140c;--line:rgba(200,255,0,.14);--r:20px;--ease:cubic-bezier(.22,1,.36,1);
+    --topbar:56px;--tabbar:64px;
+    --sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);
+    --sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  body{
+    background:var(--bg);color:var(--ink);font-family:'Manrope',sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;
+    overflow-x:clip;min-height:100vh;line-height:1.5;
+  }
+  ::selection{background:var(--lime);color:#000}
+  a{color:inherit;text-decoration:none}
+  button{font-family:inherit;border:none;background:none;color:inherit;cursor:pointer}
+  img,svg{max-width:100%}
+  .grid-guard>*,.rowg>*{min-width:0}
+
+  /* ambient bg */
+  #bgfx{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .glow{position:fixed;inset:0;z-index:0;pointer-events:none;background:
+    radial-gradient(60% 42% at 84% 6%,rgba(255,90,31,.13),transparent 60%),
+    radial-gradient(70% 46% at 6% 96%,rgba(200,255,0,.12),transparent 60%),
+    radial-gradient(60% 40% at 60% 55%,rgba(56,225,255,.06),transparent 60%)}
+
+  /* ---- top bar ---- */
+  .topbar{position:fixed;top:0;left:0;right:0;z-index:60;height:calc(var(--topbar) + var(--sat));
+    padding:var(--sat) max(16px,var(--sal)) 0 max(16px,var(--sar));
+    display:flex;align-items:center;justify-content:space-between;
+    background:rgba(7,8,6,.72);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
+    border-bottom:1px solid var(--line)}
+  @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.topbar{background:rgba(7,8,6,.96)}}
+  .tb-brand{display:flex;align-items:center;gap:9px;font-family:'Unbounded';font-weight:900;font-size:15px;letter-spacing:.01em}
+  .tb-brand .spin{width:15px;height:15px;border:2.5px solid var(--lime);border-radius:50%;border-top-color:transparent;animation:spin 3.5s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .tb-brand b{color:var(--lime)}
+  .tb-title{font-family:'Unbounded';font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+
+  /* ---- app scroll area ---- */
+  main{position:relative;z-index:2;
+    padding-top:calc(var(--topbar) + var(--sat));
+    padding-bottom:calc(var(--tabbar) + var(--sab) + 12px);
+    padding-left:max(16px,var(--sal));padding-right:max(16px,var(--sar));
+    max-width:720px;margin:0 auto}
+  .screen{display:none}
+  .screen.active{display:block;animation:enter .42s var(--ease)}
+  @keyframes enter{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+  /* ---- shared type ---- */
+  .kicker{display:inline-flex;align-items:center;gap:8px;font-family:'Unbounded';font-weight:600;font-size:10.5px;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--lime);border:1px solid var(--line);
+    padding:7px 13px;border-radius:100px;background:rgba(200,255,0,.05)}
+  .kicker .dot{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 10px var(--lime);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .h-lead{font-family:'Unbounded';font-weight:900;text-transform:uppercase;line-height:.98;letter-spacing:-.01em;
+    font-size:clamp(30px,8.5vw,46px);margin:16px 0 14px;overflow-wrap:anywhere}
+  .h-lead .a{color:var(--lime);text-shadow:0 0 22px rgba(200,255,0,.3)}
+  .h-lead .b{color:var(--cyan)}
+  .lead{color:#cfd2be;font-size:15px;line-height:1.62}
+  .stitle{font-family:'Unbounded';font-weight:800;text-transform:uppercase;line-height:1.02;letter-spacing:-.01em;
+    font-size:clamp(23px,6.4vw,32px);margin-bottom:8px;overflow-wrap:anywhere}
+  .stitle em{font-style:normal;color:var(--lime)}
+  .sdesc{color:#bcc0a8;font-size:14px;line-height:1.55}
+  .amber{height:3px;width:56px;background:linear-gradient(90deg,var(--gold),transparent);border-radius:3px;margin:12px 0 2px}
+  .shead{margin:6px 0 18px}
+  .stag{font-family:'Unbounded';font-weight:600;font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+
+  /* ---- overview ---- */
+  .hero{padding:14px 0 8px}
+  .cta-row{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
+  .btn{font-family:'Unbounded';font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;
+    padding:14px 20px;border-radius:14px;background:var(--lime);color:#070806;transition:transform .12s var(--ease),box-shadow .2s;
+    display:inline-flex;align-items:center;gap:8px}
+  .btn:active{transform:scale(.96)}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:26px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 14px}
+  .stat .n{font-family:'Unbounded';font-weight:900;font-size:26px;color:var(--lime);line-height:1}
+  .stat .l{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.3}
+
+  .rub{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+  @media(max-width:400px){.rub{grid-template-columns:1fr}}
+  .ri{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;transition:transform .12s var(--ease),border-color .2s}
+  .ri:active{transform:scale(.98)}
+  .ri .k{font-family:'Unbounded';font-weight:900;font-size:12px;color:#070806;background:var(--lime);width:26px;height:26px;border-radius:8px;display:grid;place-items:center}
+  .ri.c2 .k{background:var(--cyan)}.ri.c3 .k{background:var(--violet)}.ri.c4 .k{background:var(--gold)}.ri.c5 .k{background:var(--orange);color:#fff}
+  .ri b{display:block;font-family:'Unbounded';font-weight:800;font-size:12.5px;text-transform:uppercase;margin:11px 0 5px;overflow-wrap:anywhere}
+  .ri p{font-size:12px;color:#aeb298;line-height:1.45}
+
+  /* ---- filters ---- */
+  .fscroll{margin:16px -16px 0;padding:0 16px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .fscroll::-webkit-scrollbar{display:none}
+  .fgroup{display:inline-flex;gap:7px;padding:6px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.02);white-space:nowrap;margin-right:8px}
+  .flabel{font-size:10px;font-family:'Unbounded';font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);align-self:center;padding:0 4px 0 8px}
+  .chip{padding:9px 13px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.02);
+    font-weight:700;font-size:12.5px;transition:transform .12s var(--ease),background .18s,color .18s,border-color .18s;user-select:none}
+  .chip:active{transform:scale(.94)}
+  .chip.on{background:var(--lime);color:#070806;border-color:var(--lime)}
+  .countline{margin:16px 0 12px;font-size:12.5px;color:var(--muted)}
+  .countline b{color:var(--lime);font-family:'Unbounded'}
+
+  /* ---- school cards ---- */
+  .cards{display:grid;gap:12px}
+  .scard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;
+    transition:transform .12s var(--ease),border-color .2s;position:relative}
+  .scard:active{transform:scale(.99)}
+  .scard .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .ct{font-size:10px;font-family:'Unbounded';font-weight:700;letter-spacing:.09em;text-transform:uppercase;padding:4px 9px;border-radius:100px;white-space:nowrap}
+  .ct.sar{background:rgba(176,139,255,.15);color:var(--violet)}
+  .ct.tbi{background:rgba(56,225,255,.15);color:var(--cyan)}
+  .ct.bat{background:rgba(255,90,31,.15);color:var(--orange)}
+  .scard .sc{font-family:'Unbounded';font-weight:900;font-size:20px;color:var(--lime);line-height:1}
+  .scard .sc small{display:block;font-family:'Manrope';font-weight:600;font-size:9px;color:var(--muted);text-align:right;margin-top:2px;letter-spacing:.05em}
+  .scard h4{font-family:'Unbounded';font-weight:800;font-size:15px;text-transform:uppercase;line-height:1.12;margin:13px 0 4px;overflow-wrap:anywhere}
+  .scard .curl{font-size:12px;color:var(--lime);font-weight:700}
+  .scard .rows{margin:13px 0 0;border-top:1px dashed var(--line);padding-top:11px;display:grid;gap:6px}
+  .rw{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+  .rw span:first-child{color:var(--muted)}
+  .rw span:last-child{text-align:right;font-weight:600;color:#dadcca;overflow-wrap:anywhere}
+  .rw .fee{font-family:'Unbounded';font-weight:900;color:var(--lime);font-size:14px}
+  .scard .verd{margin-top:11px;font-size:12px;color:#b6ba9f;line-height:1.5}
+  .sbar{height:6px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-top:13px}
+  .sbar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--cyan),var(--lime));width:0;transition:width .9s var(--ease)}
+  .empty{text-align:center;padding:44px 18px;color:var(--muted);border:1px dashed var(--line);border-radius:16px}
+
+  /* ---- profiles ---- */
+  .prof{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px;margin-bottom:14px}
+  .prof .ph{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .prof h3{font-family:'Unbounded';font-weight:800;font-size:17px;text-transform:uppercase;line-height:1.08;overflow-wrap:anywhere}
+  .prof .sub{color:var(--muted);font-size:11.5px;margin-top:6px}
+  .prof .badge{font-family:'Unbounded';font-weight:800;font-size:10px;padding:6px 10px;border-radius:100px;background:rgba(200,255,0,.1);color:var(--lime);border:1px solid var(--line);white-space:nowrap}
+  .prof .plain{color:#dadcca;font-size:13.5px;line-height:1.58;margin:14px 0 4px}
+  .bars{display:grid;gap:11px;margin-top:16px}
+  .bar{display:grid;grid-template-columns:118px 1fr 34px;align-items:center;gap:10px}
+  @media(max-width:360px){.bar{grid-template-columns:92px 1fr 30px}}
+  .bar .bn{font-size:12px;color:#aeb298}
+  .bar .bt{height:8px;border-radius:5px;background:rgba(255,255,255,.06);overflow:hidden}
+  .bar .bt i{display:block;height:100%;width:0;border-radius:5px;transition:width 1s var(--ease)}
+  .bar .bv{font-family:'Unbounded';font-weight:800;font-size:12px;color:var(--lime);text-align:right}
+
+  /* ---- price ladder ---- */
+  .ladder{display:grid;gap:12px;margin-top:6px}
+  .lad .lname{font-size:13px;font-weight:700;margin-bottom:6px;overflow-wrap:anywhere}
+  .lad .lname small{display:block;color:var(--muted);font-weight:600;font-size:11px;margin-top:2px}
+  .lad .track{height:30px;border-radius:9px;background:rgba(255,255,255,.045);position:relative;overflow:hidden}
+  .lad .fillb{position:absolute;left:0;top:0;height:100%;border-radius:9px;width:0;transition:width 1s var(--ease);
+    display:flex;align-items:center;justify-content:flex-end;padding-right:9px}
+  .lad .fillb span{font-family:'Unbounded';font-weight:800;font-size:11.5px;color:#070806;white-space:nowrap}
+  .lad.est .fillb{opacity:.66;background-image:repeating-linear-gradient(45deg,transparent,transparent 6px,rgba(0,0,0,.16) 6px,rgba(0,0,0,.16) 12px)}
+  .laxis{display:flex;justify-content:space-between;color:var(--muted);font-size:10.5px;margin-top:8px}
+  .note{font-size:12px;color:var(--muted);margin-top:16px;line-height:1.55;border:1px solid var(--line);border-radius:14px;padding:14px;background:rgba(255,255,255,.015)}
+
+  /* ---- city verdict ---- */
+  .cty{border-radius:var(--r);padding:20px;border:1px solid var(--line);margin-bottom:12px}
+  .cty.v{background:linear-gradient(150deg,rgba(176,139,255,.14),rgba(176,139,255,.02))}
+  .cty.c{background:linear-gradient(150deg,rgba(56,225,255,.14),rgba(56,225,255,.02))}
+  .cty.o{background:linear-gradient(150deg,rgba(255,90,31,.14),rgba(255,90,31,.02))}
+  .cty .cn{font-family:'Unbounded';font-weight:900;font-size:20px;text-transform:uppercase}
+  .cty.v .cn{color:var(--violet)}.cty.c .cn{color:var(--cyan)}.cty.o .cn{color:var(--orange)}
+  .cty .cmeta{font-size:11px;color:var(--muted);margin:4px 0 12px}
+  .cty p{font-size:13px;color:#c3c6b2;line-height:1.55}
+  .cty ul{list-style:none;margin-top:11px;display:grid;gap:6px}
+  .cty li{font-size:12.5px;color:#aeb298;padding-left:17px;position:relative;line-height:1.4}
+  .cty li::before{content:"▸";position:absolute;left:0;color:var(--lime)}
+
+  /* ---- recommendation ---- */
+  .rec{background:linear-gradient(135deg,rgba(200,255,0,.08),transparent);border:1px solid var(--line);border-radius:var(--r);padding:22px;margin-top:8px}
+  .rec h3{font-family:'Unbounded';font-weight:800;font-size:16px;text-transform:uppercase;display:flex;gap:9px;align-items:center;line-height:1.2}
+  .rn{display:grid;gap:13px;margin-top:16px}
+  .rnrow{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}
+  .rnrow .rk{width:30px;height:30px;border-radius:9px;background:var(--lime);color:#070806;display:grid;place-items:center;font-family:'Unbounded';font-weight:900;font-size:14px}
+  .rnrow.c2 .rk{background:var(--cyan)}.rnrow.c3 .rk{background:var(--violet)}.rnrow.c4 .rk{background:var(--gold)}
+  .rnrow b{font-family:'Unbounded';font-weight:700;font-size:13px;text-transform:uppercase}
+  .rnrow p{font-size:13px;color:#c3c6b2;line-height:1.55;margin-top:3px}
+  .disc{margin-top:18px;border:1px solid var(--line);border-radius:14px;padding:16px;background:rgba(255,255,255,.015);font-size:11.5px;color:var(--muted);line-height:1.6}
+
+  .foot{text-align:center;color:var(--muted);font-size:11.5px;margin-top:26px;line-height:1.6}
+
+  /* ---- bottom tab bar ---- */
+  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:60;
+    height:calc(var(--tabbar) + var(--sab));padding-bottom:var(--sab);
+    display:flex;align-items:stretch;
+    background:rgba(9,10,7,.82);-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);
+    border-top:1px solid var(--line)}
+  @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.tabbar{background:rgba(9,10,7,.98)}}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    color:var(--muted);transition:color .2s;position:relative;padding-top:4px}
+  .tab svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .tab .tl{font-size:10px;font-weight:700;letter-spacing:.01em}
+  .tab.on{color:var(--lime)}
+  .tab.on::before{content:"";position:absolute;top:0;width:26px;height:3px;border-radius:0 0 4px 4px;background:var(--lime);box-shadow:0 0 12px var(--lime)}
+  .tab:active{transform:scale(.92)}
+
+  @media(prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms!important;transition-duration:.01ms!important}
+    .screen.active{animation:none}
+  }
+</style>
+</head>
+<body>
+<div class="glow"></div><canvas id="bgfx"></canvas>
+
+<div class="topbar">
+  <div class="tb-brand"><span class="spin"></span>SCHOOL<b>·INTEL</b></div>
+  <div class="tb-title" id="apptitle">Обзор</div>
+</div>
+
+<main>
+  <!-- ============ OVERVIEW ============ -->
+  <section class="screen active" id="s-home">
+    <div class="hero">
+      <span class="kicker"><span class="dot"></span>Конкурентная разведка · 2026</span>
+      <h1 class="h-lead">Школы под <span class="a">микроскопом</span> в трёх <span class="b">городах</span></h1>
+      <p class="lead">Язык метрик, которым себя оценивают школы Oxbridge-класса — учебный план, аккредитация, университетские исходы, размер класса, цена — применён к частным школам Саратова, Тбилиси и Батуми.</p>
+      <div class="cta-row">
+        <button class="btn" data-go="s-league">Открыть лигу →</button>
+        <button class="btn ghost" data-go="s-prices">К ценам</button>
+      </div>
+      <div class="stats grid-guard">
+        <div class="stat"><div class="n" data-count="19">0</div><div class="l">школ в анализе</div></div>
+        <div class="stat"><div class="n" data-count="14">0</div><div class="l">параметров</div></div>
+        <div class="stat"><div class="n" data-count="3">0</div><div class="l">города · 5 планов</div></div>
+      </div>
+    </div>
+    <div class="shead" style="margin-top:32px">
+      <div class="stag">/ Как это меряют в топ-лигах</div>
+      <h2 class="stitle">14 параметров <em>оценки</em></h2>
+      <p class="sdesc">Prospectus именитых школ строится вокруг измеримых осей, а не «уютно и вкусно кормят». По ним оценена каждая школа.</p>
+      <div class="amber"></div>
+    </div>
+    <div class="rub grid-guard" id="rub"></div>
+  </section>
+
+  <!-- ============ LEAGUE ============ -->
+  <section class="screen" id="s-league">
+    <div class="shead">
+      <div class="stag">/ Лига · фильтруется вживую</div>
+      <h2 class="stitle">Все школы <em>рядом</em></h2>
+      <p class="sdesc">Композитный балл — редакционная оценка по 14 осям (0–100), не официальный рейтинг. Фильтруй по городу, плану и цене.</p>
+    </div>
+    <div class="fscroll">
+      <div class="fgroup"><span class="flabel">Город</span>
+        <div class="chip on" data-f="city" data-v="all">Все</div>
+        <div class="chip" data-f="city" data-v="sar">Саратов</div>
+        <div class="chip" data-f="city" data-v="tbi">Тбилиси</div>
+        <div class="chip" data-f="city" data-v="bat">Батуми</div>
+      </div>
+    </div>
+    <div class="fscroll">
+      <div class="fgroup"><span class="flabel">План</span>
+        <div class="chip on" data-f="cur" data-v="all">Любой</div>
+        <div class="chip" data-f="cur" data-v="nat">Нац.</div>
+        <div class="chip" data-f="cur" data-v="ib">IB</div>
+        <div class="chip" data-f="cur" data-v="brit">British</div>
+        <div class="chip" data-f="cur" data-v="amer">American</div>
+        <div class="chip" data-f="cur" data-v="alt">Альт.</div>
+      </div>
+      <div class="fgroup"><span class="flabel">Цена</span>
+        <div class="chip on" data-f="price" data-v="all">Любая</div>
+        <div class="chip" data-f="price" data-v="low">до $4k</div>
+        <div class="chip" data-f="price" data-v="mid">$4–8k</div>
+        <div class="chip" data-f="price" data-v="high">$8k+</div>
+      </div>
+    </div>
+    <p class="countline">Показано <b id="cnt">0</b> школ</p>
+    <div class="cards" id="grid"></div>
+  </section>
+
+  <!-- ============ PROFILES ============ -->
+  <section class="screen" id="s-prof">
+    <div class="shead">
+      <div class="stag">/ Флагманы · разобраны по осям</div>
+      <h2 class="stitle">Профили <em>лидеров</em></h2>
+      <p class="sdesc">По одному эталону на город плюс BIST — как их читал бы приёмный офис. Полоски — редакционный скоринг.</p>
+      <div class="amber"></div>
+    </div>
+    <div id="profwrap"></div>
+  </section>
+
+  <!-- ============ PRICES ============ -->
+  <section class="screen" id="s-prices">
+    <div class="shead">
+      <div class="stag">/ Лестница цен · $ / год</div>
+      <h2 class="stitle">Сколько это <em>стоит</em></h2>
+      <p class="sdesc">Годовая плата приведена к доллару для сравнения между ₽ и ₾. Штриховка — оценка: школа цену не публикует.</p>
+    </div>
+    <div class="ladder" id="ladder"></div>
+    <div class="laxis"><span>$0</span><span>$4k</span><span>$8k</span><span>$12k</span><span>$16k</span></div>
+    <p class="note">Курс: 1 ₾ ≈ $0.37, 1 ₽ ≈ $0.0125 (июль 2026, ориентир). Для диапазонов — верхняя граница старших классов. Штриховка = цена не раскрыта, оценка по сопоставимым школам того же уровня.</p>
+  </section>
+
+  <!-- ============ VERDICT + RECOMMENDATION ============ -->
+  <section class="screen" id="s-final">
+    <div class="shead">
+      <div class="stag">/ Вердикт по городам</div>
+      <h2 class="stitle">Где какой <em>потолок</em></h2>
+    </div>
+    <div class="cty v">
+      <div class="cn">Саратов</div>
+      <div class="cmeta">Национальный ФГОС · рубли · локальный потолок</div>
+      <p>Сильный локальный частный сегмент, но всё внутри российского аттестата. Международной аккредитации и IB/British/American нет ни у кого. Потолок — статус и малые классы, не глобальная мобильность.</p>
+      <ul>
+        <li>Лидер: Гимназия гуманитарных наук (~360k ₽/год)</li>
+        <li>Гибкость: TOP IT School (онлайн-ступень)</li>
+        <li>Ниша: «Ор Авнер», Монтессори, РКШ</li>
+      </ul>
+    </div>
+    <div class="cty c">
+      <div class="cn">Тбилиси</div>
+      <div class="cmeta">IB · British · American · лари · настоящий интернационал</div>
+      <p>Единственный из трёх городов с реальным международным сегментом: полный IB (New School, European School), британские (BIST, Buckswood), американские (QSI, аккредитация MSA). Диплом признаётся вузами мира.</p>
+      <ul>
+        <li>Единственный полный IB PYP+MYP+DP: New School</li>
+        <li>CIS-член, все три IB + AP: European School</li>
+        <li>British 3–18, ~520 учеников, 4.6★: BIST</li>
+      </ul>
+    </div>
+    <div class="cty o">
+      <div class="cn">Батуми</div>
+      <div class="cmeta">Грузино-американские · лари · без «настоящего» интернационала</div>
+      <p>Честно: полноценных международных школ в Батуми на 2026 год нет. Максимум — грузино-американские с усиленным английским и грузинским аттестатом (даёт основание для ВНЖ), плюс русскоязычные частные.</p>
+      <ul>
+        <li>Бюджетно + ВНЖ: GASB (8 500 ₾/год, груз. язык)</li>
+        <li>На английском: «Прогресс» (12–15k ₾, слабые отзывы)</li>
+        <li>Русскоязычно: UNIT School (800–900 ₾/мес)</li>
+      </ul>
+    </div>
+
+    <div class="shead" style="margin-top:26px">
+      <div class="stag">/ Под номадный профиль</div>
+      <h2 class="stitle">Что выбрал бы <em>я</em></h2>
+    </div>
+    <div class="rec">
+      <h3>🎯 Логика под ротацию Франкфурт · Латвия · Израиль · Грузия</h3>
+      <div class="rn">
+        <div class="rnrow"><div class="rk">1</div><div>
+          <b>Приоритет — переносимый диплом</b>
+          <p>При номадной жизни главное не «статус в городе», а лёгкость перехода между странами. Это выводит Тбилиси вперёд: IB и American-диплом принимают вузы мира.</p>
+        </div></div>
+        <div class="rnrow c2"><div class="rk">2</div><div>
+          <b>Тбилиси — короткий список из трёх</b>
+          <p>New School (полный IB — максимум мобильности), QSI (аккредитация MSA, англоязычная среда для экспатов) и BIST (British 3–18, крупнейшее комьюнити, 4.6). Цены по запросу, ориентир $8–15k/год.</p>
+        </div></div>
+        <div class="rnrow c3"><div class="rk">3</div><div>
+          <b>Батуми — как база + ВНЖ, с оговоркой</b>
+          <p>GASB даёт грузинский аттестат и основание для ВНЖ при 8 500 ₾/год, но обучение на грузинском. «Прогресс» — на английском, но отзывы предметно слабые. Батуми — компромисс по среде, не по академике.</p>
+        </div></div>
+        <div class="rnrow c4"><div class="rk">4</div><div>
+          <b>Саратов — только если якорь именно там</b>
+          <p>ГГН/ЛГН — крепкий локальный выбор со статусом и малыми классами, но это тупик по мобильности: чистый российский аттестат. Для номада — база рядом с семьёй, не ставка на международную траекторию.</p>
+        </div></div>
+      </div>
+      <div class="disc">Источники: 2ГИС, Zoon, Яндекс.Карты, сайты школ, international-schools-database.com, ExpatHub.GE, Madloba (2025–2026). Композитные баллы и оценки скрытых цен — редакционные, не официальные рейтинги. Точные цифры и наличие мест уточняются в приёмной. Данные меняются — сверяйся с первоисточником.</div>
+    </div>
+    <div class="foot">Формат-референс: kvadrocycle · Подготовлено для внутреннего решения · 2026</div>
+  </section>
+</main>
+
+<!-- ============ TAB BAR ============ -->
+<nav class="tabbar">
+  <button class="tab on" data-go="s-home">
+    <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+    <span class="tl">Обзор</span>
+  </button>
+  <button class="tab" data-go="s-league">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    <span class="tl">Лига</span>
+  </button>
+  <button class="tab" data-go="s-prof">
+    <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+    <span class="tl">Профили</span>
+  </button>
+  <button class="tab" data-go="s-prices">
+    <svg viewBox="0 0 24 24"><path d="M12 2v20M17 6.5c0-2-2.2-3-5-3s-5 1-5 3 2.2 3 5 3 5 1 5 3-2.2 3-5 3-5-1-5-3"/></svg>
+    <span class="tl">Цены</span>
+  </button>
+  <button class="tab" data-go="s-final">
+    <svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>
+    <span class="tl">Итог</span>
+  </button>
+</nav>
+
+<script>
+/* ---------------- DATA ---------------- */
+var RUBRIC=[
+  ['Академ. строгость','Глубина программы, экзамены, олимпиады'],
+  ['Университеты','Куда реально поступают — местные вузы или мир'],
+  ['Аккредитация','IB, CIS, MSA, Cambridge — признание диплома'],
+  ['Учебный план','IB / British / American / национальный'],
+  ['Язык обучения','На каком языке предметы, native-педагоги'],
+  ['Размер класса','Учеников на класс, соотношение учитель/ученик'],
+  ['Педагоги','Профильное высшее, международный опыт, носители'],
+  ['Инфраструктура','Лаборатории, спорт, IT, кампус, безопасность'],
+  ['Внекласс','Спорт, искусство, робототехника, клубы, поездки'],
+  ['Опека','Психолог, wellbeing, адаптация, среда'],
+  ['Селективность','Входное тестирование, конкурс, лист ожидания'],
+  ['Цена/качество','Плата относительно того, что реально получаешь'],
+  ['Мобильность','Лёгкость перевода между странами и системами'],
+  ['ВНЖ-бонус','Даёт ли аттестат основание для ВНЖ']
+];
+var S=[
+  {n:'Гимназия гуманитарных наук / ЛГН',city:'sar',cur:['nat'],ages:'1–11',cls:'~12',lang:'Русский',fee:'≈360 000 ₽',band:'mid',score:78,
+   v:'Флагман Саратова, 20+ лет. Статус и малые классы. Минус — «конвейерность» по отзывам и чистый российский аттестат.'},
+  {n:'TOP IT School',city:'sar',cur:['nat'],ages:'1–11',cls:'малые',lang:'Рус.+англ/IT',fee:'по запросу',band:'na',score:70,
+   v:'IT + английский, семейное образование, онлайн-ступень с аттестацией раз в год. Хорош под номадный график.'},
+  {n:'Монтессори · «Идеал»',city:'sar',cur:['alt'],ages:'дошк.–нач.',cls:'малые',lang:'Русский',fee:'по запросу +взнос ~100k',band:'na',score:66,
+   v:'Единственная в городе по методу Монтессори: индивидуальный маршрут, мягкая среда. В основном начальная ступень.'},
+  {n:'Школа «Ор Авнер»',city:'sar',cur:['nat','alt'],ages:'уточнить',cls:'малые',lang:'Рус.+иврит',fee:'по запросу / дотация',band:'na',score:64,
+   v:'Этнокультурная еврейская среда и язык. Часто дотируется общиной — цена ниже рынка. Полный 1–11 надо подтвердить.'},
+  {n:'РКШ / «Эволюция»',city:'sar',cur:['alt'],ages:'1–11 / семейн.',cls:'малые',lang:'Русский',fee:'по запросу',band:'na',score:58,
+   v:'РКШ — консервативная дореформенная методика; «Эволюция» — гибкий график и безстрессовая аттестация. Мало инфраструктуры.'},
+
+  {n:'New School — Int. School of Georgia',city:'tbi',cur:['ib'],ages:'3–18',cls:'малые',lang:'Английский',fee:'по запросу',band:'high',score:90,
+   v:'Единственная в Грузии с полным IB (PYP+MYP+DP). Максимум мобильности. Цену не публикует, ориентир $9–13k.'},
+  {n:'European School',city:'tbi',cur:['ib','amer','nat'],ages:'3–18',cls:'малые',lang:'Англ.+груз.',fee:'по запросу',band:'high',score:88,
+   v:'Единственный в Грузии член CIS. Все три IB + American High School + AP + STEM. Широчайший выбор траекторий.'},
+  {n:'British International School (BIST)',city:'tbi',cur:['brit'],ages:'3–18',cls:'малые',lang:'Английский',fee:'по запросу',band:'high',score:87,
+   v:'British-программа, ~520 учеников, крупнейшее интер-комьюнити, 4.6★. Район Лиси. Ориентир $8–15k.'},
+  {n:'QSI International School',city:'tbi',cur:['amer'],ages:'2–18',cls:'малые',lang:'Английский',fee:'по запросу',band:'high',score:86,
+   v:'Американская, аккредитация MSA (США). Сеть QSI по миру — лёгкий перевод в школы США. American Village, Дигоми.'},
+  {n:'Guivy Zaldastanishvili Am. Academy',city:'tbi',cur:['amer'],ages:'13–18',cls:'малые',lang:'Английский',fee:'18 000–29 500 ₾',band:'high',score:84,
+   v:'Селективная американская академия для старших. Публикует цены — редкость. Сильные университетские исходы.'},
+  {n:'Buckswood International School',city:'tbi',cur:['brit','nat'],ages:'5–18',cls:'малые',lang:'Англ.+рус.',fee:'по запросу',band:'high',score:80,
+   v:'Британская модель, есть русский язык обучения — плюс для русскоязычного ребёнка. Кампус в Цкнети.'},
+  {n:'Newton Free School',city:'tbi',cur:['ib'],ages:'5–18',cls:'малые',lang:'Англ.+груз.',fee:'10 124–17 356 ₾',band:'mid',score:79,
+   v:'IB World School с 2013. Публичные цены, разумный ценник для IB. Хорошая точка входа в международную траекторию.'},
+  {n:'Deutsche Internationale Schule',city:'tbi',cur:['nat'],ages:'3–18',cls:'малые',lang:'Немецкий',fee:'10 290–19 670 ₾',band:'mid',score:77,
+   v:'Единственная немецкая школа на Южном Кавказе. Немецкий аттестат — вход в вузы Германии/Австрии. Актуально под Франкфурт.'},
+  {n:'St. George’s British-Georgian',city:'tbi',cur:['brit','nat'],ages:'6–18',cls:'малые',lang:'Англ.+груз.',fee:'по запросу',band:'mid',score:74,
+   v:'Первая британо-ориентированная средняя школа Грузии (с 2003). Все ступени включая 6th form.'},
+
+  {n:'Georgian-American School Batumi (GASB)',city:'bat',cur:['amer','nat'],ages:'1–12',cls:'~12',lang:'Груз.+англ.',fee:'8 500 ₾',band:'low',score:66,
+   v:'Аккредитована, грузинский аттестат + основание для ВНЖ. Начальные классы берут без грузинского. Бюджетно, язык — грузинский.'},
+  {n:'Georgian-American «Прогресс» (Батуми)',city:'bat',cur:['amer','nat'],ages:'1–12',cls:'сборные',lang:'Английский',fee:'12 000–15 000 ₾',band:'mid',score:52,
+   v:'Полностью на английском, американский + грузинский диплом. Но отзывы слабые: рост цены вдвое, квалификация, быт.'},
+  {n:'UNIT School (Батуми)',city:'bat',cur:['alt'],ages:'1–8',cls:'малые',lang:'Рус.+англ.',fee:'800–900 ₾/мес',band:'low',score:60,
+   v:'Русскоязычная программа, углублённый английский и математика Петерсон. Продлёнка, трансфер. Старшие — по запросу.'},
+  {n:'American School (Такаишвили, 5)',city:'bat',cur:['amer'],ages:'5–12',cls:'≤10',lang:'Английский',fee:'по запросу',band:'na',score:58,
+   v:'Стандарт штата Флорида, американский диплом, мини-классы ≤10, индивидуальный маршрут. Цена по заявке.'},
+  {n:'Euro-2000 / XXI век',city:'bat',cur:['nat'],ages:'1–12',cls:'до 12',lang:'Рус.+груз.',fee:'от ~3 000 ₾',band:'low',score:48,
+   v:'Бюджетные частные с русским сектором. Английский с 1 класса. Базовый уровень, без международной рамки.'}
+];
+/* usd for ladder */
+var USD={
+ 'Гимназия гуманитарных наук / ЛГН':4500,'New School — Int. School of Georgia':11000,'European School':10000,
+ 'British International School (BIST)':11000,'QSI International School':12000,'Guivy Zaldastanishvili Am. Academy':10915,
+ 'Buckswood International School':9000,'Newton Free School':6422,'Deutsche Internationale Schule':7278,
+ 'St. George’s British-Georgian':7000,'Georgian-American School Batumi (GASB)':3145,
+ 'Georgian-American «Прогресс» (Батуми)':5550,'UNIT School (Батуми)':3330,'American School (Такаишвили, 5)':5000,
+ 'Euro-2000 / XXI век':1200
+};
+var CL={nat:'Национальный',ib:'IB',brit:'British',amer:'American',alt:'Альтернатива'};
+var CITY={sar:'Саратов',tbi:'Тбилиси',bat:'Батуми'};
+var PROFS=[
+  {n:'New School — Int. School of Georgia',sub:'Тбилиси · IB PYP+MYP+DP · 3–18 · англ.',badge:'Эталон мобильности',
+   plain:'Если задача — чтобы ребёнок продолжил учёбу в любой стране без «пересдачи жизни», это первый выбор региона: единственный в Грузии полный International Baccalaureate. Диплом IB напрямую читают приёмные комиссии вузов мира.',
+   b:[['Аккредитация',96],['Мобильность',95],['Учебный план',94],['Университеты',90],['Педагоги',86],['Инфраструктура',84],['Цена/качество',72],['Селективность',82]]},
+  {n:'British International School (BIST)',sub:'Тбилиси · British · 3–18 · ~520 · 4.6★',badge:'Крупнейшее комьюнити',
+   plain:'Британская программа от early years до sixth form, самое большое интернациональное сообщество в городе. Тёплый приём семей-релокантов — то, ради чего экспаты выбирают BIST. Цену не публикует: ориентир $8–15k/год.',
+   b:[['Аккредитация',88],['Мобильность',88],['Учебный план',87],['Университеты',85],['Педагоги',86],['Инфраструктура',85],['Цена/качество',70],['Опека',90]]},
+  {n:'Гимназия гуманитарных наук / ЛГН',sub:'Саратов · нац. ФГОС · 1–11 · ~12 в классе',badge:'Локальный флагман',
+   plain:'Лучшее в частном Саратове: 20+ лет, малые классы, статус, лояльные выпускники. Но честно про потолок — это российский аттестат без международной рамки: высокие баллы по опеке соседствуют с низкими по мобильности.',
+   b:[['Академика',80],['Опека',82],['Размер класса',88],['Инфраструктура',72],['Цена/качество',74],['Университеты',66],['Аккредитация',40],['Мобильность',34]]},
+  {n:'Georgian-American School Batumi',sub:'Батуми · груз.+англ. · 1–12 · 8 500 ₾/год',badge:'База + ВНЖ',
+   plain:'Реалистичный максимум для Батуми: аккредитованная школа с грузинским аттестатом (основание для ВНЖ) по бюджетной цене. Компромисс — язык обучения грузинский (английский к старшим), поэтому академ-мобильность средняя.',
+   b:[['Цена/качество',82],['ВНЖ-бонус',88],['Размер класса',78],['Академика',60],['Аккредитация',58],['Мобильность',54],['Инфраструктура',52],['Университеты',50]]}
+];
+
+/* ---------------- RENDER ---------------- */
+function el(t,c,h){var e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
+
+/* rubric */
+(function(){var r=document.getElementById('rub');
+  RUBRIC.forEach(function(x,i){var d=el('div','ri c'+((i%5)+1));
+    d.innerHTML='<div class="k">'+(i+1)+'</div><b>'+x[0]+'</b><p>'+x[1]+'</p>';r.appendChild(d);});
+})();
+
+/* league cards */
+var GRID=document.getElementById('grid'),CNT=document.getElementById('cnt');
+function curl(a){return a.map(function(k){return CL[k];}).join(' · ');}
+S.slice().sort(function(a,b){return b.score-a.score;}).forEach(function(s){
+  var d=el('div','scard');
+  d.dataset.city=s.city;d.dataset.cur=s.cur.join(',');d.dataset.band=s.band;
+  d.innerHTML=
+    '<div class="top"><span class="ct '+s.city+'">'+CITY[s.city]+'</span>'+
+      '<div class="sc">'+s.score+'<small>БАЛЛ</small></div></div>'+
+    '<h4>'+s.n+'</h4><div class="curl">'+curl(s.cur)+'</div>'+
+    '<div class="rows">'+
+      '<div class="rw"><span>Классы</span><span>'+s.ages+'</span></div>'+
+      '<div class="rw"><span>Класс</span><span>'+s.cls+' чел.</span></div>'+
+      '<div class="rw"><span>Язык</span><span>'+s.lang+'</span></div>'+
+      '<div class="rw"><span>Цена/год</span><span class="fee">'+s.fee+'</span></div>'+
+    '</div><div class="verd">'+s.v+'</div>'+
+    '<div class="sbar"><i data-w="'+s.score+'"></i></div>';
+  GRID.appendChild(d);
+});
+var F={city:'all',cur:'all',price:'all'};
+function applyFilter(){
+  var n=0;
+  Array.prototype.forEach.call(GRID.querySelectorAll('.scard'),function(c){
+    var ok=(F.city==='all'||c.dataset.city===F.city)
+      &&(F.cur==='all'||c.dataset.cur.split(',').indexOf(F.cur)>-1)
+      &&(F.price==='all'||c.dataset.band===F.price);
+    c.style.display=ok?'block':'none';if(ok)n++;
+  });
+  CNT.textContent=n;
+  var em=GRID.querySelector('.empty');
+  if(n===0){if(!em){em=el('div','empty','Под эти фильтры школ нет. Ослабь один критерий — цену или план.');GRID.appendChild(em);}}
+  else if(em)em.remove();
+  fillBars(document.getElementById('s-league'));
+}
+document.querySelectorAll('.chip').forEach(function(ch){
+  ch.addEventListener('click',function(){
+    var f=ch.dataset.f;
+    ch.parentElement.querySelectorAll('.chip[data-f="'+f+'"]').forEach(function(x){x.classList.remove('on');});
+    ch.classList.add('on');F[f]=ch.dataset.v;applyFilter();
+  });
+});
+
+/* profiles */
+(function(){var w=document.getElementById('profwrap');
+  PROFS.forEach(function(p){
+    var bars=p.b.map(function(x){
+      var col=x[1]>=85?'var(--lime)':x[1]>=65?'var(--cyan)':x[1]>=50?'var(--gold)':'var(--orange)';
+      return '<div class="bar"><span class="bn">'+x[0]+'</span><div class="bt"><i data-w="'+x[1]+'" style="background:'+col+'"></i></div><span class="bv">'+x[1]+'</span></div>';
+    }).join('');
+    var d=el('div','prof');
+    d.innerHTML='<div class="ph"><div><h3>'+p.n+'</h3><div class="sub">'+p.sub+'</div></div><span class="badge">'+p.badge+'</span></div>'+
+      '<p class="plain">'+p.plain+'</p><div class="bars">'+bars+'</div>';
+    w.appendChild(d);
+  });
+})();
+
+/* ladder */
+(function(){var lad=document.getElementById('ladder'),max=16000,col={sar:'var(--violet)',tbi:'var(--cyan)',bat:'var(--orange)'};
+  var items=S.filter(function(s){return USD[s.n];}).map(function(s){
+    return {n:s.n,city:s.city,usd:USD[s.n],est:s.band==='na'||/запрос/.test(s.fee),fee:s.fee};
+  }).sort(function(a,b){return b.usd-a.usd;});
+  items.forEach(function(it){
+    var row=el('div','lad'+(it.est?' est':'')),pct=Math.min(100,it.usd/max*100);
+    row.innerHTML='<div class="lname">'+it.n+'<small>'+CITY[it.city]+' · '+it.fee+'</small></div>'+
+      '<div class="track"><div class="fillb" data-w="'+pct.toFixed(1)+'" style="background:'+col[it.city]+'"><span>$'+it.usd.toLocaleString('ru-RU')+'</span></div></div>';
+    lad.appendChild(row);
+  });
+})();
+
+/* ---------------- BEHAVIOR ---------------- */
+function fillBars(root){
+  root.querySelectorAll('[data-w]').forEach(function(b){
+    b.style.width='0%';
+    requestAnimationFrame(function(){requestAnimationFrame(function(){b.style.width=b.dataset.w+'%';});});
+  });
+}
+function runCounters(){
+  document.querySelectorAll('#s-home .n[data-count]').forEach(function(e){
+    var t=+e.dataset.count,c=0,st=Math.max(1,Math.round(t/28));
+    e.textContent='0';
+    var iv=setInterval(function(){c+=st;if(c>=t){c=t;clearInterval(iv);}e.textContent=c;},26);
+  });
+}
+var TITLES={'s-home':'Обзор','s-league':'Лига школ','s-prof':'Профили','s-prices':'Цены','s-final':'Итог'};
+function go(id){
+  document.querySelectorAll('.screen').forEach(function(s){s.classList.toggle('active',s.id===id);});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('on',t.dataset.go===id);});
+  document.getElementById('apptitle').textContent=TITLES[id]||'';
+  window.scrollTo({top:0,behavior:'auto'});
+  var scr=document.getElementById(id);
+  if(id==='s-home')runCounters();
+  fillBars(scr);
+}
+document.querySelectorAll('[data-go]').forEach(function(b){
+  b.addEventListener('click',function(){go(b.dataset.go);});
+});
+
+/* init */
+applyFilter();
+runCounters();
+fillBars(document.getElementById('s-home'));
+
+/* ambient particles (fixed, does not touch scroll) */
+(function(){
+  var c=document.getElementById('bgfx');if(!c)return;var x=c.getContext('2d'),P=[],W,H;
+  function rs(){W=c.width=innerWidth;H=c.height=innerHeight;}
+  rs();addEventListener('resize',rs);addEventListener('orientationchange',function(){setTimeout(rs,250);});
+  var cols=['200,255,0','56,225,255','176,139,255','255,90,31'];
+  for(var i=0;i<46;i++)P.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,r:Math.random()*1.5+.4,
+    dx:(Math.random()-.5)*.22,dy:(Math.random()-.5)*.22,c:cols[i%4],a:Math.random()*.45+.12});
+  (function d(){x.clearRect(0,0,W,H);P.forEach(function(p){p.x+=p.dx;p.y+=p.dy;
+    if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
+    x.beginPath();x.arc(p.x,p.y,p.r,0,6.28);x.fillStyle='rgba('+p.c+','+p.a+')';x.fill();});requestAnimationFrame(d);})();
+})();
+</script>
+</body>
+</html>

@@ -28,6 +28,7 @@ export const getMe      = ()                => getJSON("/api/me");
 export const startAssess = (company, lang = "en") => postJSON("/api/assess", { company, lang });
 export const assessEventsUrl = (jobId) => `/api/assess/${encodeURIComponent(jobId)}/events`;
 // records that the Art.13 notice was shown+accepted (accountability, Art. 5(2))
+export const assessStatus = (jobId) => getJSON(`/api/assess/${encodeURIComponent(jobId)}/status`);
 export const ackPrivacy = () => postJSON("/api/privacy/ack", {});
 
 // ---- Assistant ----

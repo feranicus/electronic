@@ -200,3 +200,14 @@ Measured on this account (2026-07): `deepseek-3.2` head (37B active, current kno
 knowledge cutoff Aug-2024 -> cannot cite recent breaches), `openai-gpt-oss-120b` third (Apache-2.0,
 5.1B active, reasoning model -> shakiest on strict JSON). anthropic-*/openai-gpt-5* are http-403 on a
 DO Tier 1/2 key regardless of being visible in the catalog.
+
+## Mobile (Android + iPhone)
+One responsive PWA — no app store, no second codebase.
+
+**Install:** Android/Chrome shows an install prompt (or menu -> "Install app"). iPhone/Safari:
+Share -> "Add to Home Screen". Either way it launches standalone, no browser chrome, with the Colt
+chevron icon.
+
+**Assessments survive the phone:** the engine runs server-side and the SSE stream is only a viewer,
+so locking the screen, switching apps or refreshing no longer cancels a run — the client reconnects
+(`Last-Event-ID`) and catches up. `GET /api/assess/{id}/status` polls the same truth.

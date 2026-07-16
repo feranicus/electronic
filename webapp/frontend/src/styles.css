@@ -297,3 +297,86 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .lang-toggle button.on{background:#00B2A9;color:#04211f;opacity:1;font-weight:600}
 .legal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:6px}
 .gdpr-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+
+/* ============================================================================
+   MOBILE  —  Android + iOS. One codebase; the sidebar becomes a bottom tab bar.
+   Rules that matter on a phone and are easy to get wrong:
+     * inputs MUST be >=16px or iOS Safari zooms the whole page on focus
+     * tap targets >=44px (Apple HIG) / 48dp (Material)
+     * respect the notch + home indicator via env(safe-area-inset-*)
+     * 100vh is WRONG on mobile (it hides under the URL bar) -> use 100dvh
+   ============================================================================ */
+.topbar{display:none}
+.nav-ico{display:none}
+.nav-ico svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
+
+@media (max-width: 720px){
+  .cab{grid-template-columns:1fr;min-height:100dvh}
+
+  /* top bar: brand + logout */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    position:sticky;top:0;z-index:40;padding:10px 14px;
+    padding-top:calc(10px + env(safe-area-inset-top));
+    background:rgba(13,20,38,.92);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line)}
+  .topbar .brand{font-size:18px;margin:0}
+
+  /* sidebar -> bottom tab bar */
+  .side{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:50;
+    flex-direction:row;border-right:0;border-top:1px solid var(--line);
+    padding:6px 8px;padding-bottom:calc(6px + env(safe-area-inset-bottom));
+    background:rgba(13,20,38,.96);backdrop-filter:blur(12px)}
+  .side .brand,.side .who{display:none}          /* they live in .topbar on a phone */
+  .side .nav{display:flex;flex-direction:row;width:100%;gap:2px}
+  .nav a{flex:1;flex-direction:column;gap:3px;padding:8px 4px;min-height:52px;
+    justify-content:center;font-size:11px;border-radius:12px}
+  .nav a.active{background:transparent;color:var(--teal)}
+  .nav-ico{display:block;line-height:0}
+
+  .main{padding:16px 14px calc(78px + env(safe-area-inset-bottom));max-width:100%}
+  .page-h{font-size:22px}
+  .page-sub{font-size:13px}
+
+  /* the assess row stacks; every control is full width and thumb-sized */
+  .assess-row{flex-direction:column;align-items:stretch;gap:10px}
+  .assess-row .fld,.assess-row .fld-lang{flex:1 1 auto;min-width:0;width:100%}
+  .assess-row .btn{width:100%;min-height:48px;font-size:15px}
+  .input,.assess-row .input{font-size:16px;min-height:46px}   /* 16px: stops iOS zoom-on-focus */
+  select.input{min-height:46px}
+
+  .panel{padding:14px;border-radius:14px}
+  .prog-note,.gdpr-mini{font-size:11px}
+  .prog-top{flex-direction:column;align-items:flex-start;gap:2px}
+
+  /* the log: readable, scrollable, never pushes the page sideways */
+  .log,.logpane,pre{font-size:11px;max-height:38vh;overflow:auto;-webkit-overflow-scrolling:touch;
+    overflow-wrap:anywhere;word-break:break-word}
+
+  /* deck cards: one per row, easy to hit */
+  .decks{grid-template-columns:1fr;gap:10px}
+  .deck,.deck-card{min-height:56px}
+
+  .legal{padding:14px 14px 90px}
+  .legal-table{display:block;overflow-x:auto;white-space:nowrap}
+  .legal-body h2{font-size:15px}
+  .lang-toggle button{padding:8px 16px;min-height:40px}
+  .gdpr-head{align-items:flex-start}
+
+  /* nothing may cause a horizontal scrollbar on a 360px phone */
+  html,body{overflow-x:hidden}
+  *{max-width:100%}
+}
+
+@media (max-width: 380px){
+  .nav a{font-size:10px}
+  .page-h{font-size:20px}
+  .main{padding-left:11px;padding-right:11px}
+}
+
+/* landscape phones: the bottom bar eats too much height, so slim it down */
+@media (max-height: 480px) and (orientation: landscape){
+  .side{padding:2px 8px}
+  .nav a{min-height:40px;flex-direction:row;gap:8px}
+  .main{padding-bottom:56px}
+}

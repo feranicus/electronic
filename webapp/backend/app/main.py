@@ -192,7 +192,7 @@ def _job_dir(email: str, job_id: str) -> Path:
 
 
 @app.post("/api/assess")
-def assess(req: AssessReq, request: Request):
+async def assess(req: AssessReq, request: Request):
     email = _require_email(request)
     company = (req.company or "").strip()
     if not company:
@@ -207,6 +207,11 @@ def assess(req: AssessReq, request: Request):
         _a.observe_assess(email, company, _t.client_ip(request))
     except Exception:
         pass
+    # Start the engine NOW, server-side, detached from any HTTP connection.
+    # It used to be the SSE generator that spawned the subprocess — so closing the tab, refreshing,
+    # or a phone locking its screen cancelled the generator and killed a 5-minute run. The job is now
+    # owned by the server; the stream is just a viewer.
+    asyncio.create_task(_run_job(job_id, email, company, lang))
     return {"job_id": job_id}
 
 
@@ -218,86 +223,170 @@ def _collect_decks(job_id: str, jobdir: Path) -> list:
     return [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*.pptx"))]
 
 
-async def _assess_stream(job_id: str, email: str):
-    """Async generator yielding SSE `data:` frames from the engine subprocess."""
+_RUNNING: dict = {}          # job_id -> asyncio.Task, so we can see what is in flight
+
+
+async def _run_job(job_id: str, email: str, company: str, lang: str):
+    """Own the engine run. Writes every line to <jobdir>/run.log and finalises the DB row.
+    Nothing here depends on an HTTP client being connected."""
+    jobdir = _job_dir(email, job_id)
+    logp = jobdir / "run.log"
+    _RUNNING[job_id] = asyncio.current_task()
+
+    def _w(line: str):
+        try:
+            with open(logp, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except Exception:
+            pass
+
+    if not Path(ENGINE).exists():
+        _w(json.dumps({"evt": "error", "message": f"engine not found at {ENGINE}"}))
+        store.finish_job(job_id, [], {}, status="error"); _RUNNING.pop(job_id, None); return
+
+    cmd = ["python3", "-u", ENGINE, "--seed", company, "--outdir", str(jobdir), "--lang", lang]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            env={**os.environ})
+    except Exception as e:
+        _w(json.dumps({"evt": "error", "message": f"failed to start engine: {e!r}"}))
+        store.finish_job(job_id, [], {}, status="error"); _RUNNING.pop(job_id, None); return
+
+    summary, completed, tail = {}, False, []
+    assert proc.stdout is not None
+    try:
+        async for raw in proc.stdout:
+            line = raw.decode("utf-8", "ignore").rstrip()
+            if not line:
+                continue
+            _w(line)
+            tail.append(line); tail[:] = tail[-15:]
+            if line.startswith("{"):
+                try:
+                    o = json.loads(line)
+                    if isinstance(o, dict) and o.get("evt") == "assess_done":
+                        summary = {"company": o.get("company", company), "critical": o.get("crit", 0),
+                                   "high": o.get("high", 0), "medium": o.get("med", 0),
+                                   "low": o.get("low", 0), "decks": o.get("decks", 0),
+                                   "qwen_used": o.get("qwen_used", False)}
+                except Exception:
+                    pass
+            if "ASSESSMENT COMPLETE" in line:
+                completed = True
+        await proc.wait()
+    except asyncio.CancelledError:
+        try: proc.kill()
+        except Exception: pass
+        store.finish_job(job_id, [], summary, status="error")
+        _RUNNING.pop(job_id, None); raise
+    except Exception as e:
+        _w(json.dumps({"evt": "error", "message": repr(e)[:200]}))
+
+    if completed:
+        decks = _collect_decks(job_id, jobdir)
+        store.finish_job(job_id, decks, summary, status="done")
+    else:
+        _w(json.dumps({"evt": "error", "message": "assessment failed",
+                       "detail": "\n".join(tail) or "no output"}))
+        store.finish_job(job_id, [], summary, status="error")
+    _RUNNING.pop(job_id, None)
+
+
+async def _assess_stream(job_id: str, email: str, start_line: int = 0):
+    """SSE viewer over <jobdir>/run.log. Resumable: each frame carries an `id:` (the line number),
+    so on reconnect the browser sends Last-Event-ID and we resume exactly where it left off —
+    no duplicate lines, no lost progress, and the run itself never depended on this connection."""
     job = store.get_job(job_id)
     if not job or job["email"] != email.lower():
         yield _sse({"evt": "error", "message": "job not found"})
         return
 
     jobdir = _job_dir(email, job_id)
-    company = job["company"]
+    logp = jobdir / "run.log"
+    n = 0                      # lines emitted so far
+    idle = 0.0
 
-    if not Path(ENGINE).exists():
-        store.finish_job(job_id, [], {}, status="error")
-        yield _sse({"evt": "error", "message": f"engine not found at {ENGINE}"})
-        return
-
-    lang = (job.get("lang") or "en")
-    cmd = ["python3", ENGINE, "--seed", company, "--outdir", str(jobdir), "--lang", lang]
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            env={**os.environ},
-        )
-    except Exception as e:  # pragma: no cover
-        store.finish_job(job_id, [], {}, status="error")
-        yield _sse({"evt": "error", "message": f"failed to start engine: {e!r}"})
-        return
-
-    lines = []
-    summary = {}
-    completed = False
-    assert proc.stdout is not None
-    async for raw in proc.stdout:
-        line = raw.decode("utf-8", "ignore").rstrip()
-        if not line:
-            continue
-        lines.append(line)
-        # capture the structured summary event
-        if line.startswith("{"):
+    while True:
+        if logp.exists():
             try:
-                o = json.loads(line)
-                if isinstance(o, dict) and o.get("evt") == "assess_done":
-                    summary = {
-                        "company": o.get("company", company),
-                        "critical": o.get("crit", 0),
-                        "high": o.get("high", 0),
-                        "medium": o.get("med", 0),
-                        "low": o.get("low", 0),
-                        "decks": o.get("decks", 0),
-                        "qwen_used": o.get("qwen_used", False),
-                    }
+                with open(logp, "r", encoding="utf-8", errors="replace") as fh:
+                    lines = fh.read().split("\n")
             except Exception:
-                pass
-        if "ASSESSMENT COMPLETE" in line:
-            completed = True
-        yield _sse({"evt": "progress", "line": line})
+                lines = []
+            while n < len(lines) - 1:            # last element is the partial/empty tail
+                line = lines[n]; n += 1
+                if n <= start_line:              # already delivered before the reconnect
+                    continue
+                if line.strip():
+                    yield _sse({"evt": "progress", "line": line}, eid=n)
 
-    await proc.wait()
+        job = store.get_job(job_id) or {}
+        status = job.get("status", "running")
+        if status != "running":
+            # drain whatever landed between the last read and the status flip
+            await asyncio.sleep(0.2)
+            if logp.exists():
+                try:
+                    with open(logp, "r", encoding="utf-8", errors="replace") as fh:
+                        lines = fh.read().split("\n")
+                except Exception:
+                    lines = []
+                while n < len(lines) - 1:
+                    line = lines[n]; n += 1
+                    if n > start_line and line.strip():
+                        yield _sse({"evt": "progress", "line": line}, eid=n)
+            if status == "done":
+                yield _sse({"evt": "done", "decks": job.get("decks") or [],
+                            "summary": job.get("summary") or {}})
+            else:
+                yield _sse({"evt": "error", "message": "assessment failed",
+                            "detail": "see the log above"})
+            return
 
-    if not completed:
-        store.finish_job(job_id, [], summary, status="error")
-        tail = "\n".join(lines[-15:]) or "no output"
-        yield _sse({"evt": "error", "message": "assessment failed", "detail": tail})
-        return
-
-    decks = _collect_decks(job_id, jobdir)
-    store.finish_job(job_id, decks, summary, status="done")
-    yield _sse({"evt": "done", "decks": decks, "summary": summary})
+        await asyncio.sleep(0.4)
+        idle += 0.4
+        if idle >= 15:                            # keep proxies + mobile radios from idling us out
+            idle = 0.0
+            yield ": keepalive\n\n"
 
 
-def _sse(obj: dict) -> str:
-    return "data: " + json.dumps(obj) + "\n\n"
+def _sse(obj: dict, eid: int = None) -> str:
+    # `id:` makes the stream RESUMABLE — the browser replays it back as Last-Event-ID on reconnect.
+    head = ("id: %d\n" % eid) if eid is not None else ""
+    return head + "data: " + json.dumps(obj) + "\n\n"
+
+
+@app.get("/api/assess/{job_id}/status")
+def assess_status(job_id: str, request: Request):
+    """Polling fallback: works when SSE is impossible (locked phone, dead radio, proxy that buffers).
+    The truth lives in the DB + run.log, not in a connection."""
+    email = _require_email(request)
+    job = store.get_job(job_id)
+    if not job or job["email"] != email.lower():
+        raise HTTPException(status_code=404, detail="job not found")
+    logp = _job_dir(email, job_id) / "run.log"
+    lines = []
+    if logp.exists():
+        try:
+            lines = [l for l in logp.read_text(encoding="utf-8", errors="replace").split("\n") if l.strip()]
+        except Exception:
+            pass
+    return {"status": job.get("status"), "company": job.get("company"), "lang": job.get("lang"),
+            "lines": lines, "decks": job.get("decks") or [], "summary": job.get("summary") or {},
+            "running": job_id in _RUNNING}
 
 
 @app.get("/api/assess/{job_id}/events")
 async def assess_events(job_id: str, request: Request):
     email = _require_email(request)
+    # Standard SSE resume: the browser sends back the last id it saw.
+    try:
+        start_line = int(request.headers.get("last-event-id") or 0)
+    except ValueError:
+        start_line = 0
     return StreamingResponse(
-        _assess_stream(job_id, email),
+        _assess_stream(job_id, email, start_line),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

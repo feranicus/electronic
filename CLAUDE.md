@@ -464,3 +464,35 @@ repo. It recomputes the next fire time each loop, so a restart cannot double-sen
 Sources: the jobs SQLite (who ran what, language, status, deck count) + events.log (logins ok/fail,
 visitors, countries, security alerts, AI cost). Manual run:
   `docker exec colt-web python3 -m app.daily_report --print`   (print only, no email)
+
+## Mobile — one responsive PWA, NOT React Native / NOT a second frontend (settled, do not re-litigate)
+Decision: make the ONE React app responsive + installable. Rejected: React Native (second codebase,
+Play Store account/signing/review, every feature built twice, and it still cannot run a 5-min job in
+the background) and a separate mobile HTML build (two frontends that drift — the exact failure that
+`legal.jsx` and `de.json` exist to prevent).
+
+**The real mobile blocker was architectural, not CSS:** `_assess_stream` USED TO SPAWN THE ENGINE, so
+closing the tab / locking a phone / refreshing cancelled the generator and KILLED a 5-minute run.
+Now: `POST /api/assess` -> `asyncio.create_task(_run_job(...))` owns the run server-side, writing
+every line to `<jobdir>/run.log` and finalising the DB row. `_assess_stream` is only a VIEWER that
+tails run.log. Frames carry `id:` (the line number) so the browser replays `Last-Event-ID` on
+reconnect and resumes with no duplicates. `GET /api/assess/{id}/status` is the polling fallback.
+`es.onerror` must NOT close the EventSource — closing it defeats the browser's auto-reconnect.
+`localStorage.cg_job` lets a phone that evicted the tab re-attach (do NOT preload lines from /status
+when re-attaching: a fresh EventSource sends no Last-Event-ID, so the stream replays from 0 and you
+would double every line).
+
+Mobile CSS rules that are easy to get wrong (all in styles.css @media max-width:720px):
+- inputs MUST be >=16px or **iOS Safari zooms the whole page on focus**;
+- `100vh` is wrong on phones (hides under the URL bar) -> `100dvh`;
+- respect the notch/home indicator: `viewport-fit=cover` + `env(safe-area-inset-*)`;
+- the sidebar becomes a fixed bottom tab bar (same DOM, CSS only — Sidebar.jsx renders a phone-only
+  `.topbar` for brand+logout so the bottom bar is pure navigation);
+- never `user-scalable=no` (accessibility).
+
+PWA: `public/manifest.webmanifest` (standalone, start_url /app, 192+512 icons — Chrome needs both to
+offer install, plus `purpose:maskable` because Android crops to a squircle) + `public/sw.js`.
+**HARD RULE — the service worker must NEVER cache `/api/`**: decks are owner-scoped behind a session
+cookie and the assessment is a live stream; a cached API response is a correctness AND privacy bug.
+iOS ignores the manifest icons: it needs `apple-touch-icon` PNGs, and they must be **opaque**
+(iOS composites alpha to BLACK) — hence the flattened 180/167/152 variants.
