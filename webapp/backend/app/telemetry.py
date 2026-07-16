@@ -58,6 +58,18 @@ def _maybe_hash(ip):
     return "h:" + hashlib.sha256((IP_SALT + ip).encode()).hexdigest()[:16]
 
 
+def _country(ip):
+    """Country from the local DB-IP database. Never let geo lookup break a request."""
+    try:
+        try:
+            from . import geoip
+        except ImportError:
+            import geoip
+        return geoip.country(ip)
+    except Exception:
+        return "-"
+
+
 def classify_ua(ua):
     u = (ua or "").lower()
     if not u.strip():
@@ -122,7 +134,9 @@ def install(app, session_email_fn=None):
                       ref=(request.headers.get("referer") or "")[:160],
                       lang=(request.headers.get("accept-language") or "")[:40].split(",")[0],
                       # Caddy/Cloudflare-style country header if a proxy ever sets one
-                      country=request.headers.get("cf-ipcountry") or request.headers.get("x-country") or "-",
+                      country=(request.headers.get("cf-ipcountry")
+                               or request.headers.get("x-country")
+                               or _country(ip)),
                       user=user)
             emit(**ev)
             try:

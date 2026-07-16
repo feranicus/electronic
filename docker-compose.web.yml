@@ -20,6 +20,15 @@ services:
       # ---- security alerting (Telegram + Gmail API; SMTP is blocked outbound on this droplet) ----
       # BOT_TOKEN / GMAIL_SENDER / GMAIL_SA_B64 come from assess-bot/.env (already mounted).
       # ALERT_TG_CHAT: leave empty to alert every authenticated operator in the auth store.
+      # ---- privacy / GDPR ----
+      # The /privacy page states: logs 30 days, country-level geo only, Frankfurt (FRA1).
+      # Those are CLAIMS ON A PUBLIC PAGE — they must stay true:
+      #   * 30-day log retention is enforced by LOKI's retention config, not by this app. Verify it.
+      #   * TELEMETRY_HASH_IPS=1 stores salted IP hashes (Art. 5(1)(c) minimisation). Off = forensics.
+      - GEOIP_ENABLED=1                # DB-IP country-lite, lazily fetched to /data, no licence key
+      - TELEMETRY_HASH_IPS=0
+      - DAILY_REPORT=1                 # "who used the platform + what they ran" -> ALERT_EMAIL
+      - DAILY_REPORT_HOUR=7            # UTC
       - ALERT_EMAIL=feranicus@s4biz.io
       - ALERTS_ENABLED=1
       - ALERT_FAIL_LOGIN_N=3          # >2 failed logins -> immediate alert

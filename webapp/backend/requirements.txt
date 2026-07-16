@@ -5,3 +5,5 @@ requests==2.*
 pydantic==2.*
 # Gmail API OTP delivery (used by colt_auth when GMAIL_SENDER/GMAIL_SA_B64 are set)
 google-auth==2.*
+# GeoIP country lookup for the visitor log (DB-IP Lite .mmdb — MaxMind DB format, no licence key)
+maxminddb==2.*

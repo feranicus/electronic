@@ -48,6 +48,16 @@ try:
             return ""
 
     _telemetry.install(app, _session_user)
+
+    # daily "who used the platform and what did they run" report -> ALERT_EMAIL at 07:00 UTC.
+    # In-app task on purpose: no cron inside the container, no systemd unit on the droplet that would
+    # drift out of this repo.
+    from . import daily_report as _daily
+
+    @app.on_event("startup")
+    async def _start_daily_report():
+        import asyncio as _aio
+        _aio.create_task(_daily.scheduler())
 except Exception as _e:  # telemetry must never stop the app from booting
     print('{"evt":"telemetry_init","result":"error","err":"%s"}' % repr(_e)[:120], flush=True)
 
@@ -137,6 +147,25 @@ def auth_verify(req: VerifyReq, request: Request):
     resp = JSONResponse({"ok": True, "email": email})
     _set_session_cookie(resp, email)
     return resp
+
+
+@app.post("/api/privacy/ack")
+def privacy_ack(request: Request):
+    """Record that the Art.13 data-processing notice was displayed and accepted.
+    GDPR Art. 5(2) accountability: being able to SHOW that you informed people is the point."""
+    try:
+        from . import telemetry as _t
+        email = ""
+        try:
+            tok = request.cookies.get(SESSION_COOKIE)
+            email = (read_session(tok) or "") if tok else ""
+        except Exception:
+            pass
+        _log(evt="privacy_ack", user=email, ip=_t.client_ip(request),
+             ua=request.headers.get("user-agent", "")[:160], notice="art13-v1")
+    except Exception:
+        pass
+    return {"ok": True}
 
 
 @app.post("/api/auth/logout")

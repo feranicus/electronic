@@ -28,6 +28,11 @@ export default function NewAssessment() {
   const [pct, setPct] = useState(0);        // last REAL milestone reported by the engine
   const [phase, setPhase] = useState("");   // human label for the current phase
   const [notice, setNotice] = useState(""); // e.g. "model X timed out — switching to Y"
+  // GDPR Art. 13: tell the user what is collected BEFORE the processing starts, not afterwards.
+  // Acknowledged once per browser; the acknowledgement itself is logged for accountability (Art. 5(2)).
+  const [ackd, setAckd] = useState(() => {
+    try { return localStorage.getItem("cg_privacy_ack") === "1"; } catch { return false; }
+  });
   const [shown, setShown] = useState(0);    // eased value actually drawn (never goes backwards)
   const [elapsed, setElapsed] = useState(0);
   const startedRef = useRef(0);
@@ -65,10 +70,17 @@ export default function NewAssessment() {
 
   useEffect(() => () => { if (esRef.current) esRef.current.close(); }, []);
 
+  function acknowledge() {
+    try { localStorage.setItem("cg_privacy_ack", "1"); } catch { /* private mode */ }
+    setAckd(true);
+    ackPrivacy();                                   // server-side record of the acknowledgement
+  }
+
   async function run(e) {
     e.preventDefault();
     const name = company.trim();
     if (!name || status === "running") return;
+    if (!ackd) { acknowledge(); }                   // first Assess click = notice was shown + accepted
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
     setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…"); setNotice("");
     startedRef.current = Date.now();
@@ -128,6 +140,28 @@ export default function NewAssessment() {
       <p className="page-sub">One input: a company name or domain. The engine resolves the entire footprint,
         sweeps Shodan, and writes the four boardroom decks — in English or Hoch-Deutsch. No IPs, ASNs or certs to type.</p>
 
+      {!ackd && (
+        <div className="panel gdpr-notice">
+          <div className="gdpr-title">🇪🇺 Datenverarbeitung / Data processing</div>
+          <p>
+            Mit <strong>Assess</strong> starten Sie eine Analyse auf einem Server im Rechenzentrum
+            <strong> Frankfurt am Main (DE)</strong>. Dabei verarbeiten wir Ihre E-Mail-Adresse, Ihre
+            IP-Adresse, Zeitstempel und das angefragte Unternehmen — zur Bereitstellung des Dienstes
+            und zur Angriffserkennung (Art. 6(1)(b) und 6(1)(f) DSGVO). Sicherheits­protokolle werden
+            nach <strong>30 Tagen</strong> automatisch gelöscht.
+          </p>
+          <p>
+            Einzelne Schritte rufen externe Dienste auf (Shodan, LLM-Endpunkt, Gmail-Versand) — diese
+            erhalten <strong>keine</strong> Nutzer­kennungen, sondern nur den Namen des zu bewertenden
+            Unternehmens bzw. die technischen Befunde. Details, Rechtsgrundlagen und Ihre Rechte:{" "}
+            <a href="/privacy" target="_blank" rel="noreferrer">Datenschutz&shy;hinweise</a>.
+          </p>
+          <button className="btn btn-sm" type="button" onClick={acknowledge}>
+            Verstanden — nicht mehr anzeigen
+          </button>
+        </div>
+      )}
+
       <div className="panel">
         <form className="assess-row" onSubmit={run}>
           <div className="fld">
@@ -148,6 +182,12 @@ export default function NewAssessment() {
             {status === "running" ? <><span className="spinner" /> Assessing…</> : "Assess"}
           </button>
         </form>
+
+        <div className="gdpr-mini">
+          🇪🇺 Verarbeitung in Frankfurt (DE) · E-Mail, IP, Zeitstempel &amp; Firmenname werden zur
+          Bereitstellung und Angriffserkennung verarbeitet (Art. 6(1)(b)/(f) DSGVO), Logs 30 Tage.{" "}
+          <a href="/privacy" target="_blank" rel="noreferrer">Datenschutzhinweise</a>
+        </div>
 
         {status === "running" && (
           <div className="prog">

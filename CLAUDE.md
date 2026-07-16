@@ -415,3 +415,31 @@ touch the firewall — Amnezia VPN shares this host):
   traffic-per-minute, VISITOR LOG table, top IPs, bots seen) and "Security" (criticals, suppressed,
   delivery failures, alert log with full forensics, auth audit).
 - Watch **"Alert delivery failures"**: non-zero means alerts are not reaching you = flying blind.
+
+## GDPR / privacy — the claims are load-bearing (remember)
+`webapp/frontend/src/pages/Privacy.jsx` (route `/privacy`) + an Art.13 notice on the Assess screen
+(`gdpr-notice`, acknowledged once per browser -> `POST /api/privacy/ack` -> `evt=privacy_ack` for
+Art. 5(2) accountability).
+- **NEVER simplify the page to "all data stays in the EU" — it is FALSE.** True statement: the app,
+  DB, decks and logs are on the FRA1 (Frankfurt) droplet. But Shodan (US), the DO serverless
+  inference endpoint (region NOT documented by DO; fronted by Cloudflare) and the Gmail API all
+  receive data. The page names each sub-processor and what exactly it gets. A false residency claim
+  on a site that SELLS DSGVO assessments is the worst possible own goal.
+- **OPEN ITEM:** confirm with DigitalOcean where serverless inference actually runs; if it is not EU,
+  the page must keep saying so (or switch to an EU endpoint).
+- The page states **30-day log retention** — that is enforced by **Loki's retention config**, not by
+  colt-web. If Loki keeps logs longer, the page is lying. Verify before showing this to a customer.
+- Geo is **country-level only** (Art. 5(1)(c)): `geoip.py` uses DB-IP Country-Lite (.mmdb, MaxMind-DB
+  format) — free, NO licence key (GeoLite2 would need a MaxMind account = another secret). Lazily
+  downloaded to /data (persistent volume) and auto-refreshed monthly, so `docker build` never depends
+  on it. Licence CC-BY-4.0 -> the DB-IP credit on /privacy is REQUIRED, do not remove it.
+- `TELEMETRY_HASH_IPS=1` swaps raw IPs for salted hashes (keeps correlation, drops the identifier).
+  Currently 0 because forensics were requested — that is a deliberate, documented choice.
+
+## Daily access report (remember)
+`webapp/backend/app/daily_report.py` -> emailed to ALERT_EMAIL at DAILY_REPORT_HOUR (07:00 UTC) by an
+in-app asyncio task started in main.py. No cron in the container, no systemd unit to drift out of the
+repo. It recomputes the next fire time each loop, so a restart cannot double-send.
+Sources: the jobs SQLite (who ran what, language, status, deck count) + events.log (logins ok/fail,
+visitors, countries, security alerts, AI cost). Manual run:
+  `docker exec colt-web python3 -m app.daily_report --print`   (print only, no email)
