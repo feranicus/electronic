@@ -20,7 +20,7 @@ Run from  C:\\Python SW\\Linkedin Scraper  on Windows (uses built-in ssh/scp/tar
     python deploy.py --deploy --grafana-port 3001   # standalone (own Grafana), only if needed
 Config via env: DROPLET_HOST, DROPLET_USER, SSH_KEY.
 """
-import argparse, os, subprocess, sys, tempfile
+import argparse, os, subprocess, sys, tempfile, time
 
 HOST    = os.environ.get("DROPLET_HOST", "64.225.108.200")
 USER    = os.environ.get("DROPLET_USER", "root")
@@ -93,12 +93,26 @@ def package():
                 "hermes-local", "*.tgz", "uploads", ".venv", "venv", "env", "*.egg-info",
                 ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build", ".idea", ".vscode",
                 "jobhuntwow-app", "*.timestamp-*.mjs", ".DS_Store"]
-    # --ignore-failed-read: a single unreadable file must degrade, not abort the deploy
-    run(["tar", "--ignore-failed-read"] + sum([["--exclude", e] for e in excludes], []) +
-        ["-czf", tgz, "-C", LOCAL, "."], check=False)
-    if not os.path.exists(tgz) or os.path.getsize(tgz) < 10240:
-        sys.exit("[X] packaging produced no usable tarball — check the excludes above")
-    print("  packaged -> %s" % tgz); return tgz
+    # NOTE: Windows ships bsdtar (libarchive), NOT GNU tar — it has no --ignore-failed-read.
+    # Passing it made tar refuse to run entirely. We do not need it: excluding jobhuntwow-app/.venv
+    # removes the unreadable symlink that started this.
+    # Delete any stale archive FIRST. A previous failed run left an 87MB tgz in Temp and the deploy
+    # happily uploaded it — shipping old code while printing "packaged -> ...". Verify freshness, not
+    # just existence/size.
+    if os.path.exists(tgz):
+        try: os.unlink(tgz)
+        except OSError as e: sys.exit("[X] cannot remove stale %s: %s" % (tgz, e))
+    t0 = time.time()
+    r = run(["tar"] + sum([["--exclude", e] for e in excludes], []) + ["-czf", tgz, "-C", LOCAL, "."],
+            check=False)
+    if not os.path.exists(tgz):
+        sys.exit("[X] tar produced no archive — deploy aborted rather than ship stale code.")
+    if os.path.getsize(tgz) < 10240:
+        sys.exit("[X] tar produced a %d-byte archive — aborted." % os.path.getsize(tgz))
+    if os.path.getmtime(tgz) < t0 - 1:
+        sys.exit("[X] %s is STALE (not written by this run) — aborted." % tgz)
+    print("  packaged -> %s  (%.1f MB, fresh)" % (tgz, os.path.getsize(tgz) / 1e6))
+    return tgz
 
 def upload():
     tgz = package()
