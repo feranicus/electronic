@@ -490,6 +490,14 @@ Mobile CSS rules that are easy to get wrong (all in styles.css @media max-width:
   `.topbar` for brand+logout so the bottom bar is pure navigation);
 - never `user-scalable=no` (accessibility).
 
+The LANDING PAGE (`Landing.jsx`, route `/`) is part of the SPA — it is React, NOT a static HTML page,
+so it is already covered by the manifest + service worker. Do NOT rebuild it as a separate mobile
+HTML file: it would lose the SPA routing/PWA and start drifting. It only ever needed CSS. Its header
+(`#hd .wrap`) is a FIXED 58px flex row with brand + 4 section links + a CTA — at 360px those wrapped
+inside the 58px box and collided with the brand. Fix: hide the section anchors on a phone (the page is
+one scroll anyway), keep brand + one CTA. Also removed a stale `@media(max-width:820px)` that forced
+`.side{position:static}` and fought the mobile bottom bar.
+
 PWA: `public/manifest.webmanifest` (standalone, start_url /app, 192+512 icons — Chrome needs both to
 offer install, plus `purpose:maskable` because Android crops to a squircle) + `public/sw.js`.
 **HARD RULE — the service worker must NEVER cache `/api/`**: decks are owner-scoped behind a session

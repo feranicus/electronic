@@ -240,7 +240,8 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .tag{font-size:12px;background:var(--navy2);border:1px solid var(--line);border-radius:8px;
   padding:5px 10px;color:var(--teal);font-weight:700}
 .muted{color:var(--mut)}
-@media(max-width:820px){.cab{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:column}}
+/* (was: a max-width:820px rule that forced .side static/column — it fought the mobile bottom bar
+   defined further down. Tablets now fall through to the 720px rules.) */
 
 /* language selector sits next to the company field; keep it narrow so the row still breathes */
 .assess-row .fld-lang { flex: 0 0 210px; }
@@ -379,4 +380,48 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .side{padding:2px 8px}
   .nav a{min-height:40px;flex-direction:row;gap:8px}
   .main{padding-bottom:56px}
+}
+
+/* ---- LANDING PAGE on a phone --------------------------------------------------
+   #hd .wrap is a fixed 58px flex row holding the brand + 4 nav links + a button.
+   At 360px those cannot fit, so they wrapped INSIDE the 58px box and collided with
+   the brand. On a phone: drop the section links (the page is a single scroll anyway,
+   they are reachable by scrolling), keep brand + one clear CTA.
+   -------------------------------------------------------------------------------- */
+@media (max-width: 720px){
+  .wrap{padding:0 16px}
+  #hd .wrap{height:auto;min-height:54px;gap:10px;padding-top:calc(6px + env(safe-area-inset-top));
+    padding-bottom:6px}
+  #hd{background:rgba(8,16,32,.86);backdrop-filter:blur(10px)}
+  #hd nav{margin-left:auto;gap:0}
+  #hd nav a:not(.btn){display:none}          /* section anchors: noise on a phone */
+  #hd nav .btn.sm{min-height:38px;padding:8px 16px;font-size:13px;white-space:nowrap}
+  #hd .brand{font-size:19px}
+
+  .hero{padding:34px 0 26px}
+  .hero h1{font-size:clamp(26px,8.2vw,36px);line-height:1.12}
+  .kick{font-size:11px;letter-spacing:1.4px}
+  .hero .sub,.sub{font-size:14.5px;line-height:1.6}
+  .cta-row{flex-direction:column;align-items:stretch;gap:10px}
+  .cta-row .btn{width:100%;min-height:50px;font-size:15px}
+
+  .lp{padding:34px 0}
+  .lp h2{font-size:24px}
+  .lede{font-size:14px}
+  .grid2,.grid3,.demo{grid-template-columns:1fr;gap:14px}
+  .card,.step{padding:16px}
+
+  /* the fake phone in the demo must not force a horizontal scroll */
+  .phone{width:100%;max-width:330px;margin:0 auto}
+  .demoside{width:100%}
+  .chips{flex-wrap:wrap}
+
+  /* long code-ish tokens (bgpview.io, run_assessment.py) were pushing the page sideways */
+  code,kbd,.mono{overflow-wrap:anywhere;word-break:break-word}
+  pre{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{display:block;overflow-x:auto}
+}
+@media (max-width: 380px){
+  .hero h1{font-size:25px}
+  #hd nav .btn.sm{padding:8px 12px;font-size:12px}
 }
