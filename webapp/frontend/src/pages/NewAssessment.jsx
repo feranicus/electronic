@@ -30,6 +30,7 @@ export default function NewAssessment() {
   const [notice, setNotice] = useState(""); // e.g. "model X timed out — switching to Y"
   // GDPR Art. 13: tell the user what is collected BEFORE the processing starts, not afterwards.
   // Acknowledged once per browser; the acknowledgement itself is logged for accountability (Art. 5(2)).
+  const [legalLang, setLegalLang] = useLegalLang();
   const [ackd, setAckd] = useState(() => {
     try { return localStorage.getItem("cg_privacy_ack") === "1"; } catch { return false; }
   });
@@ -142,24 +143,15 @@ export default function NewAssessment() {
 
       {!ackd && (
         <div className="panel gdpr-notice">
-          <div className="gdpr-title">🇪🇺 Datenverarbeitung / Data processing</div>
-          <p>
-            Mit <strong>Assess</strong> starten Sie eine Analyse auf einem Server im Rechenzentrum
-            <strong> Frankfurt am Main (DE)</strong>. Dabei verarbeiten wir Ihre E-Mail-Adresse, Ihre
-            IP-Adresse, Zeitstempel und das angefragte Unternehmen — zur Bereitstellung des Dienstes
-            und zur Angriffserkennung (Art. 6(1)(b) und 6(1)(f) DSGVO). Sicherheits­protokolle werden
-            nach <strong>30 Tagen</strong> automatisch gelöscht.
-          </p>
-          <p>
-            <strong>Ihre Daten bleiben in der EU.</strong> Einzige Ausnahme: Ihre E-Mail-Adresse geht
-            an die Gmail-API, um Ihnen den Einmalcode zu senden (Google, EU-US Data Privacy Framework).
-            Die Analyse selbst nutzt nur öffentliche Quellen und erhält <strong>keine</strong>
-            Nutzer­daten — nur den Namen des zu bewertenden Unternehmens. Details, Rechtsgrundlagen
-            und Ihre Rechte:{" "}
-            <a href="/privacy" target="_blank" rel="noreferrer">Datenschutz&shy;hinweise</a>.
-          </p>
+          <div className="gdpr-head">
+            <div className="gdpr-title">{NOTICE[legalLang].title}</div>
+            <LangToggle lang={legalLang} setLang={setLegalLang} />
+          </div>
+          <p>{NOTICE[legalLang].p1}</p>
+          <p>{NOTICE[legalLang].p2}</p>
+          <p><a href="/privacy" target="_blank" rel="noreferrer">{NOTICE[legalLang].link}</a></p>
           <button className="btn btn-sm" type="button" onClick={acknowledge}>
-            Verstanden — nicht mehr anzeigen
+            {NOTICE[legalLang].ok}
           </button>
         </div>
       )}
@@ -186,10 +178,8 @@ export default function NewAssessment() {
         </form>
 
         <div className="gdpr-mini">
-          🇪🇺 Ihre Daten bleiben in der EU (Frankfurt/FRA1) · E-Mail, IP, Zeitstempel &amp; Firmenname
-          werden zur Bereitstellung und Angriffserkennung verarbeitet (Art. 6(1)(b)/(f) DSGVO),
-          Logs 30 Tage.{" "}
-          <a href="/privacy" target="_blank" rel="noreferrer">Datenschutzhinweise</a>
+          {NOTICE[legalLang].mini}
+          <a href="/privacy" target="_blank" rel="noreferrer">{NOTICE[legalLang].link}</a>
         </div>
 
         {status === "running" && (

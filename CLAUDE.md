@@ -417,9 +417,14 @@ touch the firewall — Amnezia VPN shares this host):
 - Watch **"Alert delivery failures"**: non-zero means alerts are not reaching you = flying blind.
 
 ## GDPR / privacy — the claims are load-bearing (remember)
-`webapp/frontend/src/pages/Privacy.jsx` (route `/privacy`) + an Art.13 notice on the Assess screen
-(`gdpr-notice`, acknowledged once per browser -> `POST /api/privacy/ack` -> `evt=privacy_ack` for
-Art. 5(2) accountability).
+**ALL privacy/GDPR copy is BILINGUAL (DE + EN) and lives in ONE file: `webapp/frontend/src/legal.jsx`**
+(`PRIVACY` = the /privacy page, `NOTICE` = the Art.13 notice on the Assess screen, `useLegalLang()` +
+`<LangToggle/>`). German is the REFERENCE text (German customers/regulator), English is the
+translation. Language follows the browser (de* -> German), reader-overridable, remembered in
+localStorage `cg_legal_lang`. NEVER hardcode legal copy in a page — page and notice must not drift.
+`webapp/frontend/src/pages/Privacy.jsx` (route `/privacy`) just renders `PRIVACY[lang]`; the Assess
+notice renders `NOTICE[lang]`, is acknowledged once per browser -> `POST /api/privacy/ack` ->
+`evt=privacy_ack` for Art. 5(2) accountability.
 - **SCOPE (corrected — the user was right):** a privacy notice covers the DATA SUBJECT'S personal
   data, i.e. the platform USER. Shodan/RIPE/crt.sh get the TARGET COMPANY name; the LLM endpoint gets
   the technical findings. Neither receives a user identity, so neither is a recipient of personal data
