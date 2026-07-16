@@ -274,3 +274,15 @@ CRITICAL/HIGH from a SUCCESSFUL lookup. `assess(asns, org, discovery_ok=)` + `_F
 `data_ok` in bgp.json enforce it; run_assessment passes `discovery_ok` from whether autodiscovery
 actually returned asns/nets/ct_domains, and warns loudly when data_ok is false. This applies to EVERY
 future module: never infer a customer weakness from a failed API call.
+
+## Web UX — the assessment progress bar (remember)
+A ~2min job with only a spinner makes people refresh, which CANCELS the run (the SSE stream is what
+drives the engine). So:
+- `run_assessment.py::_pg(msg, pct)` stamps every phase line: `PROGRESS: [56%] BGP/ASN resilience...`
+  Milestone ladder = 4/8/56/62/89/91/97/99/100, weighted by REAL wall-clock (recon ~60-80s of a ~2min
+  run = the bulk; enrichment ~30-60s; deck render ~10s). `_pg(msg)` without pct still works.
+- `NewAssessment.jsx` parses `[nn%]`, then EASES toward the next milestone (1.5% of the gap per 400ms)
+  and stops 1% short of it — so during the 75s recon the bar still creeps 8% -> ~53% instead of
+  freezing, but never pre-announces a phase. It snaps forward on a real milestone and never regresses.
+- Also shows the phase label, an elapsed clock, and "refreshing cancels the run".
+- The Telegram bot is unaffected: it prints the line verbatim, `[56%]` included.

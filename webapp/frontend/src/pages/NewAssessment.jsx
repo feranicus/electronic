@@ -17,9 +17,19 @@ function asText(v) {
   return String(v);
 }
 
+function fmtTime(sec) {
+  const m = Math.floor(sec / 60), r = sec % 60;
+  return m ? `${m}m ${String(r).padStart(2, "0")}s` : `${r}s`;
+}
+
 export default function NewAssessment() {
   const [company, setCompany] = useState("");
   const [lang, setLang] = useState("en");   // language of the 4 generated documents
+  const [pct, setPct] = useState(0);        // last REAL milestone reported by the engine
+  const [phase, setPhase] = useState("");   // human label for the current phase
+  const [shown, setShown] = useState(0);    // eased value actually drawn (never goes backwards)
+  const [elapsed, setElapsed] = useState(0);
+  const startedRef = useRef(0);
   const [status, setStatus] = useState("idle"); // idle | running | done | error
   const [lines, setLines] = useState([]);
   const [decks, setDecks] = useState([]);
@@ -32,6 +42,26 @@ export default function NewAssessment() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [lines]);
 
+  // The engine reports milestones (4 -> 8 -> 56 -> 62 -> 91 -> 99). Recon alone is ~70s, so a bar
+  // pinned to milestones would freeze at 8% and look hung. Between milestones we ease toward the
+  // NEXT one and never reach it, so it always creeps but never lies about being finished.
+  const LADDER = [4, 8, 56, 62, 89, 91, 97, 99, 100];
+  useEffect(() => {
+    if (status !== "running") return;
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedRef.current) / 1000));
+      setShown((cur) => {
+        const target = LADDER.find((x) => x > pct) ?? 100;
+        const ceiling = target - 1;               // never pre-announce the next phase
+        if (cur >= ceiling) return cur;
+        return Math.min(ceiling, cur + (target - cur) * 0.015);
+      });
+    }, 400);
+    return () => clearInterval(id);
+  }, [status, pct]);
+
+  useEffect(() => { setShown((c) => Math.max(c, pct)); }, [pct]);   // snap forward on a real milestone
+
   useEffect(() => () => { if (esRef.current) esRef.current.close(); }, []);
 
   async function run(e) {
@@ -39,6 +69,8 @@ export default function NewAssessment() {
     const name = company.trim();
     if (!name || status === "running") return;
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
+    setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…");
+    startedRef.current = Date.now();
     if (esRef.current) esRef.current.close();
 
     const { ok, data } = await startAssess(name, lang);
@@ -55,7 +87,14 @@ export default function NewAssessment() {
       try { payload = JSON.parse(ev.data); } catch { return; }
       if (payload.evt === "progress") {
         setLines((cur) => [...cur, payload.line]);
+        // engine emits:  PROGRESS: [56%] BGP/ASN resilience ...
+        const m = /^PROGRESS:\s*(?:\[(\d+)%\]\s*)?(.+)$/.exec(payload.line || "");
+        if (m) {
+          if (m[1]) setPct(Number(m[1]));
+          setPhase(m[2].trim());
+        }
       } else if (payload.evt === "done") {
+        setPct(100); setShown(100);
         setDecks(payload.decks || []);
         setSummary(payload.summary || "");
         setStatus("done");
@@ -105,6 +144,20 @@ export default function NewAssessment() {
             {status === "running" ? <><span className="spinner" /> Assessing…</> : "Assess"}
           </button>
         </form>
+
+        {status === "running" && (
+          <div className="prog">
+            <div className="prog-top">
+              <span className="prog-phase">{phase || "Working…"}</span>
+              <span className="prog-meta">{Math.floor(shown)}% · {fmtTime(elapsed)}</span>
+            </div>
+            <div className="prog-track"><div className="prog-fill" style={{ width: Math.max(2, shown) + "%" }} /></div>
+            <div className="prog-note">
+              A full assessment takes about two minutes — Shodan recon is the long part, then the AI
+              writes the prose. Keep this tab open; refreshing cancels the run.
+            </div>
+          </div>
+        )}
 
         {(status === "running" || lines.length > 0) && (
           <div className="loglist" ref={logRef}>

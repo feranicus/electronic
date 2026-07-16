@@ -11,14 +11,19 @@ live, restart the caddy container as a last resort -> verify colt-web single-net
 Usage:  python deploy_web_direct.py
 Env (optional): DROPLET_HOST (default 64.225.108.200), DROPLET_USER (root), SSH_KEY (path)
 """
-import os, sys, subprocess, tarfile, tempfile
+import os, sys, base64, subprocess, tarfile, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.environ.get("DROPLET_HOST", "64.225.108.200")
 USER = os.environ.get("DROPLET_USER", "root")
 KEY  = os.environ.get("SSH_KEY", "")
-SSH_BASE = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"]
-SCP_BASE = ["scp", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"]
+# FAIL FAST, NEVER HANG. Without ConnectTimeout an unreachable droplet (blocked :22, wrong network)
+# makes ssh sit for ~2min with no output, which is indistinguishable from "it is building".
+# BatchMode=yes => never sit on an interactive password prompt; error out instead.
+_TMO = ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=4"]
+SSH_BASE = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"] + _TMO
+SCP_BASE = ["scp", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"] + _TMO
 if KEY and os.path.exists(KEY):
     SSH_BASE += ["-i", KEY]; SCP_BASE += ["-i", KEY]
 
@@ -68,22 +73,61 @@ REMOTE = "\n".join([
     "",
 ])
 
+def preflight(tgt):
+    """Prove we can reach the droplet BEFORE doing anything slow, and say so out loud."""
+    print("== preflight: ssh %s (10s timeout) ==" % tgt, flush=True)
+    r = subprocess.run(SSH_BASE + [tgt, "echo ssh-ok && docker ps --format '{{.Names}}' | head -5"],
+                       capture_output=True, text=True)
+    if r.returncode or "ssh-ok" not in (r.stdout or ""):
+        err = (r.stderr or "").strip()[:300]
+        sys.exit(
+            "[X] cannot SSH to %s\n    %s\n\n"
+            "    Most likely one of:\n"
+            "      1. Your key is not where THIS shell looks. PowerShell uses C:\\Users\\<you>\\.ssh,\n"
+            "         WSL uses ~/.ssh. This script worked from WSL before — try there, or set\n"
+            "         SSH_KEY=C:\\path\\to\\key\n"
+            "      2. The droplet is not answering :22 from this network (it blocked your IP before;\n"
+            "         tethering to mobile fixed it). Test:  ssh -v %s \"echo ok\"\n"
+            "      3. Wrong host — DROPLET_HOST=%s" % (tgt, err or "no response (connect timed out)", tgt, HOST))
+    print("  ssh OK — containers: %s" % ", ".join((r.stdout or "").split()[1:6]), flush=True)
+
+
 def main():
     tgt = "%s@%s" % (USER, HOST)
-    print("== pack sources =="); tgz = pack()
-    print("  packed (%d KB)" % (os.path.getsize(tgz)//1024))
-    print("== upload ==")
-    if subprocess.run(SSH_BASE + [tgt, "mkdir -p /opt/colt-stack"]).returncode: sys.exit("[X] ssh failed")
-    if subprocess.run(SCP_BASE + [tgz, "%s:/tmp/colt-web-src.tgz" % tgt]).returncode:
-        sys.exit("[X] scp failed")
-    subprocess.run(SSH_BASE + [tgt, "tar xzf /tmp/colt-web-src.tgz -C /opt/colt-stack && rm -f /tmp/colt-web-src.tgz"], check=True)
-    print("== build + deploy + wire + verify (on droplet) ==")
-    # raw LF bytes: text=True would translate \n -> \r\n on Windows and break bash
-    r = subprocess.run(SSH_BASE + [tgt, "bash -s"], input=REMOTE.encode("utf-8"))
+    preflight(tgt)
+    print("== pack sources ==", flush=True)
+    tgz = pack()
+    blob = base64.b64encode(open(tgz, "rb").read()).decode("ascii")
     try: os.unlink(tgz)
     except Exception: pass
-    if r.returncode: sys.exit("[X] remote deploy failed (see output above)")
+    print("  packed (%d KB -> %d KB base64)" % (len(blob) * 3 // 4 // 1024, len(blob) // 1024), flush=True)
+
+    # ONE ssh connection for the whole deploy: the tarball travels INSIDE the remote script as
+    # base64, then build + wire + verify. Why:
+    #   * scp is gone. On Windows, tempfile gives "C:\Users\...\x.tgz" and scp reads the "C:" as a
+    #     HOSTNAME (the colon), so the upload died instantly and silently. This sidesteps it entirely.
+    #   * 4 ssh connections (mkdir/scp/tar/bash) -> 1. sshd throttles rapid repeat connects
+    #     (MaxStartups), which is what made a later run hang on connect.
+    # Everything is sent as raw LF bytes: text=True would turn \n into \r\n on Windows and feed
+    # bash CRLF, which breaks the heredoc.
+    payload = "\n".join([
+        "set -e",
+        "mkdir -p /opt/colt-stack",
+        "cd /opt/colt-stack",
+        "base64 -d > /tmp/colt-web-src.tgz <<'B64EOF'",
+        blob,
+        "B64EOF",
+        "echo '== unpack on droplet =='",
+        "tar xzf /tmp/colt-web-src.tgz -C /opt/colt-stack && rm -f /tmp/colt-web-src.tgz",
+        REMOTE,
+        "",
+    ])
+    print("== upload + build + wire + verify (ONE ssh; the docker build takes 2-4 min) ==", flush=True)
+    r = subprocess.run(SSH_BASE + [tgt, "bash -s"], input=payload.encode("utf-8"))
+    if r.returncode:
+        sys.exit("[X] remote deploy failed (see output above)")
     print("\nDONE. If 'public via caddy = 401', open https://cybergod.ai/login")
+
 
 if __name__ == "__main__":
     main()

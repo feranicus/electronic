@@ -476,14 +476,18 @@ def main():
     os.makedirs(a.outdir, exist_ok=True)
     import time as _t
     def _ev(**k): print(json.dumps(k), flush=True)
-    def _pg(m): print("PROGRESS: " + m, flush=True)
+    # PROGRESS lines carry an explicit percentage so the web UI can draw a real bar instead of a
+    # spinner. Weights are wall-clock-proportional from real runs (recon dominates: ~60-80s of a
+    # ~2min job; enrichment ~30-60s; deck rendering ~10s). The bot ignores the [nn%] prefix.
+    def _pg(m, pct=None):
+        print(("PROGRESS: [%d%%] " % pct if pct is not None else "PROGRESS: ") + m, flush=True)
     _t0 = _t.time(); _tag = a.company or a.seed or "?"
     _ev(evt="assess_start", company=_tag)
 
     # 1) findings.json (live recon, or reuse)
     _ts = _t.time()
     if a.from_findings:
-        _pg("Loading findings")
+        _pg("Loading findings", 4)
         fj = json.load(open(a.from_findings))
         json.dump(fj, open(os.path.join(a.outdir,"findings.json"),"w"), indent=2, ensure_ascii=False)
         ident = fj.get("identity", {})
@@ -506,7 +510,7 @@ def main():
         open(os.path.join(a.outdir,"filters.md"),"w").write(R.filters_md(ident,F))
         if not os.environ.get("SHODAN_API_KEY"):
             print("SHODAN_API_KEY not set", file=sys.stderr); sys.exit(2)
-        _pg("Shodan recon + Top-10 super-filters")
+        _pg("Shodan recon + Top-10 super-filters", 8)
         fj = R.run(ident, F, a.audience)
         json.dump(fj, open(os.path.join(a.outdir,"findings.json"),"w"), indent=2, ensure_ascii=False)
         open(os.path.join(a.outdir,"findings.md"),"w").write(R.findings_md(fj))
@@ -515,7 +519,7 @@ def main():
 
     # --- BGP / ASN resilience -> NIS2 Art 21 continuity exposure (additive, non-fatal) ---
     try:
-        _pg("BGP/ASN resilience + NIS2 Art 21 exposure")
+        _pg("BGP/ASN resilience + NIS2 Art 21 exposure", 56)
         import bgp_resilience as BGP
         # Tell the module whether ASN AUTODISCOVERY actually worked. If bgpview/crt.sh were
         # unreachable (container DNS down, 502), an empty ASN list means "we could not look it up",
@@ -552,7 +556,7 @@ def main():
         print("[warn] bgp_resilience: %s" % _e, file=sys.stderr)
     # optional LLM prose polish + audit (safe: falls back to templated text on any failure)
     if os.environ.get("OPENAI_API_KEY"):
-        _pg("AI enrichment: improving prose + auditing vs methodology")
+        _pg("AI enrichment: improving prose + auditing vs methodology", 62)
         # snapshot the pre-QWEN (raw templated) findings so the DELTAS deck can diff against it
         try:
             import shutil as _sh
@@ -576,7 +580,7 @@ def main():
     co = a.company or fj["target"]["company"]
     safe = "".join(c if c.isalnum() or c in ".-" else "_" for c in co)
 
-    _pg("Building 3 VIP decks (Shodan / C-BIQ / GEOPOL)")
+    _pg("Building 3 VIP decks (Shodan / C-BIQ / GEOPOL)", 91)
     # 2) DERIVE cbiq + geopol (deterministic — no LLM)
     cj = derive_cbiq(fj); gj = derive_geopol(fj, ident, cj)
     json.dump(cj, open(os.path.join(a.outdir,"cbiq.json"),"w"), indent=2, ensure_ascii=False)
@@ -596,7 +600,7 @@ def main():
             import i18n as _I18N
             for _f in ("findings.json", "cbiq.json", "geopol.json"):
                 _I18N.translate_file(os.path.join(a.outdir, _f), "de")
-            _pg("Sprache: Hochdeutsch — Dokumente werden auf Deutsch erzeugt")
+            _pg("Sprache: Hochdeutsch — Dokumente werden auf Deutsch erzeugt", 89)
         except Exception as _e:
             print(f"[warn] i18n pass: {_e}", file=sys.stderr)
 
@@ -608,7 +612,7 @@ def main():
     d4=os.path.join(a.outdir,f"{safe}_DELTAS{_L}.pptx")
     ok4=False
     if fj.get("target",{}).get("qwen",{}).get("status")=="ok":
-        _pg("Building DELTAS deck (raw scan vs QWEN pursuit)")
+        _pg("Building DELTAS deck (raw scan vs QWEN pursuit)", 97)
         raw_fp=os.path.join(a.outdir,"findings_raw.json")
         r=subprocess.run(["node", os.path.join(HERE,"build_deltas_deck.js"),
                           raw_fp, os.path.join(a.outdir,"findings.json"), d4,
@@ -639,7 +643,7 @@ def main():
             _ev(evt="cost_snapshot", ledger=_CL.LEDGER, **_tot)
     except Exception as _e:
         print(f"[warn] cost ledger: {_e}", file=sys.stderr)
-    _pg("AI enrichment: " + (f"{q.get('status')} - {q.get('model')} - {q.get('tokens_in',0)+q.get('tokens_out',0)} tok - ~${q.get('cost_usd',0):.4f}" if q else "not used"))
+    _pg("AI enrichment: " + (f"{q.get('status')} - {q.get('model')} - {q.get('tokens_in',0)+q.get('tokens_out',0)} tok - ~${q.get('cost_usd',0):.4f}" if q else "not used"), 99)
     print("==== ASSESSMENT COMPLETE ====")
     print(f"Company: {co}   scope: {fj['target']['scope']}")
     print(f"Findings: CRIT {s['critical']} · HIGH {s['high']} · MED {s['medium']} · LOW {s['low']}  (IPs {s['unique_ips']}, dropped {s.get('dropped_false_positives',0)} FP)")
