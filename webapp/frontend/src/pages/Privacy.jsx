@@ -16,30 +16,34 @@ export default function Privacy() {
           wie lange wir sie aufbewahren — gemäß DSGVO/GDPR Art. 13/14.
         </p>
 
-        <h2>1. Wo die Daten liegen</h2>
+        <h2>1. Wo Ihre Daten liegen</h2>
         <p>
-          Die Anwendung, die Datenbank, die erzeugten Dokumente und die Protokolle laufen
-          ausschließlich auf einem Server im <strong>Rechenzentrum Frankfurt am Main, Deutschland
-          (DigitalOcean, Region FRA1)</strong>. Es gibt keine Replikation außerhalb der EU.
+          <strong>Ihre personenbezogenen Daten bleiben in der EU.</strong> Anwendung, Datenbank,
+          Sitzungen, erzeugte Dokumente und Sicherheits­protokolle laufen ausschließlich auf einem
+          Server im <strong>Rechenzentrum Frankfurt am Main, Deutschland (DigitalOcean, Region
+          FRA1)</strong>. Es gibt keine Replikation und kein Backup außerhalb der EU.
         </p>
-        <p className="legal-warn">
-          <strong>Transparenz zu Drittlands­übermittlungen (Art. 44–49 DSGVO):</strong> einzelne
-          Verarbeitungsschritte rufen externe Dienste auf, die außerhalb der EU betrieben werden
-          können. Wir benennen sie offen statt pauschal „alle Daten bleiben in der EU“ zu behaupten:
+        <p>
+          <strong>Auftragsverarbeiter (Art. 28 DSGVO):</strong>
         </p>
         <ul>
-          <li><strong>Shodan</strong> (US) — erhält den <em>Namen des zu bewertenden Unternehmens</em>
-              bzw. dessen Domain/ASN. Keine personenbezogenen Daten von Nutzern.</li>
-          <li><strong>DigitalOcean Serverless Inference</strong> — erhält die technischen Scan-Befunde
-              zur Formulierung der Berichtstexte. Keine Nutzerkennungen. Die Verarbeitungsregion ist
-              vom Anbieter nicht öffentlich dokumentiert und wird gesondert geprüft.</li>
-          <li><strong>Google (Gmail API)</strong> — Versand der Einmalcodes (OTP) und der Berichte an
-              die Betreiber-Adresse. Verarbeitet die Empfänger-E-Mail-Adresse.</li>
-          <li><strong>Telegram</strong> — nur, wenn Sie den Telegram-Zugang nutzen oder für
-              Sicherheits­benachrichtigungen an die Betreiber.</li>
-          <li><strong>RIPE, CAIDA, PeeringDB, crt.sh</strong> (öffentliche Register) — erhalten
-              ausschließlich den Firmennamen/die ASN des Analyse-Ziels.</li>
+          <li><strong>DigitalOcean</strong> — Hosting des Servers, Region Frankfurt (FRA1), EU.</li>
+          <li><strong>Google (Gmail API)</strong> — <em>die einzige Stelle, an die eine
+              Nutzer­kennung übermittelt wird</em>: Ihre E-Mail-Adresse, ausschließlich für den
+              Versand des Einmalcodes (OTP) und der Betriebs­berichte an den Betreiber. Google ist
+              nach dem EU-US Data Privacy Framework zertifiziert (Art. 45 DSGVO — Angemessenheits­beschluss).
+              Übermittelt wird die Adresse und der Code — sonst nichts.</li>
+          <li><strong>Telegram</strong> — nur, wenn Sie den optionalen Telegram-Zugang nutzen; dann
+              gilt Ihre Telegram-Nutzer-ID.</li>
         </ul>
+        <p className="legal-note">
+          Die Analyse selbst wertet ausschließlich <strong>öffentlich sichtbare Infrastruktur­daten
+          des zu bewertenden Unternehmens</strong> aus (Shodan, RIPE, CAIDA, PeeringDB, crt.sh) und
+          erzeugt die Berichtstexte über einen KI-Endpunkt. Diesen Diensten wird <strong>nur der
+          Firmenname bzw. die Domain/ASN des Analyse-Ziels</strong> bzw. der technische Befund
+          übergeben — <strong>keine Nutzer­kennung, keine E-Mail-Adresse, keine IP-Adresse eines
+          Nutzers</strong>. Sie sind daher keine Empfänger Ihrer personenbezogenen Daten.
+        </p>
 
         <h2>2. Welche Daten wir verarbeiten</h2>
         <table className="legal-table">

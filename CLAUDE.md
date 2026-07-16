@@ -420,13 +420,16 @@ touch the firewall — Amnezia VPN shares this host):
 `webapp/frontend/src/pages/Privacy.jsx` (route `/privacy`) + an Art.13 notice on the Assess screen
 (`gdpr-notice`, acknowledged once per browser -> `POST /api/privacy/ack` -> `evt=privacy_ack` for
 Art. 5(2) accountability).
-- **NEVER simplify the page to "all data stays in the EU" — it is FALSE.** True statement: the app,
-  DB, decks and logs are on the FRA1 (Frankfurt) droplet. But Shodan (US), the DO serverless
-  inference endpoint (region NOT documented by DO; fronted by Cloudflare) and the Gmail API all
-  receive data. The page names each sub-processor and what exactly it gets. A false residency claim
-  on a site that SELLS DSGVO assessments is the worst possible own goal.
-- **OPEN ITEM:** confirm with DigitalOcean where serverless inference actually runs; if it is not EU,
-  the page must keep saying so (or switch to an EU endpoint).
+- **SCOPE (corrected — the user was right):** a privacy notice covers the DATA SUBJECT'S personal
+  data, i.e. the platform USER. Shodan/RIPE/crt.sh get the TARGET COMPANY name; the LLM endpoint gets
+  the technical findings. Neither receives a user identity, so neither is a recipient of personal data
+  and neither belongs in an Art. 44 transfer disclosure. Do not re-add them as "transfers".
+- **The claim "Ihre Daten bleiben in der EU" is TRUE and may stand**: app, DB, sessions, decks and
+  logs are all on the FRA1 (Frankfurt) droplet, no replication outside the EU.
+- **The ONE genuine disclosure: Google (Gmail API)** — it receives the USER'S EMAIL ADDRESS to send
+  the OTP and the daily report. That is an Art. 28 processor + a US transfer (covered by the EU-US
+  Data Privacy Framework adequacy decision, Art. 45). It must stay named on /privacy.
+- The analysis pipeline is described separately as "how it works", NOT as a transfer warning.
 - The page states **30-day log retention** — that is enforced by **Loki's retention config**, not by
   colt-web. If Loki keeps logs longer, the page is lying. Verify before showing this to a customer.
 - Geo is **country-level only** (Art. 5(1)(c)): `geoip.py` uses DB-IP Country-Lite (.mmdb, MaxMind-DB

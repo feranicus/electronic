@@ -151,9 +151,11 @@ export default function NewAssessment() {
             nach <strong>30 Tagen</strong> automatisch gelöscht.
           </p>
           <p>
-            Einzelne Schritte rufen externe Dienste auf (Shodan, LLM-Endpunkt, Gmail-Versand) — diese
-            erhalten <strong>keine</strong> Nutzer­kennungen, sondern nur den Namen des zu bewertenden
-            Unternehmens bzw. die technischen Befunde. Details, Rechtsgrundlagen und Ihre Rechte:{" "}
+            <strong>Ihre Daten bleiben in der EU.</strong> Einzige Ausnahme: Ihre E-Mail-Adresse geht
+            an die Gmail-API, um Ihnen den Einmalcode zu senden (Google, EU-US Data Privacy Framework).
+            Die Analyse selbst nutzt nur öffentliche Quellen und erhält <strong>keine</strong>
+            Nutzer­daten — nur den Namen des zu bewertenden Unternehmens. Details, Rechtsgrundlagen
+            und Ihre Rechte:{" "}
             <a href="/privacy" target="_blank" rel="noreferrer">Datenschutz&shy;hinweise</a>.
           </p>
           <button className="btn btn-sm" type="button" onClick={acknowledge}>
@@ -184,8 +186,9 @@ export default function NewAssessment() {
         </form>
 
         <div className="gdpr-mini">
-          🇪🇺 Verarbeitung in Frankfurt (DE) · E-Mail, IP, Zeitstempel &amp; Firmenname werden zur
-          Bereitstellung und Angriffserkennung verarbeitet (Art. 6(1)(b)/(f) DSGVO), Logs 30 Tage.{" "}
+          🇪🇺 Ihre Daten bleiben in der EU (Frankfurt/FRA1) · E-Mail, IP, Zeitstempel &amp; Firmenname
+          werden zur Bereitstellung und Angriffserkennung verarbeitet (Art. 6(1)(b)/(f) DSGVO),
+          Logs 30 Tage.{" "}
           <a href="/privacy" target="_blank" rel="noreferrer">Datenschutzhinweise</a>
         </div>
 

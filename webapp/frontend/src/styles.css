@@ -283,7 +283,7 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .legal-lead{font-size:15px;opacity:.9}
 .legal-body h2{font-size:16px;margin:26px 0 8px;letter-spacing:.01em}
 .legal-body ul{margin:8px 0 8px 18px} .legal-body li{margin:5px 0}
-.legal-warn{border-left:3px solid #F7C844;padding:8px 12px;background:rgba(247,200,68,.08);border-radius:0 6px 6px 0}
+.legal-note{border-left:3px solid rgba(0,178,169,.6);padding:8px 12px;background:rgba(0,178,169,.06);border-radius:0 6px 6px 0}
 .legal-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12.5px}
 .legal-table th,.legal-table td{border:1px solid rgba(255,255,255,.12);padding:7px 9px;text-align:left;vertical-align:top}
 .legal-table th{background:rgba(255,255,255,.05);font-weight:600}
