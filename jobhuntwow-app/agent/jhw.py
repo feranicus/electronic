@@ -143,7 +143,7 @@ def cmd_models(_):
     """List the model ids your DO key can actually use (via the backend). Run backend first."""
     import json as _j, urllib.request as _u
     try:
-        data = _j.loads(_u.urlopen("http://localhost:8000/api/models", timeout=30).read())
+        data = _j.loads(_u.urlopen("http://127.0.0.1:8000/api/models", timeout=30).read())
     except Exception as e:
         print(f"[ERR] backend not reachable on :8000 ({e}). Run `python jhw.py backend` first."); return
     models = data.get("models") or []

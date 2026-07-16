@@ -177,3 +177,26 @@ retries each model with backoff (honouring `Retry-After`), then fails over to th
 A `429` from DO serverless is an **account** RPM/TPM quota (Tier 1/2 = 120 RPM) or an empty prepaid
 balance — not a model fault. Tier 1/2 cannot use Anthropic/OpenAI models except `gpt-oss-*`.
 Check https://cloud.digitalocean.com/limits.
+
+## Which model should write the decks? (bake-off, not benchmarks)
+The LLM writes only the deck PROSE; the slides are deterministic JS. So the question is never "which
+model scores higher on MMLU" — it is "whose German loss-narrative would a CISO believe, and does it
+fill the contract fields". Two commands answer it with evidence:
+
+```
+python probe_models.py --list        # every model this DO key can see (1 API call)
+python probe_models.py --lang de     # which ones pass the REAL contract, how fast -> ENRICH_MODELS line
+python compare_models.py --lang de   # SAME findings.json through each model, prose side by side
+```
+
+`compare_models.py` imports the real `enrich.py` prompt (DELTAS bible + LANG_DE + strict JSON), so
+what you read is exactly what would land on slide 2. It reports latency, cost, whether the output is
+actually German, how many findings were rewritten, and — the one that matters — the `realComparable`
+dated public breach each model cites. A model returning 0 precedents leaves your C-BIQ slides
+templated; a model inventing one is worse.
+
+Measured on this account (2026-07): `deepseek-3.2` head (37B active, current knowledge),
+`llama-4-maverick` backup (17B active, ~4x faster, German is an officially supported language, but
+knowledge cutoff Aug-2024 -> cannot cite recent breaches), `openai-gpt-oss-120b` third (Apache-2.0,
+5.1B active, reasoning model -> shakiest on strict JSON). anthropic-*/openai-gpt-5* are http-403 on a
+DO Tier 1/2 key regardless of being visible in the catalog.

@@ -278,6 +278,16 @@ account/tier · contract-valid JSON · usable business prose · German when aske
   + PeeringDB + bgpview LAST. bgpview.io is the only host that fails to resolve in the container
   ("Errno -5"), while stat.ripe.net answers in 1ms — never depend on one API for a load-bearing fact.
 
+## Model bake-off — decide deck quality with the artifact (remember)
+`python compare_models.py --lang de` runs the SAME findings.json through each model using the REAL
+enrich.py prompt (imports E.PROMPT/E.LANG_DE/E._bible/E._call — never re-implements it) and prints
+exec_summary + realComparable side by side with ms/cost/German/field-fill counts. Benchmarks do not
+measure "credible German CISO prose"; this does. Cheapest+fastest is not the win condition.
+Key insight that settled head-of-chain: llama-4-maverick is 4x faster but its knowledge cutoff is
+Aug-2024, and `realComparable` requires a REAL, DATED public breach from model knowledge — a stale or
+invented precedent in a customer deck is the worst failure mode. deepseek-3.2 (37B active, newer)
+stays head; maverick is the fast fallback.
+
 ## HARD RULE — absence of evidence is never a finding
 `bgp_resilience.py` graded **Cogent (AS174, a tier-1 transit network)** as
 `CRITICAL / no-ASN / 0 upstreams` — purely because container DNS died, so bgpview/crt.sh returned
@@ -300,3 +310,25 @@ drives the engine). So:
   freezing, but never pre-announces a phase. It snaps forward on a real milestone and never regresses.
 - Also shows the phase label, an elapsed clock, and "refreshing cancels the run".
 - The Telegram bot is unaffected: it prints the line verbatim, `[56%]` included.
+
+## Enrichment model chain — PROVEN on this account (2026-07, do not re-litigate)
+`python probe_models.py --lang de` measured it. Do not guess; re-run the probe if DO changes tiers.
+- **anthropic-* and commercial openai-gpt-5* = http-403 Forbidden on this key.** 74 models are
+  VISIBLE in /v1/models but Tier 1/2 cannot CALL them. gpt-oss-* is the documented exception.
+  So the chain is OPEN-WEIGHT only. (Visibility != entitlement. This is why we probe.)
+- **Reasoning/thinking models break the strict-JSON contract**: `deepseek-r1-distill-llama-70b` and
+  `qwen3.5-397b-a17b` both returned bad-contract at 700 tok (they emit thinking, then truncate).
+  Never put a *-thinking / *-distill / o1 / o3 model in the chain. Instruct models only.
+- Measured: `deepseek-3.2` = contract-valid + German OK, ~63s (slow -> a faster backup has value).
+- CHAIN (`_FALLBACKS` in enrich.py, override with ENRICH_MODELS) — MEASURED 2026-07:
+  `deepseek-3.2` (head; ok, German OK, 12.4s — but 63s on an earlier probe: latency swings wildly)
+  -> `llama-4-maverick` (ok, German OK, **3.3s**, Meta open weights)
+  -> `openai-gpt-oss-120b` (Apache-2.0; only openai id Tier 1/2 may call; probed 429 = transient
+  account quota). THREE VENDORS = no shared failure domain.
+  Also measured: glm-5.2 = valid JSON but answered ENGLISH under a one-line DE instruction (the real
+  LANG_DE prompt is far stronger, so likely a false negative); glm-5.1 + minimax-m2.5 = not JSON;
+  kimi-k2.5/k2.6 = http-400 because the probe sent `response_format` (enrich.py retries without it).
+- Catalog ids are exact and easy to get wrong: it is `openai-gpt-oss-120b`, NOT `gpt-oss-120b`
+  (that mistake made the probe skip the one usable open model). Other open-weight options present:
+  glm-5/5.1/5.2, kimi-k2.5/k2.6, llama-4-maverick, minimax-m2.5, mistral-3-14B, gemma-4-31B-it,
+  nvidia-nemotron-3-super-120b, deepseek-4-flash.

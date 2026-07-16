@@ -12,7 +12,19 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # NOTE: DO Tier 1/2 accounts cannot call Anthropic/OpenAI models except gpt-oss-120b / gpt-oss-20b.
 #       Run `python probe_models.py` to see what YOUR key can actually reach and which pass the
 #       JSON contract — do not guess the chain.
-_FALLBACKS = ["deepseek-3.2", "gpt-oss-120b", "qwen3.5-397b-a17b"]
+# CHAIN — measured on THIS account with `python probe_models.py --lang de` (2026-07). Re-probe if DO
+# changes tiers; do not guess.
+#   deepseek-3.2       ok, German OK, 12.4s (but 63s on an earlier probe -> latency swings wildly,
+#                      which is precisely why a chain exists)          <- HEAD (proven deck quality)
+#   llama-4-maverick   ok, German OK, 3.3s  -> Meta, open weights      <- backup #1 (4x faster)
+#   openai-gpt-oss-120b  Apache-2.0 open weights; the only openai id Tier 1/2 may call. Probed 429
+#                      (account quota, transient — not a model fault)  <- backup #2
+# THREE DIFFERENT VENDORS on purpose: a 429/outage is provider-wide, so deepseek -> deepseek would be
+# the same failure twice.
+# Rejected on evidence: anthropic-*/openai-gpt-5* = http-403 (Tier 1/2 cannot call them);
+# deepseek-r1-distill-llama-70b + qwen3.5-397b-a17b = bad-contract (reasoning models emit thinking,
+# not strict JSON); glm-5.1/minimax-m2.5 = not JSON.
+_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "openai-gpt-oss-120b"]
 
 def _chain():
     """ENRICH_MODELS wins outright. Otherwise a legacy single ENRICH_MODEL becomes the HEAD of the
