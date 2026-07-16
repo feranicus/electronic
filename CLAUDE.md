@@ -392,3 +392,26 @@ the customer". Root cause was the CONTRACT, not the model:
   validated against COLT/PSF/OSS/VENDOR, capped at 5 (the deck draws 5).
 - `max_tokens` 5000 -> 8000: the richer bodies need the room (gemma used 2758 out on the thin contract).
 - Depth must never be padding: every sentence carries a fact, a number, an article or an outcome.
+
+## Visitor telemetry + security alerting (cybergod.ai) — remember
+Three modules in `webapp/backend/app/`, all detection-only (they NEVER block a request and never
+touch the firewall — Amnezia VPN shares this host):
+- `telemetry.py` — one `evt=http` per request: ip · country · method · path · status · ms · ua ·
+  browser · os · device · bot/bot_name · ref · user. Static assets skipped. Client IP = FIRST
+  X-Forwarded-For entry (exactly one proxy, videodead-caddy, sits in front). `TELEMETRY_HASH_IPS=1`
+  stores salted hashes instead (GDPR minimisation) — off by default because forensics were asked for.
+- `notify.py` — Telegram (BOT_TOKEN, ALERT_TG_CHAT or every authed uid) + email via the **Gmail API**
+  (SMTP is BLOCKED outbound on this droplet — never "fix" this to SMTP). Never raises.
+- `alerts.py` — in-memory sliding windows. 11 rules: login_failed(>2) · password_spray · otp_bruteforce
+  · assess_burst(>5 companies) · ddos(>300 req/min from >40 IPs) · ip_burst · path_probe(/.env,/.git)
+  · dir_bruteforce · authz_probe(401/403 storm = IDOR) · download_burst(exfil) · session_multi_ip ·
+  new_ip_login(INFO). Every rule has a 15-min cooldown per rule+subject AND a 12/hour global storm cap
+  — an alert flood is a second outage and gets muted, which is how real incidents get missed.
+- Wired in `main.py`: middleware + hooks in auth_begin (fail/success), auth_verify (OTP fail),
+  assess (company burst). **`app` is a PACKAGE — use `from . import telemetry`; a bare
+  `import telemetry` fails at runtime and the except-swallow would hide it.**
+- Config lives in docker-compose.web.yml `environment:` (beats env_file) — no droplet hand-editing.
+- Grafana: `obs/grafana/dashboards/webapp.json` rows "Visitors" (visits/unique/humans-vs-bots/devices,
+  traffic-per-minute, VISITOR LOG table, top IPs, bots seen) and "Security" (criticals, suppressed,
+  delivery failures, alert log with full forensics, auth audit).
+- Watch **"Alert delivery failures"**: non-zero means alerts are not reaching you = flying blind.

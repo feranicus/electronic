@@ -17,6 +17,19 @@ services:
       #   gemma-4-31B-it 40.7s German, 11/11 findings, ACCURATE precedents, no invented CVE  <- head
       #   deepseek-3.2   good prose but timed out on real runs + hallucinated a CVE          <- backup
       #   llama-4-maverick 44.6s, accurate but generic                                       <- backup
+      # ---- security alerting (Telegram + Gmail API; SMTP is blocked outbound on this droplet) ----
+      # BOT_TOKEN / GMAIL_SENDER / GMAIL_SA_B64 come from assess-bot/.env (already mounted).
+      # ALERT_TG_CHAT: leave empty to alert every authenticated operator in the auth store.
+      - ALERT_EMAIL=feranicus@s4biz.io
+      - ALERTS_ENABLED=1
+      - ALERT_FAIL_LOGIN_N=3          # >2 failed logins -> immediate alert
+      - ALERT_ASSESS_N=6              # >5 companies by one user in 15 min -> alert
+      - ALERT_DDOS_REQ_N=300          # req/min ...
+      - ALERT_DDOS_IP_N=40            # ... from this many distinct IPs = flood
+      - ALERT_COOLDOWN=900            # same rule+subject at most every 15 min
+      - ALERT_STORM_CAP=12            # never more than 12 alerts/hour (an alert flood is an outage)
+      # TELEMETRY_HASH_IPS=1 would store salted IP hashes instead of raw IPs (GDPR minimisation).
+      # Left off deliberately: you asked for forensic IPs.
       - ENRICH_MODELS=gemma-4-31B-it,deepseek-3.2,llama-4-maverick
       - ENRICH_TIMEOUT=90
       - ENGINE=/opt/shodan-skill/scripts/run_assessment.py

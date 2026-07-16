@@ -33,6 +33,24 @@ from .settings import (
 
 app = FastAPI(title="Colt Cyber Pre-Sales API", version="1.0.0")
 
+# ---- visitor telemetry + security alerting -------------------------------------------------------
+# One JSON event per request (ip/device/bot/status/ms) -> Loki -> Grafana "Visitor Log", and the same
+# event feeds the alert rules (DDoS, scanners, IDOR probing, exfil). Detection only: it never blocks
+# a request and never touches the firewall (Amnezia VPN shares this host).
+try:
+    from . import telemetry as _telemetry, alerts as _alerts
+
+    def _session_user(request):
+        try:
+            tok = request.cookies.get(SESSION_COOKIE)
+            return read_session(tok) if tok else ""
+        except Exception:
+            return ""
+
+    _telemetry.install(app, _session_user)
+except Exception as _e:  # telemetry must never stop the app from booting
+    print('{"evt":"telemetry_init","result":"error","err":"%s"}' % repr(_e)[:120], flush=True)
+
 if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -88,18 +106,33 @@ def _set_session_cookie(resp: Response, email: str) -> None:
 
 # ---------------- auth ----------------
 @app.post("/api/auth/begin")
-def auth_begin(req: BeginReq):
+def auth_begin(req: BeginReq, request: Request):
     email = (req.email or "").strip().lower()
     # colt_auth.begin uses email as the uid; it also does the strict regex + password check.
     state, message = AUTH.begin(email, email, req.password or "")
+    try:
+        from . import telemetry as _t, alerts as _a
+        ip = _t.client_ip(request); ua = request.headers.get("user-agent", "")
+        if state in ("error", "denied", "locked"):
+            # wrong password / not an allowed identity -> forensics + alert past the threshold
+            _a.observe_login_failure(email, ip, state, ua)
+        elif state in ("otp_sent", "authed"):
+            _a.observe_login_success(email, ip, ua)
+    except Exception:
+        pass
     return {"state": state, "message": message}
 
 
 @app.post("/api/auth/verify")
-def auth_verify(req: VerifyReq):
+def auth_verify(req: VerifyReq, request: Request):
     email = (req.email or "").strip().lower()
     ok, message = AUTH.verify(email, (req.code or "").strip())
     if not ok:
+        try:
+            from . import telemetry as _t, alerts as _a
+            _a.observe_otp_failure(email, _t.client_ip(request))
+        except Exception:
+            pass
         return JSONResponse({"ok": False, "message": message})
     resp = JSONResponse({"ok": True, "email": email})
     _set_session_cookie(resp, email)
@@ -140,6 +173,11 @@ def assess(req: AssessReq, request: Request):
     _job_dir(email, job_id)  # pre-create owner-scoped dir
     store.create_job(job_id, email, company, lang)
     _log(evt="assess_request", user=email, company=company, job=job_id, lang=lang)
+    try:
+        from . import telemetry as _t, alerts as _a
+        _a.observe_assess(email, company, _t.client_ip(request))
+    except Exception:
+        pass
     return {"job_id": job_id}
 
 
