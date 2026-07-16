@@ -365,6 +365,30 @@ if (_DIST / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=str(_DIST / "assets")), name="assets")
 
 
+# A single-page app catch-all answers 200 to EVERYTHING, which is wrong twice over:
+#   1. a scanner walking a wordlist (/file6.php, /wp-includes/..., /.env) gets 200 on every entry, so
+#      its report says our host "has" all of it — free advertising that we look like a soft target;
+#   2. our own path_probe / dir_bruteforce alert rules key on 404/403, so the textbook case they were
+#      written for never fired.
+# Real SPA routes are a short, known list. Everything else that looks like a FILE (has an extension)
+# or matches a known probe gets an honest 404.
+_APP_ROUTES = {"", "login", "app", "privacy"}
+_PROBE_HINT = (".php", ".asp", ".aspx", ".jsp", ".cgi", ".env", ".git", ".sql", ".bak", ".old",
+               ".zip", ".tar", ".gz", ".yml", ".yaml", ".ini", ".conf", ".sh", ".py", ".rb",
+               "wp-", "wordpress", "phpmyadmin", "xmlrpc", "vendor/", "cgi-bin", "shell",
+               "adminer", "solr", "actuator", "struts", "/.")
+
+
+def _is_probe(path: str) -> bool:
+    p = path.lower().strip("/")
+    if not p:
+        return False
+    root = p.split("/", 1)[0]
+    if root in _APP_ROUTES:
+        return False
+    return any(h in p for h in _PROBE_HINT)
+
+
 @app.get("/{full_path:path}")
 def spa(full_path: str):
     # never shadow the API namespace
@@ -375,6 +399,9 @@ def spa(full_path: str):
         candidate = _DIST / full_path
         if candidate.is_file() and _DIST in candidate.resolve().parents:
             return FileResponse(str(candidate))
+    # obvious scanner bait -> 404. It never existed; say so.
+    if _is_probe(full_path):
+        raise HTTPException(status_code=404, detail="not found")
     index = _DIST / "index.html"
     if index.is_file():
         return FileResponse(str(index))
