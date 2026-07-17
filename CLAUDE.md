@@ -611,3 +611,17 @@ and `bot.py::_run_assessment` (authenticated Telegram email); `run_assessment._e
 `user` on every event, and enrich's `qwen` event too. Dashboard: live progress shows
 `user -> company [pct%] msg`, plus a "Who ordered assessments" table (sum by user, company).
 The cost ledger already keyed on COLT_USER — it was simply never set, so cost was unattributed too.
+
+## HARD RULE — parsing is not answering (remember; this one was silent)
+After I made `_json()` tolerant of shape, `gemma-4-31B-it` returned `{}` in 4s (tokens_out=**3**).
+It parsed fine -> status "ok", `qwen_used=true`, $0.0043 charged, and a DELTAS deck built with NO
+deltas in it. A SILENT quality failure — strictly worse than an honest fallback, because the log
+stops admitting anything is wrong and the deck ships empty.
+`_contract_ok(j, tokens_out)` now runs on every answer: reject if not a dict, if completion tokens
+< 50, or if there is no exec_summary AND no findings with an id. Rejection raises -> the chain fails
+over. Tolerate any SHAPE; NEVER tolerate an EMPTY answer.
+Bonus: an empty answer is rejected in ~4s, so the backup inherits almost the whole budget instead of
+starving.
+gemma on this account is ERRATIC on the same prompt: 53s/2758 tok (good) · 81s timeout · 162s ->
+top-level list · 4s -> {}. If it keeps failing, re-run `python compare_models.py --lang de` and
+consider promoting deepseek-3.2 back to head — but decide from `check_enrich.py`, not from theory.

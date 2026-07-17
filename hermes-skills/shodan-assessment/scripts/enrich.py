@@ -179,6 +179,25 @@ def _normalise(j):
     return j
 
 
+def _contract_ok(j, tokens_out=None):
+    """Did the model actually ANSWER, or just emit a well-formed nothing?
+
+    gemma-4-31B-it returned `{}` in 4s (tokens_out=3). It parsed fine, so the tolerant parser marked
+    the run "ok", set qwen_used=true, charged $0.0043 and built a DELTAS deck with no deltas — a
+    SILENT quality failure, strictly worse than an honest fallback. Tolerate any SHAPE; never
+    tolerate an EMPTY answer. If it is empty we raise, which fails over to the next model.
+    """
+    if not isinstance(j, dict):
+        return False, "not a JSON object"
+    if tokens_out is not None and int(tokens_out) < 50:
+        return False, "model emitted only %s completion tokens (empty answer)" % tokens_out
+    has_summary = bool(str(j.get("exec_summary") or "").strip())
+    findings = [x for x in (j.get("findings") or []) if isinstance(x, dict) and x.get("id")]
+    if not has_summary and not findings:
+        return False, "no exec_summary and no usable findings (keys=%s)" % sorted(j)[:6]
+    return True, ""
+
+
 def _json(s):
     """Parse the model's answer into the OBJECT we expect, tolerating the shapes models really emit.
 
@@ -301,6 +320,9 @@ def enrich(fj, lang="en"):
         try:
             t = time.time(); content, usage = _call(prompt, model, per_call); j = _json(content)
             ti = int(usage.get("prompt_tokens", 0)); to = int(usage.get("completion_tokens", 0))
+            _ok, _why_bad = _contract_ok(j, to)
+            if not _ok:
+                raise ValueError("empty/contract-invalid answer: %s" % _why_bad)
             cost = round((ti + to) / 1e6 * _price(model), 6); ms = int((time.time() - t) * 1000)
             _bad_cves = _audit_cves(fj, j)          # strip hallucinated CVE ids before they reach a slide
             def _nid(v): return "".join(ch for ch in str(v).upper() if ch.isalnum())
@@ -389,6 +411,7 @@ def enrich(fj, lang="en"):
           _why = ("timed out" if "timed out" in last.lower() or "timeout" in last.lower()
                   else "rate-limited (429)" if "429" in last
                   else "refused (403)" if "403" in last
+                  else "returned an EMPTY answer" if "empty/contract-invalid" in last
                   else "bad response")
           _pct = 62 + int(26 * (mi + 1) / max(1, len(MODELS)))
           # report what it ACTUALLY took, not the cap — "bad response after 175s" was misleading
