@@ -28,7 +28,14 @@ SSH_KEY = os.environ.get("SSH_KEY", "")
 REMOTE  = "/opt/colt-stack"
 PROJECT = "colt-stack"
 LOCAL   = os.path.dirname(os.path.abspath(__file__))
-SSH_OPTS = (["-i", SSH_KEY] if SSH_KEY else []) + ["-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"]
+# FAIL FAST, NEVER HANG. Without ConnectTimeout a stalled connect blocks forever with NO output:
+# deploy.py opens ~12 separate ssh sessions and one silently hung for 40 minutes on the
+# read-only `command -v docker` check (sshout uses echo=False, so not even the command printed).
+# BatchMode=yes: never sit on an interactive prompt. ServerAlive*: drop a dead session in ~60s.
+SSH_OPTS = (["-i", SSH_KEY] if SSH_KEY else []) + [
+    "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR",
+    "-o", "ConnectTimeout=10", "-o", "BatchMode=yes",
+    "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4"]
 
 def run(cmd, check=True, capture=False, echo=True):
     if echo: print("  $ " + " ".join(cmd))
@@ -43,7 +50,14 @@ def run(cmd, check=True, capture=False, echo=True):
 def ssh(cmd, check=True, capture=False, echo=True):
     return run(["ssh", *SSH_OPTS, "%s@%s" % (USER, HOST), cmd], check=check, capture=capture, echo=echo)
 def sshout(cmd):
-    return (ssh(cmd, check=False, capture=True, echo=False).stdout or "").strip()
+    r = ssh(cmd, check=False, capture=True, echo=False)
+    out = (r.stdout or "").strip()
+    if r.returncode != 0 and not out:
+        # ssh itself failed (timeout/auth/network). Returning "" would make the caller believe the
+        # remote answered "not present" and start INSTALLING things over a broken link.
+        sys.exit("[X] ssh to %s@%s failed (rc=%d) on a read-only check. Nothing was changed.\n"
+                 "    Test with:  ssh -v %s@%s \"echo ok\"" % (USER, HOST, r.returncode, USER, HOST))
+    return out
 def scp(local_path, remote_path):
     return run(["scp", *SSH_OPTS, local_path, "%s@%s:%s" % (USER, HOST, remote_path)])
 
@@ -67,6 +81,7 @@ def discover_loki():
     return name, net
 
 def ensure_docker():
+    print("  checking docker (10s ssh timeout)...", flush=True)
     if "OK" in sshout("command -v docker >/dev/null 2>&1 && echo OK || echo MISSING"):
         print("  docker present — untouched."); return
     print("  installing docker (does not disturb existing services)...")
@@ -77,6 +92,7 @@ def ensure_docker():
         "apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")
 
 def ensure_swap():
+    print("  checking swap...", flush=True)
     if "HAVE" in sshout("swapon --show 2>/dev/null | grep -q . && echo HAVE || echo NONE"):
         print("  swap present — untouched."); return
     print("  adding 2G swap (non-interfering)...")

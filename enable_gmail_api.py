@@ -20,7 +20,7 @@ LOCAL   = os.path.dirname(os.path.abspath(__file__))
 HOST    = os.environ.get("DROPLET_HOST", "64.225.108.200")
 USER    = os.environ.get("DROPLET_USER", "root")
 SSH_KEY = os.environ.get("SSH_KEY", "")
-SSH_OPTS = (["-i", SSH_KEY] if SSH_KEY else []) + ["-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"]
+SSH_OPTS = (["-i", SSH_KEY] if SSH_KEY else []) + ["-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4", "-o", "LogLevel=ERROR"]
 ENVS = [os.path.join(LOCAL, "assess-bot", ".env"), os.path.join(LOCAL, "cassandra-bot", ".env")]
 
 def set_env(path, key, value):

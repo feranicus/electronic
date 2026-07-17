@@ -21,7 +21,8 @@ KEY  = os.environ.get("SSH_KEY", os.path.expanduser("~/.ssh/id_ed25519"))
 CONT = os.environ.get("BOT_CONTAINER", "colt-assessbot")
 BOT  = os.path.join(HERE, "assess-bot", "bot.py")
 
-SSH = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"]
+SSH = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR",
+        "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4"]
 SCP = ["scp", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"]
 if os.path.exists(KEY):
     SSH += ["-i", KEY]; SCP += ["-i", KEY]

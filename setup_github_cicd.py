@@ -68,7 +68,7 @@ def main():
         pk = open(pub, encoding="utf-8").read().strip()
         remote = ("mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && "
                   "grep -qxF '%s' ~/.ssh/authorized_keys || echo '%s' >> ~/.ssh/authorized_keys && echo AUTHORIZED" % (pk, pk))
-        run(["ssh","-o","StrictHostKeyChecking=accept-new","%s@%s" % (a.user,a.host), remote])
+        run(["ssh","-o","StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4","%s@%s" % (a.user,a.host), remote])
 
     # --- 3) secrets ---
     print("=== setting GitHub Actions secrets on %s (encrypted by gh) ===" % a.repo)

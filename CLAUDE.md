@@ -571,3 +571,16 @@ Front the SHARED videodead-caddy with Cloudflare free: WAF managed rules + one b
 field. HTTP(S) only -> Amnezia VPN (UDP) + SSH bypass it, untouched. Client IP already reads
 CF-Connecting-IP first (telemetry.py). One human step: move GoDaddy nameservers to Cloudflare.
 Shared blast radius: it also fronts VideoDead/jobhuntwow — deliberate, documented.
+
+## HARD RULE — every ssh in every script MUST fail fast (remember)
+`deploy.py` hung for **40 minutes** at "=== prerequisites (guarded) ===" with zero output. Cause:
+its SSH_OPTS had only StrictHostKeyChecking+LogLevel — **no ConnectTimeout, no BatchMode** — and the
+hang was inside `sshout()`, which runs with `echo=False`, so not even the command was printed. Same
+defect I had already fixed in deploy_web_direct.py and did not carry over.
+RULE for EVERY script that shells out to ssh/scp:
+  `-o ConnectTimeout=10 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4`
+Also: a silent read-only probe that returns "" because SSH DIED must NOT be read as "not installed" —
+`sshout()` now exits loudly instead, or ensure_docker() would try to apt-install docker over a broken
+link. And any long/silent step must print what it is doing BEFORE it blocks.
+NOTE: deploy.py opens ~12 separate ssh sessions (sshd throttles rapid repeats); deploy_web_direct.py
+uses ONE. Prefer the single-connection pattern for anything new.

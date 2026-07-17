@@ -19,7 +19,8 @@ import os, sys, json, subprocess, datetime
 HOST = os.environ.get("DROPLET_HOST", "64.225.108.200")
 USER = os.environ.get("DROPLET_USER", "root")
 KEY  = os.environ.get("SSH_KEY", "")
-SSH  = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR"] + (["-i", KEY] if KEY and os.path.exists(KEY) else [])
+SSH  = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR",
+        "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4"] + (["-i", KEY] if KEY and os.path.exists(KEY) else [])
 CT   = os.environ.get("COLT_CONTAINER", "colt-web")
 SCRIPT = "/opt/shodan-skill/scripts/cost_ledger.py"
 
