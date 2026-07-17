@@ -40,7 +40,11 @@ services:
       # TELEMETRY_HASH_IPS=1 would store salted IP hashes instead of raw IPs (GDPR minimisation).
       # Left off deliberately: you asked for forensic IPs.
       - ENRICH_MODELS=gemma-4-31B-it,deepseek-3.2,llama-4-maverick
-      - ENRICH_TIMEOUT=90
+      # Measured: a 13-finding estate (Huawei) with the rich contract needs >81s. The old 90s
+      # ceiling + an even 3-way split of a 245s budget capped every model at 81s => 3 timeouts and
+      # an English deck. Head now gets ~55% of the remaining budget, up to ENRICH_TIMEOUT.
+      - ENRICH_TIMEOUT=175
+      - ENRICH_BUDGET_S=380          # run_assessment kills enrich at 430s
       - ENGINE=/opt/shodan-skill/scripts/run_assessment.py
       - ALLOWED_EMAIL_DOMAIN=colt.net
       - SERVICE=colt-web

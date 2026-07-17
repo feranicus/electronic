@@ -29,7 +29,8 @@ services:
     environment:                      # overrides env_file — same measured chain as colt-web
       - EVENTS_LOG=/var/log/colt/events.log
       - ENRICH_MODELS=gemma-4-31B-it,deepseek-3.2,llama-4-maverick
-      - ENRICH_TIMEOUT=90
+      - ENRICH_TIMEOUT=175
+      - ENRICH_BUDGET_S=380
     volumes:
       - colt_events:/var/log/colt
       - ./shodan-out:/root/work

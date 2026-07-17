@@ -510,3 +510,20 @@ offer install, plus `purpose:maskable` because Android crops to a squircle) + `p
 cookie and the assessment is a live stream; a cached API response is a correctness AND privacy bug.
 iOS ignores the manifest icons: it needs `apple-touch-icon` PNGs, and they must be **opaque**
 (iOS composites alpha to BLACK) — hence the flattened 180/167/152 variants.
+
+## Enrichment BUDGET — why Huawei produced an English deck (remember; do not shrink these again)
+Symptom: `gemma 81s -> timeout · deepseek 81s -> timeout · maverick 82s -> timeout` = English templates.
+Cause was ARITHMETIC, not the models: the per-call timeout was `min(ENRICH_TIMEOUT, remaining/models_left)`
+= 245/3 = **81s each**, while a 13-finding estate with the RICH rem contract (WHY COLT / WHAT YOU GET /
+HOW, max_tokens 8000) needs well past that. I capped every model below the job's actual duration.
+Fixed:
+- **head-weighted allocation**: the head gets ~55% of what is left (`share = 0.55 if models_left>1`),
+  not 1/N — it is the model we want to WIN. Huawei numbers now: 175s / 112s / 93s.
+- `ENRICH_TIMEOUT=175`, `ENRICH_BUDGET_S=380` (compose, both web + bots), and run_assessment's enrich
+  subprocess timeout raised 270 -> **430** — the pipeline must allow the budget it grants, or it kills
+  the chain mid-answer.
+- `max_tokens` 8000 -> **6500** and `ENRICH_EVIDENCE_CAP=6`: every extra token is wall-clock. The model
+  needs a few concrete host:port examples to be specific, not all 3,971 — capping evidence bounds the
+  prompt on big estates (Huawei: 7 ASNs / 71 prefixes / 3971 IPs) without hurting the prose.
+RULE: latency scales with FINDINGS x OUTPUT DEPTH. If you deepen the contract, re-check the budget —
+otherwise you silently trade German prose for English templates.

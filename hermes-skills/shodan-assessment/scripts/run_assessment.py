@@ -569,7 +569,8 @@ def main():
             # switching to gemma" WHILE it happens, not in a post-mortem dump.
             r = subprocess.run(["python3", "-u", os.path.join(HERE, "enrich.py"),
                                 os.path.join(a.outdir, "findings.json"), a.lang],
-                               timeout=270,
+                               timeout=430,   # must exceed ENRICH_BUDGET_S (380) or we
+                                              # kill the chain mid-answer
                                env={**os.environ, "OUTDIR": a.outdir, "DECK_LANG": a.lang,
                                     "PYTHONUNBUFFERED": "1"})
             # (stdout/stderr already streamed straight through to the caller)

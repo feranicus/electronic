@@ -124,7 +124,9 @@ def _post(payload, timeout=None):
 def _call(text, model=None, timeout=None):
     model = model or MODEL
     payload = {"model": model, "messages": [{"role": "user", "content": text}],
-               "temperature": 0.35, "max_tokens": 8000,   # depth: rich rem bodies need the room
+               "temperature": 0.35, "max_tokens": 6500,   # rich rem bodies need room, but every extra
+                                           # token is wall-clock: 8000 pushed a 13-finding
+                                           # deck past the per-call budget.
                "response_format": {"type": "json_object"},
                "chat_template_kwargs": {"enable_thinking": False}}
     try:
@@ -205,9 +207,14 @@ def enrich(fj, lang="en"):
     if not KEY:
         fj["target"]["qwen"] = {"status": "skipped", "model": MODEL, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0}
         _emit(company, "skipped", 0, 0, 0, 0); return fj, "no OPENAI_API_KEY — skipped"
-    slim = {"company": company, "scope": fj["target"].get("scope", ""),
+    # Cap the evidence per finding: the model needs a few concrete host:port examples to be specific,
+    # not all 3,971. On a large estate the full list bloats the prompt (and therefore the latency)
+    # without making the prose any better.
+    _ev_cap = int(os.environ.get("ENRICH_EVIDENCE_CAP", "6"))
+    slim = {"company": company, "scope": fj["target"].get("scope", "")[:300],
             "findings": [{"id": f["id"], "sev": f["sev"], "title": f["title"],
-                          "evidence": f.get("evidence", [])} for f in fj["findings"]]}
+                          "evidence": (f.get("evidence", []) or [])[:_ev_cap]}
+                         for f in fj["findings"]]}
     prompt = PROMPT % (_bible(), (LANG_DE if str(lang).lower().startswith("de") else ""),
                        json.dumps(slim, ensure_ascii=False))
     last = ""
@@ -226,9 +233,13 @@ def enrich(fj, lang="en"):
         # so there is always time for the next model.
         left = BUDGET_S - (time.time() - t0_chain)
         models_left = max(1, len(MODELS) - mi)
-        # floor 60s: the real prompt is ~14k chars and takes 25-45s. A 35s cap guaranteed
-        # a timeout, which then LOOKED like the model was down.
-        per_call = int(max(60, min(TIMEOUT, left / models_left)))
+        # ALLOCATION. Splitting the budget evenly (left/models_left) gave every model 81s on the
+        # Huawei run — below the time a 13-finding deck actually needs with the rich WHY-COLT/WHAT/HOW
+        # contract, so all three timed out and the deck fell back to English templates.
+        # The head is the model we WANT to win: give it ~55% of what is left, and only start
+        # shrinking when the chain is nearly exhausted. Floor 60s, ceiling ENRICH_TIMEOUT.
+        share = 0.55 if models_left > 1 else 1.0
+        per_call = int(max(60, min(TIMEOUT, left * share)))
         if left < 30:
             last = last or "budget exhausted"; break
         try:
