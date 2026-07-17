@@ -527,3 +527,14 @@ Fixed:
   prompt on big estates (Huawei: 7 ASNs / 71 prefixes / 3971 IPs) without hurting the prose.
 RULE: latency scales with FINDINGS x OUTPUT DEPTH. If you deepen the contract, re-check the budget —
 otherwise you silently trade German prose for English templates.
+
+## HARD RULE — promtail reads /logs/events.log, NOT stdout (remember)
+Live assessments vanished from Grafana the moment colt-web started running the engine as a background
+task. Cause: `run_assessment._ev()` was `print(json.dumps(k))` — print ONLY. Promtail tails
+`/logs/events.log`; it never reads stdout. It used to work by ACCIDENT: the engine ran inside
+colt-assessbot, whose docker stdout is scraped and happens to match `container=~".*assess-bot.*"`.
+Under colt-web the engine's stdout is a PIPE (read by the SSE viewer), so nothing reached Loki.
+FIX: `_ev()` now writes to stdout AND EVENTS_LOG, and `_pg()` also emits `evt=progress` with `pct`
++ `msg`, so the phase ladder (4/8/56/62/91/99) and every failover are queryable. New dashboard row
+"Live assessments — phase by phase".
+RULE: never rely on who owns our stdout. If an event must reach Grafana, WRITE IT TO EVENTS_LOG.

@@ -475,12 +475,34 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     import time as _t
-    def _ev(**k): print(json.dumps(k), flush=True)
+    def _ev(**k):
+        """Emit a structured event to BOTH stdout (the SSE stream / telegram) AND the shared
+        events.log that promtail tails into Loki.
+        WHY: promtail reads /logs/events.log — NOT stdout. When the engine ran inside colt-assessbot
+        its docker stdout happened to be scraped, so events reached Grafana by accident. Now that
+        colt-web runs the engine as a background task its stdout is a PIPE (read by the SSE viewer),
+        so print-only events never reached Loki and live assessments vanished from the dashboard.
+        Write to the log explicitly — never depend on who happens to own our stdout."""
+        k.setdefault("ts", _t.time())
+        k.setdefault("company", _tag)
+        k.setdefault("service", os.environ.get("SERVICE", "engine"))
+        k.setdefault("bot", os.environ.get("SERVICE", "engine"))
+        line = json.dumps(k)
+        print(line, flush=True)
+        try:
+            with open(os.environ.get("EVENTS_LOG", "/var/log/colt/events.log"), "a") as fh:
+                fh.write(line + "\n")
+        except Exception:
+            pass
     # PROGRESS lines carry an explicit percentage so the web UI can draw a real bar instead of a
     # spinner. Weights are wall-clock-proportional from real runs (recon dominates: ~60-80s of a
     # ~2min job; enrichment ~30-60s; deck rendering ~10s). The bot ignores the [nn%] prefix.
     def _pg(m, pct=None):
         print(("PROGRESS: [%d%%] " % pct if pct is not None else "PROGRESS: ") + m, flush=True)
+        try:
+            _ev(evt="progress", pct=(pct if pct is not None else -1), msg=str(m)[:300])
+        except Exception:
+            pass
     _t0 = _t.time(); _tag = a.company or a.seed or "?"
     _ev(evt="assess_start", company=_tag)
 
