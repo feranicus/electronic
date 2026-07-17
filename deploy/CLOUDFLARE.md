@@ -23,6 +23,25 @@ Internet ──► Cloudflare (WAF, bot-fight, rate-limit, DDoS, CF-IPCountry)
 Amnezia VPN (UDP) and SSH go straight to the droplet IP, NOT through Cloudflare.
 ```
 
+## Who does what
+| Step | Who | Why |
+|---|---|---|
+| Create the Cloudflare account | **You** | it is your identity |
+| Add the site `cybergod.ai` | **You** | 2 clicks |
+| Move nameservers at GoDaddy | **You** | only the domain owner can — the one irreducible step |
+| DNS records, TLS mode, WAF rule | **`python cloudflare_setup.py --apply`** | config as code, idempotent |
+| App reads real client IP + country | **already done** | `CF-Connecting-IP` / `CF-IPCountry` in telemetry.py |
+
+```
+# after the account exists and the site is added:
+$env:CF_API_TOKEN="<scoped token>"       # PowerShell
+python cloudflare_setup.py --dry-run     # shows every change, touches nothing
+python cloudflare_setup.py --apply
+```
+Scoped token (least privilege) — dash.cloudflare.com/profile/api-tokens -> Create Custom Token:
+`Zone:DNS:Edit` + `Zone:Zone Settings:Edit` + `Zone:Zone WAF:Edit` + `Zone:Zone:Read`, scoped to the
+single zone `cybergod.ai`. Store it like any secret: `python set_secret.py CF_API_TOKEN` (never git).
+
 ## One-time human steps (Cloudflare, free plan)
 1. Add the site `cybergod.ai` to a Cloudflare account (dashboard → Add site).
 2. Cloudflare shows two nameservers. At **GoDaddy** → cybergod.ai → Nameservers → **change to the
