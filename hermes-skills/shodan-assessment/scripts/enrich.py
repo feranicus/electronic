@@ -148,6 +148,37 @@ def _call(text, model=None, timeout=None):
     except Exception: pass
     return txt, d.get("usage", {}) or {}
 
+def _normalise(j):
+    """Make `findings` a flat list of DICTS, whatever the model nested.
+
+    The Bezeq failure was NOT the top level (already fixed) — it was the entries: every consumer does
+    `x.get("id")`, so ONE list inside findings raises AttributeError and throws away the whole answer.
+    Models legitimately emit `findings: [[{...},{...}]]` (a nested batch) or a stray string. Flatten
+    one level, keep the dicts, drop the rest — and say what was dropped instead of dying.
+    """
+    f = j.get("findings")
+    if isinstance(f, list):
+        flat, dropped = [], 0
+        for x in f:
+            if isinstance(x, dict):
+                flat.append(x)
+            elif isinstance(x, list):                       # nested batch -> flatten one level
+                flat.extend([y for y in x if isinstance(y, dict)])
+                dropped += sum(1 for y in x if not isinstance(y, dict))
+            else:
+                dropped += 1
+        if dropped:
+            print("[warn] enrich: dropped %d non-object entr(y/ies) from findings" % dropped,
+                  file=sys.stderr)
+        j["findings"] = flat
+    elif f is not None and not isinstance(f, list):
+        j["findings"] = []
+    for k in ("strengths", "colt_mitigation"):
+        if k in j and not isinstance(j[k], list):
+            j[k] = []
+    return j
+
+
 def _json(s):
     """Parse the model's answer into the OBJECT we expect, tolerating the shapes models really emit.
 
@@ -165,18 +196,18 @@ def _json(s):
     obj, _ = json.JSONDecoder().raw_decode(s[start:])
 
     if isinstance(obj, dict):
-        return obj
+        return _normalise(obj)
     if isinstance(obj, list):
         # [ {exec_summary:..., findings:[...]} ]  -> unwrap the first dict that looks like ours
         for item in obj:
             if isinstance(item, dict) and ("exec_summary" in item or "findings" in item):
-                return item
+                return _normalise(item)
         # [ {id:C1,...}, {id:C2,...} ] -> a bare findings array; wrap it into the contract
         if obj and all(isinstance(x, dict) for x in obj) and any("id" in x for x in obj):
-            return {"findings": obj}
+            return _normalise({"findings": obj})
         for item in obj:                       # last resort: any dict at all
             if isinstance(item, dict):
-                return item
+                return _normalise(item)
     raise ValueError("model returned %s, not the JSON object contract" % type(obj).__name__)
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
@@ -193,6 +224,7 @@ def _audit_cves(fj, j):
         known.update(x.upper() for x in _CVE_RE.findall(blob))
     invented, checked = [], 0
     for x in (j.get("findings") or []):
+        if not isinstance(x, dict): continue
         for k in ("realComparable", "lossScenario"):
             v = x.get(k)
             if not isinstance(v, str):
@@ -272,7 +304,8 @@ def enrich(fj, lang="en"):
             cost = round((ti + to) / 1e6 * _price(model), 6); ms = int((time.time() - t) * 1000)
             _bad_cves = _audit_cves(fj, j)          # strip hallucinated CVE ids before they reach a slide
             def _nid(v): return "".join(ch for ch in str(v).upper() if ch.isalnum())
-            by_id = {_nid(x.get("id")): x for x in j.get("findings", [])}
+            by_id = {_nid(x.get("id")): x for x in (j.get("findings") or [])
+                     if isinstance(x, dict)}
             for f in fj["findings"]:
                 x = by_id.get(_nid(f["id"]))
                 if not x: continue
@@ -318,6 +351,19 @@ def enrich(fj, lang="en"):
         except Exception as e:
             last = repr(e)
             code = getattr(e, "code", None)
+            if isinstance(e, (AttributeError, TypeError, ValueError, KeyError)):
+                # a PARSE failure, not a network one — record the shape so the next fix is not a guess
+                try:
+                    _shape = json.JSONDecoder().raw_decode(content[content.find("{") if content.find("{") >= 0 else content.find("["):])[0]
+                    _desc = type(_shape).__name__
+                    if isinstance(_shape, dict):
+                        _desc += " keys=%s findings=%s" % (
+                            sorted(_shape)[:6],
+                            [type(x).__name__ for x in (_shape.get("findings") or [])][:6])
+                    print("[warn] enrich %s: unusable answer shape -> %s (raw in enrich_last.json)"
+                          % (model, _desc), file=sys.stderr)
+                except Exception:
+                    pass
             _took = int(time.time() - t)
             print("[warn] enrich %s attempt %d/%d (took %ds, cap %ds, %ds budget left): %s"
                   % (model, attempt + 1, ATTEMPTS, _took, per_call,

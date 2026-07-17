@@ -590,9 +590,16 @@ Bezeq: `gemma-4-31B-it` answered fine after 162s, then `AttributeError("'list' o
 attribute 'get'")` — it returned a top-level ARRAY `[{...}]` and `_json()` handed the list straight
 to `j.get("findings")`. A GOOD answer was thrown away, 162s of the budget burned, both backups then
 starved -> English templates. It was MY parser, not the model.
-`_json()` now normalises what models actually emit: object · `[{object}]` (unwrap) · bare findings
-array (wrap into `{"findings": [...]}`) · trailing prose · ```json fences. Only a genuinely
-unusable shape raises, and it names the type it got.
+`_json()` + `_normalise()` now handle what models actually emit: object · `[{object}]` (unwrap) ·
+bare findings array (wrap) · trailing prose · ```json fences · **and the entries themselves**:
+`findings: [[{..},{..}]]` (nested batch -> flatten one level) or a stray string (dropped, logged).
+THE SECOND FIX WAS THE REAL ONE: the top-level was already handled, but every consumer does
+`x.get("id")`, so ONE list inside `findings` still raised AttributeError and binned the whole answer.
+Both consumers (`_audit_cves`, `by_id`) now skip non-dicts as well.
+On any parse failure enrich prints the ACTUAL shape (type + keys + entry types); `python
+check_enrich.py` reads `<jobdir>/enrich_last.json` off the droplet and shows the raw answer +
+finish_reason ('length' = WE truncated it -> raise max_tokens, not a parser bug). STOP GUESSING AT
+SHAPES — read enrich_last.json.
 Also: the failover line reported the CAP ("bad response after 175s") instead of the real duration —
 now prints `took Ns, cap Ns` and the `qwen_attempt` event carries `took_s`. Never report a timeout
 number that is not the measured one.
