@@ -538,3 +538,36 @@ FIX: `_ev()` now writes to stdout AND EVENTS_LOG, and `_pg()` also emits `evt=pr
 + `msg`, so the phase ladder (4/8/56/62/91/99) and every failover are queryable. New dashboard row
 "Live assessments — phase by phase".
 RULE: never rely on who owns our stdout. If an event must reach Grafana, WRITE IT TO EVENTS_LOG.
+
+## Secrets — `python set_secret.py NAME` (remember; never hand-edit .env over SSH)
+Runtime secrets belong ONLY in the droplet's `/opt/colt-stack/assess-bot/.env` (chmod 600), loaded by
+colt-web + both bots via env_file. `set_secret.py` upserts one key idempotently, restarts colt-web
+(NEVER with --remove-orphans) and verifies it inside the container. The VALUE goes over stdin, never
+argv (argv shows in `ps` + shell history). `--list` prints NAMES only, never values.
+**LANDMINE:** `deploy.py --reuse` PACKS the local `assess-bot/.env` and extracts it OVER the
+droplet's copy (`--exclude env` does NOT match `.env`), while `deploy_web_direct.py` does not ship it
+at all. So the LOCAL assess-bot/.env is the source of truth: a secret written only on the droplet is
+silently wiped by the next bot deploy. `set_secret.py` therefore upserts BOTH (local first). The local
+file is gitignored (`*.env`) so it never reaches the repo; `.env.example` documents the NAMES.
+
+## Attacker digest + abuse reporting (remember; the user asked for third-party auto-reporting — DON'T)
+- `webapp/backend/app/threat_intel.py` turns evt=http/security_alert into a per-IP digest with a
+  DETERMINISTIC MITRE ATT&CK map (path_probe->T1595.003, ip_burst->T1595.001, login_failed->T1110.001,
+  ...). A static table beats an LLM here: the technique is unambiguous, and it is free + reliable.
+  It also names the abuse desk per cloud (Azure->abuse@microsoft.com, Censys->abuse@censys.io).
+- Folded into the DAILY report (daily_report.py) which now goes to BOTH feranicus@s4biz.io AND
+  jevgenijs.vainsteins@colt.net (ALERT_EMAIL is a comma list; notify.email sends to all).
+- **Third-party reporting = AbuseIPDB ONLY, opt-in** (`abuse_report.py`, needs `ABUSEIPDB_KEY`).
+  DO NOT auto-email BSI/ENISA/ISP abuse desks daily: they don't ingest individual-operator reports,
+  and a server that mass-mails abuse gets its OWN domain blocklisted (fatal — it sends OTP over the
+  same domain). VirusTotal is for scanning URLs/files, not IP reports. AbuseIPDB is the correct
+  community channel; it dedupes per IP (24h) and skips research scanners (Censys/Shodan).
+- `security.txt` (RFC 9116, /.well-known/) is the honest monitoring+abuse notice — NOT a page
+  claiming false live feeds to BSI/EU/VirusTotal (that would be a compliance-vendor own-goal).
+
+## Cloudflare (planned — see deploy/CLOUDFLARE.md)
+Front the SHARED videodead-caddy with Cloudflare free: WAF managed rules + one block rule on
+.php/wp-/.env/.git kills today's whole scanner digest; DDoS absorbed; CF-IPCountry fills the country
+field. HTTP(S) only -> Amnezia VPN (UDP) + SSH bypass it, untouched. Client IP already reads
+CF-Connecting-IP first (telemetry.py). One human step: move GoDaddy nameservers to Cloudflare.
+Shared blast radius: it also fronts VideoDead/jobhuntwow — deliberate, documented.

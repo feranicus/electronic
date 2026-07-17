@@ -29,7 +29,11 @@ services:
       - TELEMETRY_HASH_IPS=0
       - DAILY_REPORT=1                 # "who used the platform + what they ran" -> ALERT_EMAIL
       - DAILY_REPORT_HOUR=7            # UTC
-      - ALERT_EMAIL=feranicus@s4biz.io
+      - ALERT_EMAIL=feranicus@s4biz.io,jevgenijs.vainsteins@colt.net
+      # AbuseIPDB reporting is OPT-IN: set ABUSEIPDB_KEY (free key at abuseipdb.com/account/api) to
+      # submit hostile IPs daily. Empty = detect + digest only, nothing sent to third parties.
+      # ABUSEIPDB_KEY is a SECRET -> put it in assess-bot/.env on the droplet, NOT here.
+      - ABUSEIPDB_SKIP_RESEARCH=1     # do not flag Censys/Shodan research scanners
       - ALERTS_ENABLED=1
       - ALERT_FAIL_LOGIN_N=3          # >2 failed logins -> immediate alert
       - ALERT_ASSESS_N=6              # >5 companies by one user in 15 min -> alert

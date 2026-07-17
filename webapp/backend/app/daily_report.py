@@ -97,7 +97,7 @@ def build(hours=24):
     L.append("  Security alerts               : %d" % len(alerts))
     L.append("")
 
-    L.append("WHO ACCESSED THE PLATFORM AND WHAT THEY RAN")
+    L.append("WHO ACCESSED THE PLATFORM AND WHAT THEY RAN  (Colt AE / partner email = identity)")
     L.append("-" * 72)
     if not per_user:
         L.append("  (nobody signed in during this window)")
@@ -137,6 +137,15 @@ def build(hours=24):
         L.append("VISITOR COUNTRIES: " + ", ".join("%s=%d" % (c, n) for c, n in top_c.most_common(10)))
         L.append("")
 
+    # attacker / abuse digest with MITRE ATT&CK mapping
+    try:
+        from . import threat_intel as _ti
+        L.append("")
+        L.append(_ti.render(hours))
+        L.append("")
+    except Exception as _e:
+        L.append("  [threat digest unavailable: %s]" % repr(_e)[:80])
+
     L.append("-" * 72)
     L.append("Personal data in this report (email, IP, country) is processed for security monitoring")
     L.append("and service administration — GDPR Art. 6(1)(f). Retention: see cybergod.ai/privacy.")
@@ -165,6 +174,13 @@ async def scheduler():
             send(24)
         except Exception as e:
             notify._log(evt="daily_report", result="error", err=repr(e)[:160])
+        # opt-in: submit hostile IPs to AbuseIPDB (no-op unless ABUSEIPDB_KEY is set)
+        try:
+            from . import threat_intel as _ti, abuse_report as _ar
+            res = _ar.report_digest(_ti.build(24))
+            notify._log(evt="abuse_report", **{k: res[k] for k in ("status", "reported") if k in res})
+        except Exception as e:
+            notify._log(evt="abuse_report", result="error", err=repr(e)[:160])
 
 
 if __name__ == "__main__":

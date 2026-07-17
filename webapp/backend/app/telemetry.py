@@ -44,8 +44,13 @@ _BROWSER = [("edg/", "Edge"), ("opr/", "Opera"), ("chrome/", "Chrome"), ("firefo
 
 
 def client_ip(request):
-    """Behind videodead-caddy, so the socket peer is the proxy. The FIRST X-Forwarded-For entry is
-    the real client (Caddy appends). Only trust it because we know exactly one proxy is in front."""
+    """Real client IP.
+    Order: CF-Connecting-IP (set by Cloudflare when it fronts us) -> first X-Forwarded-For entry
+    (videodead-caddy appends) -> socket peer. CF-Connecting-IP is authoritative when present because
+    only Cloudflare sets it and it reaches us via the trusted Caddy hop."""
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
     xff = request.headers.get("x-forwarded-for", "")
     if xff:
         return xff.split(",")[0].strip()
@@ -134,6 +139,7 @@ def install(app, session_email_fn=None):
                       ref=(request.headers.get("referer") or "")[:160],
                       lang=(request.headers.get("accept-language") or "")[:40].split(",")[0],
                       # Caddy/Cloudflare-style country header if a proxy ever sets one
+                      # Cloudflare provides the country for free (cf-ipcountry); DB-IP is the fallback
                       country=(request.headers.get("cf-ipcountry")
                                or request.headers.get("x-country")
                                or _country(ip)),

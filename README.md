@@ -211,3 +211,18 @@ chevron icon.
 **Assessments survive the phone:** the engine runs server-side and the SSE stream is only a viewer,
 so locking the screen, switching apps or refreshing no longer cancels a run — the client reconnects
 (`Last-Event-ID`) and catches up. `GET /api/assess/{id}/status` polls the same truth.
+
+## Secrets on the droplet (never in git)
+Runtime secrets live ONLY in the droplet's `assess-bot/.env` (chmod 600), which colt-web and the bots
+load via `env_file:`. Never in the repo, never in docker-compose (those are committed; gitleaks blocks
+secrets in CI).
+
+```
+python set_secret.py ABUSEIPDB_KEY     # prompts, hidden input, restarts colt-web, verifies
+python set_secret.py --list            # which secret NAMES exist (names only, never values)
+```
+The value is typed at a hidden prompt and piped over stdin — never an argv (visible in `ps` and your
+shell history), never echoed, never written locally.
+
+Get a free AbuseIPDB key: https://www.abuseipdb.com/account/api — without it, hostile IPs are still
+detected and reported to you in the daily digest; nothing is submitted to third parties.

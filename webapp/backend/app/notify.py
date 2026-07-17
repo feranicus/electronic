@@ -12,7 +12,9 @@ import json, os, time, urllib.parse, urllib.request
 
 TG_TOKEN   = os.environ.get("BOT_TOKEN", "")
 ALERT_CHAT = os.environ.get("ALERT_TG_CHAT", "")          # numeric chat id; auto-discovered if empty
-ALERT_MAIL = os.environ.get("ALERT_EMAIL", "feranicus@s4biz.io")
+# Comma-separated list -> both the S4BIZ and the Colt addresses get every alert + daily report.
+ALERT_MAIL = os.environ.get("ALERT_EMAIL", "feranicus@s4biz.io,jevgenijs.vainsteins@colt.net")
+ALERT_MAILS = [e.strip() for e in ALERT_MAIL.split(",") if e.strip()]
 GMAIL_SENDER = os.environ.get("GMAIL_SENDER", "")
 GMAIL_SA_B64 = os.environ.get("GMAIL_SA_B64", "")
 AUTH_STORE = os.environ.get("AUTH_STORE", "/data/web_authorized.json")
@@ -65,8 +67,13 @@ def telegram(text):
 
 
 def email(subject, body, to=None):
-    """Gmail API (HTTPS). SMTP is blocked outbound on this droplet — do not 'fix' this to SMTP."""
-    to = to or ALERT_MAIL
+    """Gmail API (HTTPS). SMTP is blocked outbound on this droplet — do not 'fix' this to SMTP.
+    `to` may be a comma list or a python list; every recipient gets it."""
+    if to is None:
+        to = ALERT_MAILS
+    if isinstance(to, str):
+        to = [x.strip() for x in to.split(",") if x.strip()]
+    to = ", ".join(to)
     if not (GMAIL_SENDER and GMAIL_SA_B64):
         _log(evt="alert_delivery", channel="email", result="skipped", err="GMAIL_SENDER/GMAIL_SA_B64 not set")
         return False
