@@ -584,3 +584,23 @@ Also: a silent read-only probe that returns "" because SSH DIED must NOT be read
 link. And any long/silent step must print what it is doing BEFORE it blocks.
 NOTE: deploy.py opens ~12 separate ssh sessions (sshd throttles rapid repeats); deploy_web_direct.py
 uses ONE. Prefer the single-connection pattern for anything new.
+
+## Enrichment JSON — models do not always return an OBJECT (remember)
+Bezeq: `gemma-4-31B-it` answered fine after 162s, then `AttributeError("'list' object has no
+attribute 'get'")` — it returned a top-level ARRAY `[{...}]` and `_json()` handed the list straight
+to `j.get("findings")`. A GOOD answer was thrown away, 162s of the budget burned, both backups then
+starved -> English templates. It was MY parser, not the model.
+`_json()` now normalises what models actually emit: object · `[{object}]` (unwrap) · bare findings
+array (wrap into `{"findings": [...]}`) · trailing prose · ```json fences. Only a genuinely
+unusable shape raises, and it names the type it got.
+Also: the failover line reported the CAP ("bad response after 175s") instead of the real duration —
+now prints `took Ns, cap Ns` and the `qwen_attempt` event carries `took_s`. Never report a timeout
+number that is not the measured one.
+
+## WHO ordered a run — COLT_USER (remember)
+Grafana showed a company with no requester. The engine's events had no user: colt-web/bot never
+passed one. Now `env={**os.environ, "COLT_USER": email}` in BOTH `main.py::_run_job` (session email)
+and `bot.py::_run_assessment` (authenticated Telegram email); `run_assessment._ev()` stamps
+`user` on every event, and enrich's `qwen` event too. Dashboard: live progress shows
+`user -> company [pct%] msg`, plus a "Who ordered assessments" table (sum by user, company).
+The cost ledger already keyed on COLT_USER — it was simply never set, so cost was unattributed too.

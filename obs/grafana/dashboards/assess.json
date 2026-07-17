@@ -2201,7 +2201,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{container=~\".*assess-bot.*\"} | json | evt=`assess_error` | line_format \"{{.company}} | {{.error}} | {{.message}} | {{.where}}\"",
+          "expr": "{container=~\".*assess-bot.*\"} | json | evt=`assess_error` | line_format \"{{.user}} | {{.company}} | {{.error}} | {{.message}} | {{.where}}\"",
           "queryType": "range"
         }
       ],
@@ -2513,7 +2513,7 @@
         {
           "refId": "A",
           "queryType": "range",
-          "expr": "{container=~\".*assess-bot.*\"} | json | evt=`progress` | line_format \"{{.company}}  [{{.pct}}%]  {{.msg}}\""
+          "expr": "{container=~\".*assess-bot.*\"} | json | evt=`progress` | line_format \"{{.user}}  ->  {{.company}}  [{{.pct}}%]  {{.msg}}\""
         }
       ],
       "options": {
@@ -2555,6 +2555,40 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 44,
+      "type": "table",
+      "title": "Who ordered assessments (range) \u2014 AE / partner",
+      "description": "Requester email per company. The engine stamps COLT_USER on every event (set by colt-web from the session and by the bot from the authenticated Telegram user).",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 132
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "sum by (user, company) (count_over_time({container=~\".*assess-bot.*\"} | json | evt=`assess_done` [$__range]))"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
           }
         },
         "overrides": []

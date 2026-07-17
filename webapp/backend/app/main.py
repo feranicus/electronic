@@ -248,7 +248,9 @@ async def _run_job(job_id: str, email: str, company: str, lang: str):
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-            env={**os.environ})
+            # COLT_USER -> the engine stamps every event + the cost ledger with the requester,
+            # so Grafana can answer "which AE ran this?" and cost is attributable per person.
+            env={**os.environ, "COLT_USER": email})
     except Exception as e:
         _w(json.dumps({"evt": "error", "message": f"failed to start engine: {e!r}"}))
         store.finish_job(job_id, [], {}, status="error"); _RUNNING.pop(job_id, None); return

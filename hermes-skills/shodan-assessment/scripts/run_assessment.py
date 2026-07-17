@@ -485,6 +485,9 @@ def main():
         Write to the log explicitly — never depend on who happens to own our stdout."""
         k.setdefault("ts", _t.time())
         k.setdefault("company", _tag)
+        # WHO ordered this run. colt-web/bot set COLT_USER; without it Grafana shows a company with
+        # no requester and you cannot tell which AE or partner ran what.
+        k.setdefault("user", os.environ.get("COLT_USER", ""))
         k.setdefault("service", os.environ.get("SERVICE", "engine"))
         k.setdefault("bot", os.environ.get("SERVICE", "engine"))
         line = json.dumps(k)

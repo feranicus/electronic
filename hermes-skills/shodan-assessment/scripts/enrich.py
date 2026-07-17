@@ -149,12 +149,35 @@ def _call(text, model=None, timeout=None):
     return txt, d.get("usage", {}) or {}
 
 def _json(s):
-    # Models often append text after the JSON object (-> json.loads "Extra data").
-    # raw_decode reads the FIRST complete JSON object from the first '{' and ignores the rest.
+    """Parse the model's answer into the OBJECT we expect, tolerating the shapes models really emit.
+
+    Models append prose after the JSON (-> json.loads "Extra data"), so raw_decode reads the first
+    complete value and ignores the rest. But that value is not always an object: gemma-4-31B-it
+    returned a top-level ARRAY [{...}] on the Bezeq run, and `j.get("findings")` raised
+    AttributeError('list' object has no attribute 'get') — throwing away a perfectly good 162s
+    answer and starving the rest of the chain. Normalise instead of failing over.
+    """
     a = s.find("{")
-    if a < 0: raise ValueError("no JSON object in model output")
-    obj, _ = json.JSONDecoder().raw_decode(s[a:])
-    return obj
+    b = s.find("[")
+    start = min(x for x in (a, b) if x >= 0) if (a >= 0 or b >= 0) else -1
+    if start < 0:
+        raise ValueError("no JSON value in model output")
+    obj, _ = json.JSONDecoder().raw_decode(s[start:])
+
+    if isinstance(obj, dict):
+        return obj
+    if isinstance(obj, list):
+        # [ {exec_summary:..., findings:[...]} ]  -> unwrap the first dict that looks like ours
+        for item in obj:
+            if isinstance(item, dict) and ("exec_summary" in item or "findings" in item):
+                return item
+        # [ {id:C1,...}, {id:C2,...} ] -> a bare findings array; wrap it into the contract
+        if obj and all(isinstance(x, dict) for x in obj) and any("id" in x for x in obj):
+            return {"findings": obj}
+        for item in obj:                       # last resort: any dict at all
+            if isinstance(item, dict):
+                return item
+    raise ValueError("model returned %s, not the JSON object contract" % type(obj).__name__)
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
 
@@ -189,7 +212,8 @@ def _audit_cves(fj, j):
 
 
 def _emit(company, status, ti, to, cost, ms, error="", model=None, attempts=0, chain=None):
-    print(json.dumps({"evt": "qwen", "company": company, "model": model or MODEL, "status": status,
+    print(json.dumps({"evt": "qwen", "company": company, "user": os.environ.get("COLT_USER", ""),
+                      "model": model or MODEL, "status": status,
                       "tokens_in": ti, "tokens_out": to, "cost_usd": cost, "ms": ms,
                       "attempts": attempts, "chain": chain or MODELS, "error": error}), flush=True)
 
@@ -294,9 +318,10 @@ def enrich(fj, lang="en"):
         except Exception as e:
             last = repr(e)
             code = getattr(e, "code", None)
-            print("[warn] enrich %s attempt %d/%d (timeout %ds, %ds budget left): %s"
-                  % (model, attempt + 1, ATTEMPTS, per_call, int(BUDGET_S - (time.time() - t0_chain)),
-                     last[:160]), file=sys.stderr)
+            _took = int(time.time() - t)
+            print("[warn] enrich %s attempt %d/%d (took %ds, cap %ds, %ds budget left): %s"
+                  % (model, attempt + 1, ATTEMPTS, _took, per_call,
+                     int(BUDGET_S - (time.time() - t0_chain)), last[:160]), file=sys.stderr)
             if not _retryable(e):
                 break                      # bad model name / contract error -> next model immediately
             if attempt + 1 < ATTEMPTS:
@@ -320,11 +345,14 @@ def enrich(fj, lang="en"):
                   else "refused (403)" if "403" in last
                   else "bad response")
           _pct = 62 + int(26 * (mi + 1) / max(1, len(MODELS)))
+          # report what it ACTUALLY took, not the cap — "bad response after 175s" was misleading
+          # when the model answered in 162s and it was our parser that rejected it.
+          _took = int(time.time() - t)
           print("PROGRESS: [%d%%] AI model %s %s after %ds — switching to %s"
-                % (_pct, model, _why, per_call, MODELS[mi + 1]), flush=True)
+                % (_pct, model, _why, _took, MODELS[mi + 1]), flush=True)
           print(json.dumps({"evt": "qwen_attempt", "company": company, "model": model,
                             "status": "failover", "reason": _why, "error": last[:200],
-                            "timeout_s": per_call, "next_model": MODELS[mi + 1],
+                            "timeout_s": per_call, "took_s": _took, "next_model": MODELS[mi + 1],
                             "attempt": tried, "chain": MODELS}), flush=True)
 
     fj["target"]["qwen"] = {"status": "fallback", "model": MODELS[0], "tokens_in": 0, "tokens_out": 0,

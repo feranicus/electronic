@@ -127,9 +127,12 @@ async def _run_assessment(msg, ctx, uid, seed, extra):
     status = await msg.reply_text("⏳ Assessing %s ..." % seed)
     steps = []
 
+    _who = AUTH.authed.get(str(uid), {}).get("email", "")
     cmd = ["python3", ENGINE, "--seed", seed, "--outdir", OUTDIR] + list(extra)
     proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env={**os.environ})
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        # COLT_USER: same requester attribution as the web path
+        env={**os.environ, "COLT_USER": _who})
 
     lines = []
     async for raw in proc.stdout:
