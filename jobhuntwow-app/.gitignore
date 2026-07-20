@@ -1,9 +1,0 @@
-node_modules/
-dist/
-__pycache__/
-*.pyc
-.env
-*.env
-!.env.example
-.venv/
-data/
