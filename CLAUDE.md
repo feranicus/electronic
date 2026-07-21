@@ -308,6 +308,20 @@ Aug-2024, and `realComparable` requires a REAL, DATED public breach from model k
 invented precedent in a customer deck is the worst failure mode. deepseek-3.2 (37B active, newer)
 stays head; maverick is the fast fallback.
 
+## Deploy transport — DIRECT SSH from the PC, no Tailscale (2026-07, settled)
+Port 22 on 64.225.108.200 is open to the internet and the operator has working SSH to it, so the
+GitHub-Actions -> Tailscale -> droplet hop bought nothing and was the ONLY step that ever failed
+("Ship compose + Caddy snippet", twice in a row, while Tailscale itself connected fine).
+- **`python ship.py` now deploys the web app STRAIGHT FROM THE PC** via `deploy_web_direct.py`
+  (~90s, self-verifying). `--ci` opts back into GitHub Actions.
+- Tailscale is removed from ALL workflows (`web-deploy.yml`, `deploy.yml`,
+  `provision-patchwatch.yml`); they ssh to `vars.DROPLET_HOST` (default 64.225.108.200).
+- Every CI ssh/scp carries `ConnectTimeout=15 -o BatchMode=yes`, and the deploy job now begins with
+  an explicit reachability probe that fails with a legible `::error::` instead of dying anonymously
+  three steps later.
+- GitHub remains the source of truth for CODE (ship.py commits+pushes first); only the image BUILD
+  location moved. `TS_AUTHKEY` is now unused.
+
 ## HARD RULE — verify the DEPLOYED CODE, never just "the site answers"
 The bibeltv.de fix was committed, tested and pushed — and the re-run STILL produced the pivot,
 because the change never reached the container that runs web assessments:

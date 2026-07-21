@@ -7,7 +7,7 @@ ship.py — THE ONE COMMAND. Test, commit, push, deploy, verify. Nothing else to
     python ship.py --test              # tests only, change nothing
     python ship.py --web               # only cybergod.ai (colt-web)
     python ship.py --bots              # only the Telegram bots
-    python ship.py --direct            # deploy straight to the droplet, bypassing GitHub CI
+    python ship.py --ci                # deploy via GitHub Actions instead of direct SSH
     python ship.py --no-test           # skip tests (you had better have a reason)
     python ship.py --dry-run           # print the plan, touch nothing
 
@@ -21,7 +21,7 @@ What it orchestrates (each of these is still runnable alone for debugging, but y
     py_compile over every engine script        catches the truncation/syntax class of bug
     ship_web.py                                web: build -> GHCR -> Actions -> droplet -> Caddy
     deploy.py --reuse --yes                    bots: rebuild + redeploy colt-stack
-    deploy_web_direct.py                       web, but straight to the droplet (--direct)
+    deploy_web_direct.py                       web: build on the droplet over SSH (DEFAULT)
 """
 import argparse, os, subprocess, sys, time
 
@@ -230,11 +230,16 @@ def do_git(message):
 
 
 # ------------------------------------------------------------------ 3. deploy
-def do_web(direct):
+def do_web(use_ci):
     say("3/5  DEPLOY WEB — cybergod.ai (colt-web)")
-    if direct or not have("gh"):
-        if not direct:
-            print("  [!] GitHub CLI `gh` not found — deploying directly instead.")
+    # DEFAULT = deploy straight from this PC over SSH.
+    # There is no firewall between here and the droplet (port 22 is open to the internet), so the
+    # old GitHub-Actions -> Tailscale -> droplet path added a hop that bought nothing and was the
+    # only thing failing. Direct takes ~90s and is self-verifying. `--ci` still uses GitHub.
+    if not use_ci:
+        run([sys.executable, "deploy_web_direct.py"])
+    elif not have("gh"):
+        print("  [!] --ci requested but GitHub CLI `gh` is missing — deploying directly instead.")
         run([sys.executable, "deploy_web_direct.py"])
     else:
         # ship_web.py can report success even when the workflow failed, so we do NOT trust it —
@@ -325,7 +330,10 @@ def main():
     ap.add_argument("--test", action="store_true", help="run tests only, change nothing")
     ap.add_argument("--web", action="store_true", help="only deploy the web app")
     ap.add_argument("--bots", action="store_true", help="only deploy the Telegram bots")
-    ap.add_argument("--direct", action="store_true", help="deploy straight to the droplet, no CI")
+    ap.add_argument("--ci", action="store_true",
+                    help="deploy via GitHub Actions instead of straight over SSH (slower)")
+    ap.add_argument("--direct", action="store_true",
+                    help="(default) deploy straight to the droplet over SSH")
     ap.add_argument("--no-test", action="store_true", help="skip the test gate")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
     a = ap.parse_args()
@@ -337,7 +345,7 @@ def main():
     print("=" * 74)
     print("  ship.py — %s" % ("DRY RUN" if DRY else "live"))
     print("  target : %s@%s   web=%s bots=%s   %s"
-          % (USER, HOST, web, bots, "direct" if a.direct else "via GitHub CI"))
+          % (USER, HOST, web, bots, "via GitHub CI" if a.ci else "direct SSH from this PC"))
     print("=" * 74)
 
     if not a.no_test:
@@ -349,7 +357,7 @@ def main():
     do_git(a.message or "ship: engine + web update")
 
     if web:
-        do_web(a.direct)
+        do_web(a.ci)
     if bots:
         do_bots()
 

@@ -63,33 +63,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Connect to Tailscale (reach the firewalled droplet)
-        uses: tailscale/github-action@v3
-        with: { authkey: "${{ secrets.TS_AUTHKEY }}", version: latest }
-
-      - name: Install SSH key
+      - name: Install SSH key + prove we can reach the droplet
+        env:
+          H: ${{ vars.DROPLET_HOST || '64.225.108.200' }}
+          U: ${{ secrets.DROPLET_USER || 'root' }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ vars.TAILNET_HOST || '100.78.224.75' }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -H "$H" >> ~/.ssh/known_hosts 2>/dev/null || true
+          # Fail HERE with a legible message rather than three steps later. The old Tailscale hop
+          # connected fine and then ssh died anonymously in "Ship compose".
+          if ! ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null \
+                   -o LogLevel=ERROR -o ConnectTimeout=15 -o BatchMode=yes \
+                   -i ~/.ssh/deploy_key "$U@$H" 'echo reachable'; then
+            echo "::error::cannot ssh to $U@$H. Check the DROPLET_SSH_KEY secret is in the"
+            echo "::error::droplet's /root/.ssh/authorized_keys, and that port 22 is reachable."
+            exit 1
+          fi
 
       - name: Ship compose + Caddy snippet to the droplet
         env:
-          H: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
+          H: ${{ vars.DROPLET_HOST || '64.225.108.200' }}
           U: ${{ secrets.DROPLET_USER || 'root' }}
         run: |
-          ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ~/.ssh/deploy_key "$U@$H" 'mkdir -p /opt/colt-stack/deploy/caddy'
-          scp -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ~/.ssh/deploy_key docker-compose.web.yml       "$U@$H:/opt/colt-stack/docker-compose.web.yml"
-          scp -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ~/.ssh/deploy_key deploy/caddy/cybergod.caddy  "$U@$H:/opt/colt-stack/deploy/caddy/cybergod.caddy"
+          ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15 -o BatchMode=yes -i ~/.ssh/deploy_key "$U@$H" 'mkdir -p /opt/colt-stack/deploy/caddy'
+          scp -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15 -o BatchMode=yes -i ~/.ssh/deploy_key docker-compose.web.yml       "$U@$H:/opt/colt-stack/docker-compose.web.yml"
+          scp -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15 -o BatchMode=yes -i ~/.ssh/deploy_key deploy/caddy/cybergod.caddy  "$U@$H:/opt/colt-stack/deploy/caddy/cybergod.caddy"
 
       - name: Pull image + (re)start colt-web + wire Caddy (idempotent)
         env:
-          H: ${{ vars.TAILNET_HOST || '100.78.224.75' }}
+          H: ${{ vars.DROPLET_HOST || '64.225.108.200' }}
           U: ${{ secrets.DROPLET_USER || 'root' }}
           TAG: ${{ github.sha }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ~/.ssh/deploy_key "$U@$H" "WEB_TAG='$TAG' GHCR_TOKEN='$GHCR_TOKEN' bash -s" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15 -o BatchMode=yes -i ~/.ssh/deploy_key "$U@$H" "WEB_TAG='$TAG' GHCR_TOKEN='$GHCR_TOKEN' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/colt-stack
 
