@@ -26,6 +26,19 @@
    deploy, diagnose, fix) must be a re-runnable **Python script** committed to the repo, invoked as
    `python <script> ...`, and any change (deps, Dockerfile, flags, config, architecture) must update
    the relevant **README.md** in the SAME change. KISS + full automation. (Applies to all projects.)
+7. **ONE ORCHESTRATOR. ONE COMMAND. ALWAYS.** ← the rule I keep breaking; stop breaking it.
+   The user must NEVER be told to run two scripts. Not "run the test then deploy", not "run X then
+   Y to verify" — **one** command, every time, in every project. All other scripts are BUILDING
+   BLOCKS that the orchestrator calls as subprocesses; they stay individually runnable only for
+   debugging, and the user should never need to.
+   - In this repo the orchestrator is **`python ship.py`** = test -> commit -> push -> deploy web +
+     bots -> verify. Flags narrow it (`--test`, `--web`, `--bots`, `--direct`, `--dry-run`,
+     `-m "msg"`), they never split it. `ship_web.py`, `deploy.py`, `deploy_web_direct.py`,
+     `test_ca_pivot.py`, `pytest` are all invoked BY ship.py.
+   - New capability (a test, a check, a migration, a provisioning step)? **Wire it into ship.py in
+     the same change.** A new script that the user has to remember to run separately is a bug.
+   - If a reply is about to end with two `python ...` lines, that is the signal: go back and fold
+     them into the orchestrator, then give the single command.
 
 ## The one irreducible human input
 Cloud credentials can only be minted by the account owner. Provide them **once** as GitHub secrets;
@@ -117,11 +130,18 @@ deploy step also `docker login`s with the workflow token. Everything documented 
 webapp/DEPLOY.md. FUTURE RULE: any new ops need = a script + a README/DEPLOY.md update, never a
 list of manual steps in chat.
 
-## STANDING RULE — always end with the exact command to run
+## STANDING RULE — always end with the exact command to run — and it is ONE command
 After finishing ANY piece of work that the user must trigger, end the reply with a short, explicit
-"Run this:" block containing the exact command(s), copy-paste ready, with the right working directory
-(e.g. `cd "C:\Python SW\Linkedin Scraper"` then `python ship_web.py`). No vague "you can deploy now" —
-give the literal command. If there is genuinely nothing to run, say "Nothing to run." explicitly.
+"Run this:" block containing the exact command, copy-paste ready, with the right working directory:
+
+    cd "C:\Python SW\Linkedin Scraper"
+    python ship.py
+
+**Exactly ONE `python ...` line.** No vague "you can deploy now"; and never a list of steps like
+"run the test, then deploy, then verify" — ship.py already does test -> commit -> push -> deploy ->
+verify. If the work added a new step, WIRE IT INTO ship.py in the same change instead of telling the
+user about it. If there is genuinely nothing to run, say "Nothing to run." explicitly.
+(See operating principle 7. This has been raised repeatedly — treat two commands as a defect.)
 
 ## cybergod.ai — web observability (remember)
 colt-web emits JSON events (logins via colt_auth, assess_request, assist_query) to

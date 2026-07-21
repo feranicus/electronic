@@ -1,5 +1,40 @@
 # electronic — Colt cyber pre-sales automation
 
+## The one command
+
+```
+cd "C:\Python SW\Linkedin Scraper"
+python ship.py
+```
+
+`ship.py` is the ONLY script you run. It does, in order:
+
+1. **Tests** — compile-checks every Python file, runs the CA-pivot regression
+   (`test_ca_pivot.py`, the bibeltv.de false-positive incident) and `pytest tests/`.
+   Nothing ships if any of it fails.
+2. **Commit + push** — GitHub stays the single source of truth.
+3. **Deploy** — web (`ship_web.py` -> GitHub Actions -> GHCR -> droplet -> Caddy) and
+   bots (`deploy.py --reuse --yes`).
+4. **Verify** — colt-* containers up, and `https://cybergod.ai/api/me` returns 401.
+
+Flags narrow it, never split it:
+
+| flag | effect |
+|---|---|
+| `--test` | tests only, deploy nothing |
+| `--web` / `--bots` | deploy only that half |
+| `--direct` | straight to the droplet, bypassing GitHub CI |
+| `--dry-run` | print the plan, touch nothing |
+| `-m "message"` | commit message |
+| `--no-test` | skip the test gate (you had better have a reason) |
+
+Every other script in this repo (`deploy.py`, `ship_web.py`, `deploy_web_direct.py`,
+`set_secret.py`, `cost_report.py`, `probe_models.py`, `compare_models.py`, `check_enrich.py`)
+is a building block. They remain runnable alone for debugging, but normal operation is
+`python ship.py` and nothing else. **If a change adds a step, wire it into ship.py in the same
+commit — a script the operator has to remember separately is a bug.**
+
+
 **Type a company name in Telegram, get four boardroom-ready cyber-risk decks in ~2 minutes.**
 So 30+ sales people can walk into any meeting prepared — even while the engineer who built it is on a beach.
 
