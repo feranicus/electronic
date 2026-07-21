@@ -74,16 +74,32 @@ def main():
     r = sh(["gh", "run", "list", "--workflow", WORKFLOW, "--limit", "1",
             "--json", "databaseId,status", "--jq", ".[0].databaseId"], cap=True)
     run_id = (r.stdout or "").strip()
+    wf_failed = False
     if run_id:
-        sh(["gh", "run", "watch", run_id, "--exit-status"])
+        # `gh run watch --exit-status` returns non-zero when the workflow FAILS. That result used to
+        # be ignored, so a failed deploy still printed "DONE" and the old container kept serving —
+        # which is how bibeltv.de got re-assessed by a 3-day-old engine. Never swallow this again.
+        wf_failed = sh(["gh", "run", "watch", run_id, "--exit-status"]).returncode != 0
     else:
         print("  (could not find the run id; check: gh run list --workflow " + WORKFLOW + ")")
+        wf_failed = True
+
+    if wf_failed:
+        print("\n" + "!" * 70)
+        print("  THE DEPLOY WORKFLOW FAILED — cybergod.ai is still running the PREVIOUS image.")
+        print("  Logs:  gh run view %s --log-failed" % (run_id or "<id>"))
+        print("  A 401 from the site below only proves the OLD container is alive, not that")
+        print("  your change shipped. `python ship.py` will now self-heal via a direct deploy.")
+        print("!" * 70)
 
     print("\n=== 4/4  verify ===")
     for _ in range(6):
         code = http_status(f"https://{DOMAIN}/api/me")
         print(f"  https://{DOMAIN}/api/me -> {code}   (401 = live + auth working)")
         if code == 401:
+            if wf_failed:
+                print("\n[X] site is up but the WORKFLOW FAILED — treat this as NOT shipped.")
+                sys.exit(1)
             print("\nDONE. https://%s/login is live." % DOMAIN); return
         time.sleep(10)
     print("\nWorkflow finished but the domain check isn't 401 yet.")

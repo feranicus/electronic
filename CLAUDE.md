@@ -308,6 +308,24 @@ Aug-2024, and `realComparable` requires a REAL, DATED public breach from model k
 invented precedent in a customer deck is the worst failure mode. deepseek-3.2 (37B active, newer)
 stays head; maverick is the fast fallback.
 
+## HARD RULE — verify the DEPLOYED CODE, never just "the site answers"
+The bibeltv.de fix was committed, tested and pushed — and the re-run STILL produced the pivot,
+because the change never reached the container that runs web assessments:
+- `web-deploy.yml` failed at "Ship compose + Caddy snippet"; `colt-web` stayed **Up 3 days**;
+- `ship_web.py` ignored the non-zero exit of `gh run watch --exit-status` and printed **DONE**;
+- both verifiers only checked `https://cybergod.ai/api/me == 401` — which a THREE-DAY-OLD container
+  answers perfectly happily. A liveness probe is not a deploy proof.
+- `deploy.py --reuse` did rebuild **colt-assessbot**, so Telegram had the fix while the WEB app did
+  not. Two delivery paths, one updated: the engine lives in BOTH images
+  (`webapp/Dockerfile` and `assess-bot/Dockerfile` each `COPY hermes-skills/... /opt/shodan-skill`).
+RULE: after any deploy, prove the running container holds THIS repo's code by comparing
+**sha256 of the engine files inside the container** against the local files —
+`ship.py::engine_is_current()` over `ENGINE_FILES` (shodan_recon.py, run_assessment.py, enrich.py)
+for BOTH `colt-web` and `colt-assessbot`. On mismatch ship.py self-heals via `deploy_web_direct.py`
+and, if it is still stale, EXITS NON-ZERO instead of reporting success. `ship_web.py` now exits 1
+when the workflow failed, even if the domain returns 401.
+Corollary: never let a script print DONE on a path where a sub-step returned non-zero.
+
 ## HARD RULE — a pivot must PROVE ownership (the bibeltv.de 1003-false-positive incident)
 `bibeltv.de` shipped a deck claiming 1003 exposed IPs — cPanel resellers in Brazil, Shopify, AWS,
 DigitalOcean droplets in Japan — for a small German broadcaster that actually has **5 hosts**. The

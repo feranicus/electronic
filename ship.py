@@ -92,6 +92,45 @@ def _test_python():
     return sys.executable
 
 
+# Files whose content MUST match between this repo and every running container. Hashing the actual
+# deployed engine is the only honest proof of a deploy: bibeltv.de was re-run against a 3-day-old
+# colt-web because the CI deploy failed, ship_web.py still printed DONE, and the verify step only
+# checked that /api/me returned 401 — which a stale container answers perfectly well.
+ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py"]
+ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
+ENGINE_REMOTE = "/opt/shodan-skill"
+
+
+def _sha_local(rel):
+    import hashlib
+    p = os.path.join(ENGINE_LOCAL, rel.replace("/", os.sep))
+    if not os.path.exists(p):
+        return None
+    return hashlib.sha256(open(p, "rb").read()).hexdigest()
+
+
+def _sha_in_container(container, rel):
+    """sha256 of a file INSIDE a running container. Uses python3 (always present in these images)
+    rather than sha256sum, which slim images sometimes lack."""
+    code = ("import hashlib,sys;p='%s/%s';\n"
+            "sys.stdout.write(hashlib.sha256(open(p,'rb').read()).hexdigest())" % (ENGINE_REMOTE, rel))
+    out = ssh("docker exec %s python3 -c \"%s\" 2>/dev/null || echo MISSING" % (container, code))
+    return (out or "").strip().splitlines()[-1].strip() if out else "MISSING"
+
+
+def engine_is_current(container):
+    """-> (ok, [list of stale files]). Proves the container runs THIS repo's engine."""
+    stale = []
+    for rel in ENGINE_FILES:
+        want = _sha_local(rel)
+        if not want:
+            continue
+        got = _sha_in_container(container, rel)
+        if got != want:
+            stale.append("%s (container=%s repo=%s)" % (rel, got[:12], want[:12]))
+    return (not stale), stale
+
+
 def _has_pytest(py):
     """True if `py` can import pytest. Never raises: a stale/wrong-arch venv (e.g. a Windows
     venv\\Scripts\\python.exe seen from WSL) makes subprocess throw OSError, and that must degrade
@@ -193,15 +232,34 @@ def do_git(message):
 # ------------------------------------------------------------------ 3. deploy
 def do_web(direct):
     say("3/5  DEPLOY WEB — cybergod.ai (colt-web)")
-    if direct:
+    if direct or not have("gh"):
+        if not direct:
+            print("  [!] GitHub CLI `gh` not found — deploying directly instead.")
         run([sys.executable, "deploy_web_direct.py"])
     else:
-        if not have("gh"):
-            print("  [!] GitHub CLI `gh` not found — falling back to a direct droplet deploy.")
-            print("      (one-time fix: install gh, then `gh auth login`)")
-            run([sys.executable, "deploy_web_direct.py"])
-        else:
-            run([sys.executable, "ship_web.py"])
+        # ship_web.py can report success even when the workflow failed, so we do NOT trust it —
+        # the hash check below is the real gate.
+        run([sys.executable, "ship_web.py"], check=False)
+
+    # PROVE the running container has THIS repo's engine. A green log is not evidence.
+    print("\n  verifying colt-web is running the current engine...")
+    ok, stale = engine_is_current("colt-web")
+    if ok:
+        print("  OK  colt-web engine matches the repo")
+        return
+    print("  [!] colt-web is STALE — the CI deploy did not take effect:")
+    for s in stale:
+        print("        " + s)
+    print("  -> self-healing with a direct deploy (deploy_web_direct.py)")
+    run([sys.executable, "deploy_web_direct.py"])
+    ok, stale = engine_is_current("colt-web")
+    if not ok:
+        for s in stale:
+            print("        " + s)
+        sys.exit("[X] colt-web STILL runs stale code after a direct deploy.\n"
+                 "    Assessments from the web app would use the OLD engine. Stopping here rather\n"
+                 "    than letting you believe this shipped.")
+    print("  OK  colt-web engine matches the repo (after direct deploy)")
 
 
 def do_bots():
@@ -209,6 +267,14 @@ def do_bots():
     # NEVER --remove-orphans here: docker-compose.web.yml defines only `web`, and a subset compose
     # in the shared colt-stack project deletes the bots + promtail as "orphans".
     run([sys.executable, "deploy.py", "--reuse", "--yes"])
+    print("\n  verifying colt-assessbot is running the current engine...")
+    ok, stale = engine_is_current("colt-assessbot")
+    if ok:
+        print("  OK  colt-assessbot engine matches the repo")
+    else:
+        for s in stale:
+            print("        " + s)
+        sys.exit("[X] colt-assessbot runs stale code — /assess would use the OLD engine.")
 
 
 # ------------------------------------------------------------------ 4. verify
@@ -221,6 +287,17 @@ def do_verify(web, bots):
             print("  [!] colt-assessbot not visible"); ok = False
         if "colt-promtail" not in out:
             print("  [!] colt-promtail missing — Grafana will go quiet"); ok = False
+    # The engine hash is the load-bearing check. HTTP 401 only proves *something* is listening —
+    # a 3-day-old container answers it just as happily as a current one.
+    for cont, want in (("colt-web", web), ("colt-assessbot", bots)):
+        if not want or DRY:
+            continue
+        good, stale = engine_is_current(cont)
+        print("  %-16s engine: %s" % (cont, "CURRENT" if good else "STALE  <-- assessments are wrong"))
+        if not good:
+            for s in stale:
+                print("      " + s)
+            ok = False
     if web:
         import ssl as _ssl, urllib.request, urllib.error
         url = "https://%s/api/me" % DOMAIN
