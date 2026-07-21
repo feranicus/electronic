@@ -17,7 +17,8 @@ commands, that is a bug in this file, not an instruction for the user.
 
 What it orchestrates (each of these is still runnable alone for debugging, but you should not have to):
     pytest tests/                              unit tests: auth + recon
-    hermes-skills/.../test_ca_pivot.py         CA-pivot regression (the bibeltv.de incident)
+    hermes-skills/.../test_ca_pivot.py         CA-pivot regression (bibeltv false POSITIVES)
+    hermes-skills/.../test_recall.py           recall regression (bibeltv false NEGATIVES)
     py_compile over every engine script        catches the truncation/syntax class of bug
     ship_web.py                                web: build -> GHCR -> Actions -> droplet -> Caddy
     deploy.py --reuse --yes                    bots: rebuild + redeploy colt-stack
@@ -164,8 +165,10 @@ def do_tests():
             print("    [X] " + b)
         sys.exit("[X] fix the syntax errors above before shipping")
 
-    # b) the CA-pivot regression — the bibeltv.de 1003-false-positive incident
+    # b) the two bibeltv.de regressions: false positives (scope blow-out) AND false negatives
+    #    (recall collapse). They pull in opposite directions, so both must run every time.
     run([sys.executable, os.path.join(engine, "test_ca_pivot.py")])
+    run([sys.executable, os.path.join(engine, "test_recall.py")])
 
     # c) the unit suite. Bootstrap the runner if it is missing — "pytest not installed" is a setup
     #    gap, not a reason to hand the operator a second command. A failing TEST blocks the ship;

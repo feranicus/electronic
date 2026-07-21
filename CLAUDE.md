@@ -340,6 +340,31 @@ and, if it is still stale, EXITS NON-ZERO instead of reporting success. `ship_we
 when the workflow failed, even if the domain returns 401.
 Corollary: never let a script print DONE on a path where a sub-step returned non-zero.
 
+## RECALL — the other half of the bibeltv.de lesson (2026-07)
+Fixing the scope blow-out swung the deck to the opposite failure: 5 hosts, 2 findings, and it MISSED
+`gitlab.bibel.tv` (SCM) and `vpn.bibeltv.de` (remote-access edge, on **Colt AS8220** — the pursuit
+hook). Precision without recall is just a different way of being wrong.
+THREE CAUSES, all fixed in `shodan_recon.py`:
+1. **A sibling DOMAIN was never discovered.** `bibel.tv` is a different registrable domain from
+   `bibeltv.de`; CT enumeration of `%.bibeltv.de` can NEVER reveal it. Fix: `_cert_sans()` reads the
+   seed's live TLS certificate and harvests the SAN list — a shared certificate IS evidence of common
+   operation, which is the ownership standard a scope-widening step must meet.
+2. **crt.sh was a single point of failure** — read-timeout, 404 and 503 on three consecutive runs,
+   and it was the ONLY subdomain source. Fix: `_certspotter_domains()` (SSLMate, free, no API key)
+   runs alongside it.
+3. **Nothing asked DNS.** Fix: `_probe_subdomains()` resolves a curated ~60-name list
+   (gitlab, vpn, mail, git, ci, jira, owa, ftp, autoconfig, ...) against every known apex. A name
+   that RESOLVES is proof the host exists — one query each, passive, ~1s total.
+**Resolved IPs go in `ident["pinned"]`, NOT `ident["nets"]`.** `run_net` is disabled whenever the
+holder is a hoster/CDN (to stop a /16 Hetzner sweep), so anything added to `nets` is silently dropped
+for exactly the shared-hosting targets this rescues. Filter #2b "Pinned hosts (DNS-resolved)" always
+runs: a /32 the customer's own DNS points at is not a hoster range.
+Identity clauses (cert-CN, hostname, http.host) are emitted for APEX domains only — `hostname:".bibel.tv"`
+already covers `gitlab.bibel.tv`, so one clause per discovered subdomain just multiplies Shodan credit
+burn. And never write `hostname:".<fqdn>"` for a full host — the leading dot means "under this domain".
+RULE: on a shared-hosting target (no owned ASN) the ONLY valid scope is
+**pinned host IPs + hostname/cert identity**. Guarded by `scripts/test_recall.py`.
+
 ## HARD RULE — a pivot must PROVE ownership (the bibeltv.de 1003-false-positive incident)
 `bibeltv.de` shipped a deck claiming 1003 exposed IPs — cPanel resellers in Brazil, Shopify, AWS,
 DigitalOcean droplets in Japan — for a small German broadcaster that actually has **5 hosts**. The

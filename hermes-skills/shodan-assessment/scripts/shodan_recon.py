@@ -84,7 +84,7 @@ CIDR_RE = re.compile(r'^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$')
 def resolve_identity(seed):
     ident = {"seed": seed, "asns": [], "nets": [], "org": None, "brand": None,
              "asn_holder": None, "domains": [], "org_is_carrier": False, "org_is_cdn": False, "assignment_netname": None,
-             "internal_cas": [], "cert_orgs": [], "jarms": [], "cpes": []}
+             "internal_cas": [], "cert_orgs": [], "jarms": [], "cpes": [], "pinned": []}
     s = seed.strip()
     if re.match(r'(?i)^AS?\d+$', s):                                   # ---- ASN
         asn = "AS" + re.sub(r'(?i)^AS?', '', s); holder = _ripe_holder(asn)
@@ -267,8 +267,76 @@ def _bgpview_asns(term, cap=12):
     except Exception as e:
         print(f"[warn] bgpview {term}: {e}", file=sys.stderr); return []
 
+# Subdomains worth a direct DNS lookup on a shared-hosting target. For Bibel TV the whole estate
+# that matters — gitlab, vpn, mail — lives on names like these, and CT-log enumeration missed all of
+# it because crt.sh was down. One DNS query each, passive, ~1s for the whole list.
+PROBE_SUBS = (
+    "www", "gitlab", "git", "vpn", "mail", "smtp", "imap", "webmail", "owa", "autodiscover",
+    "autoconfig", "ftp", "sftp", "remote", "portal", "sso", "auth", "id", "api", "dev", "test",
+    "staging", "stage", "admin", "intranet", "extranet", "cloud", "nextcloud", "jira", "confluence",
+    "wiki", "ci", "jenkins", "build", "registry", "docker", "vpn2", "fw", "firewall", "rdp", "ts",
+    "citrix", "exchange", "lync", "teams", "share", "files", "backup", "monitor", "grafana",
+    "status", "cdn", "static", "media", "img", "video", "stream", "live", "shop", "app", "my",
+)
+
+
+def _resolve(name):
+    """A/AAAA for a hostname, or [] — passive DNS only."""
+    out = []
+    try:
+        for fam, _, _, _, sa in socket.getaddrinfo(name, None):
+            ip = sa[0]
+            if ip not in out:
+                out.append(ip)
+    except Exception:
+        pass
+    return out
+
+
+def _probe_subdomains(domains, cap=120):
+    """Resolve a curated subdomain list against each known domain.
+
+    WHY THIS EXISTS (bibeltv.de): crt.sh failed on three consecutive runs (timeout, 404, 503) and it
+    was the ONLY source of subdomains, so the engine never saw gitlab.bibel.tv or vpn.bibeltv.de —
+    the two most valuable hosts in the estate. DNS is a second, independent source that cannot be
+    taken out by one flaky service, and a name that RESOLVES is proof the host exists."""
+    found = {}
+    for d in list(domains)[:4]:                       # apexes only; keep the query count sane
+        d = str(d).lower().lstrip(".")
+        for sub in PROBE_SUBS:
+            fqdn = sub + "." + d
+            ips = _resolve(fqdn)
+            if ips:
+                found[fqdn] = ips
+            if len(found) >= cap:
+                break
+    if found:
+        print("[auto] dns probe: %d live subdomain(s): %s" %
+              (len(found), ", ".join(sorted(found)[:8]) + (" ..." if len(found) > 8 else "")),
+              file=sys.stderr)
+    return found
+
+
+def _certspotter_domains(domain, cap=200):
+    """CT via SSLMate's CertSpotter — free, no API key. A SECOND CT source so one outage cannot
+    blind the whole assessment (crt.sh returned timeout/404/503 on three consecutive bibeltv runs)."""
+    out = set()
+    u = ("https://api.certspotter.com/v1/issuances?domain=" + urllib.parse.quote(domain) +
+         "&include_subdomains=true&expand=dns_names")
+    try:
+        for row in (_get_json(u, timeout=25) or [])[:cap]:
+            for nm in (row.get("dns_names") or []):
+                nm = str(nm).strip().lstrip("*.").lower()
+                if nm and "." in nm and " " not in nm:
+                    out.add(nm)
+    except Exception as e:
+        print(f"[warn] certspotter {domain}: {e}", file=sys.stderr)
+    return out
+
+
 def _crtsh_domains(domain=None, org=None, cap=60):
-    """CT-log harvest (crt.sh) -> brand domains & subdomains on any cloud/CDN."""
+    """CT-log harvest -> brand domains & subdomains on any cloud/CDN.
+    Two independent sources (crt.sh + CertSpotter); either alone is a single point of failure."""
     doms = set(); urls = []
     if domain: urls.append("https://crt.sh/?q=%25." + urllib.parse.quote(domain) + "&output=json")
     if org:    urls.append("https://crt.sh/?O=" + urllib.parse.quote(org) + "&output=json")
@@ -281,7 +349,41 @@ def _crtsh_domains(domain=None, org=None, cap=60):
                         doms.add(nm)
         except Exception as e:
             print(f"[warn] crt.sh {u}: {e}", file=sys.stderr)
+    if domain:
+        before = len(doms)
+        doms |= _certspotter_domains(domain)
+        if len(doms) > before:
+            print("[auto] certspotter added %d name(s) crt.sh did not return"
+                  % (len(doms) - before), file=sys.stderr)
     return sorted(doms)[:cap]
+
+def _cert_sans(domain, port=443, cap=80):
+    """Subject-Alternative-Name list from the host's live TLS certificate.
+
+    This is how a SIBLING DOMAIN is discovered: bibeltv.de and bibel.tv are different registrable
+    domains, so CT enumeration of one can never surface the other — but they share a certificate,
+    and a shared cert is evidence of common operation. One TLS handshake, no data sent."""
+    import ssl as _ssl
+    out = set()
+    for host in (domain, "www." + domain):
+        try:
+            ctx = _ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = _ssl.CERT_NONE
+            with socket.create_connection((host, port), timeout=8) as s:
+                with ctx.wrap_socket(s, server_hostname=host) as ss:
+                    cert = ss.getpeercert()
+            for typ, val in (cert or {}).get("subjectAltName", ()):
+                if typ.lower() == "dns":
+                    v = str(val).strip().lstrip("*.").lower()
+                    if v and "." in v and " " not in v:
+                        out.add(v)
+            if out:
+                break
+        except Exception:
+            continue
+    return sorted(out)[:cap]
+
 
 def _favicon_hash(domain):
     """Favicon MurmurHash3 for the http.favicon.hash pivot (best-effort; needs mmh3)."""
@@ -370,12 +472,49 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     seed_dom = ident["domains"][0] if ident["domains"] else None   # 3) brand domains from CT logs
     for d in _crtsh_domains(domain=seed_dom, org=(name if (is_name and not seed_dom) else None)):
         if d not in domains and d not in ident["domains"]: domains.append(d)
+
+    # 3b) SIBLING DOMAINS from the seed's own TLS certificate.
+    # bibeltv.de's most valuable assets (gitlab.bibel.tv, the two host.bibel.tv servers) live on a
+    # DIFFERENT domain — bibel.tv. No amount of CT enumeration of "%.bibeltv.de" can ever reveal it.
+    # But the seed's certificate lists both names in its SAN block, and a shared certificate is
+    # PROOF OF COMMON OPERATION — exactly the ownership evidence a scope-widening step must have.
+    if seed_dom:
+        for san in _cert_sans(seed_dom):
+            if san not in domains and san not in ident["domains"]:
+                domains.append(san)
+                if _apex(san) != _apex(seed_dom):
+                    print("[auto] sibling domain from TLS SAN: %s" % san, file=sys.stderr)
+
+    # 3c) DNS subdomain probe over every domain we now know (incl. the siblings above).
+    apexes = []
+    for d in ([seed_dom] if seed_dom else []) + list(domains) + list(ident["domains"]):
+        a = _apex(str(d))
+        if a and a not in apexes:
+            apexes.append(a)
+    probed = _probe_subdomains(apexes)
+    for fqdn, ips in probed.items():
+        if fqdn not in domains and fqdn not in ident["domains"]:
+            domains.append(fqdn)
+        # PIN the resolved IPs as exact hosts. These go in ident["pinned"], NOT ident["nets"]:
+        # `run_net` is disabled whenever the holder is a hoster/CDN (to stop a /16 Hetzner sweep),
+        # so anything added to nets here would be silently dropped for precisely the shared-hosting
+        # targets this feature exists to rescue. A /32 we resolved ourselves is not a hoster range —
+        # it is a host the customer's own DNS points at, so it always gets queried.
+        for ip in ips:
+            if ":" in ip:
+                continue                                    # IPv4 for net: clauses
+            if ip not in ident["pinned"]:
+                ident["pinned"].append(ip)
     if is_name and name not in cert_orgs: cert_orgs.append(name)   # 4) cert-org + favicon
     dom0 = (domains + ident["domains"])
     if dom0:
         fh = _favicon_hash(_apex(dom0[0]))
         if fh and fh not in favicons: favicons.append(fh)
-    print(f"[auto] asns={len(ident['asns'])} nets={len(ident['nets'])} +ct_domains={len(domains)} cert_orgs={cert_orgs}", file=sys.stderr)
+    print(f"[auto] asns={len(ident['asns'])} nets={len(ident['nets'])} pinned={len(ident['pinned'])} "
+          f"+ct_domains={len(domains)} cert_orgs={cert_orgs}", file=sys.stderr)
+    if ident["pinned"]:
+        print("[auto] pinned hosts: " + ", ".join(ident["pinned"][:10])
+              + (" ..." if len(ident["pinned"]) > 10 else ""), file=sys.stderr)
     return merge_variants(ident, orgs, brands, domains, favicons,
                           issuers=issuers, cert_orgs=cert_orgs, jarms=jarms, cpes=cpes)
 
@@ -418,17 +557,31 @@ def build_filters(ident):
             note=f"{why} ASN would return the whole {why} estate — use net/ssl/hostname or the real ASN")
     add(2, "Netblock / CIDR (master)", f"net:{nets}" if nets else "", run=run_net,
         note=("SKIPPED — belongs to the CDN, not the target" if (nets and cdn) else "the target's own IP space"))
+    # #2b PINNED HOSTS — exact IPs the customer's OWN DNS resolves to (gitlab./vpn./mail. ...).
+    # These always run: a /32 we resolved is not a hoster range, and on a shared-hosting target it
+    # is the ONLY thing that scopes correctly. This is what was missing when the bibeltv.de deck
+    # shipped without gitlab.bibel.tv (SCM) or vpn.bibeltv.de (the Colt AS8220 edge).
+    _pin = ",".join(str(i) for i in (ident.get("pinned") or []))
+    add(2.5, "Pinned hosts (DNS-resolved)", f"net:{_pin}" if _pin else "", run=bool(_pin),
+        note="exact hosts from the target's own DNS — valid even on shared hosting")
     orgs = ident.get("org_variants") or ([org] if org else [])
     brands = [b for b in (ident.get("brand_variants") or ([ident["brand"]] if ident.get("brand") else [])) if b and not CIDR_RE.match(str(b))]
     favicons = ident.get("favicons") or []
     for o in orgs:                       # #3 org-name match (+ variants: subsidiaries, native spellings)
         add(3, "Org-name match", f'org:"{o}"', run=True, note="reassigned/cloud/subsidiary ranges — try name variants")
-    for d in domains:                    # #4 cert CN — finds origin behind CDN/hoster, any ASN
+    # Query APEX domains only for the identity clauses. `hostname:".bibel.tv"` already covers
+    # gitlab.bibel.tv, so emitting one clause per discovered subdomain just multiplies the query
+    # count (and the Shodan credit burn) for zero extra recall. The individual hosts are covered
+    # exactly by the pinned net: clause above.
+    _apexes = list(dict.fromkeys(_apex(str(d)) for d in domains if d))[:6]
+    for d in _apexes:                    # #4 cert CN — finds origin behind CDN/hoster, any ASN
         add(4, "TLS cert subject CN", f'ssl.cert.subject.cn:"{d}"', run=True, note="real origin even behind a CDN/hoster")
+        add(4, "TLS cert SAN (wildcard)", f'ssl.cert.subject.cn:"*.{d}"', run=True, note="wildcard certs covering every subdomain")
     for b in brands:                     # #4/#5 cert free-text across ANY ASN (cross-ASN estate)
         add(5, "TLS free-text / cert org", f'ssl:"{b}"', run=True, note="wildcard & SAN certs across any ASN")
-    for d in domains:                    # #5 hostname / rDNS
+    for d in _apexes:                    # #5 hostname / rDNS — leading dot = "any host under it"
         add(6, "Hostname / domain", f'hostname:".{d}"', run=True, note="reverse-DNS / HTTP host")
+        add(6, "HTTP host header", f'http.host:"{d}"', run=True, note="vhost behind a shared reverse proxy")
     for b in brands:                     # #6 branded HTTP title/body (portals, shadow IT)
         add(14, "HTTP title (branded)", f'http.title:"{b}"', run=True, note="branded portals/login pages on any host")
         add(15, "HTTP body (branded)", f'http.html:"{b}"', run=True, note="branded body content / shadow IT")
