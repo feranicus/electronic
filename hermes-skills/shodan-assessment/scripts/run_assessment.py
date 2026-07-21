@@ -537,6 +537,21 @@ def main():
             print("SHODAN_API_KEY not set", file=sys.stderr); sys.exit(2)
         _pg("Shodan recon + Top-10 super-filters", 8)
         fj = R.run(ident, F, a.audience)
+        # SCOPE BLOW-OUT GUARD (bibeltv.de, 2026-07): an over-matching pivot once adopted ~998
+        # strangers' hosts as the customer's estate — 1003 IPs in the findings against 5 on the
+        # asset-inventory slide — and NOTHING in the pipeline objected. A wrong estate is not a
+        # cosmetic defect: every euro in C-BIQ and every actor in GEOPOL is derived from it.
+        _blow = ident.get("scope_blowout")
+        if _blow:
+            _ev(evt="scope_blowout", company=_tag, **_blow)
+            print("[FATAL] scope blow-out: identity queries proved %d hosts but the sweep produced "
+                  "%d (pivot added %d). Refusing to build decks from an unverified estate.\n"
+                  "        Re-run with explicit anchors, e.g.  --domain <their-domain> --org \"<Legal Name>\"\n"
+                  "        or raise PIVOT_MAX_HOSTS only if you have verified the issuer by hand."
+                  % (_blow["identity_hosts"], _blow["total_hosts"], _blow["pivot_added"]),
+                  file=sys.stderr)
+            _pg("FAILED — scope blow-out: estate could not be verified", 100)
+            sys.exit(3)
         json.dump(fj, open(os.path.join(a.outdir,"findings.json"),"w"), indent=2, ensure_ascii=False)
         open(os.path.join(a.outdir,"findings.md"),"w").write(R.findings_md(fj))
 

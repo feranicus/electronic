@@ -288,6 +288,36 @@ Aug-2024, and `realComparable` requires a REAL, DATED public breach from model k
 invented precedent in a customer deck is the worst failure mode. deepseek-3.2 (37B active, newer)
 stays head; maverick is the fast fallback.
 
+## HARD RULE — a pivot must PROVE ownership (the bibeltv.de 1003-false-positive incident)
+`bibeltv.de` shipped a deck claiming 1003 exposed IPs — cPanel resellers in Brazil, Shopify, AWS,
+DigitalOcean droplets in Japan — for a small German broadcaster that actually has **5 hosts**. The
+deck contradicted itself: the ASSET INVENTORY slide said "5 HOSTS · 2 ASNs" while the findings were
+computed over 1003. Nothing in the pipeline objected.
+CAUSE: the internal-CA pivot auto-harvests issuer CNs off the estate and re-searches Shodan for them.
+Its only guard was a substring match against `PUBLIC_CAS` ("let's encrypt", "digicert", ...). But
+**Let's Encrypt issues under bare codes R3/R10-R14/E1-E9 and Google Trust Services under
+WR1/WE1/YR2** — CNs containing NO vendor name. `'R12'` and `'YR2'` were therefore taken for the
+customer's PRIVATE CA and `ssl.cert.issuer.cn:"R12"` was run against ALL of Shodan.
+2 pivots x 500 `limit_per_query` = 998, + the 5 real hosts = the 1003. The arithmetic is exact.
+FIX (`shodan_recon._private_ca_ok`, tested by `scripts/test_ca_pivot.py`) — the gate **fails closed**:
+1. extended `PUBLIC_CAS`; 2. `_OPAQUE_CA_RE` rejects short opaque codes (`R12`,`YR2`,`WE1`,`X3`);
+3. the CN must carry a **brand token** (compared against a SQUASHED CN — "Bibel TV Issuing CA 01" vs
+token `bibeltv` never matches with the space in it) or CA wording; 4. the decisive vendor-agnostic
+test — `api.count()` on the issuer: anything signing **> PIVOT_MAX_HOSTS (2000)** hosts globally is
+shared by definition; 5. if `count()` is unavailable, CA-wording alone is NOT enough (every public CA
+has it) — only a brand token passes. Plus `_corroborates()`: a pivot may only ADD a host it can tie
+back independently (own ASN / brand domain in rDNS or cert / brand in org).
+SAFETY NET, independent of the gate: `run()` records `scope_blowout` when the final host set exceeds
+`max(25, 4x)` the hosts the identity queries actually proved, and `run_assessment.py` then emits
+`evt=scope_blowout` and **exits 3 rather than building decks from an unverified estate**.
+RULE FOR EVERY FUTURE PIVOT: a pivot widens scope, so it must produce EVIDENCE OF OWNERSHIP, not just
+a match. Never let a selector that can match the whole internet (a public CA, a shared hoster ASN, a
+generic favicon, a common JARM) become an ownership anchor. Recall is cheap; a stranger's
+infrastructure in a customer deck is not.
+LATENT TWIN, also fixed: the domain-seed path re-checks the ASN holder against CDNS/CARRIERS, but the
+NAME-seed path in `autodiscover()` never did — seeding "Bibel TV" instead of "bibeltv.de" would have
+adopted AS24940 (Hetzner) as an OWNED ASN and swept every other tenant. Now both paths check.
+
 ## HARD RULE — absence of evidence is never a finding
 `bgp_resilience.py` graded **Cogent (AS174, a tier-1 transit network)** as
 `CRITICAL / no-ASN / 0 upstreams` — purely because container DNS died, so bgpview/crt.sh returned

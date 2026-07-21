@@ -149,7 +149,109 @@ def merge_variants(ident, orgs=None, brands=None, domains=None, favicons=None,
 PUBLIC_CAS = ("let's encrypt","digicert","globalsign","sectigo","comodo","entrust","godaddy",
               "amazon","google trust","microsoft","cloudflare","actalis","buypass","zerossl",
               "starfield","geotrust","thawte","rapidssl","certum","ssl.com","isrg","baltimore",
-              "quovadis","identrust","d-trust","t-systems","telesec","swisssign","letsencrypt")
+              "quovadis","identrust","d-trust","t-systems","telesec","swisssign","letsencrypt",
+              # --- opaque intermediates, spelled out (see _private_ca_ok for the STRUCTURAL guard) ---
+              # Let's Encrypt issues under bare codes R3/R10..R14, E1..E9; Google Trust Services under
+              # WR1..WR4/WE1../YR1../YE1..  None of these strings contain a vendor name, so the
+              # substring test above cannot see them. bibeltv.de: 'R12' + 'YR2' were mistaken for the
+              # customer's PRIVATE CA and pivoted on -> 998 unrelated hosts worldwide in the deck.
+              "gts ca","gts root","google internet authority","apple public","e-tugra","hydrant",
+              "trustasia","wotrus","xinnet","secure site","encryption everywhere","cpanel, inc",
+              "cpanel","plesk","sni.cloudflaressl","alphassl","firebase","vercel","netlify","fastly")
+
+# A public intermediate's CN is typically a short opaque code: R3, R10, R12, E5, WR1, WE1, YR2, X1.
+# A genuine private/enterprise CA is named after the organisation ("Bibel TV Issuing CA 01").
+_OPAQUE_CA_RE = re.compile(r"^[A-Za-z]{1,3}[0-9]{0,4}$")
+_CA_WORDS = ("ca", "certificate", "cert", "issuing", "root", "intermediate", "pki",
+             "authority", "trust", "sub-ca", "subca", "zertifi")
+# A private CA signs an estate (tens/hundreds of hosts). Anything signing more of the internet than
+# this is by definition shared, whoever it belongs to.
+PIVOT_MAX_HOSTS = int(os.environ.get("PIVOT_MAX_HOSTS", "2000"))
+
+
+def _brand_tokens(ident):
+    """Distinctive lowercase tokens for the target: brand, org, seed and apex domains."""
+    out = set()
+    vals = [ident.get("brand"), ident.get("org"), ident.get("seed")]
+    vals += list(ident.get("domains") or [])
+    vals += list(ident.get("org_variants") or []) + list(ident.get("brand_variants") or [])
+    for v in vals:
+        if not v:
+            continue
+        s = str(v).lower()
+        s = re.sub(r"\.(com|net|org|de|ch|at|io|ai|eu|co|uk|fr|it|es|nl|se|pl)$", "", s)
+        for t in re.split(r"[^a-z0-9]+", s):
+            # drop legal-form noise and anything too short to be distinctive
+            if len(t) > 3 and t not in ("gmbh", "corp", "inc", "ltd", "group", "holding", "www",
+                                        "the", "and", "company", "co", "ag", "se", "plc", "bv"):
+                out.add(t)
+    return out
+
+
+def _private_ca_ok(cn, ident, api=None):
+    """Is this issuer CN plausibly the TARGET'S OWN private CA?  -> (bool, reason)
+
+    THE BIBELTV.DE INCIDENT: 'R12' (Let's Encrypt) and 'YR2' (Google Trust Services) passed the
+    PUBLIC_CAS substring test, because those CNs contain no vendor name. The pivot then ran
+    `ssl.cert.issuer.cn:"R12"` against ALL of Shodan and adopted 998 unrelated hosts — cPanel
+    resellers in Brazil, Shopify, DigitalOcean droplets in Japan — as the customer's estate.
+
+    This gate FAILS CLOSED: an issuer we cannot positively justify is refused. A missed pivot costs
+    us some recall; a wrong pivot puts a stranger's infrastructure in a customer-facing deck.
+    """
+    cn = (cn or "").strip()
+    if not cn:
+        return False, "empty CN"
+    if _is(cn, PUBLIC_CAS):
+        return False, "known public CA"
+    if _OPAQUE_CA_RE.match(cn):
+        return False, "opaque short code (public intermediate, e.g. R12/YR2/WE1)"
+    if len(cn) < 6:
+        return False, "CN too short to name an organisation"
+    low = cn.lower()
+    # Compare brand tokens against a SQUASHED CN: an internal CA is written "Bibel TV Issuing CA 01"
+    # while the brand token is "bibeltv". Without stripping separators the two never match, and the
+    # gate would fall back to CA-wording — which every public CA also has.
+    squash = re.sub(r"[^a-z0-9]", "", low)
+    owns = any(t in squash for t in _brand_tokens(ident))
+    looks_ca = any(w in low for w in _CA_WORDS)
+    if not (owns or looks_ca):
+        return False, "no brand token and no CA wording"
+    # The decisive, vendor-agnostic test: how much of the internet does this issuer actually sign?
+    rarity_ok = False
+    if api is not None:
+        try:
+            n = int((api.count('ssl.cert.issuer.cn:"%s"' % cn) or {}).get("total", 0))
+            if n > PIVOT_MAX_HOSTS:
+                return False, "signs %d hosts globally (> %d) — shared, not private" % (n, PIVOT_MAX_HOSTS)
+            rarity_ok = True
+        except Exception:
+            rarity_ok = False          # quota/plan/network — treated exactly like "no api"
+    if not rarity_ok and not owns:
+        # We could not prove the issuer is rare AND it does not carry the customer's own name.
+        # CA-wording alone is not evidence. Refuse: a wrong pivot is far worse than a missed one.
+        return False, "rarity check unavailable and CN carries no brand token"
+    return True, "ok"
+
+
+def _corroborates(m, ident, own_asns):
+    """Does this Shodan match plausibly belong to the target, independent of the pivot that found it?
+    Defence in depth: even a genuine private CA must not silently import hosts we cannot tie back."""
+    masn = ("AS" + str(m.get("asn"))) if str(m.get("asn") or "").isdigit() else (m.get("asn") or "")
+    if own_asns and masn in own_asns:
+        return True
+    doms = [str(d).lower().lstrip(".") for d in (ident.get("domains") or []) if d]
+    hay = " ".join([str(h).lower() for h in (m.get("hostnames") or [])])
+    ssl = (m.get("ssl") or {}).get("cert") or {}
+    subj = ssl.get("subject") or {}
+    hay += " " + str(subj.get("CN", "")).lower() + " " + str(subj.get("O", "")).lower()
+    for alt in ((m.get("ssl") or {}).get("cert", {}).get("extensions") or []):
+        hay += " " + str(alt.get("data", "")).lower()
+    if any(d and (d in hay) for d in doms):
+        return True
+    toks = _brand_tokens(ident)
+    org = ((m.get("org") or "") + " " + (m.get("isp") or "")).lower()
+    return bool(toks) and any(t in org for t in toks)
 
 def _bgpview_asns(term, cap=12):
     """Company name -> ASNs (bgp.he.net-equivalent, via the bgpview.io JSON API)."""
@@ -250,7 +352,17 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
             _found = _bgpview_asns(name)
         for a in _found:
             if a not in ident["asns"]:
-                ident["asns"].append(a); ident["asn_holder"] = ident["asn_holder"] or _ripe_holder(a)
+                # LATENT TWIN OF THE BIBELTV BUG: the domain-seed path re-checks the ASN holder
+                # against CDNS/CARRIERS (line ~104) but this NAME-seed path never did. Seeding
+                # "Bibel TV" instead of "bibeltv.de" would therefore adopt AS24940 (Hetzner) as an
+                # OWNED ASN and sweep every other tenant of that hoster.
+                _h = _ripe_holder(a)
+                if _is(_h, CDNS) or _is(_h, CARRIERS):
+                    print("[auto] ASN %s holder %r is shared hosting/carrier — kept as context, "
+                          "NOT an ownership anchor" % (a, _h), file=sys.stderr)
+                    ident.setdefault("shared_asns", []).append(a)
+                    continue
+                ident["asns"].append(a); ident["asn_holder"] = ident["asn_holder"] or _h
     if not ident.get("org_is_cdn"):                          # 2) prefixes for every ASN we now hold
         for a in ident["asns"]:
             for p in _ripe_prefixes(a):
@@ -491,27 +603,50 @@ def run(ident, F, audience, limit_per_query=500):
                 if n >= limit_per_query: break
         except shodan.APIError as e:
             print(f"[warn] query {q!r}: {e}", file=sys.stderr)
-    # auto-harvest the internal-CA issuer pivot: private issuers seen on the estate -> re-pivot
+    # auto-harvest the internal-CA issuer pivot: PRIVATE issuers seen on the estate -> re-pivot.
+    # Every candidate goes through _private_ca_ok(), which fails closed. See the bibeltv.de incident:
+    # 'R12'/'YR2' are public intermediates and this pivot imported ~998 strangers' hosts.
+    identity_ips = set(hosts)          # what the identity/ASN queries proved — the baseline estate
     seen_iss = {}
     for _ms in hosts.values():
         for _m in _ms:
             _cn = (((_m.get("ssl") or {}).get("cert") or {}).get("issuer") or {}).get("CN")
-            if _cn and not _is(_cn, PUBLIC_CAS): seen_iss[_cn] = seen_iss.get(_cn, 0) + 1
-    for _cn in [c for c, n in sorted(seen_iss.items(), key=lambda x: -x[1]) if n >= 2][:3]:
+            if _cn: seen_iss[_cn] = seen_iss.get(_cn, 0) + 1
+    pivot_added = 0
+    for _cn in [c for c, n in sorted(seen_iss.items(), key=lambda x: -x[1]) if n >= 2][:6]:
         if _cn in ident.get("internal_cas", []): continue
+        ok, why = _private_ca_ok(_cn, ident, api)
+        if not ok:
+            print(f"[auto] internal-CA pivot REFUSED on {_cn!r}: {why}", file=sys.stderr)
+            continue
         ident.setdefault("internal_cas", []).append(_cn)
-        print(f"[auto] internal-CA pivot on {_cn!r}", file=sys.stderr)
+        print(f"[auto] internal-CA pivot on {_cn!r} ({why})", file=sys.stderr)
         try:
-            k = 0
+            k = 0; kept = 0; skipped = 0
             for _m in api.search_cursor(f'ssl.cert.issuer.cn:"{_cn}"'):
                 ip2 = _m.get("ip_str")
                 if ip2 and ip2 not in hosts:
-                    hosts.setdefault(ip2, []).append(_m)
-                    if _m.get("asn"): asns.add(_m["asn"])
+                    # a pivot may only ADD a host it can independently tie to the target
+                    if not _corroborates(_m, ident, own_asns):
+                        skipped += 1
+                    else:
+                        hosts.setdefault(ip2, []).append(_m)
+                        if _m.get("asn"): asns.add(_m["asn"])
+                        kept += 1; pivot_added += 1
                 k += 1
                 if k >= limit_per_query: break
+            print(f"[auto]   pivot {_cn!r}: +{kept} hosts, {skipped} rejected (no tie to target)",
+                  file=sys.stderr)
         except shodan.APIError:
             pass
+    # SAFETY NET: findings must not be computed over an estate the identity queries never proved.
+    # If this ever trips again, the deck is wrong — say so loudly instead of shipping it silently.
+    if len(hosts) > max(25, 4 * max(1, len(identity_ips))):
+        print("[ERROR] scope blow-out: identity queries proved %d hosts but the host set is %d. "
+              "A pivot has over-matched — treat this assessment as UNSAFE."
+              % (len(identity_ips), len(hosts)), file=sys.stderr)
+        ident["scope_blowout"] = {"identity_hosts": len(identity_ips), "total_hosts": len(hosts),
+                                  "pivot_added": pivot_added}
     buckets = {}
     for ip, ms in hosts.items():
         for m in ms:
