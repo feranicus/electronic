@@ -340,6 +340,22 @@ and, if it is still stale, EXITS NON-ZERO instead of reporting success. `ship_we
 when the workflow failed, even if the domain returns 401.
 Corollary: never let a script print DONE on a path where a sub-step returned non-zero.
 
+## 5th deliverable — combined animated HTML report (2026-07)
+Every run now also emits **`<Company>_Report{_DE}.html`** — one self-contained, dark, scroll-driven
+page combining Findings + C-BIQ + GEOPOL in the Colt visual language (Inter/Unbounded/JetBrains Mono,
+teal-on-near-black, three.js particle-network hero with a canvas fallback, scroll reveals, count-ups,
+an animated loss-exceedance curve, per-actor threat cards, kill-chain timeline).
+- Builder: `scripts/build_report_html.js findings.json cbiq.json geopol.json out.html` (Node, no npm
+  deps; three.js pulled from the Cloudflare CDN at view time, canvas fallback if it fails).
+- Wired into `run_assessment.py` as step 3c (pct 98), added to the DECKS list as the 5th line;
+  `DECK_LANG=de` produces the German copy with the `_DE` suffix.
+- DEFENSIVE BY CONTRACT: every field guarded; renders cleanly on a thin 5-host estate and on a
+  findings-only run (no cbiq/geopol) — the C-BIQ and GEOPOL sections simply omit. Smoke-tested in
+  ship.py (asserts no undefined/NaN/[object Object] and that sections are present).
+- Web: `main.py::_collect_decks` also globs `*_Report*.html`; the deck download endpoint allows
+  `.html` (served inline, text/html) alongside `.pptx` (attachment). Owner-scoped + traversal-guarded
+  exactly as the decks are.
+
 ## ZERO FALSE POSITIVES — the ownership gate (skon.de, 2026-07)
 S-KON is a loyalty-platform operator: it runs white-label microsites (`vorteile.otto.de`,
 `vorteile.mediamarkt.de`, `praemie.tng.de`, `aktion.eam.de`) FOR its clients. The recall step

@@ -667,6 +667,23 @@ def main():
         ok4=(r.returncode==0)
         if not ok4: print(f"[warn] build_deltas_deck.js: {r.stderr.strip()[:300]}", file=sys.stderr)
 
+    # 3c) 5th deliverable — the combined animated HTML artifact (Findings + C-BIQ + GEOPOL in one
+    # self-contained scrollytelling page). Non-fatal: a report failure must never sink the decks.
+    d5=os.path.join(a.outdir,f"{safe}_Report{_L}.html")
+    ok5=False
+    try:
+        _pg("Building combined HTML report", 98)
+        r=subprocess.run(["node", os.path.join(HERE,"build_report_html.js"),
+                          os.path.join(a.outdir,"findings.json"),
+                          os.path.join(a.outdir,"cbiq.json"),
+                          os.path.join(a.outdir,"geopol.json"), d5],
+                         capture_output=True, text=True,
+                         env=dict(os.environ, DECK_LANG=("de" if str(a.lang).lower().startswith("de") else "en")))
+        ok5=(r.returncode==0 and os.path.exists(d5))
+        if not ok5: print(f"[warn] build_report_html.js: {r.stderr.strip()[:300]}", file=sys.stderr)
+    except Exception as _e:
+        print(f"[warn] HTML report: {_e}", file=sys.stderr)
+
     s=fj["summary"]
     if fj.get("target",{}).get("qa_note"): print(fj["target"]["qa_note"])
     q = fj.get("target", {}).get("qwen", {}) or {}
@@ -697,6 +714,7 @@ def main():
     print("DECKS:")
     _decks=[(ok1,d1),(ok2,d2),(ok3,d3)]
     if fj.get("target",{}).get("qwen",{}).get("status")=="ok": _decks.append((ok4,d4))
+    if ok5: _decks.append((ok5,d5))          # the combined HTML report (5th deliverable)
     for ok,p in _decks: print(("  OK  " if ok else "  FAIL")+p)
 
 if __name__ == "__main__":

@@ -220,7 +220,10 @@ def _deck_entry(job_id: str, path: Path) -> dict:
 
 
 def _collect_decks(job_id: str, jobdir: Path) -> list:
-    return [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*.pptx"))]
+    # .pptx decks first, then the combined _Report.html artifact (5th deliverable).
+    out = [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*.pptx"))]
+    out += [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*_Report*.html"))]
+    return out
 
 
 _RUNNING: dict = {}          # job_id -> asyncio.Task, so we can see what is in flight
@@ -404,18 +407,20 @@ def assess_deck(job_id: str, name: str, request: Request):
     job = store.get_job(job_id)
     if not job or job["email"] != email.lower():
         raise HTTPException(status_code=404, detail="not found")
-    # prevent path traversal — only a bare filename, must be a .pptx in the owner's jobdir
-    if "/" in name or "\\" in name or ".." in name or not name.lower().endswith(".pptx"):
+    # prevent path traversal — only a bare filename; allow the .pptx decks and the _Report.html
+    low = name.lower()
+    if "/" in name or "\\" in name or ".." in name or not (low.endswith(".pptx") or low.endswith(".html")):
         raise HTTPException(status_code=400, detail="bad filename")
     jobdir = _job_dir(email, job_id)
     path = jobdir / name
     if not path.exists():
         raise HTTPException(status_code=404, detail="deck not found")
-    return FileResponse(
-        str(path),
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename=name,
-    )
+    media = ("text/html" if low.endswith(".html")
+             else "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    # HTML report opens in the browser; decks download as attachments.
+    disp = "inline" if low.endswith(".html") else "attachment"
+    return FileResponse(str(path), media_type=media, filename=name,
+                        content_disposition_type=disp)
 
 
 @app.get("/api/history")
