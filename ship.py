@@ -294,6 +294,15 @@ def do_web(use_ci):
 
 def do_bots():
     say("4/5  DEPLOY BOTS — colt-stack (assess bot + Cassandra + promtail)")
+    # SKIP the 2-4 min droplet rebuild if the bot already runs THIS repo's engine. deploy.py rebuilds
+    # both Ubuntu/Python images and opens ~12 ssh sessions every time; when the engine already
+    # matches (e.g. you only changed the web app, or re-ran ship.py), that work is pure waiting.
+    ok, _ = engine_is_current("colt-assessbot")
+    if ok and not os.environ.get("FORCE_BOTS"):
+        print("  colt-assessbot already runs the current engine — skipping the rebuild.")
+        print("  (set FORCE_BOTS=1 to rebuild anyway, e.g. after a bot.py/Dockerfile change.)")
+        _import_grafana()
+        return
     # NEVER --remove-orphans here: docker-compose.web.yml defines only `web`, and a subset compose
     # in the shared colt-stack project deletes the bots + promtail as "orphans".
     run([sys.executable, "deploy.py", "--reuse", "--yes"])
