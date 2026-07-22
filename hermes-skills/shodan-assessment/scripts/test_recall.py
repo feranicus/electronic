@@ -157,6 +157,17 @@ for full, want in (("Rosneft Deutschland GmbH", "Rosneft Deutschland"),
                    ("Acme Holding AG", "Acme"), ("Foo Bar S.p.A", "Foo Bar")):
     check(R._org_core(full) == want, "%-26s -> %r" % (full, want))
 
+print("\n[15] edge appliances are CRITICAL findings, not LOW 'standard service' (S-KON WatchGuard)")
+_wg = {"port": 443, "product": "", "ssl": {"cert": {"subject": {"O": "S-KON Sales Kontor Hamburg GmbH"},
+                                                    "issuer": {"CN": "Firebox webCA"}}}}
+check(R.classify(_wg) == ("CRITICAL", "edge_appliance"), "WatchGuard (self-signed 'Firebox webCA') -> CRITICAL edge_appliance")
+check(R.classify({"port": 443, "product": "Barracuda"}) == ("CRITICAL", "edge_appliance"), "Barracuda -> CRITICAL edge_appliance")
+check(R.classify({"port": 161}) == ("HIGH", "snmp_exposed"), "exposed SNMP :161 -> HIGH snmp_exposed")
+check("edge_appliance" in R.TEMPLATES and "snmp_exposed" in R.TEMPLATES, "both new finding types have deck templates")
+# guardrail: a plain web host must NOT be misread as an appliance
+check(R.classify({"port": 443, "product": "nginx", "version": "1.18.0"})[1] != "edge_appliance",
+      "plain nginx is not misclassified as an appliance")
+
 print("\n[13] the FP auditor must be a DIFFERENT model than the deck author (never self-audit)")
 _chain = ["gemma-4-31B-it", "deepseek-3.2", "llama-4-maverick"]
 for _author in _chain + ["openai-gpt-oss-120b"]:

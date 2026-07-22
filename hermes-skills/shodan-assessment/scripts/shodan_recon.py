@@ -803,6 +803,29 @@ ICS_PORTSET = {102:"S7",502:"Modbus",4840:"OPC-UA",44818:"EtherNet/IP",20000:"DN
 REMOTE_HI = {23:"Telnet",5900:"VNC",5800:"VNC-http",445:"SMB",5985:"WinRM",5986:"WinRM",3390:"RDP"}
 VPN_PORTS = {4433,8443,10443,4443,500,4500,1194}
 
+# Edge security appliances (firewall / UTM / SSL-VPN). An exposed MGMT plane on one of these is
+# KEV-heavy and CRITICAL. Detected by product banner OR by the tell-tale self-signed cert issuer/
+# subject the device ships (e.g. WatchGuard's 'Firebox webCA', Barracuda's own CA) — the S-KON
+# WatchGuard has NO product banner, so the cert issuer is the only anchor and was being missed.
+_APPLIANCE_RE = re.compile(
+    r"(?i)watchguard|firebox|barracuda|sonicwall|fortigate|fortinet|forti-?os|citrix|netscaler|"
+    r"pulse\s*secure|ivanti|palo\s*alto|globalprotect|pan-os|check\s*point|sophos|sma\b|"
+    r"cisco\s*asa|meraki|zyxel|draytek|kemp|f5\s*big-?ip|big-?ip|silverpeak|velocloud")
+
+
+def _appliance_hit(m):
+    """Return the appliance family name if this host is an edge security appliance, else ''."""
+    prod = (m.get("product") or "") + " " + (m.get("version") or "")
+    ssl = (m.get("ssl") or {}).get("cert") or {}
+    subj = ssl.get("subject") or {}; iss = ssl.get("issuer") or {}
+    hay = " ".join([prod, str(subj.get("CN", "")), str(subj.get("O", "")),
+                    str(iss.get("CN", "")), str(iss.get("O", "")),
+                    ((m.get("http") or {}).get("server") or ""),
+                    ((m.get("http") or {}).get("title") or "")])
+    mm = _APPLIANCE_RE.search(hay)
+    return mm.group(0) if mm else ""
+
+
 def classify(m):
     port = m.get("port"); prod = (m.get("product") or ""); vulns = m.get("vulns") or {}
     ssl = m.get("ssl") or {}; tags = m.get("tags") or []
@@ -810,11 +833,14 @@ def classify(m):
     if "ics" in tags or "scada" in tags or port in ICS_PORTSET: return "CRITICAL","ics"
     if port in DB_PORTS:  return "CRITICAL","db_exposed"
     if port in (3389, 3390): return "CRITICAL","rdp"
-    if port in (264, 18264) or _is(prod, CRIT_APPLIANCES):   # exposed edge-appliance mgmt plane = KEV-heavy, CRITICAL
+    # exposed edge-appliance mgmt plane = KEV-heavy, CRITICAL — by product OR cert-issuer fingerprint
+    if port in (264, 18264) or _is(prod, CRIT_APPLIANCES) or _appliance_hit(m):
         return "CRITICAL","edge_appliance"
     if vulns:             return "HIGH","vuln_tagged"
     if port in VPN_PORTS or re.search(r'(?i)fortinet|pulse|palo alto|sonicwall|citrix|cisco asa|openvpn|sophos', prod):
         return "HIGH","vpn_appliance"
+    if port == 161 or port == 162 or "snmp" in (prod or "").lower():  # exposed SNMP = mgmt/info-disclosure
+        return "HIGH","snmp_exposed"
     if port in REMOTE_HI: return "HIGH","remote_admin"
     if title and re.search(r'(?i)login|admin|portal|vpn|dashboard|phpmyadmin|webmin|outlook|exchange', title):
         return "HIGH","exposed_panel"
@@ -822,7 +848,13 @@ def classify(m):
     if any(v.lstrip("-") in ("TLSv1","TLSv1.0","SSLv3","SSLv2","TLSv1.1") for v in versions): return "MEDIUM","legacy_tls"
     cert = ssl.get("cert") or {}
     if cert.get("expired"): return "MEDIUM","expired_tls"
-    if cert.get("issuer") and cert.get("issuer") == cert.get("subject"): return "MEDIUM","self_signed"
+    # self-signed: issuer == subject, OR the issuer is a device/private CA (not a public CA)
+    _iss = cert.get("issuer") or {}
+    _isscn = str(_iss.get("CN", "") if isinstance(_iss, dict) else _iss)
+    if (cert.get("issuer") and cert.get("issuer") == cert.get("subject")) or \
+       (_isscn and not _is(_isscn, PUBLIC_CAS) and _OPAQUE_CA_RE.match(_isscn) is None
+        and re.search(r"(?i)\b(ca|webca|self|internal|issuing)\b", _isscn)):
+        return "MEDIUM","self_signed"
     if prod and m.get("version"): return "MEDIUM","verbose_banner"
     return "LOW","standard_service"
 
@@ -831,7 +863,8 @@ TEMPLATES = {
  "db_exposed": ("Exposed database", ["Direct data-exfiltration path","Often unauthenticated"], ["Colt Managed Firewall — remove the DB from the internet","Colt DPI/NDR — detect exfiltration attempts"], ["MITRE T1190"]),
  "ics":        ("Exposed ICS/OT protocol", ["Safety/availability impact","NIS2 / ISO 27001 driver"], ["Colt Managed Firewall + IT/OT segmentation","Colt SD-WAN secure OT transport; Colt IP Guardian (DDoS)"], ["MITRE ICS","NIS2 Art.21"]),
  "vuln_tagged":("Shodan-tagged vulnerabilities (CVE)", ["Pre-mapped exploit paths; check CISA KEV"], ["Colt WAF — virtual-patch the exposed CVE","Colt Managed Security — KEV/EPSS-prioritised patch orchestration"], ["Shodan vulns","CISA KEV"]),
- "edge_appliance":("Exposed edge-appliance mgmt (Citrix/Ivanti/Check Point/Fortinet)", ["KEV-heavy edge — Citrix Bleed / CVE-2024-24919 class; #1 ransomware entry"], ["Colt SASE / ZTNA — retire the internet-facing appliance mgmt plane","Colt Managed Firewall — restrict mgmt to allowlist + MFA","Colt Managed Security — KEV/EPSS-prioritised virtual patch"], ["CISA KEV","MITRE T1133"]),
+ "edge_appliance":("Exposed edge-security appliance (firewall / SSL-VPN / UTM)", ["KEV-heavy edge — WatchGuard / Barracuda / Fortinet / Citrix / Ivanti class; the #1 ransomware entry vector. An internet-facing appliance management plane is exploited faster than it can be patched."], ["Colt SASE / ZTNA — retire the internet-facing appliance mgmt plane entirely (no public gateway to exploit)","Colt Managed Firewall — restrict mgmt to an allowlist + enforce MFA","Colt Managed Security — KEV/EPSS-prioritised virtual patching"], ["CISA KEV","MITRE T1133"]),
+ "snmp_exposed":("Exposed SNMP management service", ["Internet-reachable SNMP (161/UDP) leaks device model, firmware, interfaces and topology — reconnaissance gold, and weak community strings enable config read/write."], ["Colt Managed Firewall — block 161/162 at the edge; SNMP is a management protocol, never internet-facing","Colt Managed Security — enforce SNMPv3 with auth+priv where monitoring is required"], ["MITRE T1046","BSI IT-Grundschutz"]),
  "vpn_appliance":("Exposed VPN / firewall mgmt", ["Edge-appliance CVEs = top ransomware vector"], ["Colt SASE / ZTNA — replace the legacy VPN","Colt Managed Firewall — restrict mgmt to allowlist + MFA"], ["CISA KEV"]),
  "remote_admin":("Exposed remote-admin (Telnet/VNC/WinRM/SMB)", ["Brute-force / cleartext protocols"], ["Colt SASE / ZTNA — broker admin access","Colt Managed Firewall — block cleartext admin ports"], ["MITRE T1133"]),
  "exposed_panel":("Exposed login / admin / OWA panel", ["Credential attacks; panel-CVE surface"], ["Colt WAF — shield the panel + rate-limit","Colt SASE — identity-broker + geofence"], ["OWASP"]),

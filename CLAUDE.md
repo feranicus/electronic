@@ -390,6 +390,19 @@ an animated loss-exceedance curve, per-actor threat cards, kill-chain timeline).
   `.html` (served inline, text/html) alongside `.pptx` (attachment). Owner-scoped + traversal-guarded
   exactly as the decks are.
 
+## classify() — edge appliances were being buried as LOW (skon.de run #6)
+The org: pivot now FINDS the S-KON WatchGuard/Barracuda/SNMP hosts, but the deck still had 3 findings
+because `classify()` dumped them into LOW 'standard_service': the WatchGuard has NO product banner and
+its cert issuer is 'Firebox webCA', so nothing matched. FIX:
+- `_appliance_hit()` detects an edge security appliance by product OR the tell-tale self-signed cert
+  (issuer/subject CN/O) — watchguard/firebox/barracuda/sonicwall/fortigate/citrix/ivanti/palo alto/
+  sophos/f5/etc. -> CRITICAL 'edge_appliance'. The WatchGuard's only anchor is that cert issuer.
+- port 161/162 -> HIGH 'snmp_exposed' (SNMP is a mgmt protocol, never internet-facing).
+- self_signed detection broadened: issuer==subject OR a device/private-CA issuer CN ('...webCA',
+  '...Issuing CA') that is not a public CA and not an opaque public intermediate.
+- New TEMPLATES entries for edge_appliance + snmp_exposed with rich WHY + Colt remediation.
+Guarded by test_recall.py §15 (WatchGuard/Barracuda CRITICAL, SNMP HIGH, plain nginx NOT an appliance).
+
 ## Recon — org: pivot MUST strip the legal suffix (skon.de run #5, proven from the raw JSON)
 The operator's own Shodan exports contained 8 S-KON hosts on three unscanned netblocks — the
 WatchGuard Firebox (213.61.141.198), SNMP appliances (213.61.141.196-199), a Barracuda
