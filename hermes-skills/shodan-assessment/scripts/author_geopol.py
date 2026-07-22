@@ -101,8 +101,27 @@ def deterministic(fj, gj, company):
             for c, a in zip(("teal", "violet", "orange"), actors[:3])]
     if crit_high:
         leg2.append({"c": "red", "t": (crit_high[0].get("title") or "Priority finding")[:44]})
+    # scene-3 EXPOSURES come straight from the real findings (host:port — title), so the vectors map
+    # shows the target's actual estate, never a template's. vectors/impacts are exposure-class generic.
+    exposures = []
+    for f in (crit_high + [x for x in fnd if x not in crit_high])[:6]:
+        ev = (f.get("evidence") or [""])[0]
+        host = str(ev).split()[0] if ev else ""
+        exposures.append((host + " — " + (f.get("title") or "")).strip(" —")[:34] or (f.get("title") or "")[:34])
+    actor_defs = []
+    for c, a in zip(("violet", "amber", "teal", "red", "orange", "mint"), actors[:6]):
+        actor_defs.append({"name": (a.get("title") or a.get("sponsor") or "Threat actor")[:22],
+                           "c": c, "method": (a.get("eyebrow") or a.get("band") or "")[:26]})
     return {
         "company": company,
+        "scene3": {
+            "vectors": [{"t": "Volumetric DDoS", "c": "teal"}, {"t": "Remote-access exploit", "c": "red"},
+                        {"t": "Credential stuffing", "c": "amber"}, {"t": "Web-app exploit", "c": "orange"},
+                        {"t": "Ransomware deploy", "c": "violet"}, {"t": "Data exfiltration", "c": "mint"}],
+            "exposures": exposures,
+            "impacts": ["Customer / user PII", "Core service delivery", "Operational continuity",
+                        "Credentials & secrets", "Brand & trust"],
+        },
         "scene1": {
             "h1": "%s's %sexposed estate." % (company, "{hl}" + str(len(crit_high)) + " priority{/hl} " if crit_high else ""),
             "sub": ("%s has {ink}%s internet-facing host(s){/ink} across {ink}%s hosting ASN(s){/ink}. "
@@ -121,6 +140,7 @@ def deterministic(fj, gj, company):
             "sub": (gj.get("sectorContext") or gj.get("verdict") or
                     "%s faces the threat set typical of its sector and exposure." % company)[:420],
             "legend": leg2 or [{"c": "violet", "t": "Opportunistic ransomware"}],
+            "actors": actor_defs,            # drives the c2 threat-actor animation (real GEOPOL actors)
             "caption": ((gj.get("cbiqBridge") or [{}])[0].get("note")
                         or "Most likely: opportunistic intrusion via the exposed edge. Break it cheapest with ZTNA."),
         },

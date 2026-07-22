@@ -208,7 +208,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
 /* SCENE 2 : threat convergence */
 (function(){
   const cv=document.getElementById("c2"),ctx=cv.getContext("2d");let W,H,sources=[],particles=[],t=0,target;
-  const defs=[["NoName057(16)",TEAL,"pro-Russian DDoS"],["OPPORTUNISTIC RaaS",VIOLET,"ransomware via exposed edge"],["RELIGIOUS / IDEOLOGICAL",ORANGE,"DDoS & defacement"],["BRAND-ABUSE FRAUD",MINT,"donation phishing (look-alike)"],["INITIAL-ACCESS BROKERS",AMBER,"sell VPN :8443 access"],["KEV fleet",RED,"KEV-listed CVE"]];
+  const defs=__S2_ACTORS__;
   function build(){const s=fit(cv);W=s.w;H=s.h;target={x:W*0.64,y:H*0.5};sources=[];
     const lx=W*0.15;defs.forEach((d,i)=>{const y=H*(0.13+i*0.146);sources.push({x:lx,y,name:d[0],col:d[1],meth:d[2],ph:Math.random()*6.28});});particles=[];}
   build();window.addEventListener("resize",build);
@@ -242,9 +242,9 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
 /* SCENE 3 : attack-path map */
 (function(){
   const cv=document.getElementById("c3");if(!cv)return;const ctx=cv.getContext("2d");let W,H,t=0,parts=[];
-  const LEFT=[["DDoS flood (NoName057)",TEAL],["Ransomware via VPN edge",RED],["SCM exploit / secret leak",ORANGE],["Donation phishing (look-alike)",MINT],["Web defacement (hacktivist)",VIOLET],["nginx Rapid Reset (KEV)",AMBER]];
-  const MID=["SSL-VPN edge :8443 (Colt)","Exposed dev / SCM","Web fleet — flagged CVE","{{COMPANY}} web","bibletv.de look-alike (US)","Strato mail infra"];
-  const RIGHT=["Customer / user PII","Core service delivery","Donations / giving flow","Source code & CI secrets","Brand & customer trust"];
+  const LEFT=__S3_LEFT__;
+  const MID=__S3_MID__;
+  const RIGHT=__S3_RIGHT__;
   const LM=[[0,3],[1,0],[2,1],[3,4],[4,3],[5,2],[0,3],[1,0],[2,1],[3,4],[4,3],[5,2]];
   const MR=[[0,0,RED],[0,1,RED],[1,3,ORANGE],[2,1,AMBER],[3,4,VIOLET],[4,2,MINT],[0,0,RED],[1,3,ORANGE],[2,1,TEAL],[4,2,MINT],[3,4,VIOLET],[5,0,MINT]];
   let lx,mx,rx,ly,my,ry,laR,maL,maR,raL;

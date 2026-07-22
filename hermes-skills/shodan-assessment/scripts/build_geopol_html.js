@@ -93,8 +93,46 @@ function scene(sc, canvasId, fallbackEyebrow) {
 const company = C.company || "Target";
 const title = C.title || (company + " GEOPOL — Threat, Defence & Secure by Design · Colt / S4Biz");
 
+// ---- scene-3 vectors/exposures/impacts + scene-2 actors are DATA, not frozen text ----
+// The canvas wires index into these by fixed position, so lengths are pinned: 6 vectors, 6 exposures,
+// 5 impacts, 6 actors. We pad with generic defaults and truncate — never leak another company's data.
+const COLORS = ["TEAL", "RED", "ORANGE", "MINT", "VIOLET", "AMBER"];
+const jsColor = (c) => COLORS.includes(String(c || "").toUpperCase()) ? String(c).toUpperCase() : "TEAL";
+function fixArr(items, n, deflt) {
+  const out = (Array.isArray(items) ? items : []).slice(0, n);
+  while (out.length < n) out.push(deflt[out.length] || deflt[deflt.length - 1]);
+  return out;
+}
+const s3 = (C.scene3 || {});
+// LEFT = [[label, COLOR], ...] (6 attack vectors)
+const DEF_VEC = [["Volumetric DDoS", "TEAL"], ["Remote-access exploit", "RED"], ["Credential stuffing", "AMBER"],
+  ["Web-app exploit", "ORANGE"], ["Ransomware deploy", "VIOLET"], ["Data exfiltration", "MINT"]];
+const vecs = fixArr((s3.vectors || []).map((v) => [String(v.t || v), jsColor(v.c)]), 6, DEF_VEC);
+// MID = [str, ...] (6 of the target's own exposures — filled from real findings by the author)
+const DEF_EXP = ["Internet-facing edge", "Web / app fleet", "Mail edge", "Management interface",
+  "TLS / PKI weakness", "Look-alike / brand"];
+const exps = fixArr((s3.exposures || []).map(String), 6, DEF_EXP);
+// RIGHT = [str, ...] (5 impacts / crown jewels)
+const DEF_IMP = ["Customer / user PII", "Core service delivery", "Operational continuity",
+  "Credentials & secrets", "Brand & trust"];
+const imps = fixArr((s3.impacts || []).map(String), 5, DEF_IMP);
+// scene-2 actors = [[NAME, COLOR, method], ...] (6)
+const DEF_ACT = [["OPPORTUNISTIC RaaS", "VIOLET", "ransomware via exposed edge"],
+  ["INITIAL-ACCESS BROKERS", "AMBER", "sell exposed remote-access"], ["HACKTIVIST DDoS", "TEAL", "volumetric flood"],
+  ["CREDENTIAL THIEVES", "RED", "phishing / stuffing"], ["KEV fleet", "ORANGE", "known-exploited CVE"],
+  ["BRAND ABUSE", "MINT", "look-alike / fraud"]];
+const acts = fixArr((C.scene2 && C.scene2.actors || []).map((a) =>
+  [String(a.name || a.t || ""), jsColor(a.c), String(a.method || a.m || "")]), 6, DEF_ACT);
+
+const jsLeft = "[" + vecs.map(([t, c]) => `[${JSON.stringify(t)},${c}]`).join(",") + "]";
+const jsMid = JSON.stringify(exps);
+const jsRight = JSON.stringify(imps);
+const jsActs = "[" + acts.map(([n, c, m]) => `[${JSON.stringify(n)},${c},${JSON.stringify(m)}]`).join(",") + "]";
+
 shell = shell.replace("__SCENE1__", scene(C.scene1, "c1", "Scene 01 · The exposed estate"));
 shell = shell.replace("__SCENE2__", scene(C.scene2, "c2", "Scene 02 · Who is coming"));
+shell = shell.replace("__S3_LEFT__", jsLeft).replace("__S3_MID__", jsMid)
+             .replace("__S3_RIGHT__", jsRight).replace("__S2_ACTORS__", jsActs);
 // {{COMPANY}} tokens in the fixed defense scenes + header; and the <title>
 shell = shell.replace(/\{\{COMPANY_UPPER\}\}/g, esc(company.toUpperCase()));
 shell = shell.replace(/\{\{COMPANY\}\}/g, esc(company));
