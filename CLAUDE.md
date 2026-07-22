@@ -40,6 +40,18 @@
    - If a reply is about to end with two `python ...` lines, that is the signal: go back and fold
      them into the orchestrator, then give the single command.
 
+## GitHub really is the source of truth — ALWAYS push + tagged safe-points (2026-07)
+BUG we hit: ship.py only pushed when IT made a new commit, so commits created outside a ship.py run
+(or when the tree was already clean) NEVER reached GitHub — the PC silently drifted ahead of origin.
+FIX: `do_git()` now ALWAYS `git push origin main` (prints how many local commits were unpushed),
+even with nothing new to commit. Push is idempotent; skipping it breaks the source-of-truth promise.
+SAFE-POINTS + ROLLBACK: after a deploy VERIFIES (engine current + /api/me 401), `tag_known_good()`
+moves the `last-known-good` tag and writes a dated `good-YYYYMMDD-HHMMSS` tag, pushing both. To undo
+any breakage: `python ship.py --rollback` (-> last-known-good) or `--rollback good-<stamp>` — it
+`git reset --hard`s the PC (parking local mess in `git stash`) and redeploys that exact state to the
+droplet. The droplet has no independent history; it is always rebuilt FROM the repo, so a good commit
+on GitHub is the whole backup.
+
 ## The one irreducible human input
 Cloud credentials can only be minted by the account owner. Provide them **once** as GitHub secrets;
 after that, everything is automated and re-runnable from the Actions tab.

@@ -10,6 +10,7 @@ ship.py — THE ONE COMMAND. Test, commit, push, deploy, verify. Nothing else to
     python ship.py --ci                # deploy via GitHub Actions instead of direct SSH
     python ship.py --no-test           # skip tests (you had better have a reason)
     python ship.py --dry-run           # print the plan, touch nothing
+    python ship.py --rollback          # restore last-known-good state + redeploy it
 
 STANDING RULE (see CLAUDE.md): there is exactly ONE orchestrator. Every other script here is a
 building block that ship.py calls — never something the operator runs by hand. If a task needs two
@@ -247,11 +248,54 @@ def do_git(message):
     run(["git", "add", "-A"], check=False)
     rc = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=HERE).returncode
     if rc == 0:
-        print("  (nothing to commit — working tree clean)")
-        return False
-    run(["git", "commit", "-m", message], check=False)
+        print("  (nothing new to commit)")
+    else:
+        run(["git", "commit", "-m", message], check=False)
+    # ALWAYS push — even with nothing new to commit. BUG we hit: earlier commits made outside a
+    # ship.py run (or when the working tree was already clean) were never pushed, so GitHub silently
+    # fell BEHIND the PC. "GitHub is the single source of truth" only holds if we push every time.
+    ahead = subprocess.run(["git", "rev-list", "--count", "origin/main..HEAD"],
+                           cwd=HERE, text=True, capture_output=True).stdout.strip() or "?"
+    print("  local commits not yet on GitHub: %s — pushing." % ahead)
     run(["git", "push", "origin", "main"], check=False)
-    return True
+    return rc != 0
+
+
+def tag_known_good():
+    """Tag the just-deployed, verified commit as a restorable safe-point, and push the tag.
+    So any future breakage is one command to undo (see --rollback)."""
+    import datetime
+    tag = "good-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run(["git", "tag", "-f", "last-known-good"], check=False)   # moving pointer to the newest good
+    run(["git", "tag", tag], check=False)                        # immutable dated snapshot
+    run(["git", "push", "-f", "origin", "last-known-good"], check=False)
+    run(["git", "push", "origin", tag], check=False)
+    print("\n  SAFE-POINT saved: %s  (and moved 'last-known-good').  To roll back later:" % tag)
+    print("      python ship.py --rollback            # -> last-known-good, redeploys")
+    print("      python ship.py --rollback %s   # -> this exact point" % tag)
+
+
+def do_rollback(ref):
+    say("ROLLBACK — restore a known-good state, then redeploy")
+    ref = ref if ref and ref != "AUTO" else "last-known-good"
+    print("  restoring the repo to %r ..." % ref)
+    _clear_stale_git_locks()
+    # show what we're about to move to, and refuse if it doesn't exist
+    r = subprocess.run(["git", "rev-parse", "--verify", ref + "^{commit}"], cwd=HERE,
+                       text=True, capture_output=True)
+    if r.returncode != 0:
+        sys.exit("[X] %r is not a known ref/tag. See your safe-points with:  git tag -l 'good-*'" % ref)
+    run(["git", "stash", "push", "-u", "-m", "pre-rollback"], check=False)   # park any local mess
+    run(["git", "reset", "--hard", ref])
+    print("  PC restored to %s. Redeploying that state to the droplet..." % ref)
+    do_web(False)
+    do_bots()
+    ok = do_verify(True, True)
+    print("\n" + "=" * 74)
+    print("  ROLLBACK COMPLETE — droplet + PC are back on %r." % ref)
+    print("  (your pre-rollback changes are parked in `git stash` — `git stash pop` to get them back.)")
+    print("=" * 74)
+    sys.exit(0 if ok else 1)
 
 
 # ------------------------------------------------------------------ 3. deploy
@@ -386,8 +430,15 @@ def main():
                     help="(default) deploy straight to the droplet over SSH")
     ap.add_argument("--no-test", action="store_true", help="skip the test gate")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
+    ap.add_argument("--rollback", nargs="?", const="AUTO", default=None,
+                    help="restore a known-good state and redeploy it (default: last-known-good; "
+                         "or pass a tag like good-20260722-143000)")
     a = ap.parse_args()
     DRY = a.dry_run
+
+    if a.rollback is not None:
+        do_rollback(a.rollback)          # exits inside
+        return
 
     web = a.web or not (a.web or a.bots)
     bots = a.bots or not (a.web or a.bots)
@@ -412,6 +463,10 @@ def main():
         do_bots()
 
     ok = do_verify(web, bots)
+
+    if ok and not DRY:
+        # only tag a SAFE-POINT when the deployed engine actually verified current + live
+        tag_known_good()
 
     print("\n" + "=" * 74)
     if ok:
