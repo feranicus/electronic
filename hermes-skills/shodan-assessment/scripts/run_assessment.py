@@ -676,7 +676,7 @@ def main():
     # a client/third-party (the skon.de failure), drops it and REBUILDS the affected decks.
     try:
         _pg("Auditing findings for false positives (independent model)", 93)
-        au=subprocess.run(["python3", os.path.join(HERE, "audit_fp.py"),
+        au=subprocess.run([sys.executable, os.path.join(HERE, "audit_fp.py"),
                            os.path.join(a.outdir, "findings.json"), "--apply"],
                           capture_output=True, text=True, env=dict(os.environ, OUTDIR=a.outdir))
         _verdict={}
@@ -699,7 +699,7 @@ def main():
     ok5=False
     try:
         _pg("Authoring the animated GEOPOL report (HTML artifact)", 97)
-        r=subprocess.run(["python3", os.path.join(HERE,"author_geopol.py"),
+        r=subprocess.run([sys.executable, os.path.join(HERE,"author_geopol.py"),
                           os.path.join(a.outdir,"findings.json"),
                           os.path.join(a.outdir,"geopol.json"), d5, "--company", co],
                          capture_output=True, text=True,

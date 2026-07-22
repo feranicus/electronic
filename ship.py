@@ -175,7 +175,7 @@ def do_tests():
     import tempfile, json as _json
     smp = os.path.join(engine, "..", "sample")
     rp = os.path.join(tempfile.gettempdir(), "ship_report.html")
-    rc = subprocess.run(["python3", os.path.join(engine, "author_geopol.py"),
+    rc = subprocess.run([sys.executable, os.path.join(engine, "author_geopol.py"),
                          os.path.join(smp, "findings.sample.json"),
                          os.path.join(smp, "geopol.sample.json"), rp, "--company", "SmokeTest"],
                         capture_output=True, text=True)
