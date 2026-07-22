@@ -357,14 +357,9 @@ def _crtsh_domains(domain=None, org=None, cap=60):
                   % (len(doms) - before), file=sys.stderr)
     return sorted(doms)[:cap]
 
-def _cert_sans(domain, port=443, cap=80):
-    """Subject-Alternative-Name list from the host's live TLS certificate.
-
-    This is how a SIBLING DOMAIN is discovered: bibeltv.de and bibel.tv are different registrable
-    domains, so CT enumeration of one can never surface the other — but they share a certificate,
-    and a shared cert is evidence of common operation. One TLS handshake, no data sent."""
+def _cert_info(domain, port=443):
+    """(SAN list, subject-Organization) from the host's live TLS certificate. One handshake."""
     import ssl as _ssl
-    out = set()
     for host in (domain, "www." + domain):
         try:
             ctx = _ssl.create_default_context()
@@ -373,16 +368,76 @@ def _cert_sans(domain, port=443, cap=80):
             with socket.create_connection((host, port), timeout=8) as s:
                 with ctx.wrap_socket(s, server_hostname=host) as ss:
                     cert = ss.getpeercert()
+            sans = set()
             for typ, val in (cert or {}).get("subjectAltName", ()):
                 if typ.lower() == "dns":
                     v = str(val).strip().lstrip("*.").lower()
                     if v and "." in v and " " not in v:
-                        out.add(v)
-            if out:
-                break
+                        sans.add(v)
+            org = None
+            for rdn in (cert or {}).get("subject", ()):
+                for k, v in rdn:
+                    if k in ("organizationName", "O") and v:
+                        org = v
+            if sans or org:
+                return sorted(sans), org
         except Exception:
             continue
-    return sorted(out)[:cap]
+    return [], None
+
+
+def _cert_sans(domain, port=443, cap=80):
+    return _cert_info(domain, port)[0][:cap]
+
+
+# White-label / microsite prefixes. On a THIRD-PARTY apex these are a client's brand, not the
+# target's — S-KON runs `vorteile.otto.de`, `praemie.tng.de`, `aktion.eam.de` FOR its clients, and
+# their exposures are the client's attack surface, never S-KON's. Hard-exclude them unless the apex
+# itself carries the target's brand.
+_MICROSITE_PREFIXES = ("vorteile", "vorteil", "praemie", "prämie", "aktion", "bonus", "vorteilswelt",
+                       "rewards", "loyalty", "kampagne", "campaign", "promo")
+
+
+def _owns_apex(apex, brand_tokens, seed_apex):
+    """Is this registrable apex plausibly the TARGET'S OWN domain?  -> (bool, reason)
+
+    THE S-KON INCIDENT: the domain-discovery step (CertSpotter + DNS probe + cert SANs) pulled in
+    every client domain of a loyalty-platform operator — vorteile.otto.de, vorteile.mediamarkt.de,
+    praemie.tng.de, ...  — and pinned their ISP IPs, producing 746 hosts (718 of them on the
+    clients' ISPs TNG/DNS:NET) for a customer with 2 real hosts. A discovered domain is a CANDIDATE,
+    not proof of ownership. Fail closed: include only what carries the target's identity."""
+    apex = (apex or "").lower().strip(".")
+    if not apex:
+        return False, "empty"
+    if apex == (seed_apex or "").lower():
+        return True, "seed apex"
+    squash = re.sub(r"[^a-z0-9]", "", apex.split(".")[0])   # the registrable label, separators removed
+    for t in brand_tokens:
+        if t and len(t) >= 4 and t in squash:
+            return True, "brand token %r" % t
+    return False, "third-party apex (no brand token)"
+
+
+def _brand_tokens_from(seed_apex, org_names):
+    """Distinctive tokens from the seed domain label AND the cert subject Organization.
+
+    The cert-O is what rescues the real S-KON brands: seed 'skon.de' alone gives token 'skon'
+    (which matches saleskontor via the embedded 'skon' but NOT praemienkontor). The OV cert O
+    'S-KON Sales Kontor Hamburg GmbH' adds 'kontor', so praemienkontor/managementkontor/ekontor24
+    all resolve as owned — while otto.de / mediamarkt.de still do not."""
+    toks = set()
+    if seed_apex:
+        lbl = re.sub(r"[^a-z0-9]", "", seed_apex.split(".")[0].lower())
+        if len(lbl) >= 4:
+            toks.add(lbl)
+    NOISE = {"gmbh", "corp", "inc", "ltd", "group", "holding", "www", "the", "and", "company",
+             "sales", "hamburg", "berlin", "munich", "deutschland", "germany", "services",
+             "solutions", "systems", "technologies", "technology", "international", "und", "co", "kg"}
+    for name in (org_names or []):
+        for t in re.split(r"[^a-z0-9]+", str(name).lower()):
+            if len(t) >= 4 and t not in NOISE:
+                toks.add(t)
+    return toks
 
 
 def _favicon_hash(domain):
@@ -469,42 +524,81 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
         for a in ident["asns"]:
             for p in _ripe_prefixes(a):
                 if p not in ident["nets"]: ident["nets"].append(p)
-    seed_dom = ident["domains"][0] if ident["domains"] else None   # 3) brand domains from CT logs
+    seed_dom = ident["domains"][0] if ident["domains"] else None
+    seed_apex = _apex(seed_dom) if seed_dom else None
+
+    # OWNERSHIP BASIS. Read the seed's TLS cert ONCE: its subject-Organization is the single
+    # strongest ownership signal (the S-KON OV cert O = "S-KON Sales Kontor Hamburg GmbH"), and its
+    # SAN list reveals sibling domains. Brand tokens are derived from the seed label + that O.
+    seed_sans, seed_cert_o = _cert_info(seed_dom) if seed_dom else ([], None)
+    if seed_cert_o:
+        ident["cert_org_seen"] = seed_cert_o
+        if seed_cert_o not in cert_orgs:
+            cert_orgs.append(seed_cert_o)            # -> ssl.cert.subject.o: pivot (best filter)
+        print("[auto] seed cert subject-O: %r (used as ownership anchor)" % seed_cert_o, file=sys.stderr)
+    btoks = _brand_tokens_from(seed_apex, ([seed_cert_o] if seed_cert_o else []) +
+                               ([name] if is_name else []) + list(orgs))
+    ident["brand_tokens"] = sorted(btoks)
+    print("[auto] brand tokens: %s" % (", ".join(sorted(btoks)) or "(none)"), file=sys.stderr)
+
+    # A candidate is any apex/host surfaced by CT, cert-SANs or the DNS probe. It enters scope ONLY
+    # if it carries the target's identity. Everything else is recorded as related-but-unscoped and
+    # NEVER pinned or swept — this is what stops a platform operator's client estate from flooding in.
+    candidate_apexes = set()
+    unowned = set()
+
+    def _consider_domain(d, source):
+        d = _clean_domain(str(d))
+        if not d or "." not in d:
+            return
+        ap = _apex(d)
+        ok, why = _owns_apex(ap, btoks, seed_apex)
+        if not ok:
+            unowned.add(ap)
+            return
+        candidate_apexes.add(ap)
+        if d not in domains and d not in ident["domains"]:
+            domains.append(d)
+            if ap != seed_apex:
+                print("[auto] owned domain (%s): %s [%s]" % (source, d, why), file=sys.stderr)
+
+    # 3) CT logs (crt.sh + CertSpotter fallback)
     for d in _crtsh_domains(domain=seed_dom, org=(name if (is_name and not seed_dom) else None)):
-        if d not in domains and d not in ident["domains"]: domains.append(d)
+        _consider_domain(d, "CT")
+    # 3b) sibling domains from the seed certificate SAN list (bibel.tv came from here)
+    for san in seed_sans:
+        _consider_domain(san, "cert-SAN")
+    if seed_apex:
+        candidate_apexes.add(seed_apex)
 
-    # 3b) SIBLING DOMAINS from the seed's own TLS certificate.
-    # bibeltv.de's most valuable assets (gitlab.bibel.tv, the two host.bibel.tv servers) live on a
-    # DIFFERENT domain — bibel.tv. No amount of CT enumeration of "%.bibeltv.de" can ever reveal it.
-    # But the seed's certificate lists both names in its SAN block, and a shared certificate is
-    # PROOF OF COMMON OPERATION — exactly the ownership evidence a scope-widening step must have.
-    if seed_dom:
-        for san in _cert_sans(seed_dom):
-            if san not in domains and san not in ident["domains"]:
-                domains.append(san)
-                if _apex(san) != _apex(seed_dom):
-                    print("[auto] sibling domain from TLS SAN: %s" % san, file=sys.stderr)
-
-    # 3c) DNS subdomain probe over every domain we now know (incl. the siblings above).
-    apexes = []
-    for d in ([seed_dom] if seed_dom else []) + list(domains) + list(ident["domains"]):
-        a = _apex(str(d))
-        if a and a not in apexes:
-            apexes.append(a)
-    probed = _probe_subdomains(apexes)
+    # 3c) DNS subdomain probe — OWNED apexes only (never a client's apex).
+    probed = _probe_subdomains(sorted(candidate_apexes))
     for fqdn, ips in probed.items():
+        low = fqdn.lower()
+        ap = _apex(low)
+        # belt-and-braces: a microsite prefix must never sneak in on a non-brand apex
+        first = low.split(".")[0]
+        if any(first.startswith(mp) for mp in _MICROSITE_PREFIXES) and \
+           not _owns_apex(ap, btoks, seed_apex)[0]:
+            continue
+        if not _owns_apex(ap, btoks, seed_apex)[0]:
+            continue
         if fqdn not in domains and fqdn not in ident["domains"]:
             domains.append(fqdn)
-        # PIN the resolved IPs as exact hosts. These go in ident["pinned"], NOT ident["nets"]:
-        # `run_net` is disabled whenever the holder is a hoster/CDN (to stop a /16 Hetzner sweep),
-        # so anything added to nets here would be silently dropped for precisely the shared-hosting
-        # targets this feature exists to rescue. A /32 we resolved ourselves is not a hoster range —
-        # it is a host the customer's own DNS points at, so it always gets queried.
+        # PIN resolved IPs as exact hosts (ident["pinned"], not nets: run_net is off for hosters).
+        # Only owned hostnames reach here, so a pinned IP is always the target's.
         for ip in ips:
             if ":" in ip:
-                continue                                    # IPv4 for net: clauses
+                continue
             if ip not in ident["pinned"]:
                 ident["pinned"].append(ip)
+
+    if unowned:
+        ident["related_unscoped"] = sorted(unowned)
+        print("[auto] EXCLUDED %d third-party apex(es) as out-of-scope (client/white-label): %s"
+              % (len(unowned), ", ".join(sorted(unowned)[:8]) + (" ..." if len(unowned) > 8 else "")),
+              file=sys.stderr)
+
     if is_name and name not in cert_orgs: cert_orgs.append(name)   # 4) cert-org + favicon
     dom0 = (domains + ident["domains"])
     if dom0:
@@ -547,8 +641,9 @@ def build_filters(ident):
     def _cat(clause):
         c = clause.lower()
         return "identity" if any(k in c for k in ("ssl", "hostname:", "org:", "http.title", "http.html", "favicon")) else "sweep"
-    def add(n, name, clause, run=False, note=""):
-        if clause: F.append({"n": n, "name": name, "clause": clause, "run": run, "note": note, "cat": _cat(clause)})
+    def add(n, name, clause, run=False, note="", cat=None):
+        if clause: F.append({"n": n, "name": name, "clause": clause, "run": run, "note": note,
+                             "cat": cat or _cat(clause)})
     if own_asn:
         add(1, "ASN sweep", f"asn:{asns}", run=True, note="every host announced from the org's ASNs")
     elif ident["asns"]:
@@ -562,8 +657,11 @@ def build_filters(ident):
     # is the ONLY thing that scopes correctly. This is what was missing when the bibeltv.de deck
     # shipped without gitlab.bibel.tv (SCM) or vpn.bibeltv.de (the Colt AS8220 edge).
     _pin = ",".join(str(i) for i in (ident.get("pinned") or []))
+    # cat="pinned" bypasses the CDN/hoster drop in run(): we resolved these IPs from the target's
+    # OWN owned hostnames, so a Google/Host-Europe holder is the target's shared-hosting tenancy,
+    # not noise to discard. Without this, pinned S-KON hosts on shared infra would be dropped.
     add(2.5, "Pinned hosts (DNS-resolved)", f"net:{_pin}" if _pin else "", run=bool(_pin),
-        note="exact hosts from the target's own DNS — valid even on shared hosting")
+        note="exact hosts from the target's own DNS — valid even on shared hosting", cat="pinned")
     orgs = ident.get("org_variants") or ([org] if org else [])
     brands = [b for b in (ident.get("brand_variants") or ([ident["brand"]] if ident.get("brand") else [])) if b and not CIDR_RE.match(str(b))]
     favicons = ident.get("favicons") or []

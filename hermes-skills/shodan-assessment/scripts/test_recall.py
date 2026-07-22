@@ -94,11 +94,43 @@ print("\n[6] a hoster ASN must never become an ownership anchor")
 check(R._is("Hetzner Online GmbH", R.CDNS), "Hetzner recognised as shared hosting")
 check(R._is("Strato AG", R.CDNS) or "strato" in " ".join(R.CDNS), "Strato recognised as shared hosting")
 
+print("\n[9] ZERO FALSE POSITIVES — a platform operator's client domains must NOT enter scope")
+print("    (skon.de runs white-label loyalty microsites for Otto/MediaMarkt/Lidl/EAM/...)")
+# cert subject-O is the ownership anchor: it turns saleskontor/praemienkontor into owned brands.
+sk_tokens = R._brand_tokens_from("skon.de", ["S-KON Sales Kontor Hamburg GmbH"])
+check("skon" in sk_tokens and "kontor" in sk_tokens, "brand tokens {skon, kontor} derived from seed + cert-O")
+OWNED = ["skon.de", "saleskontor.de", "praemienkontor.de", "managementkontor.de", "ekontor24.de"]
+CLIENTS = ["otto.de", "mediamarkt.de", "lidl.de", "eam.de", "dns-net.de", "tng.de",
+           "purpur-energy.de", "dew21.de", "stadtwerke-garbsen.de", "mediamarkt-saturnvorteile.de"]
+for d in OWNED:
+    check(R._owns_apex(d, sk_tokens, "skon.de")[0], "%-24s kept (S-KON brand)" % d)
+for d in CLIENTS:
+    check(not R._owns_apex(d, sk_tokens, "skon.de")[0], "%-24s EXCLUDED (client / third party)" % d)
+
+print("\n[10] microsite prefixes on a client apex are hard-excluded even if resolvable")
+for host in ("vorteile.otto.de", "praemie.tng.de", "aktion.eam.de", "bonus.praemienkontor.de"):
+    first = host.split(".")[0]
+    ap = R._apex(host)
+    is_microsite = any(first.startswith(mp) for mp in R._MICROSITE_PREFIXES)
+    owned_apex = R._owns_apex(ap, sk_tokens, "skon.de")[0]
+    excluded = is_microsite and not owned_apex
+    # bonus.praemienkontor.de is on an OWNED apex -> kept; the otto/tng/eam ones are dropped
+    if ap == "praemienkontor.de":
+        check(owned_apex, "%-26s kept (microsite on OWNED apex)" % host)
+    else:
+        check(excluded, "%-26s dropped (microsite on client apex)" % host)
+
+print("\n[11] the two S-KON pins that were the ONLY real hosts must survive the CDN drop")
+# net:pinned uses cat='pinned', which bypasses run()'s hoster drop
+import inspect
+src = inspect.getsource(R.build_filters)
+check('cat="pinned"' in src, "pinned filter tagged cat='pinned' (bypasses the hoster drop)")
+
 print("\n" + "=" * 78)
 if FAILED:
     print("  %d CHECK(S) FAILED" % len(FAILED))
     for f in FAILED:
         print("   - " + f)
     sys.exit(1)
-print("  ALL CHECKS PASSED — gitlab.bibel.tv and vpn.bibeltv.de are now discoverable")
+print("  ALL CHECKS PASSED — recall keeps owned assets; client/white-label domains stay OUT")
 print("=" * 78)

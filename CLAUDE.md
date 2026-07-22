@@ -340,6 +340,30 @@ and, if it is still stale, EXITS NON-ZERO instead of reporting success. `ship_we
 when the workflow failed, even if the domain returns 401.
 Corollary: never let a script print DONE on a path where a sub-step returned non-zero.
 
+## ZERO FALSE POSITIVES — the ownership gate (skon.de, 2026-07)
+S-KON is a loyalty-platform operator: it runs white-label microsites (`vorteile.otto.de`,
+`vorteile.mediamarkt.de`, `praemie.tng.de`, `aktion.eam.de`) FOR its clients. The recall step
+(CertSpotter + cert-SAN + DNS probe) discovered all of them, pinned their ISP IPs, and produced a
+**746-host** deck — 718 hosts on the clients' ISPs (TNG AS13101, DNS:NET AS15366) — for a customer
+with **2 real hosts** (its two /29+/30 blocks under Colt AS8220). The client microsites are the
+CLIENT's attack surface, never S-KON's.
+FIX — every discovered domain/host now passes an OWNERSHIP GATE (`_owns_apex`), fail-closed:
+- A discovered registrable apex enters scope ONLY if it == the seed apex OR its label carries a
+  BRAND TOKEN. Tokens come from the seed label PLUS the seed's live TLS **cert subject-Organization**
+  (`_cert_info` / `_brand_tokens_from`): seed `skon.de` gives `skon`; the OV cert O
+  "S-KON Sales Kontor Hamburg GmbH" adds `kontor`, so saleskontor/praemienkontor/managementkontor/
+  ekontor24 resolve as owned while otto.de / mediamarkt.de / tng.de / eam.de do NOT.
+- `_MICROSITE_PREFIXES` (vorteile/praemie/aktion/bonus/...) on a non-brand apex are hard-excluded.
+- The DNS probe runs on OWNED apexes only; pinned IPs come only from owned hostnames.
+- Excluded apexes are recorded in `ident["related_unscoped"]` (context, never scanned/pinned).
+POSITIVE SCOPE: the seed cert subject-O becomes the Shodan filter
+`ssl.cert.subject.o:"<org>"` — the single highest-yield, near-zero-FP pivot (catches every
+target-certificated host on any ASN). `cat="pinned"` on the pinned-host query bypasses run()'s
+hoster/CDN drop, so legitimately-pinned S-KON hosts on Google/Host Europe survive.
+RULE: a discovered domain is a CANDIDATE, not proof of ownership. On a platform/agency/hosting
+target, only the brand-token / cert-O / owned-netblock set is in scope; a client's domain in the
+customer's own deck is a false positive. Guarded by `scripts/test_recall.py` (§9-§11).
+
 ## RECALL — the other half of the bibeltv.de lesson (2026-07)
 Fixing the scope blow-out swung the deck to the opposite failure: 5 hosts, 2 findings, and it MISSED
 `gitlab.bibel.tv` (SCM) and `vpn.bibeltv.de` (remote-access edge, on **Colt AS8220** — the pursuit
