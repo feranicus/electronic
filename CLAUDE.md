@@ -807,6 +807,13 @@ CF-Connecting-IP first (telemetry.py). One human step: move GoDaddy nameservers 
 Shared blast radius: it also fronts VideoDead/jobhuntwow — deliberate, documented.
 
 ## HARD RULE — every ssh in every script MUST fail fast (remember)
+UPDATE (2026-07): ConnectTimeout/ServerAlive only kill a DEAD transport, NOT a slow live
+remote command — deploy.py hung 6+ min at 'checking docker' when sshd throttled the ~10th rapid
+connection. FIX: every subprocess.run in deploy.py now has a hard `timeout=` (read-only probes 30s,
+builds 600s, scp 300s); on TimeoutExpired it kills the process and fails legibly. `sshout()` retries
+a timed-out read-only probe 3x with back-off so a transient sshd throttle can't kill the deploy.
+ship.py ALSO skips the whole bots rebuild when colt-assessbot is already current (FORCE_BOTS=1 to
+override). The web app deploys+verifies BEFORE the bots step, so it is live regardless.
 `deploy.py` hung for **40 minutes** at "=== prerequisites (guarded) ===" with zero output. Cause:
 its SSH_OPTS had only StrictHostKeyChecking+LogLevel — **no ConnectTimeout, no BatchMode** — and the
 hang was inside `sshout()`, which runs with `echo=False`, so not even the command was printed. Same

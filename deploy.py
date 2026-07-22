@@ -37,29 +37,50 @@ SSH_OPTS = (["-i", SSH_KEY] if SSH_KEY else []) + [
     "-o", "ConnectTimeout=10", "-o", "BatchMode=yes",
     "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4"]
 
-def run(cmd, check=True, capture=False, echo=True):
+def run(cmd, check=True, capture=False, echo=True, timeout=None):
     if echo: print("  $ " + " ".join(cmd))
-    r = subprocess.run(cmd, text=True,
-                       stdout=(subprocess.PIPE if capture else None),
-                       stderr=(subprocess.STDOUT if capture else None))
+    try:
+        r = subprocess.run(cmd, text=True, timeout=timeout,
+                           stdout=(subprocess.PIPE if capture else None),
+                           stderr=(subprocess.STDOUT if capture else None))
+    except subprocess.TimeoutExpired:
+        # A hung remote command (droplet under memory pressure, or sshd throttling the Nth rapid
+        # connection) used to hang subprocess.run FOREVER — ConnectTimeout/ServerAlive only cover a
+        # DEAD transport, not a slow live one. Fail fast and legibly instead of a silent 6-min wait.
+        print("\n[X] command exceeded %ss and was killed: %s" % (timeout, " ".join(cmd[:4])), flush=True)
+        if check:
+            sys.exit("[X] the droplet did not respond in time. Nothing was changed. Re-run: python ship.py\n"
+                     "    (the web app deploys BEFORE this step, so cybergod.ai is already updated.)")
+        class _R:  # a synthetic non-zero result for check=False callers
+            returncode = 124; stdout = ""
+        return _R()
     if check and r.returncode != 0:
         if capture and r.stdout: print(r.stdout)
         print("!! command failed (%d)" % r.returncode); sys.exit(r.returncode)
     return r
 
-def ssh(cmd, check=True, capture=False, echo=True):
-    return run(["ssh", *SSH_OPTS, "%s@%s" % (USER, HOST), cmd], check=check, capture=capture, echo=echo)
-def sshout(cmd):
-    r = ssh(cmd, check=False, capture=True, echo=False)
-    out = (r.stdout or "").strip()
-    if r.returncode != 0 and not out:
-        # ssh itself failed (timeout/auth/network). Returning "" would make the caller believe the
-        # remote answered "not present" and start INSTALLING things over a broken link.
-        sys.exit("[X] ssh to %s@%s failed (rc=%d) on a read-only check. Nothing was changed.\n"
-                 "    Test with:  ssh -v %s@%s \"echo ok\"" % (USER, HOST, r.returncode, USER, HOST))
-    return out
+def ssh(cmd, check=True, capture=False, echo=True, timeout=90):
+    # every ssh gets a hard ceiling; read-only probes pass a tighter one.
+    return run(["ssh", *SSH_OPTS, "%s@%s" % (USER, HOST), cmd], check=check, capture=capture,
+               echo=echo, timeout=timeout)
+def sshout(cmd, timeout=30, tries=3):
+    # deploy.py opens ~12 rapid ssh connections; sshd (MaxStartups) can throttle the Nth one, so a
+    # read-only probe occasionally times out even though the droplet is fine. Retry a couple of times
+    # with a short back-off BEFORE giving up — a transient throttle must not kill the whole deploy.
+    out, rc = "", 0
+    for i in range(tries):
+        r = ssh(cmd, check=False, capture=True, echo=False, timeout=timeout)
+        out = (r.stdout or "").strip(); rc = r.returncode
+        if rc == 0 or out:
+            return out
+        if i < tries - 1:
+            print("  (ssh probe timed out/failed rc=%s — retrying in 3s, %d left)" % (rc, tries - 1 - i), flush=True)
+            time.sleep(3)
+    sys.exit("[X] ssh to %s@%s kept failing (rc=%d) on a read-only check after %d tries. Nothing was\n"
+             "    changed. The web app already deployed. Test with:  ssh -v %s@%s \"echo ok\""
+             % (USER, HOST, rc, tries, USER, HOST))
 def scp(local_path, remote_path):
-    return run(["scp", *SSH_OPTS, local_path, "%s@%s:%s" % (USER, HOST, remote_path)])
+    return run(["scp", *SSH_OPTS, local_path, "%s@%s:%s" % (USER, HOST, remote_path)], timeout=300)
 
 def inspect():
     print("\n=== READ-ONLY inventory of %s (nothing changed) ===\n" % HOST)
@@ -81,7 +102,7 @@ def discover_loki():
     return name, net
 
 def ensure_docker():
-    print("  checking docker (10s ssh timeout)...", flush=True)
+    print("  checking docker (30s timeout, retries)...", flush=True)
     if "OK" in sshout("command -v docker >/dev/null 2>&1 && echo OK || echo MISSING"):
         print("  docker present — untouched."); return
     print("  installing docker (does not disturb existing services)...")
@@ -154,7 +175,7 @@ def deploy_reuse(loki_url, loki_net, assume_yes):
     print("\n=== upload ==="); upload()
     print("\n=== configure + launch (reuse mode, project '%s') ===" % PROJECT)
     ssh("cd %s && printf 'LOKI_URL=%s\\nLOKI_NETWORK=%s\\n' > .env && cat .env" % (REMOTE, loki_url, loki_net))
-    ssh("cd %s && docker compose -f docker-compose.reuse.yml -p %s up -d --build" % (REMOTE, PROJECT))
+    ssh("cd %s && docker compose -f docker-compose.reuse.yml -p %s up -d --build" % (REMOTE, PROJECT), timeout=600)
     ssh("cd %s && docker compose -f docker-compose.reuse.yml -p %s ps" % (REMOTE, PROJECT), check=False)
     print("\nDONE. The bots now ship into your EXISTING Loki. Next:")
     print("  1) In your Grafana (godeyes.ai/observe): Dashboards -> New -> Import ->")
@@ -170,7 +191,7 @@ def deploy_full(grafana_port, assume_yes):
         print("Aborted."); return
     ensure_docker(); ensure_swap(); upload()
     ssh("cd %s && ([ -f .env ] || echo GRAFANA_PASSWORD=$(openssl rand -base64 24) > .env) && (grep -q '^GRAFANA_PORT=' .env || echo GRAFANA_PORT=%d >> .env) && grep -E '^GRAFANA_' .env" % (REMOTE, grafana_port))
-    ssh("cd %s && docker compose -p %s up -d --build" % (REMOTE, PROJECT))
+    ssh("cd %s && docker compose -p %s up -d --build" % (REMOTE, PROJECT), timeout=600)
     ssh("cd %s && docker compose -p %s ps" % (REMOTE, PROJECT), check=False)
     print("\nGrafana on 127.0.0.1:%d — tunnel:  ssh %s@%s -L %d:localhost:%d" % (grafana_port, USER, HOST, grafana_port, grafana_port))
 
@@ -195,7 +216,7 @@ def deploy_ghcr(tag, owner, assume_yes):
     ssh("cd %s && printf 'LOKI_URL=%s\\nLOKI_NETWORK=%s\\nIMAGE_OWNER=%s\\nIMAGE_TAG=%s\\n' > .env && cat .env"
         % (REMOTE, loki_url, loki_net, owner, tag))
     ssh("cd %s && docker compose -f docker-compose.ghcr.yml -p %s pull && docker compose -f docker-compose.ghcr.yml -p %s up -d"
-        % (REMOTE, PROJECT, PROJECT))
+        % (REMOTE, PROJECT, PROJECT), timeout=600)
     ssh("cd %s && docker compose -f docker-compose.ghcr.yml -p %s ps" % (REMOTE, PROJECT), check=False)
     print("\nDeployed tag %s. Rollback: python deploy.py --ghcr <older-sha> --image-owner %s" % (tag, owner))
 
