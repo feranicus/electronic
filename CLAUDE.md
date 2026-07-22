@@ -378,6 +378,21 @@ an animated loss-exceedance curve, per-actor threat cards, kill-chain timeline).
   `.html` (served inline, text/html) alongside `.pptx` (attachment). Owner-scoped + traversal-guarded
   exactly as the decks are.
 
+## Recon — org: pivot MUST strip the legal suffix (skon.de run #5, proven from the raw JSON)
+The operator's own Shodan exports contained 8 S-KON hosts on three unscanned netblocks — the
+WatchGuard Firebox (213.61.141.198), SNMP appliances (213.61.141.196-199), a Barracuda
+(217.110.76.91). cybergod's org: pivot returned +0 because it queried org:"S-KON Sales Kontor
+Hamburg GmbH" while Shodan stores the whois-org as "S-KON SALES KONTOR HAMBURG AG" — the wrong
+LEGAL SUFFIX matched nothing. FIX (generalises to every company):
+- `_org_core()` strips GmbH/AG/KG/SE/Ltd/Inc/LLC/S.p.A/… so org:"S-KON Sales Kontor Hamburg" matches
+  every legal-form variant (Shodan org: is case-insensitive substring).
+- run() now harvests the whois-ORG field (m.org) from swept hosts too, not just the cert subject-O —
+  the WatchGuard is self-signed (cert O 'Firebox webCA') so its ONLY anchor is the netblock whois-org.
+- Two pivots: `ssl.cert.subject.o:"<full O>"` (proof by itself) + `org:"<suffix-stripped core>"`
+  (corroborated per host: the host's own org must carry the phrase, or it ties back independently).
+Guarded by test_recall.py §14. The raw JSON confirmed the host IS in Shodan — the miss was purely
+the suffix, so this closes it for any target whose appliances live on a whois-org'd netblock.
+
 ## Recon — the org: pivot finds SELF-SIGNED edge appliances (skon.de run #4)
 The cert-O pivot fired on skon.de ('S-KON Sales Kontor Hamburg GmbH') but returned +0 hosts — the
 WatchGuard Firebox is SELF-SIGNED (cert O = 'Firebox webCA'), so `ssl.cert.subject.o:` can never

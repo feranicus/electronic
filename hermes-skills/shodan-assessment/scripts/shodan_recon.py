@@ -418,6 +418,25 @@ def _owns_apex(apex, brand_tokens, seed_apex):
     return False, "third-party apex (no brand token)"
 
 
+# Legal-form suffixes to strip when building an `org:` filter. The S-KON WatchGuard was MISSED
+# because cybergod queried org:"S-KON Sales Kontor Hamburg GmbH" while Shodan stores the netblock
+# whois-org as "S-KON SALES KONTOR HAMBURG AG" — the wrong suffix meant zero matches. Stripping the
+# suffix makes org:"S-KON Sales Kontor Hamburg" match every legal-form variant (GmbH/AG/KG/SE...).
+_LEGAL_SUFFIX = re.compile(
+    r"\s*(?:\b(?:gmbh(?:\s*&\s*co\.?\s*kg)?|ag|kg|se|mbh|ohg|ug|e\.?v|"
+    r"ltd|limited|inc|incorporated|llc|l\.?l\.?c|plc|corp|corporation|co|company|"
+    r"bv|nv|sarl|s\.?a\.?r\.?l|srl|sas|s\.?p\.?a|oy|ab|a\/s|as|holding|group)\.?\s*)+$",
+    re.I)
+
+
+def _org_core(o):
+    """The distinctive part of an org name, legal suffix stripped, for a robust `org:` phrase.
+    'S-KON Sales Kontor Hamburg GmbH' -> 'S-KON Sales Kontor Hamburg' (matches the …AG variant too)."""
+    o = re.sub(r"\s+", " ", str(o or "").strip())
+    core = _LEGAL_SUFFIX.sub("", o).strip(" .,-")
+    return core if len(core) >= 4 else o
+
+
 def _brand_tokens_from(seed_apex, org_names):
     """Distinctive tokens from the seed domain label AND the cert subject Organization.
 
@@ -897,43 +916,69 @@ def run(ident, F, audience, limit_per_query=500):
     # O="S-KON Sales Kontor Hamburg GmbH"; harvesting it here and re-pivoting on
     # ssl.cert.subject.o: is what finds the owned Colt-netblock hosts the seed cert never revealed.
     seen_o = {}
+    seen_org = {}
     for _ms in hosts.values():
         for _m in _ms:
             _o = (((_m.get("ssl") or {}).get("cert") or {}).get("subject") or {}).get("O")
             if _o: seen_o[_o] = seen_o.get(_o, 0) + 1
+            # ALSO harvest the whois-org (m.org) — this is the S-KON WatchGuard's only anchor: its
+            # cert is self-signed ('Firebox webCA') but its netblock whois-org is the company.
+            _wo = _m.get("org")
+            if _wo and not _is(_wo, CDNS) and not _is(_wo, CARRIERS):
+                seen_org[_wo] = seen_org.get(_wo, 0) + 1
     _btoks = set(ident.get("brand_tokens") or [])
+
+    def _brandish(name):
+        sq = re.sub(r"[^a-z0-9]", "", str(name).lower())
+        return any(t in sq for t in _btoks) and not _is(name, CDNS) and not _is(name, PUBLIC_CAS)
+
+    # ssl.cert.subject.o: pivot — brand-token cert Organisations seen on the estate.
     for _o in [o for o, n in sorted(seen_o.items(), key=lambda x: -x[1])][:6]:
-        _sq = re.sub(r"[^a-z0-9]", "", str(_o).lower())
-        # only re-pivot on an O that carries a brand token AND is not a hoster/public name
-        if not any(t in _sq for t in _btoks) or _is(_o, CDNS) or _is(_o, PUBLIC_CAS):
-            continue
-        if _o in ident.get("cert_orgs", []):
+        if not _brandish(_o) or _o in ident.get("cert_orgs", []):
             continue
         ident.setdefault("cert_orgs", []).append(_o)
-        print(f"[auto] cert subject-O pivot on {_o!r} (brand-token match)", file=sys.stderr)
-        # TWO queries per harvested O, because the target's appliances split across them:
-        #   ssl.cert.subject.o:  -> hosts presenting the org's OWN cert (web/mail with the OV cert)
-        #   org:                 -> hosts whose whois NETBLOCK is the org (finds SELF-SIGNED edge
-        #                           appliances like the S-KON WatchGuard Firebox, whose cert O is
-        #                           "Firebox webCA" but whose netblock whois-org is the company).
-        for _clause in ('ssl.cert.subject.o:"%s"' % _o, 'org:"%s"' % _o):
-            try:
-                k = 0; kept = 0
-                for _m in api.search_cursor(_clause):
-                    ip2 = _m.get("ip_str")
-                    if ip2 and ip2 not in hosts:
-                        # org: is broader, so corroborate; ssl.cert.subject.o: is proof by itself.
-                        if _clause.startswith("org:") and not _corroborates(_m, ident, own_asns) \
-                           and _o.lower() not in ((_m.get("org") or "") + (_m.get("isp") or "")).lower():
-                            continue
-                        hosts.setdefault(ip2, []).append(_m)
-                        if _m.get("asn"): asns.add(_m["asn"])
-                        kept += 1; pivot_added += 1
-                    k += 1
-                    if k >= limit_per_query: break
-                print(f"[auto]   {_clause[:22]}… : +{kept} hosts", file=sys.stderr)
-            except shodan.APIError:
-                pass
+        print(f"[auto] cert subject-O pivot on {_o!r}", file=sys.stderr)
+        try:
+            k = 0; kept = 0
+            for _m in api.search_cursor('ssl.cert.subject.o:"%s"' % _o):
+                ip2 = _m.get("ip_str")
+                if ip2 and ip2 not in hosts:
+                    hosts.setdefault(ip2, []).append(_m)      # a target-O cert IS proof of ownership
+                    if _m.get("asn"): asns.add(_m["asn"])
+                    kept += 1; pivot_added += 1
+                k += 1
+                if k >= limit_per_query: break
+            print(f"[auto]   ssl.cert.subject.o: +{kept} hosts", file=sys.stderr)
+        except shodan.APIError:
+            pass
+
+    # org: pivot — brand-token whois ORGS, LEGAL SUFFIX STRIPPED. This is what finds the S-KON
+    # WatchGuard Firebox + SNMP/appliance netblocks: org:"S-KON Sales Kontor Hamburg" matches the
+    # stored field "S-KON SALES KONTOR HAMBURG AG" that the full 'GmbH' string missed.
+    _org_pivots = {_org_core(o) for o in seen_org if _brandish(o)}
+    _org_pivots |= {_org_core(o) for o in ident.get("cert_orgs", []) if _brandish(o)}
+    for _oc in sorted(_org_pivots, key=len, reverse=True)[:4]:
+        if len(_oc) < 5:
+            continue
+        print(f"[auto] whois-org pivot on org:\"{_oc}\" (legal suffix stripped)", file=sys.stderr)
+        try:
+            k = 0; kept = 0
+            for _m in api.search_cursor('org:"%s"' % _oc):
+                ip2 = _m.get("ip_str")
+                if ip2 and ip2 not in hosts:
+                    # org: is broad — keep only if the host's own org/whois carries the phrase, or it
+                    # otherwise corroborates (own ASN / brand domain). Guards against a shared parent.
+                    _ho = ((_m.get("org") or "") + " " + (_m.get("isp") or "")).lower()
+                    if _oc.lower() not in _ho and not _corroborates(_m, ident, own_asns):
+                        continue
+                    hosts.setdefault(ip2, []).append(_m)
+                    if _m.get("asn"): asns.add(_m["asn"])
+                    kept += 1; pivot_added += 1
+                k += 1
+                if k >= limit_per_query: break
+            print(f"[auto]   org:\"{_oc}\": +{kept} hosts", file=sys.stderr)
+        except shodan.APIError:
+            pass
 
     # SAFETY NET: findings must not be computed over an estate the identity queries never proved.
     # If this ever trips again, the deck is wrong — say so loudly instead of shipping it silently.

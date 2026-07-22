@@ -145,6 +145,18 @@ _, _dr2, _ = _A.apply_fixes(dict(_fj2), [{"id": "BAD"}])
 check(_dr2 == ["BAD"], "a genuine off-estate host still drops when it doesn't gut the deck")
 check(not _A._host_is_off_estate(["52.98.242.248:443"], _owned), "a pinned host is never off-estate")
 
+print("\n[14] org: pivot strips the legal suffix so it finds the S-KON WatchGuard netblock")
+# the WatchGuard 213.61.141.198 was MISSED: cert O='S-KON Sales Kontor Hamburg GmbH' but the Shodan
+# whois-org field is 'S-KON SALES KONTOR HAMBURG AG'. org:"…GmbH" matched nothing; the suffix-
+# stripped core matches every legal-form variant.
+_core = _A_core = R._org_core("S-KON Sales Kontor Hamburg GmbH")
+check(_core == "S-KON Sales Kontor Hamburg", "legal suffix 'GmbH' stripped from the org phrase")
+check(_core.lower() in "S-KON SALES KONTOR HAMBURG AG".lower(),
+      "the stripped phrase matches the 'AG' whois-org variant (finds the WatchGuard)")
+for full, want in (("Rosneft Deutschland GmbH", "Rosneft Deutschland"),
+                   ("Acme Holding AG", "Acme"), ("Foo Bar S.p.A", "Foo Bar")):
+    check(R._org_core(full) == want, "%-26s -> %r" % (full, want))
+
 print("\n[13] the FP auditor must be a DIFFERENT model than the deck author (never self-audit)")
 _chain = ["gemma-4-31B-it", "deepseek-3.2", "llama-4-maverick"]
 for _author in _chain + ["openai-gpt-oss-120b"]:
