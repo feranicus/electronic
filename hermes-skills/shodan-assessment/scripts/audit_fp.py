@@ -58,36 +58,62 @@ def _slim(fj):
     return "\n".join(rows)
 
 
+def _pick_auditor(author, chain):
+    """Return a model GUARANTEED to differ from the deck author — different vendor if possible,
+    but at minimum a different model id. An audit by the same model that wrote the decks is not an
+    independent second opinion; it shares every blind spot and failure mode."""
+    forced = os.environ.get("FP_AUDIT_MODEL")
+    if forced and forced != author:
+        return forced                                  # operator override (only if not the author)
+    av = _vendor(author)
+    # 1) prefer a chain model from a DIFFERENT vendor than the author
+    for m in chain:
+        if m != author and _vendor(m) != av:
+            return m
+    # 2) else any chain model that is at least a different id
+    for m in chain:
+        if m != author:
+            return m
+    # 3) last resort: a hard-coded alternative from another vendor
+    for m in ("deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it", "openai-gpt-oss-120b"):
+        if m != author and _vendor(m) != av:
+            return m
+    return "deepseek-3.2" if author != "deepseek-3.2" else "llama-4-maverick"
+
+
 def audit(fj):
     tgt = fj.get("target") or {}
-    ident = tgt.get("ident") or {}
+    owned = tgt.get("owned") or {}                     # written by run_assessment (real ownership data)
     company = tgt.get("company", "Target")
     prompt = PROMPT % {
         "company": company,
-        "domains": ",".join(ident.get("domains", []) or tgt.get("domains", []))[:300],
-        "tokens": ",".join(ident.get("brand_tokens", []))[:200],
-        "asns": ",".join(map(str, ident.get("asns", [])))[:120],
-        "certog": ident.get("cert_org_seen", ""),
-        "certorg": ident.get("cert_org_seen", ""),
-        "unscoped": ",".join(ident.get("related_unscoped", []))[:400],
+        "domains": ",".join(owned.get("domains", []) or tgt.get("domains", []))[:300],
+        "tokens": ",".join(owned.get("brand_tokens", []))[:200],
+        "asns": ",".join(map(str, owned.get("asns", [])))[:120],
+        "certorg": owned.get("cert_org", "") or "",
+        "unscoped": ",".join(owned.get("related_unscoped", []))[:400],
         "findings": _slim(fj),
     }
     try:
         sys.path.insert(0, HERE)
         import enrich as E
         chain = E._chain() or ["gemma-4-31B-it"]
-        author_vendor = _vendor(chain[0])
-        # pick the first model from a DIFFERENT vendor
-        auditor = os.environ.get("FP_AUDIT_MODEL")
-        if not auditor:
-            auditor = next((m for m in chain if _vendor(m) != author_vendor), None) or \
-                      ("llama-4-maverick" if author_vendor != "llama" else "deepseek-3.2")
+        # the ACTUAL deck author — the model that WON enrichment after any failover, not the chain
+        # head. run_assessment records it as target.qwen.model.
+        author = (tgt.get("qwen") or {}).get("model") or chain[0]
+        auditor = _pick_auditor(author, chain)
+        if auditor == author:                          # must never happen — refuse rather than fake independence
+            print("[fp-audit] could not find a model different from the author %r — skipping audit"
+                  % author, file=sys.stderr)
+            return {"auditor": None, "author": author, "verdict": "unaudited",
+                    "false_positives": [], "notes": "no distinct auditor available"}
         txt, usage = E._call(prompt, model=auditor, timeout=int(os.environ.get("FP_AUDIT_TIMEOUT", "90")))
         j = E._json(txt) or {}
         fps = [x for x in (j.get("false_positives") or []) if isinstance(x, dict) and x.get("id")]
-        print("[fp-audit] auditor=%s (author=%s) verdict=%s flagged=%d"
-              % (auditor, chain[0], j.get("verdict", "?"), len(fps)), file=sys.stderr)
-        return {"auditor": auditor, "verdict": j.get("verdict", "clean"),
+        print("[fp-audit] auditor=%s (vendor=%s) vs deck author=%s (vendor=%s) verdict=%s flagged=%d"
+              % (auditor, _vendor(auditor), author, _vendor(author), j.get("verdict", "?"), len(fps)),
+              file=sys.stderr)
+        return {"auditor": auditor, "author": author, "verdict": j.get("verdict", "clean"),
                 "false_positives": fps, "notes": j.get("notes", "")}
     except Exception as e:
         print("[fp-audit] failed (%s) — no findings dropped" % type(e).__name__, file=sys.stderr)

@@ -145,6 +145,13 @@ _, _dr2, _ = _A.apply_fixes(dict(_fj2), [{"id": "BAD"}])
 check(_dr2 == ["BAD"], "a genuine off-estate host still drops when it doesn't gut the deck")
 check(not _A._host_is_off_estate(["52.98.242.248:443"], _owned), "a pinned host is never off-estate")
 
+print("\n[13] the FP auditor must be a DIFFERENT model than the deck author (never self-audit)")
+_chain = ["gemma-4-31B-it", "deepseek-3.2", "llama-4-maverick"]
+for _author in _chain + ["openai-gpt-oss-120b"]:
+    _aud = _A._pick_auditor(_author, _chain)
+    check(_aud != _author, "author %-22s -> auditor %-18s (different model)" % (_author, _aud))
+    check(_A._vendor(_aud) != _A._vendor(_author), "   ...and a different vendor")
+
 print("\n" + "=" * 78)
 if FAILED:
     print("  %d CHECK(S) FAILED" % len(FAILED))

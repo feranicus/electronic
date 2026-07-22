@@ -392,7 +392,7 @@ FIX — auto-fix is now corroborated + guardrailed:
   by definition. Missing owned-set -> never corroborated -> keep.
 - HARD GUARDRAIL: never drop into an empty deck, and never drop >40% of findings — if the auditor
   over-flags, KEEP everything and record them as `refused`. `evt=fp_audit` now carries dropped+refused.
-RULE: an audit is a SIGNAL, not an authority. The LLM's flags are applied only where deterministic
+RULE: an audit is a SIGNAL, not an authority. The auditor is chosen to be a DIFFERENT model than the ACTUAL deck author (`target.qwen.model`, the model that won enrichment after any failover) — `_pick_auditor()` prefers a different vendor, guarantees a different id, and refuses to audit rather than self-audit. `FP_AUDIT_MODEL` overrides only if it is not the author. Guarded by test_recall.py §13. The LLM's flags are applied only where deterministic
 ownership data confirms them, and can never empty or gut a deck. Guarded by test_recall.py §12.
 
 ## ZERO FALSE POSITIVES — the ownership gate (skon.de, 2026-07)
