@@ -301,6 +301,22 @@ def do_bots():
         for s in stale:
             print("        " + s)
         sys.exit("[X] colt-assessbot runs stale code — /assess would use the OLD engine.")
+    _import_grafana()
+
+
+def _import_grafana():
+    """Re-import the Grafana dashboards so panel edits (e.g. the FP-audit row) actually appear.
+    Best-effort: a new panel in assess.json is invisible until the dashboard is re-imported, which is
+    why the FP-audit panels never showed. Needs GRAFANA_URL + GRAFANA_TOKEN; skips (with a one-line
+    note) if absent, so the deploy never blocks on Grafana."""
+    url = os.environ.get("GRAFANA_URL")
+    tok = os.environ.get("GRAFANA_TOKEN")
+    if not (url and tok):
+        print("  [i] Grafana dashboards NOT re-imported (set GRAFANA_URL + GRAFANA_TOKEN to automate).")
+        print("      One-time: python import_dashboard.py --url <grafana> --token <glsa_…>")
+        return
+    print("  re-importing Grafana dashboards (so the FP-audit panels appear)...")
+    run([sys.executable, "import_dashboard.py", "--url", url, "--token", tok, "--all"], check=False)
 
 
 # ------------------------------------------------------------------ 4. verify

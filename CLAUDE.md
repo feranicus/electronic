@@ -378,6 +378,18 @@ an animated loss-exceedance curve, per-actor threat cards, kill-chain timeline).
   `.html` (served inline, text/html) alongside `.pptx` (attachment). Owner-scoped + traversal-guarded
   exactly as the decks are.
 
+## Recon — the org: pivot finds SELF-SIGNED edge appliances (skon.de run #4)
+The cert-O pivot fired on skon.de ('S-KON Sales Kontor Hamburg GmbH') but returned +0 hosts — the
+WatchGuard Firebox is SELF-SIGNED (cert O = 'Firebox webCA'), so `ssl.cert.subject.o:` can never
+match it. Its NETBLOCK whois-org, however, IS the company. FIX: the cert-O harvest now runs TWO
+queries per brand-token O — `ssl.cert.subject.o:"<O>"` AND `org:"<O>"`. The org: query finds hosts
+whose whois netblock is the target (self-signed appliances, mail edges) that the cert query misses.
+org: is broader so each host is corroborated (own ASN / brand domain / the O appearing in the host's
+org field) before it is kept; the scope_blowout net still guards against over-match.
+Also: `ship.py` now re-imports the Grafana dashboards after a bots deploy (`import_dashboard.py --all`,
+best-effort, needs GRAFANA_URL+GRAFANA_TOKEN) — a panel edit in assess.json is invisible in Grafana
+until re-imported, which is why the FP-audit panels never appeared.
+
 ## Recon depth + audit safety (skon.de run #3 — the Opus gap)
 Opus's hand-made S-KON deck had 12 findings incl. a WatchGuard Firebox (C-01) on the Colt /30;
 cybergod produced 2 and the audit dropped the one critical. Two root causes, both fixed:

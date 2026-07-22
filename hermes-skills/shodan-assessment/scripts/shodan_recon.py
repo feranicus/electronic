@@ -911,19 +911,29 @@ def run(ident, F, audience, limit_per_query=500):
             continue
         ident.setdefault("cert_orgs", []).append(_o)
         print(f"[auto] cert subject-O pivot on {_o!r} (brand-token match)", file=sys.stderr)
-        try:
-            k = 0; kept = 0
-            for _m in api.search_cursor('ssl.cert.subject.o:"%s"' % _o):
-                ip2 = _m.get("ip_str")
-                if ip2 and ip2 not in hosts:
-                    hosts.setdefault(ip2, []).append(_m)      # a target-O cert IS proof of ownership
-                    if _m.get("asn"): asns.add(_m["asn"])
-                    kept += 1; pivot_added += 1
-                k += 1
-                if k >= limit_per_query: break
-            print(f"[auto]   cert-O pivot {_o!r}: +{kept} hosts", file=sys.stderr)
-        except shodan.APIError:
-            pass
+        # TWO queries per harvested O, because the target's appliances split across them:
+        #   ssl.cert.subject.o:  -> hosts presenting the org's OWN cert (web/mail with the OV cert)
+        #   org:                 -> hosts whose whois NETBLOCK is the org (finds SELF-SIGNED edge
+        #                           appliances like the S-KON WatchGuard Firebox, whose cert O is
+        #                           "Firebox webCA" but whose netblock whois-org is the company).
+        for _clause in ('ssl.cert.subject.o:"%s"' % _o, 'org:"%s"' % _o):
+            try:
+                k = 0; kept = 0
+                for _m in api.search_cursor(_clause):
+                    ip2 = _m.get("ip_str")
+                    if ip2 and ip2 not in hosts:
+                        # org: is broader, so corroborate; ssl.cert.subject.o: is proof by itself.
+                        if _clause.startswith("org:") and not _corroborates(_m, ident, own_asns) \
+                           and _o.lower() not in ((_m.get("org") or "") + (_m.get("isp") or "")).lower():
+                            continue
+                        hosts.setdefault(ip2, []).append(_m)
+                        if _m.get("asn"): asns.add(_m["asn"])
+                        kept += 1; pivot_added += 1
+                    k += 1
+                    if k >= limit_per_query: break
+                print(f"[auto]   {_clause[:22]}… : +{kept} hosts", file=sys.stderr)
+            except shodan.APIError:
+                pass
 
     # SAFETY NET: findings must not be computed over an estate the identity queries never proved.
     # If this ever trips again, the deck is wrong — say so loudly instead of shipping it silently.
