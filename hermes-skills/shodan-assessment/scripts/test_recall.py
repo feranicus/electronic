@@ -126,6 +126,25 @@ import inspect
 src = inspect.getsource(R.build_filters)
 check('cat="pinned"' in src, "pinned filter tagged cat='pinned' (bypasses the hoster drop)")
 
+print("\n[12] FP-AUDIT must never empty a deck (the skon.de disaster)")
+import audit_fp as _A
+_owned = {"domains": ["skon.de"], "brand_tokens": ["skon", "kontor"],
+          "pinned": ["35.244.246.242", "217.110.76.92", "52.98.242.248"]}
+_fj = {"target": {"owned": _owned}, "summary": {},
+       "findings": [{"id": "H1", "sev": "HIGH", "title": "OWA", "evidence": ["52.98.242.248:443"]},
+                    {"id": "H2", "sev": "HIGH", "title": "nginx", "evidence": ["35.244.246.242:443"]},
+                    {"id": "M1", "sev": "MEDIUM", "title": "TLS", "evidence": ["217.110.76.92:443"]}]}
+_, _dr, _rf = _A.apply_fixes(dict(_fj), [{"id": "H1"}, {"id": "H2"}, {"id": "M1"}])
+check(_dr == [] and len(_rf) == 3, "auditor flags ALL 3 pinned hosts -> 0 dropped, deck kept")
+
+_fj2 = {"target": {"owned": {"pinned": ["1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4", "5.5.5.5"],
+                             "brand_tokens": ["acme"], "domains": ["acme.com"]}},
+        "summary": {}, "findings": [{"id": "F%d" % i, "sev": "HIGH", "evidence": ["%d.%d.%d.%d:443" % (i, i, i, i)]} for i in range(1, 6)]
+        + [{"id": "BAD", "sev": "HIGH", "evidence": ["9.9.9.9:443 otherco.de"]}]}
+_, _dr2, _ = _A.apply_fixes(dict(_fj2), [{"id": "BAD"}])
+check(_dr2 == ["BAD"], "a genuine off-estate host still drops when it doesn't gut the deck")
+check(not _A._host_is_off_estate(["52.98.242.248:443"], _owned), "a pinned host is never off-estate")
+
 print("\n" + "=" * 78)
 if FAILED:
     print("  %d CHECK(S) FAILED" % len(FAILED))

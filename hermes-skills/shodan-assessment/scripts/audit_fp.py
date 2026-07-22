@@ -94,19 +94,59 @@ def audit(fj):
         return {"auditor": None, "verdict": "unaudited", "false_positives": [], "notes": str(e)[:120]}
 
 
+import re as _re
+
+
+def _host_is_off_estate(ev, owned):
+    """True only if EVERY IP/host in this evidence is provably NOT the target's.
+
+    The auditor (an LLM) over-rejects hosts on shared hosting (Google/M365) — it destroyed the
+    skon.de deck by flagging every legit S-KON host. So a drop is only applied when the DETERMINISTIC
+    owned-set agrees the host is off-estate: not a pinned IP, not under an owned domain, no brand
+    token. Fail closed toward KEEPING the finding — a missing owned-set means we cannot corroborate,
+    so we do not drop."""
+    pins = set(owned.get("pinned") or [])
+    doms = [str(d).lower().lstrip(".") for d in (owned.get("domains") or [])]
+    toks = [t for t in (owned.get("brand_tokens") or []) if t]
+    if not (pins or doms or toks):
+        return False                       # no ownership data -> never corroborated -> keep
+    blob = " ".join(str(e) for e in (ev or [])).lower()
+    ips = _re.findall(r"\d{1,3}(?:\.\d{1,3}){3}", blob)
+    for ip in ips:
+        if ip in pins:
+            return False                   # a pinned host is ours by definition
+    if any(d and d in blob for d in doms):
+        return False                       # references an owned domain
+    if any(t in _re.sub(r"[^a-z0-9]", "", blob) for t in toks):
+        return False                       # carries a brand token
+    # nothing tied it to the target — but only call it off-estate if there was SOMETHING to check
+    return bool(ips or "." in blob)
+
+
 def apply_fixes(fj, fps):
-    """Drop flagged findings and recompute the summary. Returns (new_fj, dropped_ids)."""
-    ids = {x["id"] for x in fps}
-    if not ids:
-        return fj, []
-    kept = [f for f in (fj.get("findings") or []) if f.get("id") not in ids]
-    dropped = [f.get("id") for f in (fj.get("findings") or []) if f.get("id") in ids]
+    """Drop flagged findings — but only those the OWNED-SET corroborates as off-estate, and NEVER
+    into an empty or decimated deck. Returns (new_fj, dropped_ids, refused_ids)."""
+    owned = (fj.get("target") or {}).get("owned") or {}
+    all_f = fj.get("findings") or []
+    flagged = {x["id"] for x in fps}
+    # corroborate each flag against the deterministic owned-set
+    drop_ids, refused = [], []
+    for f in all_f:
+        if f.get("id") in flagged:
+            (drop_ids if _host_is_off_estate(f.get("evidence"), owned) else refused).append(f.get("id"))
+    # HARD GUARDRAILS: an audit must never empty or gut the deck. If it would drop everything, or
+    # more than 40% of findings, refuse the whole auto-fix and keep them all (flag-only).
+    if drop_ids and (len(drop_ids) >= len(all_f) or len(drop_ids) > max(1, int(0.4 * len(all_f)))):
+        return fj, [], list(flagged)       # too aggressive -> keep everything, report as refused
+    if not drop_ids:
+        return fj, [], list(flagged)
+    kept = [f for f in all_f if f.get("id") not in set(drop_ids)]
     fj["findings"] = kept
     sm = fj.setdefault("summary", {})
     for k in ("critical", "high", "medium", "low"):
         sm[k] = sum(1 for f in kept if str(f.get("sev", "")).lower() == k)
-    sm["audited_false_positives"] = sm.get("audited_false_positives", 0) + len(dropped)
-    return fj, dropped
+    sm["audited_false_positives"] = sm.get("audited_false_positives", 0) + len(drop_ids)
+    return fj, drop_ids, refused
 
 
 def main():
@@ -119,10 +159,17 @@ def main():
     except Exception as e:
         print(json.dumps({"verdict": "error", "error": str(e)})); return
     res = audit(fj)
+    res["dropped"] = []
+    res["refused"] = []
     if a.apply and res["false_positives"]:
-        fj, dropped = apply_fixes(fj, res["false_positives"])
-        json.dump(fj, open(a.findings, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        fj, dropped, refused = apply_fixes(fj, res["false_positives"])
+        if dropped:
+            json.dump(fj, open(a.findings, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
         res["dropped"] = dropped
+        res["refused"] = refused
+        if refused and not dropped:
+            print("[fp-audit] REFUSED all %d flag(s): not corroborated by the owned-set, or would "
+                  "gut the deck — findings kept unchanged." % len(refused), file=sys.stderr)
     print(json.dumps(res, ensure_ascii=False))
 
 

@@ -552,6 +552,17 @@ def main():
                   file=sys.stderr)
             _pg("FAILED — scope blow-out: estate could not be verified", 100)
             sys.exit(3)
+        # Persist the OWNED-ESTATE set so the FP auditor can corroborate its flags against real
+        # ownership data (the skon.de deck went empty because the auditor had none and blindly
+        # rejected the legitimate S-KON hosts on Google/M365 shared IPs).
+        fj.setdefault("target", {})["owned"] = {
+            "domains": list(ident.get("domains") or []),
+            "pinned": list(ident.get("pinned") or []),
+            "brand_tokens": list(ident.get("brand_tokens") or []),
+            "asns": list(ident.get("asns") or []),
+            "cert_org": ident.get("cert_org_seen"),
+            "related_unscoped": list(ident.get("related_unscoped") or []),
+        }
         json.dump(fj, open(os.path.join(a.outdir,"findings.json"),"w"), indent=2, ensure_ascii=False)
         open(os.path.join(a.outdir,"findings.md"),"w").write(R.findings_md(fj))
 
@@ -683,9 +694,13 @@ def main():
         try: _verdict=json.loads((au.stdout or "{}").strip().splitlines()[-1])
         except Exception: pass
         _dropped=_verdict.get("dropped") or []
+        _refused=_verdict.get("refused") or []
         _ev(evt="fp_audit", company=_tag, auditor=_verdict.get("auditor"),
             verdict=_verdict.get("verdict"), flagged=len(_verdict.get("false_positives") or []),
-            dropped=len(_dropped))
+            dropped=len(_dropped), refused=len(_refused))
+        if _refused and not _dropped:
+            # the auditor over-flagged (the skon.de failure): guardrails kept the deck intact
+            _pg("FP audit flagged %d but none corroborated as off-estate — findings kept" % len(_refused), 95)
         if _dropped:
             _pg("FP audit removed %d finding(s) — rebuilding decks" % len(_dropped), 95)
             fj=json.load(open(os.path.join(a.outdir,"findings.json")))   # reload the cleaned findings

@@ -378,6 +378,23 @@ an animated loss-exceedance curve, per-actor threat cards, kill-chain timeline).
   `.html` (served inline, text/html) alongside `.pptx` (attachment). Owner-scoped + traversal-guarded
   exactly as the decks are.
 
+## HARD RULE — the FP auditor may FLAG but must never gut the deck (skon.de, run #2)
+The independent FP-audit LLM (audit_fp.py) turned a CORRECT skon.de run (19 real hosts, zero client
+FPs) into an EMPTY deck: deepseek flagged all 3 findings and --apply dropped all 3 -> CRIT/HIGH/MED/
+LOW all 0. Cause: the auditor made ownership calls with NO ownership data and rejected the legit
+S-KON hosts because they sit on Google/Microsoft-365 shared IPs. An auto-fix that can empty a deck is
+worse than no audit.
+FIX — auto-fix is now corroborated + guardrailed:
+- `run_assessment` persists the OWNED-SET into findings.json (`target.owned` = domains, pinned IPs,
+  brand_tokens, asns, related_unscoped).
+- `audit_fp._host_is_off_estate()` drops a flagged finding ONLY if the DETERMINISTIC owned-set agrees
+  it is off-estate (evidence IP not pinned, no owned domain, no brand token). A pinned host is ours
+  by definition. Missing owned-set -> never corroborated -> keep.
+- HARD GUARDRAIL: never drop into an empty deck, and never drop >40% of findings — if the auditor
+  over-flags, KEEP everything and record them as `refused`. `evt=fp_audit` now carries dropped+refused.
+RULE: an audit is a SIGNAL, not an authority. The LLM's flags are applied only where deterministic
+ownership data confirms them, and can never empty or gut a deck. Guarded by test_recall.py §12.
+
 ## ZERO FALSE POSITIVES — the ownership gate (skon.de, 2026-07)
 S-KON is a loyalty-platform operator: it runs white-label microsites (`vorteile.otto.de`,
 `vorteile.mediamarkt.de`, `praemie.tng.de`, `aktion.eam.de`) FOR its clients. The recall step
