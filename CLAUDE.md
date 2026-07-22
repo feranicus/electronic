@@ -340,6 +340,28 @@ and, if it is still stale, EXITS NON-ZERO instead of reporting success. `ship_we
 when the workflow failed, even if the domain returns 401.
 Corollary: never let a script print DONE on a path where a sub-step returned non-zero.
 
+## 5th deliverable — BESPOKE animated GEOPOL HTML (2026-07, two-phase)
+The generic combined-report HTML was rejected ("terrible"). The real deliverable matches the
+hand-authored exemplars (BibelTV/Stratos/Rosneft `*_GEOPOL_Animated.html`): a 5-scene scrollytelling
+page (exposed estate → who is coming → every way in → six moves arrive → secure by design) with five
+inline canvas animations, count-up stat bars, teal-on-near-black Colt style.
+- **Fixed shell** = `scripts/geopol_html/skeleton.html`, extracted byte-for-byte from the BibelTV
+  exemplar: all CSS + the five canvas animations (c1/c2/c3/ddos/sbd) + the defense scenes s3/s4/s5.
+  Scenes s1/s2 are placeholders; `{{COMPANY}}`/`{{COMPANY_UPPER}}` tokens elsewhere.
+- **`build_geopol_html.js content.json out.html`** assembles the exact s1/s2 DOM (eyebrow, h1, sub,
+  statbar, legend, caption) from a small content object and substitutes the company — the layout can
+  never drift because only text/numbers are injected. Inline tokens: {hl}/{ink}/{red}/{amber}/{b}.
+- **`author_geopol.py`** writes the two bespoke scenes with a DO model (Gemma/Llama/DeepSeek via
+  `enrich._call`, the SAME key as the decks; `GEOPOL_HTML_MODEL` overrides), grounded ONLY in
+  findings.json + geopol.json. Deterministic fallback so it NEVER blocks the run.
+- **TWO PHASES.** run_assessment.py: phase 1 = the 3-4 decks (released), phase 2 (pct 92-99) =
+  (a) `audit_fp.py` then (b) the GEOPOL HTML.
+- **`audit_fp.py`** = the independent FP auditor: a model from a DIFFERENT vendor than the deck author
+  (a 429/blind-spot is provider-wide) reviews every finding's evidence host and, with `--apply`,
+  DROPS third-party/client hosts and the engine REBUILDS the findings deck. Emits `evt=fp_audit`.
+- Web: `_collect_decks` globs `*_GEOPOL_Animated*.html`; the `.html` download is served inline.
+- ship.py smoke-tests the artifact (no undefined/NaN/placeholders leak; all 5 canvases present).
+
 ## 5th deliverable — combined animated HTML report (2026-07)
 Every run now also emits **`<Company>_Report{_DE}.html`** — one self-contained, dark, scroll-driven
 page combining Findings + C-BIQ + GEOPOL in the Colt visual language (Inter/Unbounded/JetBrains Mono,

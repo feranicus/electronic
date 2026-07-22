@@ -667,22 +667,48 @@ def main():
         ok4=(r.returncode==0)
         if not ok4: print(f"[warn] build_deltas_deck.js: {r.stderr.strip()[:300]}", file=sys.stderr)
 
-    # 3c) 5th deliverable — the combined animated HTML artifact (Findings + C-BIQ + GEOPOL in one
-    # self-contained scrollytelling page). Non-fatal: a report failure must never sink the decks.
-    d5=os.path.join(a.outdir,f"{safe}_Report{_L}.html")
+    # ============================ PHASE 2 (second progress bar) ============================
+    # The 3-4 decks above are phase 1 and are now released. Phase 2 = (a) an independent
+    # different-vendor FP audit that fixes bad artifacts, then (b) the bespoke animated GEOPOL HTML.
+    _pg("Phase 2 — audit + HTML artifact", 100 if False else 92)
+
+    # 3c) FALSE-POSITIVE AUDIT — a DIFFERENT vendor's model reviews the findings and, if any host is
+    # a client/third-party (the skon.de failure), drops it and REBUILDS the affected decks.
+    try:
+        _pg("Auditing findings for false positives (independent model)", 93)
+        au=subprocess.run(["python3", os.path.join(HERE, "audit_fp.py"),
+                           os.path.join(a.outdir, "findings.json"), "--apply"],
+                          capture_output=True, text=True, env=dict(os.environ, OUTDIR=a.outdir))
+        _verdict={}
+        try: _verdict=json.loads((au.stdout or "{}").strip().splitlines()[-1])
+        except Exception: pass
+        _dropped=_verdict.get("dropped") or []
+        _ev(evt="fp_audit", company=_tag, auditor=_verdict.get("auditor"),
+            verdict=_verdict.get("verdict"), flagged=len(_verdict.get("false_positives") or []),
+            dropped=len(_dropped))
+        if _dropped:
+            _pg("FP audit removed %d finding(s) — rebuilding decks" % len(_dropped), 95)
+            fj=json.load(open(os.path.join(a.outdir,"findings.json")))   # reload the cleaned findings
+            _node_build("build_findings_deck.js", os.path.join(a.outdir,"findings.json"), d1, a.lang)
+    except Exception as _e:
+        print(f"[warn] fp audit: {_e}", file=sys.stderr)
+
+    # 3d) 5th deliverable — the bespoke animated GEOPOL HTML (Scene 01/02 authored by a DO model into
+    # the fixed animated shell). Non-fatal: an HTML failure must never sink the decks.
+    d5=os.path.join(a.outdir,f"{safe}_GEOPOL_Animated{_L}.html")
     ok5=False
     try:
-        _pg("Building combined HTML report", 98)
-        r=subprocess.run(["node", os.path.join(HERE,"build_report_html.js"),
+        _pg("Authoring the animated GEOPOL report (HTML artifact)", 97)
+        r=subprocess.run(["python3", os.path.join(HERE,"author_geopol.py"),
                           os.path.join(a.outdir,"findings.json"),
-                          os.path.join(a.outdir,"cbiq.json"),
-                          os.path.join(a.outdir,"geopol.json"), d5],
+                          os.path.join(a.outdir,"geopol.json"), d5, "--company", co],
                          capture_output=True, text=True,
-                         env=dict(os.environ, DECK_LANG=("de" if str(a.lang).lower().startswith("de") else "en")))
+                         env=dict(os.environ, OUTDIR=a.outdir,
+                                  DECK_LANG=("de" if str(a.lang).lower().startswith("de") else "en")))
         ok5=(r.returncode==0 and os.path.exists(d5))
-        if not ok5: print(f"[warn] build_report_html.js: {r.stderr.strip()[:300]}", file=sys.stderr)
+        if not ok5: print(f"[warn] author_geopol.py: {(r.stderr or '').strip()[:300]}", file=sys.stderr)
     except Exception as _e:
-        print(f"[warn] HTML report: {_e}", file=sys.stderr)
+        print(f"[warn] GEOPOL HTML: {_e}", file=sys.stderr)
 
     s=fj["summary"]
     if fj.get("target",{}).get("qa_note"): print(fj["target"]["qa_note"])

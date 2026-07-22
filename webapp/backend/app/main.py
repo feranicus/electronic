@@ -222,6 +222,8 @@ def _deck_entry(job_id: str, path: Path) -> dict:
 def _collect_decks(job_id: str, jobdir: Path) -> list:
     # .pptx decks first, then the combined _Report.html artifact (5th deliverable).
     out = [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*.pptx"))]
+    # the 5th deliverable — bespoke animated GEOPOL HTML (also accept the older _Report name)
+    out += [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*_GEOPOL_Animated*.html"))]
     out += [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*_Report*.html"))]
     return out
 

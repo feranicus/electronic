@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>{{COMPANY}} GEOPOL — Threat, Defence &amp; Secure by Design · Colt / S4Biz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#05080E;--bg2:#0A111C;--panel:#0E1827;--line:#16243B;
+    --ink:#E9F1FA;--dim:#8DA0BC;--faint:#54657F;
+    --teal:#00D7BD;--teal2:#0C544E;--tealg:#19F0D6;--green:#26D98A;
+    --amber:#FFC33C;--red:#FF3B57;--violet:#9E86FF;--orange:#FF7A33;--mint:#5FFFC2;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:"Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  body{background:
+    radial-gradient(1200px 700px at 82% -8%, rgba(0,215,189,.10), transparent 60%),
+    radial-gradient(900px 600px at -8% 30%, rgba(158,134,255,.05), transparent 60%),
+    radial-gradient(1000px 700px at 50% 115%, rgba(0,215,189,.06), transparent 60%),
+    var(--bg);}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;opacity:.35;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/></svg>");
+    mix-blend-mode:overlay}
+  .wrap{position:relative;z-index:3}
+  header{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;
+    padding:14px 26px;background:rgba(5,8,14,.72);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .brand{font-family:"Unbounded";font-weight:800;letter-spacing:.06em;font-size:15px}
+  .brand b{color:var(--teal)}
+  .tag{font-family:"JetBrains Mono";font-size:10.5px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase}
+  .colt{font-family:Arial,sans-serif;font-weight:800;font-size:17px;color:var(--teal)}
+  .colt small{font-family:"JetBrains Mono";font-weight:600;font-size:9.5px;color:var(--dim);letter-spacing:.12em}
+  section{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:50px 26px 38px;position:relative}
+  .eyebrow{font-family:"JetBrains Mono";font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--teal);margin-bottom:9px}
+  h1{font-family:"Unbounded";font-weight:800;font-size:clamp(25px,4.1vw,48px);line-height:1.03;margin:0 0 8px}
+  h1 .hl{color:var(--teal)} h1 .rd{color:var(--red)} h1 .gr{color:var(--green)}
+  .sub{color:var(--dim);max-width:980px;font-size:clamp(13px,1.45vw,15.5px);line-height:1.5;margin:0 0 16px}
+  canvas{display:block;width:100%;height:100%}
+  .stage{position:relative;flex:1;min-height:440px;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    background:linear-gradient(180deg, rgba(14,24,39,.55), rgba(5,8,14,.2))}
+  .stage.tall{min-height:560px;flex:none}
+  .legend{position:absolute;left:18px;bottom:16px;display:flex;gap:16px;flex-wrap:wrap;font-family:"JetBrains Mono";font-size:10.5px;color:var(--dim);z-index:5}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .legend.static{position:static;left:auto;bottom:auto;margin-top:12px}
+  .statbar{position:absolute;right:18px;top:16px;display:flex;flex-direction:column;gap:8px;z-index:5;text-align:right}
+  .stat{background:rgba(5,8,14,.6);border:1px solid var(--line);border-radius:9px;padding:7px 12px;min-width:172px}
+  .stat .n{font-family:"Unbounded";font-weight:800;font-size:22px;color:var(--teal);line-height:1}
+  .stat .l{font-family:"JetBrains Mono";font-size:8.5px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;margin-top:4px}
+  .stat.bad .n{color:var(--red)}
+  .stat .pill{display:inline-block;font-family:"JetBrains Mono";font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;letter-spacing:.06em}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 13px;align-items:center}
+  .btn{font-family:"JetBrains Mono";font-size:11px;letter-spacing:.04em;color:var(--dim);background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;padding:9px 14px;cursor:pointer;transition:all .18s;user-select:none}
+  .btn:hover{border-color:var(--teal);color:var(--ink)}
+  .btn.active{background:var(--teal);color:#04221d;border-color:var(--teal);font-weight:700}
+  .btn .n{opacity:.55;margin-right:7px;font-weight:700}
+  .hint{font-family:"JetBrains Mono";font-size:10px;color:var(--faint);margin-left:6px}
+  .caption{font-family:"JetBrains Mono";font-size:11px;color:var(--faint);margin-top:13px;letter-spacing:.04em;max-width:1040px}
+  .foot{padding:20px 26px;border-top:1px solid var(--line);color:var(--faint);font-family:"JetBrains Mono";font-size:10.5px;letter-spacing:.08em;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  @media(max-width:680px){.statbar{position:static;flex-direction:row;flex-wrap:wrap;margin-top:10px}.legend{position:static;margin-top:10px}.stage{min-height:520px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><span class="brand">{{COMPANY_UPPER}} <b>GEOPOL</b></span> &nbsp;<span class="tag">Threat · Defence · Secure by Design</span></div>
+    <div class="colt">colt <small>/ s4biz</small></div>
+  </header>
+
+  <section id="s1">
+__SCENE1__
+  </section>
+
+  <section id="s2">
+__SCENE2__
+  </section>
+
+  <section id="s3">
+    <div class="eyebrow">Scene 03 · The full attack surface</div>
+    <h1>Every way <span class="hl">in</span>.</h1>
+    <p class="sub">The attack-path map: threat vectors on the left, {{COMPANY}}'s own verified exposures in the centre, and the crown jewels an attacker is ultimately after on the right. Each flowing wire is a live, reachable path — coloured by its MITRE ATT&amp;CK stage. This is a small estate, but the paths that exist are the ones that matter.</p>
+    <div class="stage tall"><canvas id="c3"></canvas></div>
+    <div class="legend static">
+      <span><i style="background:#FFC33C;border-radius:2px"></i>Reconnaissance</span>
+      <span><i style="background:#FF7A33;border-radius:2px"></i>Initial access</span>
+      <span><i style="background:#FF3B57;border-radius:2px"></i>Exploitation</span>
+      <span><i style="background:#9E86FF;border-radius:2px"></i>Impact / ransomware</span>
+      <span><i style="background:#00D7BD;border-radius:2px"></i>DDoS / availability</span>
+      <span><i style="background:#5FFFC2;border-radius:2px"></i>Fraud / exfil</span>
+    </div>
+    <p class="caption">Vectors &#8594; exposures &#8594; impact, mapped to MITRE ATT&amp;CK · illustrative attack-path synthesis of the verified July 2026 findings (CVE-2023-44487, CISA KEV; exposed SSL-VPN :8443; public GitLab; bibletv.de look-alike).</p>
+  </section>
+
+  <section id="s4">
+    <div class="eyebrow">Scene 04 · Featured issue — SSL-VPN edge on Colt · SASE/ZTNA is the quick win</div>
+    <h1>Six moves arrive. <span class="hl">Each layer stops its own.</span></h1>
+    <p class="sub">The headline finding in motion: {{COMPANY}}'s <b style="color:var(--ink)">SSL-VPN edge</b> (213.61.87.246:8443) is public and sits on <b style="color:var(--ink)">Colt's own AS8220</b>. An <b style="color:var(--ink)">opportunistic ransomware affiliate</b> opens with a <b style="color:#37C8FF">volumetric DDoS</b> to flood the edge and mask the intrusion, bypasses or credential-stuffs the VPN portal, pivots to donor records and broadcast systems, deploys ransomware and exfiltrates data. <b style="color:#3AA0FF">Colt IP Guardian</b> scrubs the flood at the network edge and <b style="color:var(--teal)">SASE / ZTNA</b> retires the public gateway so there is nothing left to exploit — both on the backbone {{COMPANY}} already uses. Add each layer and watch which move it blocks.</p>
+    <div class="controls" id="ddosCtl">
+      <div class="btn active"><span class="n">1</span>Attack only</div>
+      <div class="btn"><span class="n">2</span>+ IP Guardian (DDoS)</div>
+      <div class="btn"><span class="n">3</span>+ SASE/ZTNA &#9889; quick win</div>
+      <div class="btn"><span class="n">4</span>+ NGFW segment</div>
+      <div class="btn"><span class="n">5</span>+ Managed SOC</div>
+      <div class="btn"><span class="n">6</span>+ SSE secure egress</div>
+      <span class="hint">click an option &#8594;</span>
+    </div>
+    <div class="stage tall">
+      <canvas id="ddos"></canvas>
+      <div class="statbar">
+        <div class="stat"><div class="n" id="ddAvail" style="color:var(--red)">6%</div><div class="l">Estate integrity</div></div>
+        <div class="stat"><div class="pill" id="ddStatus" style="background:rgba(255,59,87,.15);color:var(--red)">ESTATE BREACHED</div><div class="l" style="margin-top:6px">Status</div></div>
+        <div class="stat"><div class="n" id="ddAbs" style="color:var(--teal);font-size:18px">5%</div><div class="l">Moves blocked</div></div>
+      </div>
+    </div>
+    <div class="legend static">
+      <span><i style="background:#37C8FF;border-radius:2px"></i>Volumetric DDoS flood</span>
+      <span><i style="background:var(--red);border-radius:2px"></i>VPN portal bypass / cred-stuff</span>
+      <span><i style="background:var(--orange);border-radius:2px"></i>Lateral &#8594; donor / broadcast</span>
+      <span><i style="background:var(--amber);border-radius:2px"></i>Credential / session theft</span>
+      <span><i style="background:var(--violet);border-radius:2px"></i>Ransomware deploy</span>
+      <span><i style="background:var(--mint);border-radius:2px"></i>Donor-data exfiltration</span>
+    </div>
+    <p class="caption">IP Guardian scrubs the volumetric DDoS at the network edge — always-on, no customer kit. SASE/ZTNA (quick win) retires the public VPN portal and enforces identity, so the exploit and credential paths disappear. NGFW segmentation contains lateral movement to donor &amp; broadcast systems; Managed SOC detects and stops ransomware; SSE secure egress blocks C2 and exfiltration. Figures illustrative.</p>
+  </section>
+
+  <section id="s5">
+    <div class="eyebrow">Scene 05 · Secure by Design — CISA + BSI, by Colt / S4Biz</div>
+    <h1>From <span class="rd">exposed</span> to <span class="gr">secure by design</span>.</h1>
+    <p class="sub">The same estate, two architectures. <b style="color:var(--ink)">Before</b>: a public SSL-VPN portal, a public GitLab, KEV-flagged nginx and a look-alike domain — every path reaches donor data and the broadcast operation. <b style="color:var(--ink)">After</b>: a Secure-by-Design architecture — the VPN portal retired behind identity-first ZTNA, donor &amp; broadcast systems segmented, DDoS scrubbing and a managed edge, DMARC against brand-abuse, continuous SOC monitoring — built and operated by Colt &amp; S4Biz on the backbone they already run for {{COMPANY}}.</p>
+    <div class="controls" id="sbdCtl">
+      <div class="btn"><span class="n">A</span>Before</div>
+      <div class="btn active"><span class="n">B</span>After — Secure by Design</div>
+      <span class="hint">toggles automatically · click to hold</span>
+    </div>
+    <div class="stage">
+      <canvas id="sbd"></canvas>
+      <div class="statbar">
+        <div class="stat"><div class="n" id="sbPaths" style="color:var(--red)">9</div><div class="l">Reachable attack paths</div></div>
+        <div class="stat"><div class="n" id="sbExp" style="color:var(--red)">4</div><div class="l">Exposed entry points</div></div>
+        <div class="stat"><div class="pill" id="sbState" style="background:rgba(255,59,87,.15);color:var(--red)">EXPOSED</div><div class="l" style="margin-top:6px">Architecture</div></div>
+      </div>
+    </div>
+    <div class="legend static">
+      <span><i style="background:var(--red);border-radius:2px"></i>Reachable attack path</span>
+      <span><i style="background:var(--teal);border-radius:2px"></i>Colt SASE / ZTNA + managed edge</span>
+      <span><i style="background:var(--green);border-radius:2px"></i>Secure-by-Design control active</span>
+    </div>
+    <p class="caption">Secure-by-Design (CISA &amp; BSI-aligned, delivered by Colt / S4Biz): own the security outcome, retire the public VPN portal behind ZTNA, gate GitLab, segment donor &amp; broadcast systems, DDoS-scrub on the Colt edge, enforce DMARC + patch KEV (CVE-2023-44487), monitor continuously — designed in, not bolted on.</p>
+  </section>
+
+  <div class="foot">
+    <span>COLT / S4BIZ · PREPARED FOR {{COMPANY_UPPER}} STIFTUNG gGMBH · ILLUSTRATIVE</span>
+    <span>FEATURED ISSUE: SSL-VPN EDGE :8443 (COLT AS8220) · FIX: COLT SASE/ZTNA + IP GUARDIAN + MANAGED SOC</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+const TEAL="#00D7BD",AMBER="#FFC33C",RED="#FF3B57",VIOLET="#9E86FF",ORANGE="#FF7A33",MINT="#5FFFC2",GREEN="#26D98A",CORE="#3b4a63";
+function fit(cv){const r=cv.getBoundingClientRect();const d=Math.min(window.devicePixelRatio||1,2);
+  cv.width=Math.max(2,r.width*d);cv.height=Math.max(2,r.height*d);const x=cv.getContext("2d");x.setTransform(d,0,0,d,0,0);return {w:r.width,h:r.height};}
+function dpiFit(cv,ctx){const r=cv.getBoundingClientRect();const d=Math.min(window.devicePixelRatio||1,2);
+  cv.width=Math.max(2,r.width*d);cv.height=Math.max(2,r.height*d);ctx.setTransform(d,0,0,d,0,0);return {w:r.width,h:r.height};}
+function rrect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function hexr(h){const n=parseInt(h.slice(1),16);return ((n>>16)&255)+","+((n>>8)&255)+","+(n&255);}
+function mix(a,b,tt){const A=parseInt(a.slice(1),16),B=parseInt(b.slice(1),16);
+  const r=Math.round((A>>16&255)*(1-tt)+(B>>16&255)*tt),g=Math.round((A>>8&255)*(1-tt)+(B>>8&255)*tt),bl=Math.round((A&255)*(1-tt)+(B&255)*tt);
+  return "rgb("+r+","+g+","+bl+")";}
+function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
+
+/* SCENE 1 : exposed on Colt's own network */
+(function(){
+  const cv=document.getElementById("c1"),ctx=cv.getContext("2d");let W,H,nodes=[],t=0,started=0;
+  function build(){const s=fit(cv);W=s.w;H=s.h;const cx=W*0.5,cy=H*0.5;nodes=[];
+    for(let i=0;i<1;i++)nodes.push({core:true,ang:Math.random()*6.28,rad:22,cx,cy,r:3.0,col:CORE,sp:0.2});
+    const N=Math.max(90,Math.min(170,Math.round(W*0.16)));
+    for(let i=0;i<N;i++){const a=Math.random()*6.283;const rr=Math.min(W,H)*(0.20+Math.random()*0.42);
+      const crit=Math.random()<0.09;const us=!crit&&Math.random()<0.42;
+      nodes.push({core:false,ang:a,rad:rr,cx,cy,r:crit?2.9:(us?1.9:2.1),
+        col:crit?RED:(us?AMBER:TEAL),sp:0.04+Math.random()*0.10,drift:Math.random()*6.28,da:0.2+Math.random()*0.5,crit,us});}}
+  build();window.addEventListener("resize",build);
+  function frame(){t+=0.016;const cx=W*0.5,cy=H*0.5;ctx.clearRect(0,0,W,H);
+    ctx.save();ctx.strokeStyle="rgba(0,215,189,"+(0.10+0.05*Math.sin(t*1.3))+")";ctx.setLineDash([4,9]);ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(cx,cy,Math.min(W,H)*0.16,0,6.2832);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+    const g=ctx.createRadialGradient(cx,cy,2,cx,cy,70);g.addColorStop(0,"rgba(255,59,87,.13)");g.addColorStop(1,"rgba(255,59,87,0)");
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,70,0,6.2832);ctx.fill();
+    for(let i=0;i<nodes.length;i+=11){const n=nodes[i];if(n.core)continue;const x=cx+Math.cos(n.ang)*n.rad,y=cy+Math.sin(n.ang)*n.rad;
+      ctx.strokeStyle="rgba(141,160,188,0.06)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(x,y);ctx.stroke();}
+    for(const n of nodes){n.ang+=n.sp*0.004;let rr=n.rad+(n.core?0:Math.sin(t*n.da+n.drift)*6);
+      const x=n.cx+Math.cos(n.ang)*rr,y=n.cy+Math.sin(n.ang)*rr;const pulse=n.crit?(0.5+0.5*Math.sin(t*3+n.drift)):1;
+      ctx.beginPath();ctx.fillStyle=n.col;ctx.globalAlpha=n.core?0.85:(0.55+0.4*pulse);
+      ctx.arc(x,y,n.r*(n.crit?(0.8+0.5*pulse):1),0,6.2832);ctx.fill();
+      if(n.crit){ctx.globalAlpha=0.25*pulse;ctx.beginPath();ctx.arc(x,y,n.r*3.4*pulse,0,6.2832);ctx.fillStyle=RED;ctx.fill();}
+      ctx.globalAlpha=1;}
+    ctx.fillStyle="rgba(255,59,87,.85)";ctx.font="600 11px 'JetBrains Mono', monospace";ctx.textAlign="center";
+    ctx.fillText("COLT AS8220 · 0 BEHIND MANAGED EDGE",cx,cy+Math.min(W,H)*0.16+18);
+    requestAnimationFrame(frame);}
+  requestAnimationFrame(frame);
+  const obs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting&&!started){started=1;document.querySelectorAll("#s1 .stat .n").forEach(el=>{
+    const to=+el.dataset.to;const d=1400;const st=performance.now();
+    (function tick(now){const p=Math.min(1,(now-st)/d);el.textContent=Math.round(to*(1-Math.pow(1-p,3))).toLocaleString();if(p<1)requestAnimationFrame(tick);})(st);});}}),{threshold:.3});
+  obs.observe(document.getElementById("s1"));
+})();
+
+/* SCENE 2 : threat convergence */
+(function(){
+  const cv=document.getElementById("c2"),ctx=cv.getContext("2d");let W,H,sources=[],particles=[],t=0,target;
+  const defs=[["NoName057(16)",TEAL,"pro-Russian DDoS"],["OPPORTUNISTIC RaaS",VIOLET,"ransomware via exposed edge"],["RELIGIOUS / IDEOLOGICAL",ORANGE,"DDoS & defacement"],["BRAND-ABUSE FRAUD",MINT,"donation phishing (look-alike)"],["INITIAL-ACCESS BROKERS",AMBER,"sell VPN :8443 access"],["nginx KEV",RED,"CVE-2023-44487 Rapid Reset"]];
+  function build(){const s=fit(cv);W=s.w;H=s.h;target={x:W*0.64,y:H*0.5};sources=[];
+    const lx=W*0.15;defs.forEach((d,i)=>{const y=H*(0.13+i*0.146);sources.push({x:lx,y,name:d[0],col:d[1],meth:d[2],ph:Math.random()*6.28});});particles=[];}
+  build();window.addEventListener("resize",build);
+  function spawn(){for(const s of sources){if(Math.random()<0.18){
+    const c1x=(s.x+target.x)/2+(Math.random()-0.5)*W*0.12,c1y=s.y+(Math.random()-0.5)*H*0.22;
+    particles.push({s,x:s.x,y:s.y,p:0,sp:0.006+Math.random()*0.010,c1x,c1y,r:1.6+Math.random()*1.8});}}}
+  function frame(){t+=0.016;ctx.clearRect(0,0,W,H);
+    const g=ctx.createRadialGradient(target.x,target.y,3,target.x,target.y,110);
+    g.addColorStop(0,"rgba(0,215,189,"+(0.16+0.06*Math.sin(t*2))+")");g.addColorStop(1,"rgba(0,215,189,0)");
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(target.x,target.y,110,0,6.2832);ctx.fill();
+    ctx.strokeStyle="rgba(0,215,189,.5)";ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(target.x,target.y,30+2*Math.sin(t*2),0,6.2832);ctx.stroke();
+    ctx.fillStyle="rgba(233,241,250,.9)";ctx.font="700 13px 'Unbounded', sans-serif";ctx.textAlign="center";ctx.fillText("{{COMPANY_UPPER}}",target.x,target.y-44);
+    ctx.font="500 9.5px 'JetBrains Mono', monospace";ctx.fillStyle="rgba(141,160,188,.85)";ctx.fillText("donor data · broadcast · giving",target.x,target.y+52);
+    for(const s of sources){ctx.save();ctx.beginPath();const pr=6+1.6*Math.sin(t*2.4+s.ph);
+      const gg=ctx.createRadialGradient(s.x,s.y,1,s.x,s.y,22);gg.addColorStop(0,s.col);gg.addColorStop(1,"transparent");
+      ctx.fillStyle=gg;ctx.globalAlpha=.5;ctx.arc(s.x,s.y,22,0,6.2832);ctx.fill();ctx.restore();
+      ctx.beginPath();ctx.fillStyle=s.col;ctx.arc(s.x,s.y,pr,0,6.2832);ctx.fill();
+      ctx.fillStyle="rgba(233,241,250,.92)";ctx.font="700 11px 'Unbounded',sans-serif";ctx.textAlign="left";ctx.fillText(s.name,s.x+14,s.y-2);
+      ctx.fillStyle="rgba(141,160,188,.8)";ctx.font="400 9px 'JetBrains Mono',monospace";ctx.fillText(s.meth,s.x+14,s.y+11);}
+    spawn();
+    for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.p+=p.sp;
+      if(p.p>=1){ctx.globalAlpha=0.6;ctx.beginPath();ctx.fillStyle=p.s.col;ctx.arc(target.x,target.y,3,0,6.2832);ctx.fill();ctx.globalAlpha=1;particles.splice(i,1);continue;}
+      const x=qbez(p.s.x,p.c1x,target.x,p.p),y=qbez(p.s.y,p.c1y,target.y,p.p);
+      const x2=qbez(p.s.x,p.c1x,target.x,Math.max(0,p.p-0.06)),y2=qbez(p.s.y,p.c1y,target.y,Math.max(0,p.p-0.06));
+      ctx.strokeStyle=p.s.col;ctx.globalAlpha=0.28;ctx.lineWidth=p.r*0.9;ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x,y);ctx.stroke();
+      ctx.globalAlpha=0.9;ctx.beginPath();ctx.fillStyle=p.s.col;ctx.arc(x,y,p.r,0,6.2832);ctx.fill();ctx.globalAlpha=1;}
+    requestAnimationFrame(frame);}
+  requestAnimationFrame(frame);
+})();
+
+/* SCENE 3 : attack-path map */
+(function(){
+  const cv=document.getElementById("c3");if(!cv)return;const ctx=cv.getContext("2d");let W,H,t=0,parts=[];
+  const LEFT=[["DDoS flood (NoName057)",TEAL],["Ransomware via VPN edge",RED],["GitLab exploit / secrets",ORANGE],["Donation phishing (look-alike)",MINT],["Web defacement (hacktivist)",VIOLET],["nginx Rapid Reset (KEV)",AMBER]];
+  const MID=["SSL-VPN edge :8443 (Colt)","Public GitLab (Hetzner)","host.bibel.tv nginx — CVE","{{COMPANY}} / bibel.tv web","bibletv.de look-alike (US)","Strato mail infra"];
+  const RIGHT=["Donor / supporter PII","Broadcast & streaming","Donations / giving flow","Source code & CI secrets","Brand & donor trust"];
+  const LM=[[0,3],[1,0],[2,1],[3,4],[4,3],[5,2],[0,3],[1,0],[2,1],[3,4],[4,3],[5,2]];
+  const MR=[[0,0,RED],[0,1,RED],[1,3,ORANGE],[2,1,AMBER],[3,4,VIOLET],[4,2,MINT],[0,0,RED],[1,3,ORANGE],[2,1,TEAL],[4,2,MINT],[3,4,VIOLET],[5,0,MINT]];
+  let lx,mx,rx,ly,my,ry,laR,maL,maR,raL;
+  function colY(n){const top=58,bot=H-40,step=(bot-top)/(n>1?n-1:1),a=[];for(let i=0;i<n;i++)a.push(top+i*step);return a;}
+  function build(){const s=dpiFit(cv,ctx);W=s.w;H=s.h;lx=W*0.155;mx=W*0.5;rx=W*0.845;ly=colY(LEFT.length);my=colY(MID.length);ry=colY(RIGHT.length);
+    laR=lx+Math.min(96,W*0.10);maL=mx-Math.min(118,W*0.12);maR=mx+Math.min(118,W*0.12);raL=rx-Math.min(96,W*0.10);parts=[];}
+  build();window.addEventListener("resize",build);
+  function cubic(a,b,c,d,tt){const u=1-tt;return u*u*u*a+3*u*u*tt*b+3*u*tt*tt*c+tt*tt*tt*d;}
+  function ptOn(x1,y1,x2,y2,tt){const cx=(x1+x2)/2;return [cubic(x1,cx,cx,x2,tt),cubic(y1,y1,y2,y2,tt)];}
+  function wire(x1,y1,x2,y2,col,a){const cx=(x1+x2)/2;ctx.strokeStyle=col;ctx.globalAlpha=a;ctx.lineWidth=1.1;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.bezierCurveTo(cx,y1,cx,y2,x2,y2);ctx.stroke();ctx.globalAlpha=1;}
+  function chip(cx,y,text,col){ctx.font="600 10px 'Inter',sans-serif";const w=ctx.measureText(text).width+16,h=19,x=cx-w/2;
+    rrect(ctx,x,y-h/2,w,h,6);ctx.fillStyle="rgba(10,18,30,.94)";ctx.fill();ctx.strokeStyle=col;ctx.globalAlpha=.85;ctx.lineWidth=1.2;ctx.stroke();ctx.globalAlpha=1;
+    ctx.fillStyle="#E9F1FA";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(text,cx,y);ctx.textBaseline="alphabetic";}
+  function spawn(){if(parts.length<95&&Math.random()<0.55){
+    if(Math.random()<0.5){const e=LM[(Math.random()*LM.length)|0];parts.push({x1:laR,y1:ly[e[0]],x2:maL,y2:my[e[1]],col:LEFT[e[0]][1],p:0,sp:0.008+Math.random()*0.01});}
+    else{const e=MR[(Math.random()*MR.length)|0];parts.push({x1:maR,y1:my[e[0]],x2:raL,y2:ry[e[1]],col:e[2],p:0,sp:0.008+Math.random()*0.01});}}}
+  function frame(){t+=0.016;ctx.clearRect(0,0,W,H);
+    ctx.font="700 10px 'JetBrains Mono',monospace";ctx.fillStyle="rgba(141,160,188,.8)";ctx.textAlign="center";ctx.textBaseline="alphabetic";
+    ctx.fillText("THREAT VECTORS",lx,28);ctx.fillText("{{COMPANY_UPPER}} EXPOSURES",mx,28);ctx.fillText("IMPACT · CROWN JEWELS",rx,28);
+    LM.forEach(e=>wire(laR,ly[e[0]],maL,my[e[1]],LEFT[e[0]][1],0.12));
+    MR.forEach(e=>wire(maR,my[e[0]],raL,ry[e[1]],e[2],0.12));
+    spawn();
+    for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.p+=p.sp;if(p.p>=1){parts.splice(i,1);continue;}
+      const a=ptOn(p.x1,p.y1,p.x2,p.y2,p.p),b=ptOn(p.x1,p.y1,p.x2,p.y2,Math.max(0,p.p-0.05));
+      ctx.strokeStyle=p.col;ctx.globalAlpha=.5;ctx.lineWidth=1.8;ctx.beginPath();ctx.moveTo(b[0],b[1]);ctx.lineTo(a[0],a[1]);ctx.stroke();
+      ctx.globalAlpha=1;ctx.fillStyle=p.col;ctx.beginPath();ctx.arc(a[0],a[1],1.9,0,6.283);ctx.fill();}
+    ctx.globalAlpha=1;
+    LEFT.forEach((n,i)=>chip(lx,ly[i],n[0],n[1]));
+    MID.forEach((n,i)=>chip(mx,my[i],n,TEAL));
+    RIGHT.forEach((n,i)=>chip(rx,ry[i],n,RED));
+    requestAnimationFrame(frame);}
+  requestAnimationFrame(frame);
+})();
+
+/* SCENE 4 : defence in depth (SSL-VPN featured issue) */
+(function(){
+  const cv=document.getElementById("ddos");if(!cv)return;const ctx=cv.getContext("2d");
+  let W,H,t=0,state=0,avail=6,parts=[],spl=[];
+  const DDOSC="#37C8FF",IPG="#3AA0FF";
+  const LANES=[{name:"Volumetric DDoS flood",col:DDOSC,key:"DDOS"},{name:"VPN portal bypass / cred-stuff (:8443)",col:RED,key:"VPN"},{name:"Lateral → donor / broadcast",col:ORANGE,key:"LAT"},
+    {name:"Credential / session theft",col:AMBER,key:"CRED"},{name:"Ransomware deploy",col:VIOLET,key:"RANSOM"},{name:"Donor-data exfiltration",col:MINT,key:"EXFIL"}];
+  const WALLS=[{name:"IP GUARDIAN",sub:"always-on DDoS scrub · no CPE",col:IPG,fx:0.30,blocks:{DDOS:0.99}},
+    {name:"SASE · ZTNA",sub:"retire gateway · identity-first · quick win",col:TEAL,fx:0.42,blocks:{VPN:0.99,CRED:0.92}},
+    {name:"NGFW SEGMENT",sub:"contain · donor / broadcast",col:VIOLET,fx:0.54,blocks:{LAT:0.96}},
+    {name:"MANAGED SOC",sub:"detect · respond 24×7",col:AMBER,fx:0.66,blocks:{RANSOM:0.8}},
+    {name:"SSE · SECURE EGRESS",sub:"block C2 · stop exfil",col:MINT,fx:0.78,blocks:{EXFIL:0.98,DDOS:0.99,VPN:0.99,LAT:0.99,CRED:0.99,RANSOM:0.99}}];
+  const stAvail=[6,38,64,80,92,99],stAbs=[5,30,55,76,90,99],stStatus=["ESTATE BREACHED","DDoS SCRUBBED","GATEWAY CLOSED","CONTAINED","DETECTED","SECURE"],stCol=[RED,"#3AA0FF","#00D7BD","#9E86FF",GREEN,GREEN];
+  let laneY=[],srcX,tx;
+  function build(){const s=dpiFit(cv,ctx);W=s.w;H=s.h;const top=84,bot=H-66;laneY=LANES.map((l,i)=>top+i*(bot-top)/(LANES.length-1));srcX=W*0.205;tx=W*0.90;parts=[];spl=[];}
+  build();window.addEventListener("resize",build);
+  const ctl=document.getElementById("ddosCtl");
+  ctl.querySelectorAll(".btn").forEach((b,i)=>b.addEventListener("click",()=>{state=i;
+    ctl.querySelectorAll(".btn").forEach((x,j)=>x.classList.toggle("active",j===i));
+    const st=document.getElementById("ddStatus");st.textContent=stStatus[i];st.style.color=stCol[i];st.style.background="rgba("+hexr(stCol[i])+",.15)";
+    document.getElementById("ddAvail").style.color=stCol[i];document.getElementById("ddAbs").textContent=stAbs[i]+"%";}));
+  function active(){return WALLS.slice(0,state).map(w=>({x:W*w.fx,col:w.col,blocks:w.blocks,name:w.name,sub:w.sub}));}
+  function spawn(){LANES.forEach((l,i)=>{if(Math.random()<(l.key==="VPN"||l.key==="DDOS"?0.8:0.45)){
+    parts.push({key:l.key,col:l.col,x:srcX,y:laneY[i]+(Math.random()-0.5)*10,vx:2.4+Math.random()*1.7,proc:0,r:1.4+Math.random()*1.3});}});}
+  function frame(){t+=0.016;ctx.clearRect(0,0,W,H);const aw=active();
+    LANES.forEach((l,i)=>{ctx.strokeStyle="rgba(141,160,188,.05)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(srcX,laneY[i]);ctx.lineTo(tx,laneY[i]);ctx.stroke();});
+    ctx.fillStyle="rgba(255,59,87,.95)";ctx.font="700 11px 'Unbounded',sans-serif";ctx.textAlign="left";ctx.fillText("OPPORTUNISTIC RANSOMWARE AFFILIATE",W*0.03,52);
+    ctx.fillStyle="rgba(141,160,188,.8)";ctx.font="400 9px 'JetBrains Mono',monospace";ctx.fillText("exposed :8443 VPN · valid-account / edge exploit",W*0.03,66);
+    LANES.forEach((l,i)=>{ctx.font="600 9.5px 'Inter',sans-serif";const w=ctx.measureText(l.name).width+14;
+      rrect(ctx,W*0.02,laneY[i]-9,w,18,5);ctx.fillStyle="rgba(10,18,30,.92)";ctx.fill();ctx.strokeStyle=l.col;ctx.globalAlpha=.85;ctx.lineWidth=1.1;ctx.stroke();ctx.globalAlpha=1;
+      ctx.fillStyle="#E9F1FA";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(l.name,W*0.02+7,laneY[i]);ctx.textBaseline="alphabetic";});
+    aw.forEach((w,wi)=>{const isFab=w.name.indexOf('EGRESS')>=0;
+      if(isFab){rrect(ctx,w.x-30,72,60,H-138,12);ctx.fillStyle="rgba(95,255,194,.06)";ctx.fill();ctx.strokeStyle=w.col;ctx.globalAlpha=.8;ctx.lineWidth=1.6;ctx.stroke();ctx.globalAlpha=1;}
+      else{const grd=ctx.createLinearGradient(w.x-16,0,w.x+16,0);grd.addColorStop(0,"rgba(0,0,0,0)");grd.addColorStop(.5,w.col+"33");grd.addColorStop(1,"rgba(0,0,0,0)");
+        ctx.fillStyle=grd;ctx.fillRect(w.x-16,70,32,H-128);ctx.strokeStyle=w.col;ctx.globalAlpha=.85;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(w.x,72);ctx.lineTo(w.x,H-58);ctx.stroke();ctx.globalAlpha=1;}
+      ctx.fillStyle=w.col;ctx.font="700 10.5px 'JetBrains Mono',monospace";ctx.textAlign="center";ctx.fillText(w.name,w.x,60);if(w.name==="SASE · ZTNA"){ctx.font="700 8px 'JetBrains Mono',monospace";ctx.fillStyle=w.col;ctx.fillText("QUICK WIN",w.x,46);}
+      ctx.fillStyle="rgba(141,160,188,.85)";ctx.font="400 7.5px 'JetBrains Mono',monospace";const wd=w.sub.split(" · ");
+      ctx.fillText(wd.slice(0,Math.ceil(wd.length/2)).join(" · "),w.x,H-36);ctx.fillText(wd.slice(Math.ceil(wd.length/2)).join(" · "),w.x,H-26);});
+    const col=stCol[state];rrect(ctx,tx-12,H*0.5-46,62,92,12);ctx.fillStyle="rgba(10,18,30,.95)";ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.globalAlpha=.9;ctx.stroke();ctx.globalAlpha=1;
+    if(state>=4){ctx.strokeStyle="rgba(95,255,194,"+(0.4+0.3*Math.sin(t*3))+")";ctx.lineWidth=2;ctx.beginPath();ctx.arc(tx+19,H*0.5,60,-1.0,1.0);ctx.stroke();}
+    ctx.fillStyle="#E9F1FA";ctx.font="700 10px 'Unbounded',sans-serif";ctx.textAlign="center";ctx.fillText("{{COMPANY_UPPER}}",tx+19,H*0.5-2);
+    ctx.fillStyle=col;ctx.font="400 8px 'JetBrains Mono',monospace";ctx.fillText("DONOR·BROADCAST",tx+19,H*0.5+13);
+    spawn();
+    for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx;
+      if(p.proc<aw.length){const w=aw[p.proc];if(p.x>=w.x){const pb=w.blocks[p.key];
+        if(pb&&Math.random()<pb){spl.push({x:w.x,y:p.y,col:w.col,a:1});parts.splice(i,1);continue;}else{p.proc++;}}}
+      if(p.x>tx-12){parts.splice(i,1);continue;}
+      ctx.fillStyle=p.col;ctx.globalAlpha=.9;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();ctx.globalAlpha=1;}
+    for(let i=spl.length-1;i>=0;i--){const s=spl[i];s.a-=0.06;if(s.a<=0){spl.splice(i,1);continue;}
+      ctx.strokeStyle=s.col;ctx.globalAlpha=s.a;ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(s.x,s.y,(1-s.a)*8,0,6.283);ctx.stroke();ctx.globalAlpha=1;}
+    avail+=(stAvail[state]-avail)*0.08;document.getElementById("ddAvail").textContent=Math.round(avail)+"%";
+    if(parts.length>900)parts.length=900;
+    requestAnimationFrame(frame);}
+  requestAnimationFrame(frame);
+})();
+
+/* SCENE 5 : secure by design before/after */
+(function(){
+  const cv=document.getElementById("sbd");if(!cv)return;const ctx=cv.getContext("2d");
+  let W,H,t=0,m=1,mTarget=1,parts=[],lastClick=0;
+  const PRIN=["Retire VPN portal (ZTNA)","Default-deny · identity-first","Segment donor / broadcast","Patch KEV · enforce DMARC","Continuous SOC monitoring"];
+  let sx,sy,coreX,coreY,shieldX;
+  function build(){const s=dpiFit(cv,ctx);W=s.w;H=s.h;sx=W*0.10;sy=H*0.45;coreX=W*0.88;coreY=H*0.45;shieldX=W*0.52;parts=[];}
+  build();window.addEventListener("resize",build);
+  const ctl=document.getElementById("sbdCtl"),btns=ctl.querySelectorAll(".btn");
+  function paint(x){const st=document.getElementById("sbState");
+    if(x){st.textContent="SECURE BY DESIGN";st.style.color=GREEN;st.style.background="rgba(38,217,138,.15)";}
+    else{st.textContent="EXPOSED";st.style.color=RED;st.style.background="rgba(255,59,87,.15)";}
+    btns.forEach((b,j)=>b.classList.toggle("active",j===x));}
+  btns.forEach((b,i)=>b.addEventListener("click",()=>{mTarget=i;lastClick=performance.now();paint(i);}));
+  setInterval(()=>{if(performance.now()-lastClick>5500){mTarget=mTarget?0:1;paint(mTarget);}},3600);
+  const NW=7;
+  function frame(){t+=0.016;m+=(mTarget-m)*0.06;ctx.clearRect(0,0,W,H);const secure=m;
+    for(let i=0;i<NW;i++){const oy=(i-(NW-1)/2)*H*0.082;const y1=sy+oy*0.4,y2=coreY+oy;
+      ctx.strokeStyle=mix(RED,"#2b3b52",secure);ctx.globalAlpha=0.5-0.28*secure;ctx.lineWidth=1.2;
+      ctx.beginPath();ctx.moveTo(sx,y1);ctx.bezierCurveTo((sx+coreX)/2,y1,(sx+coreX)/2,y2,coreX,y2);ctx.stroke();ctx.globalAlpha=1;}
+    if(secure>0.02){const a=secure;const grd=ctx.createLinearGradient(shieldX-18,0,shieldX+18,0);
+      grd.addColorStop(0,"rgba(0,0,0,0)");grd.addColorStop(.5,"rgba(0,215,189,"+(0.18*a)+")");grd.addColorStop(1,"rgba(0,0,0,0)");
+      ctx.fillStyle=grd;ctx.fillRect(shieldX-18,46,36,H-96);
+      ctx.strokeStyle="rgba(0,215,189,"+(0.35+0.5*a)+")";ctx.lineWidth=2.4;ctx.beginPath();ctx.moveTo(shieldX,48);ctx.lineTo(shieldX,H-50);ctx.stroke();
+      ctx.fillStyle="rgba(0,215,189,"+a+")";ctx.font="700 11px 'JetBrains Mono',monospace";ctx.textAlign="center";ctx.fillText("COLT SASE/ZTNA + SOC",shieldX,36);}
+    const sg=ctx.createRadialGradient(sx,sy,2,sx,sy,32);sg.addColorStop(0,"rgba(255,59,87,.45)");sg.addColorStop(1,"rgba(255,59,87,0)");
+    ctx.fillStyle=sg;ctx.beginPath();ctx.arc(sx,sy,32,0,6.283);ctx.fill();
+    ctx.fillStyle=RED;ctx.beginPath();ctx.arc(sx,sy,8,0,6.283);ctx.fill();
+    ctx.fillStyle="#E9F1FA";ctx.font="700 10px 'Unbounded',sans-serif";ctx.textAlign="center";ctx.fillText("INTERNET",sx,sy-22);
+    const ccol=mix(RED,GREEN,secure);rrect(ctx,coreX-58,coreY-44,52,88,12);ctx.fillStyle="rgba(10,18,30,.95)";ctx.fill();
+    ctx.strokeStyle=ccol;ctx.lineWidth=2.4;ctx.globalAlpha=.9;ctx.stroke();ctx.globalAlpha=1;
+    ctx.fillStyle="#E9F1FA";ctx.font="700 10px 'Unbounded',sans-serif";ctx.fillText("{{COMPANY_UPPER}}",coreX-32,coreY-6);
+    ctx.fillStyle=ccol;ctx.font="400 8px 'JetBrains Mono',monospace";ctx.fillText("donor data",coreX-32,coreY+8);ctx.fillText("broadcast",coreX-32,coreY+19);
+    for(let i=0;i<NW;i++){if(Math.random()<0.35){const oy=(i-(NW-1)/2)*H*0.082;parts.push({oy,p:0,sp:0.01+Math.random()*0.008});}}
+    const stopP=secure>0.1?(shieldX-sx)/(coreX-sx):1.06;
+    for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.p+=p.sp;const oy=p.oy;const y1=sy+oy*0.4,y2=coreY+oy;const cx=(sx+coreX)/2;
+      if(p.p>=Math.min(1,stopP)){if(secure>0.1){const yy=qbez(y1,(y1+y2)/2,y2,Math.min(1,stopP));
+        ctx.strokeStyle="rgba(0,215,189,"+Math.max(0,0.6-(p.p-stopP)*4)+")";ctx.lineWidth=1;ctx.beginPath();ctx.arc(shieldX,yy,(p.p-stopP)*46+2,0,6.283);ctx.stroke();}
+        if(p.p>=Math.min(1,stopP)+0.12||p.p>=1){parts.splice(i,1);continue;}}
+      else{const x=qbez(sx,cx,coreX,p.p),y=qbez(y1,(y1+y2)/2,y2,p.p);
+        ctx.fillStyle=secure>0.1?"#FFB0BB":RED;ctx.globalAlpha=.9;ctx.beginPath();ctx.arc(x,y,1.8,0,6.283);ctx.fill();ctx.globalAlpha=1;}}
+    const cyP=H-28,cw=W/PRIN.length;ctx.textAlign="center";
+    PRIN.forEach((pr,i)=>{const x=cw*(i+0.5);ctx.font="600 9.5px 'Inter',sans-serif";const w=ctx.measureText(pr).width+18;
+      rrect(ctx,x-w/2,cyP-10,w,20,6);ctx.fillStyle=secure>0.5?"rgba(38,217,138,.16)":"rgba(20,30,46,.85)";ctx.fill();
+      ctx.strokeStyle=secure>0.5?GREEN:"#2b3b52";ctx.globalAlpha=.9;ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;
+      ctx.fillStyle=secure>0.5?"#9affc9":"#56657f";ctx.fillText(pr,x,cyP+4);});
+    document.getElementById("sbPaths").textContent=Math.round(9-8*secure);
+    document.getElementById("sbPaths").style.color=mix(RED,GREEN,secure);
+    document.getElementById("sbExp").textContent=Math.round(4-4*secure);
+    document.getElementById("sbExp").style.color=mix(RED,GREEN,secure);
+    if(parts.length>520)parts.length=520;
+    requestAnimationFrame(frame);}
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

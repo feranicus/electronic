@@ -19,7 +19,7 @@ What it orchestrates (each of these is still runnable alone for debugging, but y
     pytest tests/                              unit tests: auth + recon
     hermes-skills/.../test_ca_pivot.py         CA-pivot regression (bibeltv false POSITIVES)
     hermes-skills/.../test_recall.py           recall regression (bibeltv false NEGATIVES)
-    build_report_html.js (smoke)               the 5th deliverable renders cleanly
+    author_geopol.py + build_geopol_html.js    the 5th deliverable (GEOPOL HTML) renders
     py_compile over every engine script        catches the truncation/syntax class of bug
     ship_web.py                                web: build -> GHCR -> Actions -> droplet -> Caddy
     deploy.py --reuse --yes                    bots: rebuild + redeploy colt-stack
@@ -175,16 +175,18 @@ def do_tests():
     import tempfile, json as _json
     smp = os.path.join(engine, "..", "sample")
     rp = os.path.join(tempfile.gettempdir(), "ship_report.html")
-    rc = subprocess.run(["node", os.path.join(engine, "build_report_html.js"),
-                         os.path.join(smp, "findings.sample.json"), os.path.join(smp, "cbiq.sample.json"),
-                         os.path.join(smp, "geopol.sample.json"), rp], capture_output=True, text=True)
+    rc = subprocess.run(["python3", os.path.join(engine, "author_geopol.py"),
+                         os.path.join(smp, "findings.sample.json"),
+                         os.path.join(smp, "geopol.sample.json"), rp, "--company", "SmokeTest"],
+                        capture_output=True, text=True)
     ok = rc.returncode == 0 and os.path.exists(rp)
     if ok:
         htm = open(rp, encoding="utf-8").read()
-        ok = all(t not in htm for t in ("undefined", "NaN", "[object Object]")) and "<section" in htm
-    print("  HTML report build: %s" % ("OK" if ok else "BROKEN"))
+        ok = (all(t not in htm for t in ("undefined", "NaN", "[object Object]", "__SCENE", "{{COMPANY"))
+              and all(('id="%s"' % c) in htm for c in ("c1", "c2", "c3", "ddos", "sbd")))
+    print("  GEOPOL HTML artifact build: %s" % ("OK" if ok else "BROKEN"))
     if not ok:
-        print(rc.stderr[:300]); sys.exit("[X] build_report_html.js failed")
+        print((rc.stderr or "")[:300]); sys.exit("[X] author_geopol.py / build_geopol_html.js failed")
 
     # c) the unit suite. Bootstrap the runner if it is missing — "pytest not installed" is a setup
     #    gap, not a reason to hand the operator a second command. A failing TEST blocks the ship;
