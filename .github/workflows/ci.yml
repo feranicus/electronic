@@ -30,7 +30,7 @@ jobs:
           python -m compileall -q colt_auth.py assess-bot cassandra-bot hermes-skills/shodan-assessment/scripts *.py
           ruff check . || true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
 
