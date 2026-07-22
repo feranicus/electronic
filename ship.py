@@ -183,7 +183,11 @@ def do_tests():
     if ok:
         htm = open(rp, encoding="utf-8").read()
         ok = (all(t not in htm for t in ("undefined", "NaN", "[object Object]", "__SCENE", "{{COMPANY"))
-              and all(('id="%s"' % c) in htm for c in ("c1", "c2", "c3", "ddos", "sbd")))
+              and all(('id="%s"' % c) in htm for c in ("c1", "c2", "c3", "ddos", "sbd"))
+              # the skeleton was extracted from the BibelTV exemplar — none of its specifics
+              # (gitlab, donor/broadcast, its VPN IP, its CVE) may leak into another company's report
+              and all(t not in htm.lower() for t in ("bibel", "gitlab", "donor", "broadcast",
+                                                     "213.61.87", "cve-2023-44487")))
     print("  GEOPOL HTML artifact build: %s" % ("OK" if ok else "BROKEN"))
     if not ok:
         print((rc.stderr or "")[:300]); sys.exit("[X] author_geopol.py / build_geopol_html.js failed")

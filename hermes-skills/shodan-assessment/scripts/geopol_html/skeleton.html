@@ -91,13 +91,13 @@ __SCENE2__
       <span><i style="background:#00D7BD;border-radius:2px"></i>DDoS / availability</span>
       <span><i style="background:#5FFFC2;border-radius:2px"></i>Fraud / exfil</span>
     </div>
-    <p class="caption">Vectors &#8594; exposures &#8594; impact, mapped to MITRE ATT&amp;CK · illustrative attack-path synthesis of the verified July 2026 findings (CVE-2023-44487, CISA KEV; exposed SSL-VPN :8443; public GitLab; bibletv.de look-alike).</p>
+    <p class="caption">Vectors &#8594; exposures &#8594; impact, mapped to MITRE ATT&amp;CK · illustrative attack-path synthesis of the verified findings (KEV-listed CVE; exposed remote-access edge; exposed dev/SCM; look-alike domain.de look-alike).</p>
   </section>
 
   <section id="s4">
     <div class="eyebrow">Scene 04 · Featured issue — SSL-VPN edge on Colt · SASE/ZTNA is the quick win</div>
     <h1>Six moves arrive. <span class="hl">Each layer stops its own.</span></h1>
-    <p class="sub">The headline finding in motion: {{COMPANY}}'s <b style="color:var(--ink)">SSL-VPN edge</b> (213.61.87.246:8443) is public and sits on <b style="color:var(--ink)">Colt's own AS8220</b>. An <b style="color:var(--ink)">opportunistic ransomware affiliate</b> opens with a <b style="color:#37C8FF">volumetric DDoS</b> to flood the edge and mask the intrusion, bypasses or credential-stuffs the VPN portal, pivots to donor records and broadcast systems, deploys ransomware and exfiltrates data. <b style="color:#3AA0FF">Colt IP Guardian</b> scrubs the flood at the network edge and <b style="color:var(--teal)">SASE / ZTNA</b> retires the public gateway so there is nothing left to exploit — both on the backbone {{COMPANY}} already uses. Add each layer and watch which move it blocks.</p>
+    <p class="sub">The headline finding in motion: {{COMPANY}}'s <b style="color:var(--ink)">remote-access edge</b> is public and sits on <b style="color:var(--ink)">Colt's own AS8220</b>. An <b style="color:var(--ink)">opportunistic ransomware affiliate</b> opens with a <b style="color:#37C8FF">volumetric DDoS</b> to flood the edge and mask the intrusion, bypasses or credential-stuffs the remote-access portal, pivots to core records and systems, deploys ransomware and exfiltrates data. <b style="color:#3AA0FF">Colt IP Guardian</b> scrubs the flood at the network edge and <b style="color:var(--teal)">SASE / ZTNA</b> retires the public gateway so there is nothing left to exploit — both on the backbone {{COMPANY}} already uses. Add each layer and watch which move it blocks.</p>
     <div class="controls" id="ddosCtl">
       <div class="btn active"><span class="n">1</span>Attack only</div>
       <div class="btn"><span class="n">2</span>+ IP Guardian (DDoS)</div>
@@ -118,18 +118,18 @@ __SCENE2__
     <div class="legend static">
       <span><i style="background:#37C8FF;border-radius:2px"></i>Volumetric DDoS flood</span>
       <span><i style="background:var(--red);border-radius:2px"></i>VPN portal bypass / cred-stuff</span>
-      <span><i style="background:var(--orange);border-radius:2px"></i>Lateral &#8594; donor / broadcast</span>
+      <span><i style="background:var(--orange);border-radius:2px"></i>Lateral &#8594; core systems</span>
       <span><i style="background:var(--amber);border-radius:2px"></i>Credential / session theft</span>
       <span><i style="background:var(--violet);border-radius:2px"></i>Ransomware deploy</span>
-      <span><i style="background:var(--mint);border-radius:2px"></i>Donor-data exfiltration</span>
+      <span><i style="background:var(--mint);border-radius:2px"></i>Crown-jewel data exfiltration</span>
     </div>
-    <p class="caption">IP Guardian scrubs the volumetric DDoS at the network edge — always-on, no customer kit. SASE/ZTNA (quick win) retires the public VPN portal and enforces identity, so the exploit and credential paths disappear. NGFW segmentation contains lateral movement to donor &amp; broadcast systems; Managed SOC detects and stops ransomware; SSE secure egress blocks C2 and exfiltration. Figures illustrative.</p>
+    <p class="caption">IP Guardian scrubs the volumetric DDoS at the network edge — always-on, no customer kit. SASE/ZTNA (quick win) retires the public VPN portal and enforces identity, so the exploit and credential paths disappear. NGFW segmentation contains lateral movement to core systems; Managed SOC detects and stops ransomware; SSE secure egress blocks C2 and exfiltration. Figures illustrative.</p>
   </section>
 
   <section id="s5">
     <div class="eyebrow">Scene 05 · Secure by Design — CISA + BSI, by Colt / S4Biz</div>
     <h1>From <span class="rd">exposed</span> to <span class="gr">secure by design</span>.</h1>
-    <p class="sub">The same estate, two architectures. <b style="color:var(--ink)">Before</b>: a public SSL-VPN portal, a public GitLab, KEV-flagged nginx and a look-alike domain — every path reaches donor data and the broadcast operation. <b style="color:var(--ink)">After</b>: a Secure-by-Design architecture — the VPN portal retired behind identity-first ZTNA, donor &amp; broadcast systems segmented, DDoS scrubbing and a managed edge, DMARC against brand-abuse, continuous SOC monitoring — built and operated by Colt &amp; S4Biz on the backbone they already run for {{COMPANY}}.</p>
+    <p class="sub">The same estate, two architectures. <b style="color:var(--ink)">Before</b>: a public remote-access portal, an exposed dev/SCM host, a KEV-flagged web fleet and a look-alike domain — every path reaches the crown-jewel data and core operations. <b style="color:var(--ink)">After</b>: a Secure-by-Design architecture — the VPN portal retired behind identity-first ZTNA, core systems segmented, DDoS scrubbing and a managed edge, DMARC against brand-abuse, continuous SOC monitoring — built and operated by Colt &amp; S4Biz on the backbone they already run for {{COMPANY}}.</p>
     <div class="controls" id="sbdCtl">
       <div class="btn"><span class="n">A</span>Before</div>
       <div class="btn active"><span class="n">B</span>After — Secure by Design</div>
@@ -148,7 +148,7 @@ __SCENE2__
       <span><i style="background:var(--teal);border-radius:2px"></i>Colt SASE / ZTNA + managed edge</span>
       <span><i style="background:var(--green);border-radius:2px"></i>Secure-by-Design control active</span>
     </div>
-    <p class="caption">Secure-by-Design (CISA &amp; BSI-aligned, delivered by Colt / S4Biz): own the security outcome, retire the public VPN portal behind ZTNA, gate GitLab, segment donor &amp; broadcast systems, DDoS-scrub on the Colt edge, enforce DMARC + patch KEV (CVE-2023-44487), monitor continuously — designed in, not bolted on.</p>
+    <p class="caption">Secure-by-Design (CISA &amp; BSI-aligned, delivered by Colt / S4Biz): own the security outcome, retire the public VPN portal behind ZTNA, gate the dev/SCM surface, segment core systems, DDoS-scrub on the Colt edge, enforce DMARC + patch KEV-listed CVEs, monitor continuously — designed in, not bolted on.</p>
   </section>
 
   <div class="foot">
@@ -208,7 +208,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
 /* SCENE 2 : threat convergence */
 (function(){
   const cv=document.getElementById("c2"),ctx=cv.getContext("2d");let W,H,sources=[],particles=[],t=0,target;
-  const defs=[["NoName057(16)",TEAL,"pro-Russian DDoS"],["OPPORTUNISTIC RaaS",VIOLET,"ransomware via exposed edge"],["RELIGIOUS / IDEOLOGICAL",ORANGE,"DDoS & defacement"],["BRAND-ABUSE FRAUD",MINT,"donation phishing (look-alike)"],["INITIAL-ACCESS BROKERS",AMBER,"sell VPN :8443 access"],["nginx KEV",RED,"CVE-2023-44487 Rapid Reset"]];
+  const defs=[["NoName057(16)",TEAL,"pro-Russian DDoS"],["OPPORTUNISTIC RaaS",VIOLET,"ransomware via exposed edge"],["RELIGIOUS / IDEOLOGICAL",ORANGE,"DDoS & defacement"],["BRAND-ABUSE FRAUD",MINT,"donation phishing (look-alike)"],["INITIAL-ACCESS BROKERS",AMBER,"sell VPN :8443 access"],["KEV fleet",RED,"KEV-listed CVE"]];
   function build(){const s=fit(cv);W=s.w;H=s.h;target={x:W*0.64,y:H*0.5};sources=[];
     const lx=W*0.15;defs.forEach((d,i)=>{const y=H*(0.13+i*0.146);sources.push({x:lx,y,name:d[0],col:d[1],meth:d[2],ph:Math.random()*6.28});});particles=[];}
   build();window.addEventListener("resize",build);
@@ -221,7 +221,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
     ctx.fillStyle=g;ctx.beginPath();ctx.arc(target.x,target.y,110,0,6.2832);ctx.fill();
     ctx.strokeStyle="rgba(0,215,189,.5)";ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(target.x,target.y,30+2*Math.sin(t*2),0,6.2832);ctx.stroke();
     ctx.fillStyle="rgba(233,241,250,.9)";ctx.font="700 13px 'Unbounded', sans-serif";ctx.textAlign="center";ctx.fillText("{{COMPANY_UPPER}}",target.x,target.y-44);
-    ctx.font="500 9.5px 'JetBrains Mono', monospace";ctx.fillStyle="rgba(141,160,188,.85)";ctx.fillText("donor data · broadcast · giving",target.x,target.y+52);
+    ctx.font="500 9.5px 'JetBrains Mono', monospace";ctx.fillStyle="rgba(141,160,188,.85)";ctx.fillText("customer data · core service",target.x,target.y+52);
     for(const s of sources){ctx.save();ctx.beginPath();const pr=6+1.6*Math.sin(t*2.4+s.ph);
       const gg=ctx.createRadialGradient(s.x,s.y,1,s.x,s.y,22);gg.addColorStop(0,s.col);gg.addColorStop(1,"transparent");
       ctx.fillStyle=gg;ctx.globalAlpha=.5;ctx.arc(s.x,s.y,22,0,6.2832);ctx.fill();ctx.restore();
@@ -242,9 +242,9 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
 /* SCENE 3 : attack-path map */
 (function(){
   const cv=document.getElementById("c3");if(!cv)return;const ctx=cv.getContext("2d");let W,H,t=0,parts=[];
-  const LEFT=[["DDoS flood (NoName057)",TEAL],["Ransomware via VPN edge",RED],["GitLab exploit / secrets",ORANGE],["Donation phishing (look-alike)",MINT],["Web defacement (hacktivist)",VIOLET],["nginx Rapid Reset (KEV)",AMBER]];
-  const MID=["SSL-VPN edge :8443 (Colt)","Public GitLab (Hetzner)","host.bibel.tv nginx — CVE","{{COMPANY}} / bibel.tv web","bibletv.de look-alike (US)","Strato mail infra"];
-  const RIGHT=["Donor / supporter PII","Broadcast & streaming","Donations / giving flow","Source code & CI secrets","Brand & donor trust"];
+  const LEFT=[["DDoS flood (NoName057)",TEAL],["Ransomware via VPN edge",RED],["SCM exploit / secret leak",ORANGE],["Donation phishing (look-alike)",MINT],["Web defacement (hacktivist)",VIOLET],["nginx Rapid Reset (KEV)",AMBER]];
+  const MID=["SSL-VPN edge :8443 (Colt)","Exposed dev / SCM","Web fleet — flagged CVE","{{COMPANY}} web","bibletv.de look-alike (US)","Strato mail infra"];
+  const RIGHT=["Customer / user PII","Core service delivery","Donations / giving flow","Source code & CI secrets","Brand & customer trust"];
   const LM=[[0,3],[1,0],[2,1],[3,4],[4,3],[5,2],[0,3],[1,0],[2,1],[3,4],[4,3],[5,2]];
   const MR=[[0,0,RED],[0,1,RED],[1,3,ORANGE],[2,1,AMBER],[3,4,VIOLET],[4,2,MINT],[0,0,RED],[1,3,ORANGE],[2,1,TEAL],[4,2,MINT],[3,4,VIOLET],[5,0,MINT]];
   let lx,mx,rx,ly,my,ry,laR,maL,maR,raL;
@@ -285,11 +285,11 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
   const cv=document.getElementById("ddos");if(!cv)return;const ctx=cv.getContext("2d");
   let W,H,t=0,state=0,avail=6,parts=[],spl=[];
   const DDOSC="#37C8FF",IPG="#3AA0FF";
-  const LANES=[{name:"Volumetric DDoS flood",col:DDOSC,key:"DDOS"},{name:"VPN portal bypass / cred-stuff (:8443)",col:RED,key:"VPN"},{name:"Lateral → donor / broadcast",col:ORANGE,key:"LAT"},
-    {name:"Credential / session theft",col:AMBER,key:"CRED"},{name:"Ransomware deploy",col:VIOLET,key:"RANSOM"},{name:"Donor-data exfiltration",col:MINT,key:"EXFIL"}];
+  const LANES=[{name:"Volumetric DDoS flood",col:DDOSC,key:"DDOS"},{name:"VPN portal bypass / cred-stuff (:8443)",col:RED,key:"VPN"},{name:"Lateral → core systems",col:ORANGE,key:"LAT"},
+    {name:"Credential / session theft",col:AMBER,key:"CRED"},{name:"Ransomware deploy",col:VIOLET,key:"RANSOM"},{name:"Data exfiltration",col:MINT,key:"EXFIL"}];
   const WALLS=[{name:"IP GUARDIAN",sub:"always-on DDoS scrub · no CPE",col:IPG,fx:0.30,blocks:{DDOS:0.99}},
     {name:"SASE · ZTNA",sub:"retire gateway · identity-first · quick win",col:TEAL,fx:0.42,blocks:{VPN:0.99,CRED:0.92}},
-    {name:"NGFW SEGMENT",sub:"contain · donor / broadcast",col:VIOLET,fx:0.54,blocks:{LAT:0.96}},
+    {name:"NGFW SEGMENT",sub:"contain · core systems",col:VIOLET,fx:0.54,blocks:{LAT:0.96}},
     {name:"MANAGED SOC",sub:"detect · respond 24×7",col:AMBER,fx:0.66,blocks:{RANSOM:0.8}},
     {name:"SSE · SECURE EGRESS",sub:"block C2 · stop exfil",col:MINT,fx:0.78,blocks:{EXFIL:0.98,DDOS:0.99,VPN:0.99,LAT:0.99,CRED:0.99,RANSOM:0.99}}];
   const stAvail=[6,38,64,80,92,99],stAbs=[5,30,55,76,90,99],stStatus=["ESTATE BREACHED","DDoS SCRUBBED","GATEWAY CLOSED","CONTAINED","DETECTED","SECURE"],stCol=[RED,"#3AA0FF","#00D7BD","#9E86FF",GREEN,GREEN];
@@ -321,7 +321,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
     const col=stCol[state];rrect(ctx,tx-12,H*0.5-46,62,92,12);ctx.fillStyle="rgba(10,18,30,.95)";ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.globalAlpha=.9;ctx.stroke();ctx.globalAlpha=1;
     if(state>=4){ctx.strokeStyle="rgba(95,255,194,"+(0.4+0.3*Math.sin(t*3))+")";ctx.lineWidth=2;ctx.beginPath();ctx.arc(tx+19,H*0.5,60,-1.0,1.0);ctx.stroke();}
     ctx.fillStyle="#E9F1FA";ctx.font="700 10px 'Unbounded',sans-serif";ctx.textAlign="center";ctx.fillText("{{COMPANY_UPPER}}",tx+19,H*0.5-2);
-    ctx.fillStyle=col;ctx.font="400 8px 'JetBrains Mono',monospace";ctx.fillText("DONOR·BROADCAST",tx+19,H*0.5+13);
+    ctx.fillStyle=col;ctx.font="400 8px 'JetBrains Mono',monospace";ctx.fillText("CROWN JEWELS",tx+19,H*0.5+13);
     spawn();
     for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx;
       if(p.proc<aw.length){const w=aw[p.proc];if(p.x>=w.x){const pb=w.blocks[p.key];
@@ -340,7 +340,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
 (function(){
   const cv=document.getElementById("sbd");if(!cv)return;const ctx=cv.getContext("2d");
   let W,H,t=0,m=1,mTarget=1,parts=[],lastClick=0;
-  const PRIN=["Retire VPN portal (ZTNA)","Default-deny · identity-first","Segment donor / broadcast","Patch KEV · enforce DMARC","Continuous SOC monitoring"];
+  const PRIN=["Retire VPN portal (ZTNA)","Default-deny · identity-first","Segment core systems","Patch KEV · enforce DMARC","Continuous SOC monitoring"];
   let sx,sy,coreX,coreY,shieldX;
   function build(){const s=dpiFit(cv,ctx);W=s.w;H=s.h;sx=W*0.10;sy=H*0.45;coreX=W*0.88;coreY=H*0.45;shieldX=W*0.52;parts=[];}
   build();window.addEventListener("resize",build);
@@ -368,7 +368,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
     const ccol=mix(RED,GREEN,secure);rrect(ctx,coreX-58,coreY-44,52,88,12);ctx.fillStyle="rgba(10,18,30,.95)";ctx.fill();
     ctx.strokeStyle=ccol;ctx.lineWidth=2.4;ctx.globalAlpha=.9;ctx.stroke();ctx.globalAlpha=1;
     ctx.fillStyle="#E9F1FA";ctx.font="700 10px 'Unbounded',sans-serif";ctx.fillText("{{COMPANY_UPPER}}",coreX-32,coreY-6);
-    ctx.fillStyle=ccol;ctx.font="400 8px 'JetBrains Mono',monospace";ctx.fillText("donor data",coreX-32,coreY+8);ctx.fillText("broadcast",coreX-32,coreY+19);
+    ctx.fillStyle=ccol;ctx.font="400 8px 'JetBrains Mono',monospace";ctx.fillText("crown-jewel data",coreX-32,coreY+8);ctx.fillText("core service",coreX-32,coreY+19);
     for(let i=0;i<NW;i++){if(Math.random()<0.35){const oy=(i-(NW-1)/2)*H*0.082;parts.push({oy,p:0,sp:0.01+Math.random()*0.008});}}
     const stopP=secure>0.1?(shieldX-sx)/(coreX-sx):1.06;
     for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.p+=p.sp;const oy=p.oy;const y1=sy+oy*0.4,y2=coreY+oy;const cx=(sx+coreX)/2;
