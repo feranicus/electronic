@@ -378,6 +378,27 @@ an animated loss-exceedance curve, per-actor threat cards, kill-chain timeline).
   `.html` (served inline, text/html) alongside `.pptx` (attachment). Owner-scoped + traversal-guarded
   exactly as the decks are.
 
+## Recon depth + audit safety (skon.de run #3 — the Opus gap)
+Opus's hand-made S-KON deck had 12 findings incl. a WatchGuard Firebox (C-01) on the Colt /30;
+cybergod produced 2 and the audit dropped the one critical. Two root causes, both fixed:
+1. **The crown-jewel host was never scanned.** skon.de fronts on Google with a DV cert (no
+   subject-O), so the seed gave brand token `skon` only — never the strong
+   `ssl.cert.subject.o:"S-KON Sales Kontor Hamburg GmbH"` anchor. FIX: `run()` now HARVESTS the cert
+   subject-O from the SWEEP hosts (the WatchGuard presents the OV O) and re-pivots on
+   `ssl.cert.subject.o:` when the O carries a brand token — pulling in the owned Colt-netblock hosts
+   the seed cert never revealed. (Parallel to the internal-CA harvest; brand-token gated so it can't
+   blow scope.)
+2. **The audit dropped a legit scanned host.** `run()` now records `scanned_ips` (every host recon's
+   ownership gate KEPT = owned by definition); `run_assessment` persists it to `target.owned`; and
+   `audit_fp._host_is_off_estate()` never drops a host recon scanned. Recon is the ownership
+   authority; the LLM auditor is a backstop that can flag but not overrule it.
+Audit is now VISIBLE: run_assessment prints `FP-AUDIT: auditor=X vs deck-author=Y -> verdict/…`,
+the `fp_audit` event carries author+auditor+verdict+dropped+refused, and Grafana has an
+"FP audit" row (audits run, dropped, refused, dirty verdicts, + an auditor-vs-author ledger table).
+NOTE (honest): closing the FULL Opus depth gap (detecting every category Opus writes — edge-appliance
+class, HTTP/2 DoS, PKI hygiene, verbose banners as distinct findings) is iterative detector work in
+`classify()`, tracked separately. This change restores the hosts + stops the audit deleting them.
+
 ## HARD RULE — the FP auditor may FLAG but must never gut the deck (skon.de, run #2)
 The independent FP-audit LLM (audit_fp.py) turned a CORRECT skon.de run (19 real hosts, zero client
 FPs) into an EMPTY deck: deepseek flagged all 3 findings and --apply dropped all 3 -> CRIT/HIGH/MED/

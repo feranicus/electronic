@@ -131,16 +131,20 @@ def _host_is_off_estate(ev, owned):
     owned-set agrees the host is off-estate: not a pinned IP, not under an owned domain, no brand
     token. Fail closed toward KEEPING the finding — a missing owned-set means we cannot corroborate,
     so we do not drop."""
+    # scanned_ips = every host recon's ownership gate already vetted and KEPT. Recon is the ownership
+    # authority; the LLM auditor is a backstop. A host recon scanned is owned by definition, so the
+    # auditor may NOT drop it (this is what wrongly deleted skon.de's real nginx-CVE critical).
+    vetted = set(owned.get("scanned_ips") or [])
     pins = set(owned.get("pinned") or [])
     doms = [str(d).lower().lstrip(".") for d in (owned.get("domains") or [])]
     toks = [t for t in (owned.get("brand_tokens") or []) if t]
-    if not (pins or doms or toks):
+    if not (vetted or pins or doms or toks):
         return False                       # no ownership data -> never corroborated -> keep
     blob = " ".join(str(e) for e in (ev or [])).lower()
     ips = _re.findall(r"\d{1,3}(?:\.\d{1,3}){3}", blob)
     for ip in ips:
-        if ip in pins:
-            return False                   # a pinned host is ours by definition
+        if ip in vetted or ip in pins:
+            return False                   # recon scanned/pinned this host -> ours by definition
     if any(d and d in blob for d in doms):
         return False                       # references an owned domain
     if any(t in _re.sub(r"[^a-z0-9]", "", blob) for t in toks):

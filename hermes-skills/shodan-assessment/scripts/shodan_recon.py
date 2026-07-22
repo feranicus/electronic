@@ -890,6 +890,41 @@ def run(ident, F, audience, limit_per_query=500):
                   file=sys.stderr)
         except shodan.APIError:
             pass
+
+    # auto-harvest the CERT SUBJECT-O pivot: the seed cert (on a Google/CDN LB) is often a DV cert
+    # with NO organisation, so the strongest anchor — the OV subject-O — is only visible on the
+    # estate's OWN appliances. skon.de: the WatchGuard Firebox at 213.61.141.198 presents
+    # O="S-KON Sales Kontor Hamburg GmbH"; harvesting it here and re-pivoting on
+    # ssl.cert.subject.o: is what finds the owned Colt-netblock hosts the seed cert never revealed.
+    seen_o = {}
+    for _ms in hosts.values():
+        for _m in _ms:
+            _o = (((_m.get("ssl") or {}).get("cert") or {}).get("subject") or {}).get("O")
+            if _o: seen_o[_o] = seen_o.get(_o, 0) + 1
+    _btoks = set(ident.get("brand_tokens") or [])
+    for _o in [o for o, n in sorted(seen_o.items(), key=lambda x: -x[1])][:6]:
+        _sq = re.sub(r"[^a-z0-9]", "", str(_o).lower())
+        # only re-pivot on an O that carries a brand token AND is not a hoster/public name
+        if not any(t in _sq for t in _btoks) or _is(_o, CDNS) or _is(_o, PUBLIC_CAS):
+            continue
+        if _o in ident.get("cert_orgs", []):
+            continue
+        ident.setdefault("cert_orgs", []).append(_o)
+        print(f"[auto] cert subject-O pivot on {_o!r} (brand-token match)", file=sys.stderr)
+        try:
+            k = 0; kept = 0
+            for _m in api.search_cursor('ssl.cert.subject.o:"%s"' % _o):
+                ip2 = _m.get("ip_str")
+                if ip2 and ip2 not in hosts:
+                    hosts.setdefault(ip2, []).append(_m)      # a target-O cert IS proof of ownership
+                    if _m.get("asn"): asns.add(_m["asn"])
+                    kept += 1; pivot_added += 1
+                k += 1
+                if k >= limit_per_query: break
+            print(f"[auto]   cert-O pivot {_o!r}: +{kept} hosts", file=sys.stderr)
+        except shodan.APIError:
+            pass
+
     # SAFETY NET: findings must not be computed over an estate the identity queries never proved.
     # If this ever trips again, the deck is wrong — say so loudly instead of shipping it silently.
     if len(hosts) > max(25, 4 * max(1, len(identity_ips))):
@@ -929,6 +964,10 @@ def run(ident, F, audience, limit_per_query=500):
                 "title": f"{title}{extra} ({nhost} host{'s' if nhost > 1 else ''})",
                 "what": [f"{len(b['ips'])} host(s) match this exposure pattern."],
                 "evidence": b["evidence"], "why": why, "rem": rem, "refs": refs})
+    # Every IP the sweep KEPT has already passed recon's ownership gate, so it is owned by
+    # definition. The FP auditor uses this set to avoid dropping a legitimately-scanned host that
+    # simply wasn't in the DNS-probe pin list (that dropped skon.de's real critical).
+    ident["scanned_ips"] = sorted(hosts.keys())
     return {"target": {"company": company_name(ident), "audience": audience or "Internal — Colt Sales Engineering",
                        "date": datetime.date.today().isoformat(),
                        "scope": f"ASN {','.join(ident['asns']) or '—'} · {len(ident['nets'])} prefixes · domains {','.join(ident['domains']) or '—'}"},

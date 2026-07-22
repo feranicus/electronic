@@ -558,6 +558,7 @@ def main():
         fj.setdefault("target", {})["owned"] = {
             "domains": list(ident.get("domains") or []),
             "pinned": list(ident.get("pinned") or []),
+            "scanned_ips": list(ident.get("scanned_ips") or []),   # every host recon's gate kept = owned
             "brand_tokens": list(ident.get("brand_tokens") or []),
             "asns": list(ident.get("asns") or []),
             "cert_org": ident.get("cert_org_seen"),
@@ -695,9 +696,17 @@ def main():
         except Exception: pass
         _dropped=_verdict.get("dropped") or []
         _refused=_verdict.get("refused") or []
-        _ev(evt="fp_audit", company=_tag, auditor=_verdict.get("auditor"),
+        _author=(fj.get("target",{}).get("qwen",{}) or {}).get("model")
+        _auditor=_verdict.get("auditor")
+        # VISIBLE in the run log (the user asked "I don't see what model did the audit"):
+        print("FP-AUDIT: auditor=%s  vs  deck-author=%s  ->  verdict=%s  flagged=%d  dropped=%d  refused=%d"
+              % (_auditor or "none", _author or "?", _verdict.get("verdict","?"),
+                 len(_verdict.get("false_positives") or []), len(_dropped), len(_refused)))
+        _ev(evt="fp_audit", company=_tag, auditor=_auditor, author=_author,
             verdict=_verdict.get("verdict"), flagged=len(_verdict.get("false_positives") or []),
             dropped=len(_dropped), refused=len(_refused))
+        _pg("FP audit: %s reviewed the decks (author %s) — verdict %s"
+            % (_auditor or "none", _author or "?", _verdict.get("verdict","?")), 94)
         if _refused and not _dropped:
             # the auditor over-flagged (the skon.de failure): guardrails kept the deck intact
             _pg("FP audit flagged %d but none corroborated as off-estate — findings kept" % len(_refused), 95)
