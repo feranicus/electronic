@@ -919,3 +919,34 @@ human asserts the fact, so the zero-false-positive ownership gate stays intact.
 - Guarded by ship.py smoke (`clarify.build` on the sample: every question carries a valid `maps_to`,
   the notes question is always present). Deploys with the ONE command `python ship.py` (colt-web +
   colt-assessbot both carry the engine change; engine-hash verify proves the container holds it).
+
+## Compliance module — NIS2 / CRA / EU AI Act (2026-07; 4th cabinet section)
+A SECOND assessment type beside Assess/Assistant/History, same "one company-name input -> AI decks +
+deliver-then-refine" UX as the security Assess. It grades a company against NIS2, the Cyber Resilience
+Act and the EU AI Act and produces 3 regime decks + a combined roadmap deck + an animated HTML report
+(EN/DE). Input is the COMPANY NAME ONLY: the LLM INFERS the scoping assumptions (sector, size band,
+sells-digital-products?, builds/deploys-AI?, countries) and STATES them; the post-run clarification
+loop is how the operator confirms/corrects them (answers OVERRIDE the inference).
+- Engine (all in hermes-skills/shodan-assessment/scripts, so BOTH images already COPY it):
+  `compliance_enrich.py` (LLM grounded ONLY in `compliance/EU_COMPLIANCE_REFERENCE.md` -> compliance.json;
+  reuses enrich._call/_chain/_json; DETERMINISTIC fallback holds the FIXED facts — obligations,
+  deadlines, penalty maxima are company-independent, so the decks are correct even with no model,
+  applicability just reads "requires confirmation"); `build_compliance_deck.js` (ONE parametrized
+  pptxgenjs builder for nis2|cra|aiact|roadmap, Colt palette, EN/DE via a local label map — does NOT
+  use deck_i18n); `build_compliance_html.js` (self-contained animated report, no deps);
+  `compliance_clarify.py` (deterministic questions: sector/size_band/sells_digital/builds_ai/countries/
+  notes); `compliance_assess.py` (orchestrator: enrich -> 4 decks -> HTML -> clarify.json -> PROGRESS/
+  events + "ASSESSMENT COMPLETE"; refine flags --sector/--size-band/--sells-digital/--builds-ai/
+  --country/--notes).
+- Backend: `settings.COMPLIANCE_ENGINE`; `_run_job(engine=, seed_flag=)` now selects the engine
+  (compliance uses `--company`, security uses `--seed`); `POST /api/compliance` (start) +
+  `POST /api/compliance/{job}/refine` (`_compliance_refine_flags`). The streaming/status/deck/clarify
+  endpoints are SHARED (engine-agnostic, keyed by job_id) — no `kind` column needed, and `_collect_decks`
+  already globs `*.pptx` + `*_Report*.html` which catches the compliance artifacts.
+- Frontend: `pages/Compliance.jsx` (+ Sidebar nav + Cabinet route + api startCompliance/complianceRefine).
+  Reuses the clarify panel; adds the `choice`/`yesno` question kinds.
+- Ship: ship.py smoke builds the deterministic compliance.json + a regime deck + roadmap deck + HTML
+  (no undefined/NaN leaks) + clarify; compliance_assess.py/compliance_enrich.py added to ENGINE_FILES
+  so the engine-hash verify proves the container holds them. ONE command: `python ship.py`.
+- NOT legal advice — the reference and every deck footer say so; deadlines/penalties are quoted from
+  the primary legal texts as at 20 Jul 2026 and should be re-checked (national NIS2 transposition moves).

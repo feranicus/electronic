@@ -35,6 +35,14 @@ export const assessClarify = (jobId) => getJSON(`/api/assess/${encodeURIComponen
 export const assessRefine = (jobId, answers, lang = "en") =>
   postJSON(`/api/assess/${encodeURIComponent(jobId)}/refine`, { answers, lang });
 
+// ---- Compliance (NIS2 / CRA / EU AI Act) ----
+// Shares the assess streaming/status/clarify/deck endpoints (engine-agnostic); only start + refine
+// are compliance-specific.
+export const startCompliance = (company, lang = "en") =>
+  postJSON("/api/compliance", { company, lang });
+export const complianceRefine = (jobId, answers, lang = "en") =>
+  postJSON(`/api/compliance/${encodeURIComponent(jobId)}/refine`, { answers, lang });
+
 // ---- Assistant ----
 export const assist = (message) => postJSON("/api/assist", { message });
 

@@ -99,7 +99,8 @@ def _test_python():
 # deployed engine is the only honest proof of a deploy: bibeltv.de was re-run against a 3-day-old
 # colt-web because the CI deploy failed, ship_web.py still printed DONE, and the verify step only
 # checked that /api/me returned 401 — which a stale container answers perfectly well.
-ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py"]
+ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
+                "scripts/compliance_assess.py", "scripts/compliance_enrich.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -215,6 +216,45 @@ def do_tests():
     print("  clarify questions build: %s" % ("OK" if cok else "BROKEN"))
     if not cok:
         sys.exit("[X] clarify.py produced no/invalid questions (each needs a valid maps_to)")
+
+    # c''') COMPLIANCE module — the deterministic path must produce a valid compliance.json, render a
+    #       regime deck + roadmap deck + the HTML report (no undefined/NaN leaks), and yield clarify
+    #       questions with valid maps_to. This runs with NO OPENAI key = the fallback, so it proves the
+    #       decks are safe even when the model is down.
+    try:
+        import importlib.util as _ilu2
+        _s = _ilu2.spec_from_file_location("compliance_enrich", os.path.join(engine, "compliance_enrich.py"))
+        _CE = _ilu2.module_from_spec(_s); _s.loader.exec_module(_CE)
+        _env = dict(os.environ); _env.pop("OPENAI_API_KEY", None)
+        _cj, _st = _CE.build("SmokeTest AG", "en", {})
+        _cpath = os.path.join(tempfile.gettempdir(), "ship_compliance.json")
+        _json.dump(_cj, open(_cpath, "w", encoding="utf-8"), ensure_ascii=False)
+        comp_ok = set(_cj.get("regimes") or {}) >= {"nis2", "cra", "aiact"} and bool(_cj.get("roadmap"))
+        for _reg, _fn in (("nis2", "ship_c_nis2.pptx"), ("roadmap", "ship_c_road.pptx")):
+            _op = os.path.join(tempfile.gettempdir(), _fn)
+            _r = subprocess.run(["node", os.path.join(engine, "build_compliance_deck.js"), _cpath, _op, _reg],
+                                capture_output=True, text=True, env=_env)
+            comp_ok = comp_ok and _r.returncode == 0 and os.path.exists(_op)
+        _hp = os.path.join(tempfile.gettempdir(), "ship_compliance.html")
+        _r = subprocess.run(["node", os.path.join(engine, "build_compliance_html.js"), _cpath, _hp],
+                            capture_output=True, text=True, env=_env)
+        if _r.returncode == 0 and os.path.exists(_hp):
+            _htm = open(_hp, encoding="utf-8").read()
+            comp_ok = comp_ok and all(t not in _htm for t in ("undefined", "NaN", "[object Object]"))
+            comp_ok = comp_ok and all(('id="%s"' % k) in _htm for k in ("nis2", "cra", "aiact"))
+        else:
+            comp_ok = False
+        _sc = _ilu2.spec_from_file_location("compliance_clarify", os.path.join(engine, "compliance_clarify.py"))
+        _CC = _ilu2.module_from_spec(_sc); _sc.loader.exec_module(_CC)
+        _cq = _CC.build(_cj).get("questions") or []
+        _cmaps = {"sector", "size_band", "sells_digital_products", "builds_or_deploys_ai", "countries", "notes"}
+        comp_ok = comp_ok and bool(_cq) and all(q.get("maps_to") in _cmaps for q in _cq) \
+                  and any(q.get("id") == "notes" for q in _cq)
+    except Exception as _e:
+        comp_ok = False; print("    compliance smoke error: %r" % _e)
+    print("  compliance decks + HTML + clarify build: %s" % ("OK" if comp_ok else "BROKEN"))
+    if not comp_ok:
+        sys.exit("[X] compliance module failed its smoke (enrich/deck/html/clarify)")
 
     # c) the unit suite. Bootstrap the runner if it is missing — "pytest not installed" is a setup
     #    gap, not a reason to hand the operator a second command. A failing TEST blocks the ship;

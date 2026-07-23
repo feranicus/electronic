@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import NewAssessment from "./NewAssessment.jsx";
+import Compliance from "./Compliance.jsx";
 import Assistant from "./Assistant.jsx";
 import History from "./History.jsx";
 import { getMe } from "../api.js";
@@ -33,6 +34,7 @@ export default function Cabinet() {
       <main className="main">
         <Routes>
           <Route path="/" element={<NewAssessment />} />
+          <Route path="compliance" element={<Compliance />} />
           <Route path="assistant" element={<Assistant />} />
           <Route path="history" element={<History />} />
         </Routes>

@@ -8,6 +8,9 @@ const items = [
   ["/app", "Assess", true, (
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
   )],
+  ["/app/compliance", "Compliance", false, (
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg>
+  )],
   ["/app/assistant", "Assistant", false, (
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 1 1-3.2-6.4" /><path d="M12 8v4l3 2" /></svg>
   )],

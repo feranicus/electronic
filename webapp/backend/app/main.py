@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from . import store, assistant
 from .auth import AUTH, make_session, read_session, email_ok, _log
 from .settings import (
-    ENGINE, JOBS_DIR, FRONTEND_DIST, SESSION_COOKIE, SESSION_MAX_AGE,
+    ENGINE, COMPLIANCE_ENGINE, JOBS_DIR, FRONTEND_DIST, SESSION_COOKIE, SESSION_MAX_AGE,
     SESSION_COOKIE_SECURE, CORS_ORIGINS,
 )
 
@@ -90,6 +90,17 @@ class RefineReq(BaseModel):
     # run_assessment override flags — the frontend stays dumb, all parsing lives server-side.
     answers: dict = {}
     lang: str = "en"          # inherited from the parent run; the operator can also switch language
+
+
+class ComplianceReq(BaseModel):
+    company: str
+    lang: str = "en"          # "en" | "de" — language of the 4 compliance decks + HTML
+
+
+class ComplianceRefineReq(BaseModel):
+    # answers keyed by compliance_clarify's `maps_to` (sector/size_band/sells_digital_products/...)
+    answers: dict = {}
+    lang: str = "en"
 
 
 class AssistReq(BaseModel):
@@ -238,14 +249,18 @@ def _collect_decks(job_id: str, jobdir: Path) -> list:
 _RUNNING: dict = {}          # job_id -> asyncio.Task, so we can see what is in flight
 
 
-async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: list = None):
+async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: list = None,
+                   engine: str = None, seed_flag: str = "--seed"):
     """Own the engine run. Writes every line to <jobdir>/run.log and finalises the DB row.
     Nothing here depends on an HTTP client being connected.
 
-    `overrides` are extra run_assessment.py flags from the post-run clarification loop (a REFINE run):
-    --domain / --exclude-domain / --pin / --asn / --net / --platform-operator / --notes. They are the
-    sanctioned way scope changes after the first run — the operator asserted the fact, so the
-    zero-false-positive ownership gate stays intact."""
+    `engine`/`seed_flag` select which engine runs: the security engine (run_assessment.py, --seed) or
+    the compliance engine (compliance_assess.py, --company). Both stream PROGRESS/JSON the same way and
+    print "ASSESSMENT COMPLETE", so the shared SSE viewer + deck collection work for both.
+
+    `overrides` are extra engine flags from the post-run clarification loop (a REFINE run). They are the
+    sanctioned way scope changes after the first run — the operator asserted the fact."""
+    engine = engine or ENGINE
     jobdir = _job_dir(email, job_id)
     logp = jobdir / "run.log"
     _RUNNING[job_id] = asyncio.current_task()
@@ -257,11 +272,11 @@ async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: 
         except Exception:
             pass
 
-    if not Path(ENGINE).exists():
-        _w(json.dumps({"evt": "error", "message": f"engine not found at {ENGINE}"}))
+    if not Path(engine).exists():
+        _w(json.dumps({"evt": "error", "message": f"engine not found at {engine}"}))
         store.finish_job(job_id, [], {}, status="error"); _RUNNING.pop(job_id, None); return
 
-    cmd = ["python3", "-u", ENGINE, "--seed", company, "--outdir", str(jobdir), "--lang", lang]
+    cmd = ["python3", "-u", engine, seed_flag, company, "--outdir", str(jobdir), "--lang", lang]
     cmd += list(overrides or [])
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -559,6 +574,87 @@ async def assess_refine(job_id: str, req: RefineReq, request: Request):
     _log(evt="assess_refine", user=email, company=company, job=child_id, parent=job_id,
          flags=len(flags))
     asyncio.create_task(_run_job(child_id, email, company, lang, overrides=flags))
+    return {"job_id": child_id, "parent": job_id}
+
+
+# ---------------------------------------------------------------- COMPLIANCE MODULE ---
+# NIS2 / Cyber Resilience Act / EU AI Act. Same shape as Assess: one company-name input -> the
+# compliance engine (compliance_assess.py) produces 3 regime decks + a roadmap deck + an animated HTML
+# report, then surfaces clarification questions the operator answers to refine scope. The shared
+# streaming/status/deck/clarify endpoints are engine-agnostic (they read the job's run.log + jobdir);
+# only START and REFINE need to know the engine, so only those are compliance-specific.
+
+def _compliance_refine_flags(answers: dict) -> list:
+    """Map compliance clarify answers (keyed by `maps_to`) into compliance_assess.py flags."""
+    a = answers or {}
+    flags: list = []
+    sector = str(a.get("sector") or "").strip()
+    if sector:
+        flags += ["--sector", sector[:160]]
+    size = str(a.get("size_band") or "").strip().lower()
+    if size in ("micro", "small", "medium", "large"):
+        flags += ["--size-band", size]
+    if a.get("sells_digital_products") is not None:
+        flags += ["--sells-digital", "yes" if a.get("sells_digital_products") in (True, "true", "yes", "on", 1, "1") else "no"]
+    if a.get("builds_or_deploys_ai") is not None:
+        flags += ["--builds-ai", "yes" if a.get("builds_or_deploys_ai") in (True, "true", "yes", "on", 1, "1") else "no"]
+    for tok in _split_tokens(a.get("countries")):
+        c = re.sub(r"[^A-Za-z]", "", tok).upper()[:2]
+        if len(c) == 2:
+            flags += ["--country", c]
+    notes = str(a.get("notes") or "").strip()
+    if notes:
+        flags += ["--notes", notes[:2000]]
+    return flags
+
+
+@app.post("/api/compliance")
+async def compliance(req: ComplianceReq, request: Request):
+    email = _require_email(request)
+    company = (req.company or "").strip()
+    if not company:
+        raise HTTPException(status_code=400, detail="company required")
+    lang = "de" if str(req.lang or "en").lower().startswith("de") else "en"
+    job_id = uuid.uuid4().hex
+    _job_dir(email, job_id)
+    store.create_job(job_id, email, company, lang)
+    _log(evt="compliance_request", user=email, company=company, job=job_id, lang=lang)
+    try:
+        from . import telemetry as _t, alerts as _a
+        _a.observe_assess(email, company, _t.client_ip(request))
+    except Exception:
+        pass
+    asyncio.create_task(_run_job(job_id, email, company, lang,
+                                 engine=COMPLIANCE_ENGINE, seed_flag="--company"))
+    return {"job_id": job_id}
+
+
+@app.post("/api/compliance/{job_id}/refine")
+async def compliance_refine(job_id: str, req: ComplianceRefineReq, request: Request):
+    """Answer the compliance clarification questions -> a NEW child run, re-scoped with the
+    operator-confirmed facts (which OVERRIDE the model's inference)."""
+    email = _require_email(request)
+    parent = store.get_job(job_id)
+    if not parent or parent["email"] != email.lower():
+        raise HTTPException(status_code=404, detail="job not found")
+    flags = _compliance_refine_flags(req.answers)
+    if not flags:
+        raise HTTPException(status_code=400, detail="no changes supplied")
+    company = parent.get("company") or ""
+    lang = "de" if str(req.lang or parent.get("lang") or "en").lower().startswith("de") else "en"
+    child_id = uuid.uuid4().hex
+    cdir = _job_dir(email, child_id)
+    store.create_job(child_id, email, company, lang)
+    try:
+        (cdir / "refine_request.json").write_text(
+            json.dumps({"parent": job_id, "answers": req.answers, "flags": flags}, ensure_ascii=False),
+            encoding="utf-8")
+    except Exception:
+        pass
+    _log(evt="compliance_refine", user=email, company=company, job=child_id, parent=job_id,
+         flags=len(flags))
+    asyncio.create_task(_run_job(child_id, email, company, lang, overrides=flags,
+                                 engine=COMPLIANCE_ENGINE, seed_flag="--company"))
     return {"job_id": child_id, "parent": job_id}
 
 

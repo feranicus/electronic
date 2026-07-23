@@ -123,3 +123,14 @@ answers, and a REFINE run re-scopes and rebuilds.
 - Frontend: the "Refine this assessment" panel in `NewAssessment.jsx` (checkbox chips, text fields,
   platform toggle, free-text notes).
 - Ship: guarded by the ship.py clarify smoke; deploys with the one command `python ship.py`.
+
+## Compliance module (NIS2 / CRA / EU AI Act)
+A fourth cabinet section beside Assess/Assistant/History, same one-input + deliver-then-refine UX.
+- Engine (beside the security engine, shipped in both images): `compliance_assess.py` (orchestrator) ->
+  `compliance_enrich.py` (LLM grounded in `compliance/EU_COMPLIANCE_REFERENCE.md`; deterministic
+  fallback holds the fixed obligations/deadlines/penalties) -> `build_compliance_deck.js` (3 regime
+  decks + roadmap, EN/DE) + `build_compliance_html.js` (animated report) -> `compliance_clarify.py`.
+- API: `POST /api/compliance` (start), `POST /api/compliance/{job}/refine`; streaming/status/deck/
+  clarify are the SHARED assess endpoints (engine-agnostic). `settings.COMPLIANCE_ENGINE` selects it.
+- Frontend: `pages/Compliance.jsx` + Sidebar nav + Cabinet route.
+- Ship: guarded by the ship.py compliance smoke; deploys with the one command `python ship.py`.
