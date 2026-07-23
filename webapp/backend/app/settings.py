@@ -27,10 +27,12 @@ ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "colt.net")
 # Locally, default to the repo copy so `python -m app.main` works out of the box.
 _DEFAULT_ENGINE = REPO_ROOT / "hermes-skills" / "shodan-assessment" / "scripts" / "run_assessment.py"
 ENGINE = os.getenv("ENGINE", str(_DEFAULT_ENGINE))
-# Compliance module engine (NIS2 / CRA / EU AI Act) lives beside the security engine.
-_DEFAULT_COMPLIANCE_ENGINE = (REPO_ROOT / "hermes-skills" / "shodan-assessment" / "scripts"
-                              / "compliance_assess.py")
-COMPLIANCE_ENGINE = os.getenv("COMPLIANCE_ENGINE", str(_DEFAULT_COMPLIANCE_ENGINE))
+# Compliance module engine (NIS2 / CRA / EU AI Act) lives BESIDE the security engine — derive it from
+# ENGINE's own directory, never from REPO_ROOT. In the container ENGINE is overridden by env to
+# /opt/shodan-skill/scripts/run_assessment.py, so REPO_ROOT-relative paths point at a non-existent
+# /hermes-skills/... (this exact bug 404'd the first live compliance run). Both scripts are COPYed
+# into the same dir, so with_name() always resolves correctly whatever ENGINE points to.
+COMPLIANCE_ENGINE = os.getenv("COMPLIANCE_ENGINE") or str(Path(ENGINE).with_name("compliance_assess.py"))
 
 # --- assistant (cassandra / DeepSeek on DO serverless) ---
 OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY", "")
