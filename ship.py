@@ -113,25 +113,38 @@ def _sha_local(rel):
     return hashlib.sha256(open(p, "rb").read()).hexdigest()
 
 
-def _sha_in_container(container, rel):
-    """sha256 of a file INSIDE a running container. Uses python3 (always present in these images)
-    rather than sha256sum, which slim images sometimes lack."""
-    code = ("import hashlib,sys;p='%s/%s';\n"
-            "sys.stdout.write(hashlib.sha256(open(p,'rb').read()).hexdigest())" % (ENGINE_REMOTE, rel))
-    out = ssh("docker exec %s python3 -c \"%s\" 2>/dev/null || echo MISSING" % (container, code))
-    return (out or "").strip().splitlines()[-1].strip() if out else "MISSING"
+def _sha_all_in_container(container):
+    """sha256 of EVERY ENGINE_FILE inside a running container, in ONE ssh + ONE docker exec.
+
+    WHY one call: the old code opened one ssh PER FILE. sshd throttles rapid repeat connections, so
+    growing ENGINE_FILES (e.g. adding the compliance engine) pushed the per-file loop past the throttle
+    threshold and the whole ship HUNG mid-verify. Hashing all files in a single remote python keeps the
+    connection count flat no matter how many files we verify. The remote code is a SINGLE line (no
+    newlines, no double quotes) so it survives ssh's shell quoting; missing files report 'MISSING'."""
+    code = ("import hashlib,os;b=%r;fs=%r;"
+            "print(chr(10).join(r+' '+(hashlib.sha256(open(os.path.join(b,r),'rb').read()).hexdigest() "
+            "if os.path.exists(os.path.join(b,r)) else 'MISSING') for r in fs))"
+            % (ENGINE_REMOTE, list(ENGINE_FILES)))
+    out = ssh("docker exec %s python3 -c \"%s\" 2>/dev/null || true" % (container, code))
+    got = {}
+    for line in (out or "").splitlines():
+        parts = line.strip().split(" ")
+        if len(parts) == 2 and "/" in parts[0]:
+            got[parts[0]] = parts[1]
+    return got
 
 
 def engine_is_current(container):
-    """-> (ok, [list of stale files]). Proves the container runs THIS repo's engine."""
+    """-> (ok, [list of stale files]). Proves the container runs THIS repo's engine. ONE ssh."""
+    got = _sha_all_in_container(container)
     stale = []
     for rel in ENGINE_FILES:
         want = _sha_local(rel)
         if not want:
             continue
-        got = _sha_in_container(container, rel)
-        if got != want:
-            stale.append("%s (container=%s repo=%s)" % (rel, got[:12], want[:12]))
+        have = got.get(rel, "MISSING")
+        if have != want:
+            stale.append("%s (container=%s repo=%s)" % (rel, have[:12], want[:12]))
     return (not stale), stale
 
 
