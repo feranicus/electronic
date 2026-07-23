@@ -891,3 +891,31 @@ starving.
 gemma on this account is ERRATIC on the same prompt: 53s/2758 tok (good) · 81s timeout · 162s ->
 top-level list · 4s -> {}. If it keeps failing, re-run `python compare_models.py --lang de` and
 consider promoting deepseek-3.2 back to head — but decide from `check_enrich.py`, not from theory.
+
+## Assess clarification loop — deliver FIRST, then ask (2026-07; jobhuntwow gap->answer model)
+The Assess flow is now conversational, modelled EXACTLY on jobhuntwow's Tailor (docs/TAILOR_LOGIC.md
+§4): the four decks + animated GEOPOL HTML are delivered FIRST, THEN the engine surfaces what recon
+could not resolve as clarification questions. The operator answers / adds facts and a REFINE run
+re-scopes and rebuilds. Answers are the ONE sanctioned way scope changes after the first run — the
+human asserts the fact, so the zero-false-positive ownership gate stays intact.
+- Questions are DETERMINISTIC (`scripts/clarify.py::build(fj)`), NOT LLM — auditable, free, never
+  hallucinates a domain. Each is machine-actionable via `maps_to`. Triggers: related_unscoped domains
+  ("which are yours?"), no-owned-ASN / CDN-fronted ("known netblocks/ASNs?"), thin estate (<6 hosts,
+  "known VPN/mail/gitlab hosts?"), a prune list of current findings ("anything NOT yours?"), and an
+  always-present free-text notes box. run_assessment.py writes `clarify.json` to the jobdir at the end
+  of every run and emits `evt=clarify`.
+- Refine overrides (run_assessment.py): `--exclude-domain` (apex/host/IP force out of scope),
+  `--pin` (exact host IP to scan), `--platform-operator` (keep client domains out), `--notes`
+  (free-text -> enrich via COLT_NOTES + GEOPOL). Threaded into `shodan_recon.autodiscover(...,
+  excludes=, pins=, platform_operator=)`: excludes force-unown an apex in `_consider_domain` and drop
+  matching hosts (by IP or hostname/rDNS/cert-CN under the apex) in `run()` after all pivots; pins
+  append to `ident["pinned"]` (scanned via the always-on pinned-host filter). Existing
+  `--domain/--asn/--net/--org` already cover the INCLUDE side.
+- Web: `GET /api/assess/{job}/clarify` returns the questions; `POST /api/assess/{job}/refine` maps
+  answers (keyed by `maps_to`) -> flags via `main.py::_refine_flags` (IP->--pin, CIDR->--net,
+  ASxxxx->--asn, domain->--domain, "not mine"->--exclude-domain) and launches a CHILD job that streams
+  like the original. Frontend `NewAssessment.jsx` shows a "Refine this assessment" panel after the
+  decks (checkbox chips for include/exclude, text fields, platform toggle, notes) -> `assessRefine`.
+- Guarded by ship.py smoke (`clarify.build` on the sample: every question carries a valid `maps_to`,
+  the notes question is always present). Deploys with the ONE command `python ship.py` (colt-web +
+  colt-assessbot both carry the engine change; engine-hash verify proves the container holds it).

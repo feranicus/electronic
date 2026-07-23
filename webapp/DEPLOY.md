@@ -108,3 +108,18 @@ ledger on the shared `colt_events` volume: `/var/log/colt/cost_ledger.sqlite`
   so it reports true all-time totals with no extra datasource or plugin.
 - Report / backfill / refresh, all read-only on the droplet:
   `python cost_report.py`   (add `--json`, `--no-backfill`, or `--local <path>`)
+
+## Post-run clarification loop (Assess) — deliver first, then refine
+Modelled on jobhuntwow's Tailor (docs/TAILOR_LOGIC.md §4). The four decks + animated GEOPOL HTML are
+delivered FIRST; then the engine surfaces what recon could not resolve as questions, the operator
+answers, and a REFINE run re-scopes and rebuilds.
+
+- Engine: `scripts/clarify.py` writes `clarify.json` at the end of every run (deterministic questions,
+  each with a `maps_to`). `run_assessment.py` accepts refine flags
+  `--exclude-domain/--pin/--platform-operator/--notes` (INCLUDE side reuses `--domain/--asn/--net`),
+  threaded into `shodan_recon.autodiscover(excludes=, pins=, platform_operator=)`.
+- API: `GET /api/assess/{job}/clarify` (questions), `POST /api/assess/{job}/refine` (answers -> flags
+  via `_refine_flags` -> a child job that streams like the original on `/events` + `/status`).
+- Frontend: the "Refine this assessment" panel in `NewAssessment.jsx` (checkbox chips, text fields,
+  platform toggle, free-text notes).
+- Ship: guarded by the ship.py clarify smoke; deploys with the one command `python ship.py`.

@@ -469,6 +469,16 @@ def main():
     ap.add_argument("--cert-org", dest="cert_org", action="append", default=[])
     ap.add_argument("--jarm", action="append", default=[]); ap.add_argument("--cpe", action="append", default=[])
     ap.add_argument("--from-findings"); ap.add_argument("--company")
+    # REFINE overrides — fed by the post-run clarification loop (clarify.py + web /refine). They are
+    # the ONE sanctioned way scope changes after the first run; the operator asserts the fact so the
+    # zero-false-positive ownership gate stays intact.
+    ap.add_argument("--exclude-domain", dest="exclude", action="append", default=[],
+                    help="apex/host/IP the operator says is NOT theirs — force out of scope")
+    ap.add_argument("--pin", action="append", default=[],
+                    help="exact host IP to scan directly (VPN/mail/GitLab edge the auto-recon missed)")
+    ap.add_argument("--platform-operator", dest="platform_operator", action="store_true",
+                    help="operator runs sites for clients — keep client domains out of scope")
+    ap.add_argument("--notes", default="", help="free-text operator context for the LLM prose + GEOPOL")
     ap.add_argument("--outdir", default="."); ap.add_argument("--audience")
     ap.add_argument("--lang", default=os.environ.get("DECK_LANG", "en"),
                     choices=["en", "de"], help="language of the 4 generated decks (en|de)")
@@ -530,7 +540,8 @@ def main():
             if n not in ident["nets"]: ident["nets"].append(n)
             ident["org_is_cdn"]=False
         R.autodiscover(ident, a.org, a.brand, a.domain, a.favicon,
-                       issuers=a.issuer, cert_orgs=a.cert_org, jarms=a.jarm, cpes=a.cpe)
+                       issuers=a.issuer, cert_orgs=a.cert_org, jarms=a.jarm, cpes=a.cpe,
+                       excludes=a.exclude, pins=a.pin, platform_operator=a.platform_operator)
         F = R.build_filters(ident)
         open(os.path.join(a.outdir,"filters.md"),"w").write(R.filters_md(ident,F))
         if not os.environ.get("SHODAN_API_KEY"):
@@ -563,7 +574,16 @@ def main():
             "asns": list(ident.get("asns") or []),
             "cert_org": ident.get("cert_org_seen"),
             "related_unscoped": list(ident.get("related_unscoped") or []),
+            "excluded": (list(ident.get("exclude_apexes") or []) + list(ident.get("exclude_ips") or [])),
+            "platform_operator": bool(ident.get("platform_operator")),
         }
+        # REFINE provenance — record what the operator asserted so the deck can state it, the next
+        # clarify round knows what was already answered, and enrichment/GEOPOL get the free-text notes.
+        if a.notes or a.exclude or a.pin or a.platform_operator:
+            fj["target"]["refine"] = {"notes": a.notes, "excluded": list(a.exclude),
+                                      "pinned": list(a.pin), "platform_operator": bool(a.platform_operator)}
+        if a.notes:
+            fj["target"]["operator_notes"] = a.notes
         json.dump(fj, open(os.path.join(a.outdir,"findings.json"),"w"), indent=2, ensure_ascii=False)
         open(os.path.join(a.outdir,"findings.md"),"w").write(R.findings_md(fj))
 
@@ -624,7 +644,7 @@ def main():
                                timeout=430,   # must exceed ENRICH_BUDGET_S (380) or we
                                               # kill the chain mid-answer
                                env={**os.environ, "OUTDIR": a.outdir, "DECK_LANG": a.lang,
-                                    "PYTHONUNBUFFERED": "1"})
+                                    "COLT_NOTES": a.notes or "", "PYTHONUNBUFFERED": "1"})
             # (stdout/stderr already streamed straight through to the caller)
             if r.returncode != 0:
                 print(f"[warn] enrich exit={r.returncode}: {r.stderr.strip()[-500:]}", file=sys.stderr)
@@ -733,6 +753,20 @@ def main():
         if not ok5: print(f"[warn] author_geopol.py: {(r.stderr or '').strip()[:300]}", file=sys.stderr)
     except Exception as _e:
         print(f"[warn] GEOPOL HTML: {_e}", file=sys.stderr)
+
+    # CLARIFY (post-run, jobhuntwow gap->answer model): deliver the artifacts FIRST, then surface
+    # what recon could NOT resolve as machine-actionable questions. The web /refine endpoint turns
+    # the operator's answers into the override flags above and re-runs — the sanctioned way scope
+    # changes while keeping the zero-false-positive ownership gate intact.
+    try:
+        import clarify as _CLAR
+        _clar = _CLAR.build(fj)
+        json.dump(_clar, open(os.path.join(a.outdir, "clarify.json"), "w"),
+                  indent=2, ensure_ascii=False)
+        _ev(evt="clarify", company=_tag, questions=len(_clar.get("questions") or []),
+            excluded_related=_clar.get("summary", {}).get("excluded_related", 0))
+    except Exception as _e:
+        print(f"[warn] clarify: {_e}", file=sys.stderr)
 
     s=fj["summary"]
     if fj.get("target",{}).get("qa_note"): print(fj["target"]["qa_note"])

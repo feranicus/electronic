@@ -85,6 +85,13 @@ class AssessReq(BaseModel):
     lang: str = "en"          # "en" | "de" — language of the 4 generated decks
 
 
+class RefineReq(BaseModel):
+    # answers keyed by the clarify question's `maps_to` (clarify.py). The backend turns them into
+    # run_assessment override flags — the frontend stays dumb, all parsing lives server-side.
+    answers: dict = {}
+    lang: str = "en"          # inherited from the parent run; the operator can also switch language
+
+
 class AssistReq(BaseModel):
     message: str
 
@@ -231,9 +238,14 @@ def _collect_decks(job_id: str, jobdir: Path) -> list:
 _RUNNING: dict = {}          # job_id -> asyncio.Task, so we can see what is in flight
 
 
-async def _run_job(job_id: str, email: str, company: str, lang: str):
+async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: list = None):
     """Own the engine run. Writes every line to <jobdir>/run.log and finalises the DB row.
-    Nothing here depends on an HTTP client being connected."""
+    Nothing here depends on an HTTP client being connected.
+
+    `overrides` are extra run_assessment.py flags from the post-run clarification loop (a REFINE run):
+    --domain / --exclude-domain / --pin / --asn / --net / --platform-operator / --notes. They are the
+    sanctioned way scope changes after the first run — the operator asserted the fact, so the
+    zero-false-positive ownership gate stays intact."""
     jobdir = _job_dir(email, job_id)
     logp = jobdir / "run.log"
     _RUNNING[job_id] = asyncio.current_task()
@@ -250,6 +262,7 @@ async def _run_job(job_id: str, email: str, company: str, lang: str):
         store.finish_job(job_id, [], {}, status="error"); _RUNNING.pop(job_id, None); return
 
     cmd = ["python3", "-u", ENGINE, "--seed", company, "--outdir", str(jobdir), "--lang", lang]
+    cmd += list(overrides or [])
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
@@ -423,6 +436,130 @@ def assess_deck(job_id: str, name: str, request: Request):
     disp = "inline" if low.endswith(".html") else "attachment"
     return FileResponse(str(path), media_type=media, filename=name,
                         content_disposition_type=disp)
+
+
+# ---------------------------------------------------------------- clarify + refine ---
+# jobhuntwow gap->answer model (docs/TAILOR_LOGIC.md §4): deliver the artifacts first, then let the
+# operator answer clarification questions / add facts and REFINE. clarify.json is written by the
+# engine at the end of every run; /refine turns answers into override flags and re-runs the engine.
+
+_IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+_CIDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
+_ASN_RE = re.compile(r"^AS?\d+$", re.I)
+
+
+def _split_tokens(v) -> list:
+    """Accept a list OR a free-text string ('a, b; c') and return clean tokens."""
+    if isinstance(v, list):
+        items = v
+    else:
+        items = re.split(r"[,\n;]+", str(v or ""))
+    return [t.strip() for t in items if str(t).strip()]
+
+
+def _refine_flags(answers: dict) -> list:
+    """Map clarify answers (keyed by the question's `maps_to`) into run_assessment.py flags.
+
+    All parsing lives here so the frontend just posts the raw answers. A token that looks like an IP
+    becomes --pin, a CIDR becomes --net, an ASxxxx becomes --asn, otherwise a domain (--domain), and
+    'not mine' answers become --exclude-domain (autodiscover normalises IP vs apex)."""
+    flags: list = []
+    a = answers or {}
+
+    def _host_of(tok: str) -> str:
+        return tok.split()[0].split(":")[0].strip()   # "1.2.3.4:443 nginx" -> "1.2.3.4"
+
+    for tok in _split_tokens(a.get("include_domains")):
+        flags += ["--domain", _host_of(tok)]
+    for tok in _split_tokens(a.get("include_nets")):
+        flags += ["--net", tok]
+    for tok in _split_tokens(a.get("include_asns")):
+        flags += ["--asn", tok]
+
+    # free-text "known netblocks or ASNs" — split by shape
+    for tok in _split_tokens(a.get("netblocks_or_asns")):
+        if _CIDR_RE.match(tok):
+            flags += ["--net", tok]
+        elif _ASN_RE.match(tok):
+            flags += ["--asn", "AS" + re.sub(r"\D", "", tok)]
+        elif _IP_RE.match(tok):
+            flags += ["--pin", tok]
+        elif "." in tok:
+            flags += ["--domain", _host_of(tok)]
+
+    # free-text "extra hosts/domains to add"
+    for tok in _split_tokens(a.get("hosts_or_domains")):
+        h = _host_of(tok)
+        if _IP_RE.match(h):
+            flags += ["--pin", h]
+        elif _CIDR_RE.match(h):
+            flags += ["--net", h]
+        elif "." in h:
+            flags += ["--domain", h]
+
+    # "these are NOT mine" — from the exclude checkboxes (host:port) or a free-text list
+    for tok in _split_tokens(a.get("exclude_hosts")) + _split_tokens(a.get("exclude_domains")):
+        flags += ["--exclude-domain", _host_of(tok)]
+
+    if a.get("platform_operator") in (True, "true", "yes", "on", 1, "1"):
+        flags += ["--platform-operator"]
+
+    notes = str(a.get("notes") or "").strip()
+    if notes:
+        flags += ["--notes", notes[:2000]]
+
+    return flags
+
+
+@app.get("/api/assess/{job_id}/clarify")
+def assess_clarify(job_id: str, request: Request):
+    """Return the post-run clarification questions (clarify.json) for a finished job."""
+    email = _require_email(request)
+    job = store.get_job(job_id)
+    if not job or job["email"] != email.lower():
+        raise HTTPException(status_code=404, detail="job not found")
+    p = _job_dir(email, job_id) / "clarify.json"
+    if not p.exists():
+        return {"questions": [], "summary": {}, "company": job.get("company")}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {"questions": [], "summary": {}, "company": job.get("company")}
+
+
+@app.post("/api/assess/{job_id}/refine")
+async def assess_refine(job_id: str, req: RefineReq, request: Request):
+    """Answer the clarification questions -> a NEW child run, correctly re-scoped.
+
+    We re-run the whole engine (from --seed company) with the answer-derived override flags rather
+    than patching the old artifacts: recon is where scope is decided, so the clean way to change
+    scope is to re-resolve it with the operator's asserted facts. The child streams exactly like the
+    original assessment (same /events + /status)."""
+    email = _require_email(request)
+    parent = store.get_job(job_id)
+    if not parent or parent["email"] != email.lower():
+        raise HTTPException(status_code=404, detail="job not found")
+
+    flags = _refine_flags(req.answers)
+    if not flags:
+        raise HTTPException(status_code=400, detail="no changes supplied")
+
+    company = parent.get("company") or ""
+    lang = "de" if str(req.lang or parent.get("lang") or "en").lower().startswith("de") else "en"
+    child_id = uuid.uuid4().hex
+    cdir = _job_dir(email, child_id)
+    store.create_job(child_id, email, company, lang)
+    # provenance: what the operator asserted, and which run it refines
+    try:
+        (cdir / "refine_request.json").write_text(
+            json.dumps({"parent": job_id, "answers": req.answers, "flags": flags}, ensure_ascii=False),
+            encoding="utf-8")
+    except Exception:
+        pass
+    _log(evt="assess_refine", user=email, company=company, job=child_id, parent=job_id,
+         flags=len(flags))
+    asyncio.create_task(_run_job(child_id, email, company, lang, overrides=flags))
+    return {"job_id": child_id, "parent": job_id}
 
 
 @app.get("/api/history")

@@ -30,6 +30,10 @@ export const assessEventsUrl = (jobId) => `/api/assess/${encodeURIComponent(jobI
 // records that the Art.13 notice was shown+accepted (accountability, Art. 5(2))
 export const assessStatus = (jobId) => getJSON(`/api/assess/${encodeURIComponent(jobId)}/status`);
 export const ackPrivacy = () => postJSON("/api/privacy/ack", {});
+// post-run clarification loop (jobhuntwow gap->answer model)
+export const assessClarify = (jobId) => getJSON(`/api/assess/${encodeURIComponent(jobId)}/clarify`);
+export const assessRefine = (jobId, answers, lang = "en") =>
+  postJSON(`/api/assess/${encodeURIComponent(jobId)}/refine`, { answers, lang });
 
 // ---- Assistant ----
 export const assist = (message) => postJSON("/api/assist", { message });

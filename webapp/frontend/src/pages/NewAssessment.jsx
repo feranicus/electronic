@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { startAssess, assessEventsUrl, ackPrivacy, assessStatus } from "../api.js";
+import { startAssess, assessEventsUrl, ackPrivacy, assessStatus,
+  assessClarify, assessRefine } from "../api.js";
 import { NOTICE, useLegalLang, LangToggle } from "../legal";
 
 function asText(v) {
@@ -43,8 +44,30 @@ export default function NewAssessment() {
   const [decks, setDecks] = useState([]);
   const [summary, setSummary] = useState("");
   const [errMsg, setErrMsg] = useState("");
+  // post-run clarification loop (jobhuntwow gap->answer model): after the decks are delivered we ask
+  // what recon could not resolve; the operator answers / adds facts and we REFINE.
+  const [jobId, setJobId] = useState(null);
+  const [clarify, setClarify] = useState(null);   // {questions, summary, company} | null
+  const [answers, setAnswers] = useState({});      // keyed by question.maps_to (what /refine expects)
+  const [refining, setRefining] = useState(false);
   const esRef = useRef(null);
   const logRef = useRef(null);
+
+  async function loadClarify(id) {
+    try {
+      const data = await assessClarify(id);   // getJSON returns the raw object (not {ok,data})
+      if (data && (data.questions || []).length) { setClarify(data); setAnswers({}); }
+      else setClarify(null);
+    } catch { setClarify(null); }
+  }
+  const ansMulti = (key, opt) => setAnswers((a) => {
+    const cur = new Set(a[key] || []);
+    cur.has(opt) ? cur.delete(opt) : cur.add(opt);
+    return { ...a, [key]: [...cur] };
+  });
+  const ansText = (key, val) => setAnswers((a) => ({ ...a, [key]: val }));
+  const hasAnswers = Object.entries(answers).some(([, v]) =>
+    Array.isArray(v) ? v.length : (typeof v === "boolean" ? v : String(v || "").trim()));
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -95,6 +118,7 @@ export default function NewAssessment() {
         setCompany(data.company || "");
         setLines(data.lines || []); setDecks(data.decks || []);
         setSummary(data.summary || ""); setStatus("done"); setPct(100); setShown(100);
+        setJobId(jid); loadClarify(jid);
         try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
       } else {
         try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
@@ -111,6 +135,7 @@ export default function NewAssessment() {
 
   // ONE place that wires the stream — used both by a fresh run and by resuming an in-flight job.
   function attach(jobId) {
+    setJobId(jobId);
     if (esRef.current) esRef.current.close();
     const es = new EventSource(assessEventsUrl(jobId), { withCredentials: true });
     esRef.current = es;
@@ -135,6 +160,7 @@ export default function NewAssessment() {
         setDecks(payload.decks || []);
         setSummary(payload.summary || "");
         setStatus("done");
+        loadClarify(jobId);                          // surface the clarification questions
         es.close();
       } else if (payload.evt === "error") {
         try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
@@ -161,6 +187,7 @@ export default function NewAssessment() {
     if (!name || status === "running") return;
     if (!ackd) { acknowledge(); }                   // first Assess click = notice was shown + accepted
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
+    setClarify(null); setAnswers({});                // fresh run — drop the previous clarification
     setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…"); setNotice("");
     startedRef.current = Date.now();
 
@@ -170,6 +197,25 @@ export default function NewAssessment() {
       setErrMsg(data.message || "Could not start the assessment.");
       return;
     }
+    try { localStorage.setItem("cg_job", data.job_id); } catch { /* ignore */ }
+    attach(data.job_id);
+  }
+
+  // Refine: send the clarification answers -> a NEW child run, re-scoped, streamed like the original.
+  async function submitRefine() {
+    if (!jobId || !hasAnswers || refining) return;
+    setRefining(true);
+    const { ok, data } = await assessRefine(jobId, answers, lang);
+    setRefining(false);
+    if (!ok || !data.job_id) {
+      setErrMsg(data.message || "Could not refine the assessment.");
+      return;
+    }
+    // reset the run view and stream the child exactly like a fresh assessment
+    setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
+    setClarify(null);
+    setPct(0); setShown(0); setElapsed(0); setPhase("Re-scoping with your answers…"); setNotice("");
+    startedRef.current = Date.now();
     try { localStorage.setItem("cg_job", data.job_id); } catch { /* ignore */ }
     attach(data.job_id);
   }
@@ -267,6 +313,58 @@ export default function NewAssessment() {
           </>
         )}
       </div>
+
+      {status === "done" && clarify && (clarify.questions || []).length > 0 && (
+        <div className="panel clarify">
+          <h2 className="page-h" style={{ fontSize: 20, marginTop: 0 }}>Refine this assessment</h2>
+          <p className="page-sub" style={{ marginTop: 4 }}>
+            The decks above are ready. To sharpen the scope, answer anything relevant below — confirm
+            what is yours, add IP ranges / systems the auto-recon could not see, or flag anything that
+            is not yours. I will re-scope and rebuild the four decks and the animated report.
+          </p>
+
+          {clarify.questions.map((q) => (
+            <div key={q.id} className="clarify-q">
+              <div className="clarify-title">{q.title}</div>
+              {q.body && <div className="clarify-body">{q.body}</div>}
+
+              {(q.kind === "domains_multi" || q.kind === "hosts_multi") && (
+                <div className="clarify-opts">
+                  {(q.options || []).map((opt) => {
+                    const on = (answers[q.maps_to] || []).includes(opt);
+                    return (
+                      <label key={opt} className={"chip" + (on ? " chip-on" : "")}>
+                        <input type="checkbox" checked={on} onChange={() => ansMulti(q.maps_to, opt)} />
+                        {opt}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              {q.kind === "text" && (
+                <input className="input" placeholder={q.placeholder || ""}
+                  value={answers[q.maps_to] || ""}
+                  onChange={(e) => ansText(q.maps_to, e.target.value)} />
+              )}
+
+              {q.kind === "yesno" && (
+                <label className={"chip" + (answers[q.maps_to] ? " chip-on" : "")}>
+                  <input type="checkbox" checked={!!answers[q.maps_to]}
+                    onChange={(e) => ansText(q.maps_to, e.target.checked)} />
+                  Yes
+                </label>
+              )}
+            </div>
+          ))}
+
+          <button className="btn" type="button" onClick={submitRefine}
+            disabled={!hasAnswers || refining}>
+            {refining ? <><span className="spinner" /> Refining…</> : "Refine & rebuild"}
+          </button>
+          {!hasAnswers && <div className="gdpr-mini">Answer at least one question to refine.</div>}
+        </div>
+      )}
     </>
   );
 }

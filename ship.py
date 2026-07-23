@@ -195,6 +195,27 @@ def do_tests():
     if not ok:
         print((rc.stderr or "")[:300]); sys.exit("[X] author_geopol.py / build_geopol_html.js failed")
 
+    # c'') clarify.py — the post-run clarification questions. Every question MUST be machine-actionable
+    #      (carry a maps_to that /refine can turn into a run_assessment flag), and the free-text notes
+    #      question must always be present (a run should never dead-end without a way to add context).
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location("clarify", os.path.join(engine, "clarify.py"))
+        _clar = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_clar)
+        _fj = _json.load(open(os.path.join(smp, "findings.sample.json"), encoding="utf-8"))
+        _out = _clar.build(_fj)
+        _qs = _out.get("questions") or []
+        _valid_maps = {"include_domains", "include_nets", "include_asns", "exclude_domains",
+                       "exclude_hosts", "netblocks_or_asns", "hosts_or_domains", "platform_operator",
+                       "notes"}
+        cok = bool(_qs) and all(q.get("maps_to") in _valid_maps for q in _qs) \
+              and any(q.get("id") == "notes" for q in _qs)
+    except Exception as _e:
+        cok = False; print("    clarify smoke error: %r" % _e)
+    print("  clarify questions build: %s" % ("OK" if cok else "BROKEN"))
+    if not cok:
+        sys.exit("[X] clarify.py produced no/invalid questions (each needs a valid maps_to)")
+
     # c) the unit suite. Bootstrap the runner if it is missing — "pytest not installed" is a setup
     #    gap, not a reason to hand the operator a second command. A failing TEST blocks the ship;
     #    a missing test RUNNER we fix ourselves and, if we cannot, warn loudly and continue.

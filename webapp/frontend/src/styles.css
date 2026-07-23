@@ -430,3 +430,18 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .hero h1{font-size:25px}
   #hd nav .btn.sm{padding:8px 12px;font-size:12px}
 }
+
+/* ---------- post-run clarification / refine ---------- */
+.clarify{margin-top:18px;border:1px solid var(--line);border-left:3px solid var(--teal)}
+.clarify-q{padding:14px 0;border-top:1px solid var(--line)}
+.clarify-q:first-of-type{border-top:0}
+.clarify-title{font-weight:700;color:var(--ink);font-size:15px;margin-bottom:4px}
+.clarify-body{color:var(--mut);font-size:13.5px;line-height:1.5;margin-bottom:10px}
+.clarify-opts{display:flex;flex-wrap:wrap;gap:8px}
+.clarify .chip{cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:7px;
+  font-size:13px;color:var(--ink);transition:.15s}
+.clarify .chip:hover{border-color:var(--teal);transform:none}
+.clarify .chip input{accent-color:var(--teal);margin:0}
+.clarify .chip-on{border-color:var(--teal);background:rgba(0,178,169,.14)}
+.clarify .input{margin-top:2px}
+.clarify .btn{margin-top:14px}

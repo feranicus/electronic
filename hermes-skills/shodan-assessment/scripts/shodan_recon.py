@@ -500,12 +500,39 @@ def shodan_plan():
 
 
 def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
-                 issuers=None, cert_orgs=None, jarms=None, cpes=None):
+                 issuers=None, cert_orgs=None, jarms=None, cpes=None,
+                 excludes=None, pins=None, platform_operator=False):
     """One input in, full anchor block out. Resolves ASNs+prefixes (bgpview + RIPE),
     brand domains (crt.sh CT logs), cert subject O, and favicon — then folds in any manual
-    overrides. The internal-CA issuer pivot is auto-harvested live during the sweep (run())."""
+    overrides. The internal-CA issuer pivot is auto-harvested live during the sweep (run()).
+
+    REFINE overrides (from the post-run clarification loop, clarify.py):
+      excludes          — apexes/hostnames/IPs the operator says are NOT theirs (client/white-label
+                          sites, stray shared-hosting neighbours). Domains are force-unowned and never
+                          scanned; IPs are dropped from the final host set in run().
+      pins              — exact host IPs the operator supplied (VPN/mail/GitLab edges the auto-recon
+                          missed). Scanned directly via the always-on pinned-host filter.
+      platform_operator — the operator confirmed they run sites for clients; recorded so the report
+                          can state it and the gate stays strict (client domains never adopted)."""
     orgs=list(orgs or []); brands=list(brands or []); domains=list(domains or [])
     favicons=list(favicons or []); cert_orgs=list(cert_orgs or [])
+    # --- REFINE overrides: normalise excludes into apexes + IPs, and force-pin supplied hosts -------
+    exclude_apexes=set(); exclude_ips=set()
+    for x in (excludes or []):
+        x=str(x).strip().lower().split()[0] if str(x).strip() else ""
+        if not x: continue
+        if CIDR_RE.match(x) or (x.replace(".","").isdigit() and x.count(".")==3):
+            exclude_ips.add(x.split("/")[0])       # exact host IP (CIDR range-match not supported)
+        else:
+            exclude_apexes.add(_apex(_clean_domain(x.split(":")[0])))   # drop any :port
+    if exclude_apexes: ident["exclude_apexes"]=sorted(exclude_apexes)
+    if exclude_ips:    ident["exclude_ips"]=sorted(exclude_ips)
+    for ip in (pins or []):
+        ip=str(ip).strip()
+        if ip and ip not in ident["pinned"] and ip not in exclude_ips:
+            ident["pinned"].append(ip)
+            ident["org_is_cdn"]=ident.get("org_is_cdn")  # pins work via filter #2b regardless
+    if platform_operator: ident["platform_operator"]=True
     name = ident.get("org") or ident.get("brand") or ident["seed"]
     is_name = bool(name) and not CIDR_RE.match(str(name))
     if is_name:                                              # 1) ASNs: RIPE + CAIDA + PeeringDB + bgpview
@@ -571,6 +598,10 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
         if not d or "." not in d:
             return
         ap = _apex(d)
+        # REFINE: the operator explicitly said this apex is not theirs — force it out, never scan it.
+        if ap in exclude_apexes:
+            unowned.add(ap)
+            return
         ok, why = _owns_apex(ap, btoks, seed_apex)
         if not ok:
             unowned.add(ap)
@@ -1021,6 +1052,28 @@ def run(ident, F, audience, limit_per_query=500):
               % (len(identity_ips), len(hosts)), file=sys.stderr)
         ident["scope_blowout"] = {"identity_hosts": len(identity_ips), "total_hosts": len(hosts),
                                   "pivot_added": pivot_added}
+    # REFINE exclusions: drop any host the operator said is not theirs (by IP, or by any hostname/
+    # rDNS/cert-CN under an excluded apex). Applied AFTER all pivots so it prunes whatever slipped in.
+    _ex_ips = set(ident.get("exclude_ips") or [])
+    _ex_aps = tuple(ident.get("exclude_apexes") or [])
+    if _ex_ips or _ex_aps:
+        _before = len(hosts)
+        for ip in list(hosts.keys()):
+            if ip in _ex_ips:
+                del hosts[ip]; continue
+            if _ex_aps:
+                names = set()
+                for m in hosts[ip]:
+                    for h in (m.get("hostnames") or []): names.add(str(h).lower())
+                    for h in (m.get("domains") or []): names.add(str(h).lower())
+                    cn = (((m.get("ssl") or {}).get("cert") or {}).get("subject") or {}).get("CN")
+                    if cn: names.add(str(cn).lower())
+                if any(nm == ap or nm.endswith("." + ap) for nm in names for ap in _ex_aps):
+                    del hosts[ip]
+        if len(hosts) != _before:
+            print("[refine] excluded %d host(s) at operator request" % (_before - len(hosts)),
+                  file=sys.stderr)
+
     buckets = {}
     for ip, ms in hosts.items():
         for m in ms:
