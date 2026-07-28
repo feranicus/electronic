@@ -47,6 +47,11 @@ export default function Sidebar({ email }) {
           signed in as
           <b>{email || "…"}</b>
           <button className="btn ghost sm logout" onClick={logout}>Log out</button>
+          <div className="side-legal">
+            <a href="/impressum">Impressum</a><span>&middot;</span>
+            <a href="/privacy">Datenschutz</a><span>&middot;</span>
+            <a href="/contact">Kontakt</a>
+          </div>
         </div>
       </aside>
     </>

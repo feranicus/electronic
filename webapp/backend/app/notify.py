@@ -109,3 +109,71 @@ def both(subject, body):
     e = email("[cybergod.ai] " + subject, body)
     _log(evt="alert_delivery", channel="both", telegram=bool(t), email=bool(e), subject=subject[:120])
     return t or e
+
+
+# ---------------------------------------------------------------- operator activity feed
+# "Tell me every time someone logs in, and every time someone runs a report."
+# These are INFORMATIONAL, not security alerts: they deliberately bypass alerts.py's cooldown and
+# storm-cap (that machinery exists to stop an attack flooding you; a login you asked to see must
+# never be silently suppressed). Volume is bounded by the size of the allow-list, not by the internet.
+#
+# NOTHING here may block the FastAPI event loop: telegram()/email() do synchronous network I/O, so
+# always dispatch through fire_and_forget().
+import threading
+
+NOTIFY_LOGINS  = os.environ.get("NOTIFY_LOGINS", "1") != "0"
+NOTIFY_REPORTS = os.environ.get("NOTIFY_REPORTS", "1") != "0"
+
+
+def fire_and_forget(fn, *a, **kw):
+    """Run a blocking notification on a daemon thread. Never raises into the caller."""
+    try:
+        threading.Thread(target=lambda: _safe(fn, *a, **kw), daemon=True).start()
+    except Exception:
+        pass
+
+
+def _safe(fn, *a, **kw):
+    try:
+        fn(*a, **kw)
+    except Exception as e:
+        _log(evt="alert_delivery", channel="thread", result="error", err=repr(e)[:160])
+
+
+def _stamp():
+    return time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+
+
+def notify_login(email, ip="", ua="", country="", how="web"):
+    """Every successful sign-in."""
+    if not NOTIFY_LOGINS:
+        return
+    _log(evt="login_notice", user=email, ip=ip, country=country, how=how)
+    body = ("\n".join([
+        "%s just signed in to cybergod.ai." % email,
+        "",
+        "When    : %s" % _stamp(),
+        "Via     : %s" % how,
+        "IP      : %s%s" % (ip or "-", (" (%s)" % country) if country else ""),
+        "Device  : %s" % ((ua or "-")[:160]),
+        "",
+        "If this was not expected, rotate the shared password.",
+    ]))
+    fire_and_forget(both, "Login — %s" % email, body)
+
+
+def notify_report(email, company, kind="assessment", phase="started", ip="", extra=None):
+    """Every report run: once when it starts, once when it finishes."""
+    if not NOTIFY_REPORTS:
+        return
+    extra = extra or {}
+    _log(evt="report_notice", user=email, company=company, kind=kind, phase=phase, **{
+        k: v for k, v in extra.items() if isinstance(v, (str, int, float, bool))})
+    lines = ["%s %s a %s for %s." % (email, "started" if phase == "started" else "finished", kind, company),
+             "", "When    : %s" % _stamp(), "Company : %s" % company, "Type    : %s" % kind]
+    if ip:
+        lines.append("IP      : %s" % ip)
+    for k, v in extra.items():
+        lines.append("%-8s: %s" % (k[:8], v))
+    icon = "▶" if phase == "started" else "✅"
+    fire_and_forget(both, "%s Report %s — %s (%s)" % (icon, phase, company, email), "\n".join(lines))

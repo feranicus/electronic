@@ -230,6 +230,25 @@ def do_tests():
     if not cok:
         sys.exit("[X] clarify.py produced no/invalid questions (each needs a valid maps_to)")
 
+    # LEGAL GUARD - a German Impressum (Sec. 5 DDG) must carry a real name, postal address and
+    # phone number. An incomplete one is the classic Abmahnung risk, so make it impossible to
+    # miss. Loud WARNING, not a hard fail: when to publish is the operator's call.
+    try:
+        _legal = open(os.path.join(HERE, 'webapp', 'frontend', 'src', 'legal.jsx'), encoding='utf-8').read()
+        import re as _re
+        _todo = len(_re.findall(r':\s*"TODO', _legal))   # only real field VALUES, not the comments
+    except Exception:
+        _todo = 0
+    if _todo:
+        print('\n  ' + '!' * 68)
+        print('  [!] IMPRESSUM INCOMPLETE - %d field(s) still say TODO in' % _todo)
+        print('      webapp/frontend/src/legal.jsx  ->  export const OPERATOR')
+        print('      Germany requires a real name, postal address and reachable phone (Sec. 5 DDG).')
+        print('      Publishing without them is legally actionable.')
+        print('  ' + '!' * 68 + '\n')
+    else:
+        print('  legal: Impressum operator details complete')
+
     # c''') COMPLIANCE module — the deterministic path must produce a valid compliance.json, render a
     #       regime deck + roadmap deck + the HTML report (no undefined/NaN leaks), and yield clarify
     #       questions with valid maps_to. This runs with NO OPENAI key = the fallback, so it proves the

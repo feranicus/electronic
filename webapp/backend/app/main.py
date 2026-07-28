@@ -164,6 +164,15 @@ def auth_verify(req: VerifyReq, request: Request):
         return JSONResponse({"ok": False, "message": message})
     resp = JSONResponse({"ok": True, "email": email})
     _set_session_cookie(resp, email)
+    # The operator asked to be told about EVERY sign-in. Threaded inside notify, so a slow
+    # Telegram/Gmail call can never delay the user's login or block the event loop.
+    try:
+        from . import telemetry as _t, geoip as _g, notify as _n
+        _ip = _t.client_ip(request)
+        _n.notify_login(email, ip=_ip, ua=request.headers.get("user-agent", "")[:200],
+                        country=(request.headers.get("cf-ipcountry") or _g.country(_ip)), how="web")
+    except Exception:
+        pass
     return resp
 
 
@@ -220,6 +229,12 @@ async def assess(req: AssessReq, request: Request):
     _job_dir(email, job_id)  # pre-create owner-scoped dir
     store.create_job(job_id, email, company, lang)
     _log(evt="assess_request", user=email, company=company, job=job_id, lang=lang)
+    try:
+        from . import telemetry as _t2, notify as _n2
+        _n2.notify_report(email, company, kind="security assessment", phase="started",
+                          ip=_t2.client_ip(request), extra={"lang": lang, "job": job_id[:8]})
+    except Exception:
+        pass
     try:
         from . import telemetry as _t, alerts as _a
         _a.observe_assess(email, company, _t.client_ip(request))
@@ -321,6 +336,16 @@ async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: 
     if completed:
         decks = _collect_decks(job_id, jobdir)
         store.finish_job(job_id, decks, summary, status="done")
+        try:
+            from . import notify as _n3
+            _kind = "compliance assessment" if engine != ENGINE else "security assessment"
+            _extra = {"files": len(decks), "lang": lang}
+            for _k in ("critical", "high", "medium", "low"):
+                if summary.get(_k) is not None:
+                    _extra[_k] = summary.get(_k)
+            _n3.notify_report(email, company, kind=_kind, phase="finished", extra=_extra)
+        except Exception:
+            pass
     else:
         _w(json.dumps({"evt": "error", "message": "assessment failed",
                        "detail": "\n".join(tail) or "no output"}))
@@ -619,6 +644,12 @@ async def compliance(req: ComplianceReq, request: Request):
     _job_dir(email, job_id)
     store.create_job(job_id, email, company, lang)
     _log(evt="compliance_request", user=email, company=company, job=job_id, lang=lang)
+    try:
+        from . import telemetry as _t2, notify as _n2
+        _n2.notify_report(email, company, kind="compliance assessment", phase="started",
+                          ip=_t2.client_ip(request), extra={"lang": lang, "job": job_id[:8]})
+    except Exception:
+        pass
     try:
         from . import telemetry as _t, alerts as _a
         _a.observe_assess(email, company, _t.client_ip(request))

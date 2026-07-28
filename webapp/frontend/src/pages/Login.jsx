@@ -106,7 +106,8 @@ export default function Login() {
           {err && <div className="err">{err}</div>}
           <Link className="iam-back" to="/">&#8592; Back to the overview</Link>
         </div>
-        <div className="iam-legal">Colt Technology Services · authorised use only</div>
+        <div className="iam-legal">Colt Technology Services · authorised use only<br />
+          <a href="/impressum">Impressum</a> · <a href="/privacy">Datenschutz / Privacy</a> · <a href="/contact">Kontakt</a></div>
       </main>
     </div>
   );

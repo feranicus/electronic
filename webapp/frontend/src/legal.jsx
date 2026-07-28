@@ -68,6 +68,114 @@ export const NOTICE = {
   },
 };
 
+// ======================================================================================
+// OPERATOR — the ONE place the legal identity lives. Impressum, the Datenschutz controller
+// section and the contact page all read from here, so they can never disagree.
+//
+// !! FILL THESE IN BEFORE GOING LIVE !!
+// A German Impressum (§ 5 DDG, formerly § 5 TMG) legally REQUIRES a real name and a
+// physical postal address you can receive mail at — a PO box is not sufficient, and an
+// incomplete Impressum is the classic Abmahnung (cease-and-desist) risk.
+// `ship.py` prints a loud warning while any value below still starts with "TODO".
+// ======================================================================================
+export const OPERATOR = {
+  // Verified from your own jev.best source (src/data.jsx, index.html) — legal spelling as used on
+  // your Colt address jevgenijs.vainsteins@colt.net and your Latvian passport.
+  name:    "Jevgenijs Vainsteins",
+  street:  "Herman J Bach Weg 16",
+  zipCity: "61169 Friedberg",
+  country: "Deutschland",
+  email:   "feranicus@s4biz.io",
+  phone:   "+49 157 8554 1545",
+  vatId:   "",                       // USt-IdNr. — leave "" if you are not VAT-registered
+  // 61169 Friedberg is in Hessen, so the Hessian authority is the competent one (Art. 77 DSGVO).
+  authority: "Der Hessische Beauftragte für Datenschutz und Informationsfreiheit",
+  // --- contact channels (verified from jev.best) ---
+  linkedin: "https://www.linkedin.com/in/feranicus",
+  telegram: "https://t.me/feranicus",
+  github:   "https://github.com/feranicus",
+};
+export const operatorReady = () =>
+  ![OPERATOR.name, OPERATOR.street, OPERATOR.zipCity, OPERATOR.phone]
+    .some((v) => String(v).startsWith("TODO"));
+
+// ---------------------------------------------------------------- the /impressum page
+export const IMPRESSUM = {
+  de: {
+    h1: "Impressum", sub: "Angaben gemäß § 5 DDG",
+    s1: "Diensteanbieter",
+    s2: "Kontakt",
+    s3: "Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV",
+    s4: "Umsatzsteuer-Identifikationsnummer",
+    s5: "Streitbeilegung",
+    s5p: (<>Die Europäische Kommission stellt eine Plattform zur Online-Streitbeilegung (OS) bereit:{" "}
+          <a href="https://ec.europa.eu/consumers/odr/" target="_blank" rel="noreferrer">ec.europa.eu/consumers/odr</a>.
+          Wir sind nicht bereit und nicht verpflichtet, an Streitbeilegungs­verfahren vor einer
+          Verbraucher­schlichtungsstelle teilzunehmen.</>),
+    s6: "Haftung für Inhalte und Links",
+    s6p: (<>Als Diensteanbieter sind wir für eigene Inhalte auf diesen Seiten nach den allgemeinen
+          Gesetzen verantwortlich (§ 7 Abs. 1 DDG). Für Inhalte verlinkter externer Seiten ist stets
+          deren jeweiliger Anbieter verantwortlich; zum Zeitpunkt der Verlinkung waren keine
+          Rechtsverstöße erkennbar. Bei Bekanntwerden von Rechtsverletzungen entfernen wir
+          entsprechende Links umgehend.</>),
+    s7: "Urheberrecht",
+    s7p: (<>Die durch den Betreiber erstellten Inhalte und Werke auf diesen Seiten unterliegen dem
+          deutschen Urheberrecht. Die durch cybergod.ai erzeugten Analyse­dokumente sind internes
+          Vertriebs­material und nicht zur öffentlichen Verbreitung bestimmt.</>),
+    note: "Hinweis: cybergod.ai ist ein zugangsbeschränktes internes Werkzeug für die Cyber-Pre-Sales-Analyse; es steht der Allgemeinheit nicht zur Nutzung offen.",
+    todo: "⚠ Dieses Impressum ist noch unvollständig. Vor der Veröffentlichung müssen Name, Anschrift und Telefonnummer in OPERATOR (src/legal.jsx) eingetragen werden — ein unvollständiges Impressum ist abmahnfähig.",
+  },
+  en: {
+    h1: "Legal notice (Impressum)", sub: "Information pursuant to § 5 DDG (German Digital Services Act)",
+    s1: "Service provider",
+    s2: "Contact",
+    s3: "Responsible for content under § 18(2) MStV",
+    s4: "VAT identification number",
+    s5: "Dispute resolution",
+    s5p: (<>The European Commission provides a platform for online dispute resolution (ODR):{" "}
+          <a href="https://ec.europa.eu/consumers/odr/" target="_blank" rel="noreferrer">ec.europa.eu/consumers/odr</a>.
+          We are neither willing nor obliged to participate in dispute-resolution proceedings before a
+          consumer arbitration board.</>),
+    s6: "Liability for content and links",
+    s6p: (<>As a service provider we are responsible for our own content on these pages under general
+          law (§ 7(1) DDG). The respective provider is always responsible for the content of linked
+          external pages; no legal infringements were apparent at the time of linking. We remove such
+          links immediately upon becoming aware of any infringement.</>),
+    s7: "Copyright",
+    s7p: (<>Content created by the operator on these pages is subject to German copyright law. The
+          analysis documents produced by cybergod.ai are internal sales material and are not intended
+          for public distribution.</>),
+    note: "Note: cybergod.ai is an access-restricted internal tool for cyber pre-sales analysis; it is not open to the general public.",
+    todo: "⚠ This legal notice is incomplete. Name, postal address and phone number must be filled into OPERATOR (src/legal.jsx) before publication — an incomplete Impressum is legally actionable in Germany.",
+  },
+};
+
+// ---------------------------------------------------------------- the /contact page
+export const CONTACT = {
+  de: {
+    h1: "Kontakt", sub: "Direkter Draht — kein Formular, keine Warteschleife",
+    lead: "Fragen zum Zugang, zu einer Analyse, zum Datenschutz oder zur Partnerschaft? Schreiben Sie direkt.",
+    email: "E-Mail", emailD: "Für Zugang, Datenschutz­anfragen und alles Geschäftliche. Antwort in der Regel am selben Arbeitstag.",
+    li: "LinkedIn", liD: "Der schnellste Weg für eine berufliche Kontaktaufnahme.",
+    tg: "Telegram", tgD: "Direktnachricht — dieselbe Plattform, auf der auch die Assessment-Bots laufen.",
+    gh: "GitHub", ghD: "Technischer Hintergrund und Projekte.",
+    access: "Zugang anfragen",
+    accessD: "cybergod.ai ist zugangsbeschränkt: eine freigegebene Colt- oder Partner-E-Mail-Adresse ist erforderlich. Nennen Sie in Ihrer Nachricht Ihre Firma und die gewünschte Adresse.",
+    legal: "Rechtliches: ", soon: "Kanal folgt",
+  },
+  en: {
+    h1: "Contact", sub: "A direct line — no form, no queue",
+    lead: "Questions about access, an assessment, data protection or partnering? Get in touch directly.",
+    email: "Email", emailD: "For access, data-protection requests and anything commercial. Usually answered the same working day.",
+    li: "LinkedIn", liD: "The fastest route for a professional introduction.",
+    tg: "Telegram", tgD: "Direct message — the same platform the assessment bots run on.",
+    gh: "GitHub", ghD: "Technical background and projects.",
+    access: "Request access",
+    accessD: "cybergod.ai is access-restricted: an approved Colt or partner email address is required. Include your company and the address you want enabled.",
+    legal: "Legal: ", soon: "channel coming soon",
+  },
+};
+
 // ---------------------------------------------------------------- the /privacy page
 export const PRIVACY = {
   de: {
@@ -138,9 +246,13 @@ export const PRIVACY = {
       "Regelmäßige, automatisierte Sicherheits-Updates des Servers.",
     ],
     s6: "6. Verantwortlicher",
-    s6p: (<>Betreiber dieser Instanz: <a href="mailto:feranicus@s4biz.io">feranicus@s4biz.io</a>{" "}
-          (S4BIZ). Interne Nutzung für Colt-Pre-Sales. Die erzeugten Dokumente sind internes
-          Vertriebsmaterial.</>),
+    s6p: (<>Verantwortlicher im Sinne der DSGVO ist <strong>{OPERATOR.name}</strong>,{" "}
+          {OPERATOR.street}, {OPERATOR.zipCity}, {OPERATOR.country} —{" "}
+          <a href={"mailto:" + OPERATOR.email}>{OPERATOR.email}</a>. Vollständige Angaben im{" "}
+          <a href="/impressum">Impressum</a>. Interne Nutzung für Colt-Pre-Sales; die erzeugten
+          Dokumente sind internes Vertriebsmaterial. Sie haben das Recht, sich bei einer
+          Datenschutz-Aufsichtsbehörde zu beschweren (Art. 77 DSGVO); zuständig ist{" "}
+          <strong>{OPERATOR.authority}</strong>.</>),
     credit: "IP-zu-Land-Zuordnung: ", disclaimerT: "Hinweis: ",
     disclaimer: "Dieser Text beschreibt die tatsächliche technische Verarbeitung. Er ist keine Rechtsberatung und sollte vor externer Veröffentlichung von einer/einem Datenschutzbeauftragten geprüft werden.",
   },
@@ -210,8 +322,13 @@ export const PRIVACY = {
       "Regular, automated security patching of the server.",
     ],
     s6: "6. Controller",
-    s6p: (<>Operator of this instance: <a href="mailto:feranicus@s4biz.io">feranicus@s4biz.io</a>{" "}
-          (S4BIZ). Internal use for Colt pre-sales. The generated documents are internal sales material.</>),
+    s6p: (<>The controller under the GDPR is <strong>{OPERATOR.name}</strong>, {OPERATOR.street},{" "}
+          {OPERATOR.zipCity}, {OPERATOR.country} —{" "}
+          <a href={"mailto:" + OPERATOR.email}>{OPERATOR.email}</a>. Full details in the{" "}
+          <a href="/impressum">legal notice</a>. Internal use for Colt pre-sales; the generated
+          documents are internal sales material. You have the right to lodge a complaint with a data
+          protection supervisory authority (Art. 77 GDPR); the competent authority is{" "}
+          <strong>{OPERATOR.authority}</strong>.</>),
     credit: "IP-to-country mapping: ", disclaimerT: "Note: ",
     disclaimer: "This text describes the actual technical processing. It is not legal advice and should be reviewed by a data protection officer before external publication.",
   },
