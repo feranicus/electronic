@@ -532,35 +532,40 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .iam-legal a{color:var(--mut)}.iam-legal a:hover{color:var(--teal)}
 @media(max-width:720px){ .side-legal{display:none} }
 
-/* ---------- LANDING: real mobile navigation ----------
-   The section anchors used to be display:none under 720px, which did not "tidy up" the header —
-   it removed the site map from every phone. They now collapse into a burger-driven drawer. */
-.burger{display:none;flex-direction:column;justify-content:center;align-items:center;gap:5px;
-  width:44px;height:44px;padding:0;margin-left:2px;background:none;border:0;cursor:pointer}
-.burger span{display:block;width:22px;height:2px;border-radius:2px;background:var(--ink);
-  transition:transform .25s var(--ease),opacity .2s}
-.burger[aria-expanded="true"] span:nth-child(1){transform:translateY(7px) rotate(45deg)}
-.burger[aria-expanded="true"] span:nth-child(2){opacity:0}
-.burger[aria-expanded="true"] span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
-.mnav{display:none}
+/* ---------- LANDING: native-app bottom tab bar (ported from the jev.best pattern) ----------
+   The section anchors used to be display:none under 720px, which removed the site map from every
+   phone. They now drive a docked tab bar. Height and padding come from the safe-area inset so the
+   bar clears the iPhone home indicator instead of sitting under it. */
+:root{ --tabbar:64px; --sab:env(safe-area-inset-bottom,0px); }
+.tabbar{display:none}
+
 @media (max-width: 720px){
-  .burger{display:flex}
-  /* Anchored to the header (top:100%), not to a hard-coded pixel offset: on a notched iPhone the
-     safe-area inset grows the header, and a fixed offset would leave a gap or overlap. */
-  .mnav{display:flex;flex-direction:column;position:absolute;top:100%;left:0;right:0;z-index:19;
-    max-height:calc(100dvh - 100px);overflow-y:auto;-webkit-overflow-scrolling:touch;
-    padding:12px 20px calc(20px + env(safe-area-inset-bottom));
-    background:rgba(6,12,24,.98);backdrop-filter:blur(14px);
-    border-bottom:1px solid var(--line);box-shadow:0 24px 50px rgba(0,0,0,.55);
-    opacity:0;visibility:hidden;transform:translateY(-10px);
-    transition:opacity .25s var(--ease),transform .25s var(--ease),visibility .25s}
-  .mnav.open{opacity:1;visibility:visible;transform:none}
-  .mnav a:not(.btn){display:block;padding:16px 4px;font-size:18px;font-weight:600;
-    color:var(--ink);border-bottom:1px solid var(--line)}
-  .mnav a:not(.btn):active{color:var(--teal)}
-  .mnav .btn{margin-top:20px;justify-content:center;font-size:16px;padding:14px 20px}
-  .mnav-legal{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;
-    align-items:center;font-size:12.5px;color:var(--mut)}
-  .mnav-legal a{color:var(--mut)}
-  .mnav-legal span{color:var(--line)}
+  .tabbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:60;
+    height:calc(var(--tabbar) + var(--sab));padding-bottom:var(--sab);
+    display:grid;grid-template-columns:repeat(6,1fr);
+    background:rgba(8,16,32,.88);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border-top:1px solid var(--line);
+  }
+  .tb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    height:var(--tabbar);background:none;border:0;cursor:pointer;
+    font-family:inherit;font-size:9px;letter-spacing:.04em;text-transform:uppercase;font-weight:700;
+    color:var(--mut);transition:color .2s var(--ease);position:relative;-webkit-tap-highlight-color:transparent}
+  .tb svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round}
+  .tb.on{color:var(--teal)}
+  .tb.on::after{content:'';position:absolute;top:0;left:22%;right:22%;height:2px;
+    background:var(--teal);box-shadow:0 0 12px var(--teal)}
+  .tb:active{transform:scale(.94)}
+  /* the last tab is the CTA — make it read as the primary action */
+  .tb:last-child{color:var(--gold)}
+  .tb:last-child.on{color:var(--gold)}
+
+  /* keep the docked bar from covering the end of the page */
+  .foot{padding-bottom:calc(var(--tabbar) + var(--sab) + 24px) !important}
+  /* the header keeps brand + CTA; the sections live in the tab bar now */
+  #hd nav a:not(.btn){display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  .tb,.tb:active{transition:none;transform:none}
 }

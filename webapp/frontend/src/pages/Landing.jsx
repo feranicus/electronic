@@ -1,22 +1,42 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import TabBar from "../components/TabBar.jsx";
 
 export default function Landing() {
   const rootRef = useRef(null);
-  // Mobile navigation. The section anchors used to be display:none on a phone, which meant the whole
-  // site map was simply unreachable there — you could not get to Your edge / The machine / Security
-  // at all. They now live in a real drawer instead of being deleted.
-  const [menu, setMenu] = useState(false);
-  const closeMenu = () => setMenu(false);
+  // Mobile navigation. The section anchors were previously display:none under 720px, which removed
+  // the whole site map from every phone. They now drive a native-app style bottom tab bar
+  // (the jev.best pattern) with a scroll-spy that keeps the active tab in sync with the page.
+  const nav = useNavigate();
+  const TABS = [
+    { id: "edge", label: "Edge", href: "#edge" },
+    { id: "demo", label: "Live", href: "#demo" },
+    { id: "map", label: "Machine", href: "#map" },
+    { id: "deep", label: "Deep", href: "#deep" },
+    { id: "secure", label: "Secure", href: "#secure" },
+    { id: "app", label: "Open", to: "/login" },
+  ];
+  const [tab, setTab] = useState("edge");
+
+  const go = (t) => {
+    if (t.to) { nav(t.to); return; }
+    const el = document.querySelector(t.href);
+    if (el) { setTab(t.id); el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  };
 
   useEffect(() => {
-    if (!menu) return;
-    const onKey = (e) => { if (e.key === "Escape") setMenu(false); };
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";      // don't scroll the page behind the drawer
-    window.addEventListener("keydown", onKey);
-    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
-  }, [menu]);
+    // scroll-spy: whichever section owns the middle of the viewport lights its tab
+    const ids = ["edge", "demo", "map", "deep", "secure"];
+    const els = ids.map((id) => document.getElementById(id)).filter(Boolean);
+    if (!els.length) return;
+    const io = new IntersectionObserver((entries) => {
+      const vis = entries.filter((e) => e.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (vis) setTab(vis.target.id);
+    }, { rootMargin: "-45% 0px -45% 0px", threshold: [0, 0.15, 0.5, 1] });
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -291,34 +311,14 @@ export default function Landing() {
 
   return (
     <div ref={rootRef}>
-      <header id="hd">
-        <div className="wrap">
-          <span className="brand"><span className="chev">❯</span> colt</span>
-          <nav>
-            <a href="#edge">Your edge</a><a href="#demo">See it live</a><a href="#map">The machine</a>
-            <a href="#deep">Deep dive</a><a href="#secure">Security</a><Link to="/contact">Contact</Link>
-            <Link className="btn sm" to="/login">Open the app</Link>
-          </nav>
-          <button className="burger" type="button" onClick={() => setMenu((v) => !v)}
-            aria-expanded={menu} aria-controls="mnav"
-            aria-label={menu ? "Close menu" : "Open menu"}>
-            <span /><span /><span />
-          </button>
-        </div>
-        <div id="mnav" className={"mnav" + (menu ? " open" : "")}>
-          <a href="#edge" onClick={closeMenu}>Your edge</a>
-          <a href="#demo" onClick={closeMenu}>See it live</a>
-          <a href="#map" onClick={closeMenu}>The machine</a>
-          <a href="#deep" onClick={closeMenu}>Deep dive</a>
-          <a href="#secure" onClick={closeMenu}>Security</a>
-          <Link to="/contact" onClick={closeMenu}>Kontakt / Contact</Link>
-          <Link className="btn" to="/login" onClick={closeMenu}>Open the app / Log in</Link>
-          <div className="mnav-legal">
-            <Link to="/impressum" onClick={closeMenu}>Impressum</Link><span>&middot;</span>
-            <Link to="/privacy" onClick={closeMenu}>Datenschutz</Link>
-          </div>
-        </div>
-      </header>
+      <header id="hd"><div className="wrap">
+        <span className="brand"><span className="chev">❯</span> colt</span>
+        <nav>
+          <a href="#edge">Your edge</a><a href="#demo">See it live</a><a href="#map">The machine</a>
+          <a href="#deep">Deep dive</a><a href="#secure">Security</a><Link to="/contact">Contact</Link>
+          <Link className="btn sm" to="/login">Open the app</Link>
+        </nav>
+      </div></header>
 
       <section className="hero">
         <canvas id="dust"></canvas>
@@ -485,6 +485,8 @@ export default function Landing() {
         <p className="foothost">Betrieben in Deutschland &middot; Server in Frankfurt am Main (FRA1) &middot; Ihre Daten bleiben in der EU.</p>
         <div className="g" style={{ marginTop: 18 }}>» » » » »</div>
       </div></div>
+
+      <TabBar tabs={TABS} active={tab} onGo={go} />
     </div>
   );
 }
