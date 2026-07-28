@@ -445,3 +445,63 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .clarify .chip-on{border-color:var(--teal);background:rgba(0,178,169,.14)}
 .clarify .input{margin-top:2px}
 .clarify .btn{margin-top:14px}
+
+/* ---------- LANDING: "your edge" (partner / AE sales section) ---------- */
+.edge .kick2{color:var(--gold);font-weight:800;letter-spacing:2px;text-transform:uppercase;font-size:12px;margin-bottom:8px}
+.edge .eh{font-size:clamp(19px,2.6vw,27px);font-weight:800;margin:40px 0 14px;line-height:1.3}
+.edge .lede.small{font-size:15px;margin-bottom:16px}
+.edge .r{color:#ff5c74}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+.vsc{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px}
+.vsc h4{margin:0 0 12px;font-size:12px;letter-spacing:2px;text-transform:uppercase}
+.vsc.bad h4{color:#ff6b83}
+.vsc.good h4{color:var(--teal)}
+.vsc.good{background:rgba(0,178,169,.07);border-color:rgba(0,178,169,.35)}
+.vsc ul{margin:0;padding-left:18px}
+.vsc li{margin:8px 0;font-size:15px;color:var(--ink);line-height:1.5}
+.vsc .last{font-weight:800;margin-top:12px}
+.vsc.bad .last{color:#ff6b83}
+.vsc.good .last{color:var(--teal)}
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.tric{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px}
+.tric .tt{font-size:26px;font-weight:900;letter-spacing:-.5px;margin-bottom:8px}
+.tric p{margin:0 0 12px;font-size:14.5px;color:var(--ink);line-height:1.55}
+.tric .src{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--mut);font-weight:700}
+.clocks{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.clock{background:linear-gradient(180deg,rgba(242,12,54,.11),rgba(242,12,54,0));
+  border:1px solid rgba(242,12,54,.35);border-radius:16px;padding:20px 22px}
+.clock .reg{font-weight:800;font-size:16px}
+.clock .fine{color:#ff5c74;font-weight:800;font-size:14px;margin:2px 0 14px}
+.clock .num{font-size:38px;font-weight:900;letter-spacing:-1px;color:#fff;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.clock .num i{font-style:normal;font-size:17px;color:var(--mut);margin:0 8px 0 3px}
+.clock .num.past{font-size:24px;color:var(--gold);letter-spacing:1px}
+.clock .cap2{font-size:12.5px;color:var(--mut);margin-top:8px;line-height:1.5}
+.unlock{margin-top:34px;background:rgba(0,178,169,.08);border:1px solid rgba(0,178,169,.32);
+  border-radius:16px;padding:22px 24px}
+.unlock h3{margin:0 0 8px;font-size:20px;font-weight:800}
+.unlock p{margin:0;font-size:15px;line-height:1.62;color:var(--ink)}
+.plays{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.play{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.play .pn{display:inline-block;font-weight:900;font-size:18px;color:var(--teal);margin-bottom:6px}
+.play b{display:block;font-size:15px;margin-bottom:4px}
+.play p{margin:0;font-size:13.5px;color:var(--mut);line-height:1.5}
+.pullq{margin:32px 0 22px;background:var(--navy2);border:1px solid var(--line);border-radius:16px;
+  padding:26px 24px;font-size:clamp(17px,2.4vw,26px);font-weight:800;line-height:1.4;text-align:center}
+@media(max-width:860px){
+  .vs,.tri,.clocks,.plays{grid-template-columns:1fr}
+  .clock .num{font-size:33px}
+  .edge .eh{margin:30px 0 12px}
+  .pullq{padding:20px 18px;text-align:left}
+  .unlock{padding:18px 18px}
+  .vsc,.tric,.clock{padding:17px 18px}
+}
+
+/* the machine map: 18 nodes shrink to unreadable on a phone, so let it scroll at a legible width */
+.maphint{display:none;font-size:12.5px;color:var(--mut);margin:8px 0 0}
+@media(max-width:860px){
+  .mapbox{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+  .mapbox svg{width:900px;max-width:none}
+  .maphint{display:block}
+  .legend{margin-left:0;font-size:12px;gap:10px}
+}

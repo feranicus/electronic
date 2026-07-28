@@ -110,29 +110,58 @@ export default function Landing() {
     }
     cleanups.push(() => { demoAlive = false; });
 
+    // ---- live regulatory countdowns. Real statutory dates; each retires itself to "LIVE NOW". ----
+    const DEADLINES = [{ el: "cd1", date: "2026-07-31" }, { el: "cd2", date: "2026-08-02" }, { el: "cd3", date: "2026-09-11" }];
+    function tickCd() {
+      const now = new Date();
+      DEADLINES.forEach((d) => {
+        const n = root.querySelector("#" + d.el); if (!n) return;
+        const ms = new Date(d.date + "T00:00:00Z") - now;
+        if (ms <= 0) { n.textContent = "LIVE NOW"; n.classList.add("past"); return; }
+        const dd = Math.floor(ms / 86400000), h = Math.floor(ms / 3600000) % 24,
+              m = Math.floor(ms / 60000) % 60, sec = Math.floor(ms / 1000) % 60;
+        n.innerHTML = dd + "<i>d</i>" + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+      });
+    }
+    tickCd();
+    const cdTimer = setInterval(tickCd, 1000);
+    cleanups.push(() => clearInterval(cdTimer));
+
     const C = { green: "#10B981", teal: "#00B2A9", gold: "#F7C844", purple: "#8b6cff", cyan: "#38e1ff" };
     const NODES = [
-      { id: "you", x: 150, y: 210, ico: "phone", t: "SALES", s: "Telegram / one name", c: C.green, n: "1", dd: "d1" },
-      { id: "bot", x: 450, y: 130, ico: "shield", t: "colttechbot", s: "the assessor", c: C.teal, n: "1", dd: "d1", big: true },
-      { id: "cass", x: 450, y: 300, ico: "compass", t: "cassandra", s: "AE assistant", c: C.teal, n: "1", dd: "d1" },
-      { id: "auth", x: 450, y: 470, ico: "lock", t: "ZERO-TRUST", s: "email+pw+code", c: C.purple, n: "2", dd: "d2" },
-      { id: "eng", x: 740, y: 300, ico: "gear", t: "ENGINE", s: "recon > decks", c: C.teal, n: "3", dd: "d3", big: true },
-      { id: "gmail", x: 740, y: 110, ico: "mail", t: "GMAIL API", s: "2FA code / HTTPS", c: C.gold, n: "2", dd: "d2" },
-      { id: "foot", x: 1050, y: 120, ico: "globe", t: "FOOTPRINT", s: "bgpview/RIPE/crt.sh", c: C.gold, n: "3", dd: "d3" },
-      { id: "shodan", x: 1050, y: 280, ico: "scope", t: "SHODAN", s: "paid / 30+ filters", c: C.gold, n: "4", dd: "d4" },
-      { id: "deep", x: 1050, y: 440, ico: "bot", t: "DEEPSEEK", s: "DO serverless AI", c: C.gold, n: "5", dd: "d5" },
-      { id: "spaces", x: 740, y: 520, ico: "disk", t: "SPACES", s: "backups", c: C.gold, n: "7", dd: "d7" },
-      { id: "graf", x: 1050, y: 590, ico: "chart", t: "GRAFANA", s: "godeyes.ai/observe", c: C.cyan, n: "6", dd: "d6" },
-      { id: "gh", x: 150, y: 440, ico: "octo", t: "GITHUB CI/CD", s: "build/scan/ship", c: C.teal, n: "8", dd: "d8" },
-      { id: "patch", x: 150, y: 600, ico: "patch", t: "PATCHWATCH", s: "self-patch /3d", c: C.purple, n: "7", dd: "d7" },
+      { id: "you",    x: 105,  y: 110, ico: "phone",  t: "SALES",        s: "Telegram / one name",   c: C.green,  n: "1",  dd: "d1" },
+      { id: "web",    x: 105,  y: 262, ico: "screen", t: "WEB APP",      s: "cybergod.ai cabinet",   c: C.green,  n: "1",  dd: "d1" },
+      { id: "gh",     x: 105,  y: 462, ico: "octo",   t: "GITHUB CI/CD", s: "build/scan/ship",       c: C.teal,   n: "11", dd: "d11" },
+      { id: "patch",  x: 105,  y: 602, ico: "patch",  t: "PATCHWATCH",   s: "self-patch /3d",        c: C.purple, n: "10", dd: "d10" },
+      { id: "bot",    x: 355,  y: 110, ico: "shield", t: "colttechbot",  s: "the assessor",          c: C.teal,   n: "1",  dd: "d1", big: true },
+      { id: "cass",   x: 355,  y: 262, ico: "compass",t: "cassandra",    s: "AE assistant",          c: C.teal,   n: "1",  dd: "d1" },
+      { id: "auth",   x: 355,  y: 412, ico: "lock",   t: "ZERO-TRUST",   s: "email+pw+code",         c: C.purple, n: "2",  dd: "d2" },
+      { id: "eng",    x: 600,  y: 252, ico: "gear",   t: "ENGINE",       s: "recon to decks",        c: C.teal,   n: "3",  dd: "d3", big: true },
+      { id: "comp",   x: 600,  y: 422, ico: "scroll", t: "COMPLIANCE",   s: "NIS2 / CRA / AI Act",   c: C.teal,   n: "8",  dd: "d8", big: true },
+      { id: "clar",   x: 600,  y: 582, ico: "chat",   t: "CLARIFY",      s: "deliver, then refine",  c: C.teal,   n: "7",  dd: "d7" },
+      { id: "foot",   x: 850,  y: 95,  ico: "globe",  t: "FOOTPRINT",    s: "bgpview/RIPE/crt.sh",   c: C.gold,   n: "3",  dd: "d3" },
+      { id: "shodan", x: 850,  y: 235, ico: "scope",  t: "SHODAN",       s: "paid / 30+ filters",    c: C.gold,   n: "4",  dd: "d4" },
+      { id: "deep",   x: 850,  y: 375, ico: "bot",    t: "AI MODELS",    s: "multi-vendor chain",    c: C.gold,   n: "5",  dd: "d5" },
+      { id: "audit",  x: 850,  y: 515, ico: "scale",  t: "AI AUDIT",     s: "2nd model checks it",   c: C.gold,   n: "6",  dd: "d6" },
+      { id: "gmail",  x: 1095, y: 95,  ico: "mail",   t: "GMAIL API",    s: "2FA code / HTTPS",      c: C.gold,   n: "2",  dd: "d2" },
+      { id: "decks",  x: 1095, y: 252, ico: "decks",  t: "DELIVERABLES", s: "4 decks + live report", c: C.green,  n: "5",  dd: "d5", big: true },
+      { id: "graf",   x: 1095, y: 420, ico: "chart",  t: "GRAFANA",      s: "godeyes.ai/observe",    c: C.cyan,   n: "9",  dd: "d9" },
+      { id: "spaces", x: 1095, y: 580, ico: "disk",   t: "SPACES",       s: "backups",               c: C.gold,   n: "10", dd: "d10" },
     ];
-    const ICO = { phone: "📱", shield: "🛡️", compass: "🧭", lock: "🔐", gear: "⚙️", mail: "✉️", globe: "🌐", scope: "🔭", bot: "🤖", disk: "💾", chart: "📈", octo: "🐙", patch: "🩹" };
+    const ICO = { phone: "\ud83d\udcf1", screen: "\ud83d\udda5\ufe0f", shield: "\ud83d\udee1\ufe0f", compass: "\ud83e\udded", lock: "\ud83d\udd10", gear: "\u2699\ufe0f", scroll: "\ud83d\udcdc", chat: "\ud83d\udcac", mail: "\u2709\ufe0f", globe: "\ud83c\udf10", scope: "\ud83d\udd2d", bot: "\ud83e\udd16", scale: "\u2696\ufe0f", decks: "\ud83d\udcd1", disk: "\ud83d\udcbe", chart: "\ud83d\udcc8", octo: "\ud83d\udc19", patch: "\ud83e\ude79" };
     const EDGES = [
       { a: "you", b: "bot", c: C.green }, { a: "you", b: "cass", c: C.green },
-      { a: "bot", b: "auth", c: C.purple }, { a: "cass", b: "auth", c: C.purple }, { a: "auth", b: "gmail", c: C.gold, two: true },
-      { a: "auth", b: "eng", c: C.teal }, { a: "eng", b: "foot", c: C.gold, two: true }, { a: "eng", b: "shodan", c: C.gold, two: true },
-      { a: "eng", b: "deep", c: C.gold, two: true }, { a: "bot", b: "graf", c: C.cyan, bow: 90 }, { a: "eng", b: "graf", c: C.cyan },
-      { a: "eng", b: "spaces", c: C.gold }, { a: "patch", b: "spaces", c: C.purple, bow: -60 }, { a: "patch", b: "eng", c: C.purple },
+      { a: "web", b: "auth", c: C.green }, { a: "web", b: "comp", c: C.green, bow: -40 },
+      { a: "bot", b: "auth", c: C.purple }, { a: "cass", b: "auth", c: C.purple },
+      { a: "auth", b: "gmail", c: C.gold, two: true, bow: 80 },
+      { a: "auth", b: "eng", c: C.teal },
+      { a: "eng", b: "foot", c: C.gold, two: true }, { a: "eng", b: "shodan", c: C.gold, two: true },
+      { a: "eng", b: "deep", c: C.gold, two: true }, { a: "eng", b: "audit", c: C.gold, two: true },
+      { a: "comp", b: "deep", c: C.gold, two: true },
+      { a: "eng", b: "decks", c: C.green }, { a: "comp", b: "decks", c: C.green },
+      { a: "decks", b: "clar", c: C.teal, bow: -90 }, { a: "clar", b: "eng", c: C.teal, two: true },
+      { a: "eng", b: "graf", c: C.cyan }, { a: "bot", b: "graf", c: C.cyan, bow: 120 },
+      { a: "patch", b: "spaces", c: C.purple, bow: -60 }, { a: "patch", b: "eng", c: C.purple },
       { a: "gh", b: "eng", c: C.teal, bow: 60 },
     ];
     const NS = "http://www.w3.org/2000/svg";
@@ -181,14 +210,17 @@ export default function Landing() {
     }
 
     const STEPS = [
-      { ids: ["you", "bot"], t: "1 - You text one company name to the bot - that's the whole input." },
-      { ids: ["bot", "auth", "gmail"], t: "2 - Zero-trust: colt.net email + password + a one-time code emailed to you." },
+      { ids: ["you", "web", "bot"], t: "1 - One input: a company name. From Telegram, or from the cybergod.ai web app." },
+      { ids: ["bot", "auth", "gmail"], t: "2 - Zero-trust: approved email + password + a one-time code emailed to that inbox." },
       { ids: ["auth", "eng", "foot"], t: "3 - The engine auto-resolves the company's entire footprint. You type no IPs." },
-      { ids: ["eng", "shodan"], t: "4 - It sweeps Shodan (paid) for every exposed door + the hidden internal-CA estate." },
-      { ids: ["eng", "deep"], t: "5 - DeepSeek writes the prose; templates lock the numbers into 4 decks." },
-      { ids: ["bot", "eng", "graf"], t: "6 - Every login, assessment and patch is logged live to Grafana." },
-      { ids: ["patch", "spaces", "eng"], t: "7 - patchwatch backs up to Spaces, then patches the server itself every 3 days." },
-      { ids: ["gh", "eng"], t: "8 - One command / git push builds, scans and ships it over a private Tailscale tunnel." },
+      { ids: ["eng", "shodan"], t: "4 - It sweeps Shodan for every exposed door - and pivots on their own private CA." },
+      { ids: ["eng", "deep", "decks"], t: "5 - A multi-vendor AI chain writes the prose; templates lock the numbers into the decks." },
+      { ids: ["eng", "audit"], t: "6 - A SECOND AI, from a different vendor, audits the findings for false positives before you ever see them." },
+      { ids: ["decks", "clar", "eng"], t: "7 - Decks land first - then it asks what it could not resolve. You answer, it re-scopes and rebuilds." },
+      { ids: ["web", "comp", "decks"], t: "8 - Compliance: NIS2, the Cyber Resilience Act and the EU AI Act - from the same one input." },
+      { ids: ["bot", "eng", "graf"], t: "9 - Every login, assessment, audit and patch is logged live to Grafana." },
+      { ids: ["patch", "spaces", "eng"], t: "10 - patchwatch backs up to Spaces, then patches the server itself every 3 days." },
+      { ids: ["gh", "eng"], t: "11 - One command builds, scans and ships it - and proves the container really holds the new code." },
     ];
     let touring = false, ti = 0, timer = null;
     const cap = root.querySelector("#cap"), tbtn = root.querySelector("#tour");
@@ -209,14 +241,17 @@ export default function Landing() {
     }
 
     const DD = [
-      { id: "d1", n: "1", ic: "📱", c: C.green, h: "Telegram + the two bots", plain: "You send one message - the prospect's name. Two bots live on the server 24/7: <b>colttechbot</b> does the assessment, <b>cassandra</b> is your research/outreach sidekick.", hood: ["<code>python-telegram-bot</code>, one per bot, in Docker", "colttechbot shells the deterministic engine per <code>/assess</code>", "cassandra: live OSINT (HTTP + headless-Chromium fallback) + DeepSeek"] },
-      { id: "d2", n: "2", ic: "🔐", c: C.purple, h: "Zero-trust login (2FA)", plain: "To use a bot you need a real <b>@colt.net</b> email, the shared password, <b>and</b> a one-time code emailed to that inbox. Knowing the password isn't enough - you must own the mailbox.", hood: ["<code>colt_auth.py</code>: constant-time compare, lockout, 10-min codes", "OTP delivered via <b>Gmail API over HTTPS</b> (droplet blocks SMTP ports)", "Every attempt logged for the auth audit trail"] },
-      { id: "d3", n: "3", ic: "🧩", c: C.teal, h: "The engine + auto-discovery", plain: "From just the name the engine finds the company's <b>networks, domains and certificates</b> - then hunts, scores and writes. You never hand it an IP.", hood: ["ASNs+prefixes: <code>bgpview.io</code> + RIPEstat", "Brand domains/subdomains: <code>crt.sh</code> CT logs", "cert-subject-O + favicon derived; internal-CA harvested live from the sweep", "<code>run_assessment.py</code> to <code>shodan_recon.autodiscover()</code>"] },
-      { id: "d4", n: "4", ic: "🔭", c: C.gold, h: "Shodan - what's exposed", plain: "It queries Shodan (a search engine of internet-connected devices) for exposed remote-access, databases, VPNs, mail, industrial gear and known-vulnerable systems - and the killer pivot: the company's own private CA to reveal their whole hidden estate.", hood: ["30+ super-filters; edge-appliance mgmt = CRITICAL", "Paid facets: <code>has_vuln</code>, <code>vuln:CVE</code>, <code>tag:ics</code>, <code>ssl.jarm</code>", "CDN/honeypot false-positives dropped automatically"] },
-      { id: "d5", n: "5", ic: "🤖", c: C.gold, h: "DeepSeek writes the decks", plain: "An AI writes the words; fixed templates guarantee the structure and the maths. You get board-ready slides, not a scan dump: <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b>.", hood: ["DeepSeek on DigitalOcean serverless inference (OpenAI-compatible)", "<code>pptxgenjs</code> templates lock layout; numbers stay deterministic", "EUR business impact, adversary attribution, value bought back"] },
-      { id: "d6", n: "6", ic: "📈", c: C.cyan, h: "Always watching", plain: "Every login, assessment and patch prints a structured line that flows into <b>your existing Grafana</b> - no second monitoring stack.", hood: ["events.log to <code>promtail</code> to Loki to Grafana (<code>godeyes.ai/observe</code>)", "Per-bot activity, auth audit trail, patchwatch deep-dive dashboard", "Dashboards imported from the repo (<code>import-dashboards.yml</code>)"] },
-      { id: "d7", n: "7", ic: "🩹", c: C.purple, h: "It patches itself", plain: "A server nobody patches gets hacked. Every 3 days it <b>backs itself up</b> to Spaces, upgrades the OS/Docker, and an AI writes a risk digest (flagging kernel holes like GhostLock). Reboots happen at 4am.", hood: ["<code>patchwatch/</code> systemd timer; backup-first (abort if backup fails)", "DO Spaces tarball + optional DO droplet snapshot", "DeepSeek digest to Telegram + Grafana"] },
-      { id: "d8", n: "8", ic: "🚀", c: C.teal, h: "Shipping is one command", plain: "Change the code, run one thing, it's live - no clicking through consoles.", hood: ["<code>python ship.py</code>: repair to commit to push to rebuild to redeploy to verify", "GitHub Actions: build to Trivy scan to GHCR to deploy", "Reaches the firewalled droplet over a private <b>Tailscale</b> tunnel"] },
+      { id: "d1", n: "1", ic: "\ud83d\udcf1", c: C.green, h: "Two front doors, one input", plain: "Type a prospect's name - in <b>Telegram</b>, or in the <b>cybergod.ai web app</b>. Same engine, same decks. Two bots live on the server: <b>colttechbot</b> assesses, <b>cassandra</b> is your research and outreach sidekick.", hood: ["<code>python-telegram-bot</code>, one per bot, in Docker", "React cabinet: Assess / Compliance / Assistant / History", "The run is owned by the SERVER - lock your phone, it keeps going"] },
+      { id: "d2", n: "2", ic: "\ud83d\udd10", c: C.purple, h: "Zero-trust login (2FA)", plain: "You need an approved <b>@colt.net</b> or partner email, the shared password, <b>and</b> a one-time code emailed to that inbox. Knowing the password isn't enough - you must own the mailbox.", hood: ["<code>colt_auth.py</code>: constant-time compare, lockout, 10-min codes", "OTP delivered via <b>Gmail API over HTTPS</b> (droplet blocks SMTP ports)", "One gate shared by the bots AND the web app - they can never disagree"] },
+      { id: "d3", n: "3", ic: "\ud83e\udde9", c: C.teal, h: "The engine + auto-discovery", plain: "From just the name the engine finds the company's <b>networks, domains and certificates</b> - then hunts, scores and writes. You never hand it an IP.", hood: ["ASNs+prefixes from RIPE + CAIDA + PeeringDB + bgpview", "Brand domains/subdomains: <code>crt.sh</code> + CertSpotter CT logs + DNS probe", "Ownership gate: a discovered domain is a CANDIDATE, never proof", "Scope blow-out guard - it refuses to build decks from an unverified estate"] },
+      { id: "d4", n: "4", ic: "\ud83d\udd2d", c: C.gold, h: "Shodan - what's exposed", plain: "It queries Shodan for exposed remote-access, databases, VPNs, mail, industrial gear and known-vulnerable systems - plus the killer pivot: the company's own private CA and whois-org, which reveal the hidden estate.", hood: ["30+ super-filters; edge appliances (firewalls, VPN concentrators) = CRITICAL", "Paid facets: <code>has_vuln</code>, <code>vuln:CVE</code>, <code>tag:ics</code>, <code>ssl.jarm</code>", "CDN/honeypot false-positives dropped automatically"] },
+      { id: "d5", n: "5", ic: "\ud83e\udd16", c: C.gold, h: "The AI writes it - you get five artifacts", plain: "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen - in English or Hochdeutsch.", hood: ["Multi-VENDOR chain with failover - a 429 is provider-wide, so the backup must be another vendor", "<code>pptxgenjs</code> templates lock layout; numbers stay deterministic", "Hallucination guard: any CVE not in the scan evidence is stripped, and logged"] },
+      { id: "d6", n: "6", ic: "\u2696\ufe0f", c: C.gold, h: "A second AI audits the first", plain: "Before you ever see the decks, a <b>different model from a different vendor</b> re-reads every finding and challenges anything that looks like it isn't really theirs. A model is never allowed to mark its own homework.", hood: ["<code>audit_fp.py</code> picks an auditor that differs from the deck author - it refuses to self-audit", "The LLM can FLAG, but a finding is only dropped when deterministic ownership data agrees", "Hard guardrail: it can never empty a deck, or drop more than 40% of findings", "Every audit is logged: auditor vs author, verdict, dropped, refused"] },
+      { id: "d7", n: "7", ic: "\ud83d\udcac", c: C.teal, h: "It asks you what it couldn't work out", plain: "The decks land <b>first</b>. Then the engine tells you what it could not resolve - which related domains are yours, your netblocks if you sit behind a CDN, anything in the report that isn't yours - you answer, and it re-scopes and rebuilds.", hood: ["Questions are DETERMINISTIC, not LLM-written - auditable, free, never invents a domain", "Your answers are the ONE sanctioned way scope changes after a run", "Because you asserted the fact, the zero-false-positive rules stay intact"] },
+      { id: "d8", n: "8", ic: "\ud83d\udcdc", c: C.teal, h: "Compliance: NIS2, CRA, EU AI Act", plain: "The same one input, pointed at regulation. It grades the company against the three horizontal EU digital laws and writes <b>three regime decks, a roadmap deck and an animated report</b> - applicability, duties, gaps, deadlines and the maximum fine.", hood: ["Grounded ONLY in a committed reference of the primary legal texts", "The model infers sector/size/product/AI profile and STATES it - you confirm and it rebuilds", "Deterministic fallback holds the fixed facts, so obligations and fines are right even if the model is down", "Not legal advice - and every deck says so"] },
+      { id: "d9", n: "9", ic: "\ud83d\udcc8", c: C.cyan, h: "Always watching", plain: "Every login, assessment, audit, cost and patch prints a structured line that flows into <b>your existing Grafana</b> - no second monitoring stack.", hood: ["events.log to <code>promtail</code> to Loki to Grafana (<code>godeyes.ai/observe</code>)", "Per-run cost ledger in SQLite - true lifetime spend, survives log retention", "11 live security rules: brute force, spraying, scanners, IDOR probes, exfil bursts"] },
+      { id: "d10", n: "10", ic: "\ud83e\ude79", c: C.purple, h: "It patches itself", plain: "A server nobody patches gets hacked. Every 3 days it <b>backs itself up</b> to Spaces, upgrades the OS/Docker, and an AI writes a risk digest. Reboots happen at 4am.", hood: ["<code>patchwatch/</code> systemd timer; backup-first (abort if the backup fails)", "DO Spaces tarball + optional droplet snapshot", "AI digest to Telegram + Grafana"] },
+      { id: "d11", n: "11", ic: "\ud83d\ude80", c: C.teal, h: "Shipping is one command", plain: "Change the code, run one thing, it's live - and it <b>proves</b> the running container actually holds the new code before it reports success.", hood: ["<code>python ship.py</code>: test to commit to push to deploy to VERIFY", "Engine-hash check: sha256 inside the container vs the repo - a stale container fails the ship", "Tagged safe-points and <code>--rollback</code> to any known-good state"] },
     ];
     const dw = root.querySelector("#ddwrap");
     if (dw) {
@@ -245,7 +280,7 @@ export default function Landing() {
       <header id="hd"><div className="wrap">
         <span className="brand"><span className="chev">❯</span> colt</span>
         <nav>
-          <a href="#demo">See it live</a><a href="#map">The machine</a>
+          <a href="#edge">Your edge</a><a href="#demo">See it live</a><a href="#map">The machine</a>
           <a href="#deep">Deep dive</a><a href="#secure">Security</a>
           <Link className="btn sm" to="/login">Open the app</Link>
         </nav>
@@ -264,6 +299,78 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
+      <section id="edge" className="lp edge"><div className="wrap reveal">
+        <div className="kick2">For Colt account executives &amp; partners</div>
+        <h2>Your unfair <span className="g">advantage</span></h2>
+        <p className="lede">Your competitor walks in and asks <i>&ldquo;so, tell me about your environment.&rdquo;</i> You
+          walk in with their exposed systems, the price of their breach in euros, the group most likely to hit them, and
+          the date the regulator starts counting. Same meeting. One input.</p>
+
+        <div className="vs">
+          <div className="vsc bad"><h4>Everyone else</h4><ul>
+            <li>Discovery calls to find out what they have</li>
+            <li>Wait for a technical resource who is booked</li>
+            <li>Weeks pass. The deal goes cold.</li>
+            <li>The CFO asks &ldquo;why should I care?&rdquo;</li>
+            <li className="last">You hand over a brochure.</li></ul></div>
+          <div className="vsc good"><h4>You</h4><ul>
+            <li>You already know what they have</li>
+            <li>No technical resource. No permission. No wait.</li>
+            <li>Minutes. The first meeting IS the deal.</li>
+            <li>The CFO gets the number, in euros.</li>
+            <li className="last">You hand over four boardroom decks.</li></ul></div>
+        </div>
+
+        <h3 className="eh">Three questions decide every cyber deal. You now answer all three <span className="g">before the first call</span>.</h3>
+        <div className="tri">
+          <div className="tric"><div className="tt" style={{ color: "var(--teal)" }}>WHO</div>
+            <p>Named threat actors likely to target them, by sector and geography - and the kill chain they would use.</p>
+            <span className="src">GEOPOL deck</span></div>
+          <div className="tric"><div className="tt" style={{ color: "var(--gold)" }}>HOW MUCH</div>
+            <p>The breach modelled in euros - expected annual loss, worst realistic case, and the return on fixing it.</p>
+            <span className="src">C-BIQ deck</span></div>
+          <div className="tric"><div className="tt" style={{ color: "#ff5c74" }}>WHEN</div>
+            <p>The exact regulatory dates their board already fears - and the maximum fine attached to each.</p>
+            <span className="src">Compliance decks</span></div>
+        </div>
+
+        <h3 className="eh">The clocks are <span className="r">already running</span></h3>
+        <p className="lede small">Three EU laws turned every mid-size company into a funded, deadline-driven buyer - and
+          this is not the security budget. These dates are written in law, not invented by marketing.</p>
+        <div className="clocks">
+          <div className="clock"><div className="reg">NIS2 &mdash; Germany</div><div className="fine">&euro;10m / 2% of turnover</div>
+            <div className="num" id="cd1">&mdash;</div>
+            <div className="cap2">until the BSI registration grace period ends &middot; 31 Jul 2026</div></div>
+          <div className="clock"><div className="reg">EU AI Act</div><div className="fine">&euro;35m / 7% of turnover</div>
+            <div className="num" id="cd2">&mdash;</div>
+            <div className="cap2">until high-risk obligations apply &middot; 2 Aug 2026</div></div>
+          <div className="clock"><div className="reg">Cyber Resilience Act</div><div className="fine">&euro;15m / 2.5% of turnover</div>
+            <div className="num" id="cd3">&mdash;</div>
+            <div className="cap2">until incident &amp; vulnerability reporting &middot; 11 Sep 2026</div></div>
+        </div>
+
+        <div className="unlock">
+          <h3>You do not need their permission</h3>
+          <p>This is not a penetration test. No port scanning, no probing, no login attempts - it reads public sources,
+            the internet equivalent of noting which doors are visible from the street. Which gives you the sentence that
+            changes your pipeline: <b>you can run it on a company that has never heard of you, before the first call,
+            legally.</b> Every cold name on your list is now a warm meeting with a deck already in your hand.</p>
+        </div>
+
+        <h3 className="eh">Five plays you can run <span className="g">this week</span></h3>
+        <div className="plays">
+          {[["01","The cold open","Send three findings from their real estate. Nobody deletes that email."],["02","The dormant account","Re-run a customer you sold two years ago. Their attack surface changed - new conversation, new order."],["03","The QBR upgrade","Walk into the review with their exposure and the euro number instead of a service report."],["04","The deadline play","Put the date and the fine on one slide, then ask who owns it. Watch the room change."],["05","The displacement","Their incumbent has never shown them this. You just did - in the first meeting, for free."],["+","Run it on yourself","See your own company's exposure. That feeling is exactly what you are about to sell."]].map(([n, t, b]) => (
+            <div className="play" key={n}><span className="pn">{n}</span><b>{t}</b><p>{b}</p></div>
+          ))}
+        </div>
+
+        <div className="pullq">&ldquo;Your competitor is still asking what they have.{" "}
+          <span className="g">You are showing them what they are about to lose.&rdquo;</span></div>
+        <div className="cta-row" style={{ justifyContent: "center" }}>
+          <Link className="btn" to="/login">Run your first assessment</Link>
+        </div>
+      </div></section>
 
       <section id="demo" className="lp"><div className="wrap reveal">
         <h2>See it <span className="g">live</span></h2>
@@ -311,6 +418,7 @@ export default function Landing() {
             <g id="edges"></g><g id="nodes"></g>
           </svg>
         </div>
+        <p className="maphint">Swipe the map sideways to explore &rarr;</p>
         <div className="cap" id="cap"></div>
       </div></section>
 
