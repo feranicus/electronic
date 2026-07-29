@@ -9,7 +9,7 @@ export default function Landing() {
   // (the jev.best pattern) with a scroll-spy that keeps the active tab in sync with the page.
   const nav = useNavigate();
   const TABS = [
-    { id: "edge", label: "Edge", href: "#edge" },
+    { id: "edge", label: "Why", href: "#edge" },
     { id: "demo", label: "Live", href: "#demo" },
     { id: "map", label: "Machine", href: "#map" },
     { id: "deep", label: "Deep", href: "#deep" },
@@ -168,7 +168,7 @@ export default function Landing() {
       { id: "gh",     x: 105,  y: 462, ico: "octo",   t: "GITHUB CI/CD", s: "build/scan/ship",       c: C.teal,   n: "11", dd: "d11" },
       { id: "patch",  x: 105,  y: 602, ico: "patch",  t: "PATCHWATCH",   s: "self-patch /3d",        c: C.purple, n: "10", dd: "d10" },
       { id: "bot",    x: 355,  y: 110, ico: "shield", t: "colttechbot",  s: "the assessor",          c: C.teal,   n: "1",  dd: "d1", big: true },
-      { id: "cass",   x: 355,  y: 262, ico: "compass",t: "cassandra",    s: "AE assistant",          c: C.teal,   n: "1",  dd: "d1" },
+      { id: "cass",   x: 355,  y: 262, ico: "compass",t: "cassandra",    s: "research assistant",          c: C.teal,   n: "1",  dd: "d1" },
       { id: "auth",   x: 355,  y: 412, ico: "lock",   t: "ZERO-TRUST",   s: "email+pw+code",         c: C.purple, n: "2",  dd: "d2" },
       { id: "eng",    x: 600,  y: 252, ico: "gear",   t: "ENGINE",       s: "recon to decks",        c: C.teal,   n: "3",  dd: "d3", big: true },
       { id: "comp",   x: 600,  y: 422, ico: "scroll", t: "COMPLIANCE",   s: "NIS2 / CRA / AI Act",   c: C.teal,   n: "8",  dd: "d8", big: true },
@@ -275,7 +275,7 @@ export default function Landing() {
     }
 
     const DD = [
-      { id: "d1", n: "1", ic: "\ud83d\udcf1", c: C.green, h: "Two front doors, one input", plain: "Type a prospect's name - in <b>Telegram</b>, or in the <b>cybergod.ai web app</b>. Same engine, same decks. Two bots live on the server: <b>colttechbot</b> assesses, <b>cassandra</b> is your research and outreach sidekick.", hood: ["<code>python-telegram-bot</code>, one per bot, in Docker", "React cabinet: Assess / Compliance / Assistant / History", "The run is owned by the SERVER - lock your phone, it keeps going"] },
+      { id: "d1", n: "1", ic: "\ud83d\udcf1", c: C.green, h: "Two front doors, one input", plain: "Type a company name - in <b>Telegram</b>, or in the <b>cybergod.ai web app</b>. Same engine, same decks. Two bots live on the server: <b>colttechbot</b> assesses, <b>cassandra</b> answers questions about the findings.", hood: ["<code>python-telegram-bot</code>, one per bot, in Docker", "React cabinet: Assess / Compliance / Assistant / History", "The run is owned by the SERVER - lock your phone, it keeps going"] },
       { id: "d2", n: "2", ic: "\ud83d\udd10", c: C.purple, h: "Zero-trust login (2FA)", plain: "You need an approved <b>@colt.net</b> or partner email, the shared password, <b>and</b> a one-time code emailed to that inbox. Knowing the password isn't enough - you must own the mailbox.", hood: ["<code>colt_auth.py</code>: constant-time compare, lockout, 10-min codes", "OTP delivered via <b>Gmail API over HTTPS</b> (droplet blocks SMTP ports)", "One gate shared by the bots AND the web app - they can never disagree"] },
       { id: "d3", n: "3", ic: "\ud83e\udde9", c: C.teal, h: "The engine + auto-discovery", plain: "From just the name the engine finds the company's <b>networks, domains and certificates</b> - then hunts, scores and writes. You never hand it an IP.", hood: ["ASNs+prefixes from RIPE + CAIDA + PeeringDB + bgpview", "Brand domains/subdomains: <code>crt.sh</code> + CertSpotter CT logs + DNS probe", "Ownership gate: a discovered domain is a CANDIDATE, never proof", "Scope blow-out guard - it refuses to build decks from an unverified estate"] },
       { id: "d4", n: "4", ic: "\ud83d\udd2d", c: C.gold, h: "Shodan - what's exposed", plain: "It queries Shodan for exposed remote-access, databases, VPNs, mail, industrial gear and known-vulnerable systems - plus the killer pivot: the company's own private CA and whois-org, which reveal the hidden estate.", hood: ["30+ super-filters; edge appliances (firewalls, VPN concentrators) = CRITICAL", "Paid facets: <code>has_vuln</code>, <code>vuln:CVE</code>, <code>tag:ics</code>, <code>ssl.jarm</code>", "CDN/honeypot false-positives dropped automatically"] },
@@ -314,7 +314,7 @@ export default function Landing() {
       <header id="hd"><div className="wrap">
         <span className="brand"><span className="chev">❯</span> colt</span>
         <nav>
-          <a href="#edge">Your edge</a><a href="#demo">See it live</a><a href="#map">The machine</a>
+          <a href="#edge">Why it matters</a><a href="#demo">See it live</a><a href="#map">The machine</a>
           <a href="#deep">Deep dive</a><a href="#secure">Security</a><Link to="/contact">Contact</Link>
           <Link className="btn sm" to="/login">Open the app</Link>
         </nav>
@@ -323,10 +323,12 @@ export default function Landing() {
       <section className="hero">
         <canvas id="dust"></canvas>
         <div className="wrap">
-          <div className="kick">Colt / S4Biz - cyber pre-sales automation</div>
+          <div className="kick">Colt / S4Biz - external cyber-risk assessment</div>
           <h1>Type a company name.<br /><span className="g">Four boardroom decks.</span> Two minutes.</h1>
-          <p className="sub">A robot that turns one word - a prospect's name - into a full external
-            cyber-risk assessment, priced in euros. So 30+ sales people are ready for any meeting, hands-free.</p>
+          <p className="sub">Every organisation has an internet-facing footprint it cannot fully see. From one
+            company name, this maps yours using public sources alone, prices the risk in euros, names the
+            groups most likely to target you, and shows which EU deadlines already apply - without touching
+            a single one of your systems.</p>
           <div className="cta-row">
             <Link className="btn" to="/login">Open the app / Log in</Link>
             <a className="btn ghost" href="#demo">Watch it work</a>
@@ -335,43 +337,49 @@ export default function Landing() {
       </section>
 
       <section id="edge" className="lp edge"><div className="wrap reveal">
-        <div className="kick2">For Colt account executives &amp; partners</div>
-        <h2>Your unfair <span className="g">advantage</span></h2>
-        <p className="lede">Your competitor walks in and asks <i>&ldquo;so, tell me about your environment.&rdquo;</i> You
-          walk in with their exposed systems, the price of their breach in euros, the group most likely to hit them, and
-          the date the regulator starts counting. Same meeting. One input.</p>
+        <div className="kick2">For boards, CISOs and risk owners</div>
+        <h2>What you cannot see is <span className="g">already public</span></h2>
+        <p className="lede">Your internet-facing footprint grows every quarter - a forgotten host, a
+          supplier portal, a VPN nobody decommissioned, a certificate that quietly names an internal
+          system. An attacker enumerates all of it in minutes, from public sources, without ever
+          touching you. Most organisations have never looked at themselves the same way.</p>
 
         <div className="vs">
-          <div className="vsc bad"><h4>Everyone else</h4><ul>
-            <li>Discovery calls to find out what they have</li>
-            <li>Wait for a technical resource who is booked</li>
-            <li>Weeks pass. The deal goes cold.</li>
-            <li>The CFO asks &ldquo;why should I care?&rdquo;</li>
-            <li className="last">You hand over a brochure.</li></ul></div>
-          <div className="vsc good"><h4>You</h4><ul>
-            <li>You already know what they have</li>
-            <li>No technical resource. No permission. No wait.</li>
-            <li>Minutes. The first meeting IS the deal.</li>
-            <li>The CFO gets the number, in euros.</li>
-            <li className="last">You hand over four boardroom decks.</li></ul></div>
+          <div className="vsc bad"><h4>How it usually goes</h4><ul>
+            <li>An annual test, scoped to what you remembered to list</li>
+            <li>A findings spreadsheet with no price attached to anything</li>
+            <li>Weeks between the question and the answer</li>
+            <li>The board asks what it would actually cost. Nobody knows.</li>
+            <li className="last">Compliance deadlines live in somebody&rsquo;s inbox.</li></ul></div>
+          <div className="vsc good"><h4>What you get here</h4><ul>
+            <li>Your whole internet-facing estate, discovered from public data</li>
+            <li>Every exposure modelled in euros, with the method shown</li>
+            <li>Minutes, not weeks - and repeatable whenever you want</li>
+            <li>A number the board can actually make a decision on</li>
+            <li className="last">The regulatory clock, on one slide.</li></ul></div>
         </div>
 
-        <h3 className="eh">Three questions decide every cyber deal. You now answer all three <span className="g">before the first call</span>.</h3>
+        <h3 className="eh">Three questions decide a security budget. You should be able to answer all
+          three <span className="g">today</span>.</h3>
         <div className="tri">
           <div className="tric"><div className="tt" style={{ color: "var(--teal)" }}>WHO</div>
-            <p>Named threat actors likely to target them, by sector and geography - and the kill chain they would use.</p>
+            <p>The threat groups realistically interested in your sector and geography - and the route
+              they would most likely take into you.</p>
             <span className="src">GEOPOL deck</span></div>
           <div className="tric"><div className="tt" style={{ color: "var(--gold)" }}>HOW MUCH</div>
-            <p>The breach modelled in euros - expected annual loss, worst realistic case, and the return on fixing it.</p>
+            <p>Your exposure modelled in euros - expected annual loss, worst realistic case, and the
+              return on fixing it first.</p>
             <span className="src">C-BIQ deck</span></div>
           <div className="tric"><div className="tt" style={{ color: "#ff5c74" }}>WHEN</div>
-            <p>The exact regulatory dates their board already fears - and the maximum fine attached to each.</p>
+            <p>The regulatory dates that already apply to you - and the maximum fine attached to each
+              of them.</p>
             <span className="src">Compliance decks</span></div>
         </div>
 
         <h3 className="eh">The clocks are <span className="r">already running</span></h3>
-        <p className="lede small">Three EU laws turned every mid-size company into a funded, deadline-driven buyer - and
-          this is not the security budget. These dates are written in law, not invented by marketing.</p>
+        <p className="lede small">Three EU laws now reach most mid-size organisations: NIS2, the Cyber
+          Resilience Act and the EU AI Act. These dates are written in law, not on a vendor&rsquo;s slide -
+          and the penalties are set against global turnover.</p>
         <div className="clocks">
           <div className="clock"><div className="reg">NIS2 &mdash; Germany</div><div className="fine">&euro;10m / 2% of turnover</div>
             <div className="num" id="cd1">&mdash;</div>
@@ -385,24 +393,39 @@ export default function Landing() {
         </div>
 
         <div className="unlock">
-          <h3>You do not need their permission</h3>
-          <p>This is not a penetration test. No port scanning, no probing, no login attempts - it reads public sources,
-            the internet equivalent of noting which doors are visible from the street. Which gives you the sentence that
-            changes your pipeline: <b>you can run it on a company that has never heard of you, before the first call,
-            legally.</b> Every cold name on your list is now a warm meeting with a deck already in your hand.</p>
+          <h3>Nothing of yours is touched</h3>
+          <p>This is not a penetration test and it is not a scan of your systems. No ports are probed,
+            no logins attempted, no agent installed, no credentials required. It reads only what is
+            already public - the internet equivalent of noting which doors are visible from the street.
+            <b> That is precisely why it can show you what an attacker already sees, with no change
+            request, no maintenance window, and not one packet sent to your infrastructure.</b></p>
         </div>
 
-        <h3 className="eh">Five plays you can run <span className="g">this week</span></h3>
+        <h3 className="eh">Where it earns its place</h3>
         <div className="plays">
-          {[["01","The cold open","Send three findings from their real estate. Nobody deletes that email."],["02","The dormant account","Re-run a customer you sold two years ago. Their attack surface changed - new conversation, new order."],["03","The QBR upgrade","Walk into the review with their exposure and the euro number instead of a service report."],["04","The deadline play","Put the date and the fine on one slide, then ask who owns it. Watch the room change."],["05","The displacement","Their incumbent has never shown them this. You just did - in the first meeting, for free."],["+","Run it on yourself","See your own company's exposure. That feeling is exactly what you are about to sell."]].map(([n, t, b]) => (
+          {[["01","Before the board","Walk in with the exposure and the euro number instead of adjectives."],["02","Before an audit","NIS2, CRA and AI-Act applicability, duties and deadlines on a single page."],["03","After an acquisition","See the estate you have just inherited, mapped from the outside in."],["04","Third-party risk","Assess a supplier the same way - no access, no questionnaire, no waiting."],["05","Quarter on quarter","Re-run it and see exactly what changed on your perimeter."],["+","Your own first look","Most organisations find something public they did not know was there."]].map(([n, t, b]) => (
             <div className="play" key={n}><span className="pn">{n}</span><b>{t}</b><p>{b}</p></div>
           ))}
         </div>
 
-        <div className="pullq">&ldquo;Your competitor is still asking what they have.{" "}
-          <span className="g">You are showing them what they are about to lose.&rdquo;</span></div>
+        <h3 className="eh">Fair questions</h3>
+        <div className="tri">
+          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>&ldquo;Is this legal?&rdquo;</div>
+            <p>Yes. It uses public sources any researcher could look up, and never interacts with your
+              systems. Nothing is exploited, nothing is logged into.</p></div>
+          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>&ldquo;How accurate is it?&rdquo;</div>
+            <p>Every finding carries the evidence behind it. Where a source cannot be reached it says
+              &ldquo;unknown&rdquo; rather than inventing a weakness - and it asks you to confirm anything
+              it could not resolve.</p></div>
+          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>&ldquo;What do we have to provide?&rdquo;</div>
+            <p>Your company name. No access, no questionnaire, no NDA to start, and nothing to install.
+              The euro figures are modelled ranges with the assumptions shown.</p></div>
+        </div>
+
+        <div className="pullq">The question is not whether something of yours is exposed.{" "}
+          <span className="g">It is whether you know what.</span></div>
         <div className="cta-row" style={{ justifyContent: "center" }}>
-          <Link className="btn" to="/login">Run your first assessment</Link>
+          <Link className="btn" to="/contact">Request an assessment</Link>
         </div>
       </div></section>
 
@@ -475,7 +498,7 @@ export default function Landing() {
 
       <div className="foot"><div className="wrap">
         <div style={{ fontSize: 20, fontWeight: 800 }}><span className="chev">❯</span> colt</div>
-        <p>Colt / S4Biz - cyber pre-sales automation / one name in, four boardroom decks out / built to run itself.</p>
+        <p>Colt / S4Biz - external cyber-risk and EU compliance assessment / one company name in, four boardroom documents out.</p>
         <Link className="btn" to="/login">Open the app</Link>
         <div className="footlinks">
           <Link to="/contact">Kontakt / Contact</Link><span>&middot;</span>
