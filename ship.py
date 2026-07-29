@@ -492,6 +492,17 @@ def do_verify(web, bots):
             for s in stale:
                 print("      " + s)
             ok = False
+    if web and not DRY:
+        # Prove the bot-404 gate: real users must be served, crawlers must get 404, and /api/me must
+        # still answer 401 (every deploy verifier in this repo depends on that — see check_bot_gate.py).
+        try:
+            sys.path.insert(0, HERE)
+            import check_bot_gate as _bg
+            _r = _bg.run(DOMAIN, "https", insecure=False)
+            if _r["failures"]:
+                ok = False
+        except Exception as _e:
+            print("  [!] bot-gate check skipped (%s)" % type(_e).__name__)
     if web:
         import ssl as _ssl, urllib.request, urllib.error
         url = "https://%s/api/me" % DOMAIN
