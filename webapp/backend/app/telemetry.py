@@ -110,22 +110,34 @@ def install(app, session_email_fn=None):
     class _Telemetry(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             t0 = time.time()
+            # Bot gate FIRST: classify the client and, if it is a crawler asking for the website,
+            # answer 404 without ever touching the app. /api and /.well-known are exempt — see
+            # visitors.py for why (the deploy verifiers assert 401 on /api/me).
+            try:
+                from . import visitors as _v
+            except ImportError:
+                _v = None
+            cls = _v.classify(request) if _v else None
+            if _v is not None and cls and _v.should_block(request.url.path, cls):
+                from starlette.responses import HTMLResponse
+                _safe_emit(request, 404, t0, session_email_fn, cls=cls, blocked=True)
+                return HTMLResponse(_v.NOT_FOUND_HTML, status_code=404)
             try:
                 response = await call_next(request)
                 status = response.status_code
             except Exception:
-                _safe_emit(request, 500, t0, session_email_fn)
+                _safe_emit(request, 500, t0, session_email_fn, cls=cls)
                 raise
-            _safe_emit(request, status, t0, session_email_fn)
+            _safe_emit(request, status, t0, session_email_fn, cls=cls)
             return response
 
-    def _safe_emit(request, status, t0, fn):
+    def _safe_emit(request, status, t0, fn, cls=None, blocked=False):
         try:
             path = request.url.path
-            if SKIP_PATH_RE.search(path):
+            if SKIP_PATH_RE.search(path) and not blocked:
                 return
             ua = request.headers.get("user-agent", "")
-            c = classify_ua(ua)
+            c = cls or classify_ua(ua)
             ip = client_ip(request)
             user = ""
             try:
@@ -151,6 +163,18 @@ def install(app, session_email_fn=None):
                 except ImportError:
                     import alerts
                 alerts.observe_http(ev)      # rate rules live here, not in the request path logic
+            except Exception:
+                pass
+            # who actually arrived: alert on a real person, log the bots we turned away
+            try:
+                try:
+                    from . import visitors as _vv
+                except ImportError:
+                    import visitors as _vv
+                if blocked:
+                    _vv.note_block(ev, c)
+                elif not c.get("bot"):
+                    _vv.note_visit(ev, c)
             except Exception:
                 pass
         except Exception:

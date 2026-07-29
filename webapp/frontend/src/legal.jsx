@@ -189,10 +189,13 @@ export const PRIVACY = {
     s1sub: "Auftragsverarbeiter (Art. 28 DSGVO):",
     s1list: [
       (<><strong>DigitalOcean</strong> — Hosting des Servers, Region Frankfurt (FRA1), EU.</>),
-      (<><strong>Google (Gmail API)</strong> — <em>die einzige Stelle, an die eine Nutzer­kennung
-         übermittelt wird</em>: Ihre E-Mail-Adresse, ausschließlich für den Versand des Einmalcodes
-         (OTP) und der Betriebs­berichte an den Betreiber. Google ist nach dem EU-US Data Privacy
-         Framework zertifiziert (Art. 45 DSGVO). Übermittelt wird die Adresse und der Code — sonst nichts.</>),
+      (<><strong>Google (Gmail API)</strong> — Versand des Einmalcodes (OTP) an Ihre E-Mail-Adresse
+         sowie Versand der Betriebs- und Sicherheits­benachrichtigungen an den Betreiber. Diese
+         Benachrichtigungen können <strong>technische Metadaten eines Zugriffs enthalten (IP-Adresse,
+         Land, Browser/Gerät, aufgerufene Seite)</strong>, damit der Betreiber Zugriffe und
+         Sicherheits­vorfälle prüfen kann (Art. 6(1)(f) DSGVO). Google ist nach dem EU-US Data
+         Privacy Framework zertifiziert (Art. 45 DSGVO). Es werden keine Inhalte der Analysen
+         übermittelt.</>),
       (<><strong>Telegram</strong> — nur, wenn Sie den optionalen Telegram-Zugang nutzen; dann gilt
          Ihre Telegram-Nutzer-ID.</>),
     ],
@@ -267,10 +270,12 @@ export const PRIVACY = {
     s1sub: "Processors (Art. 28 GDPR):",
     s1list: [
       (<><strong>DigitalOcean</strong> — hosting of the server, Frankfurt (FRA1) region, EU.</>),
-      (<><strong>Google (Gmail API)</strong> — <em>the only place a user identifier is sent</em>: your
-         email address, solely to deliver the one-time code (OTP) and the operational reports to the
-         operator. Google is certified under the EU-US Data Privacy Framework (Art. 45 GDPR). What is
-         transmitted is the address and the code — nothing else.</>),
+      (<><strong>Google (Gmail API)</strong> — delivers the one-time code (OTP) to your email address,
+         and delivers operational and security notifications to the operator. Those notifications may
+         contain <strong>technical metadata about a visit (IP address, country, browser/device, page
+         requested)</strong> so the operator can review access and security events (Art. 6(1)(f) GDPR).
+         Google is certified under the EU-US Data Privacy Framework (Art. 45 GDPR). No assessment
+         content is transmitted.</>),
       (<><strong>Telegram</strong> — only if you use the optional Telegram access; then your Telegram
          user ID applies.</>),
     ],
