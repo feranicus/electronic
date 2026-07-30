@@ -28,7 +28,11 @@ services:
     env_file: assess-bot/.env
     environment:                      # overrides env_file — same measured chain as colt-web
       - EVENTS_LOG=/var/log/colt/events.log
-      - ENRICH_MODELS=gemma-4-31B-it,deepseek-3.2,llama-4-maverick
+      # ENRICH_MODELS intentionally NOT set here: compose `environment:`
+      # beats `env_file`, so hardcoding it defeated enrich.py::_FALLBACKS
+      # (the committed, documented chain) and silently kept gemma at the
+      # head for weeks. Default = _FALLBACKS; override via
+      # `python set_secret.py ENRICH_MODELS` which writes assess-bot/.env.
       - ENRICH_TIMEOUT=175
       - ENRICH_BUDGET_S=380
     volumes:

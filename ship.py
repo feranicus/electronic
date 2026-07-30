@@ -273,6 +273,26 @@ def do_tests():
     else:
         print('  static check: no undefined names in engine, webapp or root scripts')
 
+    # c'''''''') NOTHING may hardcode ENRICH_MODELS. docker-compose `environment:` BEATS
+    #            `env_file`, so a value committed there silently outranks enrich.py::_FALLBACKS —
+    #            that is exactly why gemma stayed at the head of the chain and deepseek-v4-flash
+    #            was never once called, even after the repo chain was changed and deployed.
+    _bad = []
+    for _f in ('docker-compose.web.yml', 'docker-compose.reuse.yml'):
+        _fp = os.path.join(HERE, _f)
+        if not os.path.exists(_fp):
+            continue
+        for _ln in open(_fp, encoding='utf-8'):
+            _st = _ln.strip()
+            if _st.startswith('-') and 'ENRICH_MODELS=' in _st:
+                _bad.append('%s: %s' % (_f, _st))
+    if _bad:
+        for _b in _bad:
+            print('    ' + _b)
+        sys.exit('[X] ENRICH_MODELS is hardcoded in compose - it will BEAT enrich.py::_FALLBACKS '
+                 'and the committed chain will never run. Remove it.')
+    print('  enrich chain: not hardcoded in compose - enrich.py::_FALLBACKS is authoritative')
+
     # c''''''') PARITY — the acceptance test the operator asked for: the platform must not find
     #           LESS than his own manual Shodan filtering. Replays his real angermann.de exports
     #           (75 host:port) and asserts recall (subsidiaries, vendor-hosted tenants, the
@@ -572,16 +592,16 @@ def do_verify(web, bots):
                 # the operator to run a SECOND script is also a violation of the one-command rule.
                 print("  [!] ENRICH_MODELS drift — droplet %s vs repo %s; correcting the droplet"
                       % (_envchain, _repo))
-                _sed = ("sed -i 's|^ENRICH_MODELS=.*|ENRICH_MODELS=%s|' "
-                        "/opt/colt-stack/assess-bot/.env" % _repo)
-                ssh(_sed)
+                # DELETE the override rather than rewrite it: enrich.py::_FALLBACKS is the single
+                # source of truth, and a value present in .env silently outranks it forever after.
+                ssh("sed -i '/^ENRICH_MODELS=/d' /opt/colt-stack/assess-bot/.env")
                 _now = ssh("grep -h '^ENRICH_MODELS=' /opt/colt-stack/assess-bot/.env "
                            "| tail -1 || true").strip()
-                if _repo.replace(" ", "") in _now.replace(" ", ""):
+                if not _now.strip():
                     ssh("cd /opt/colt-stack && docker compose -p colt-stack "
                         "-f docker-compose.web.yml up -d web >/dev/null 2>&1 || true")
-                    print("  enrich chain: droplet corrected to the repo order (%s), colt-web restarted"
-                          % _repo)
+                    print("  enrich chain: stale droplet override REMOVED, repo order now in force "
+                          "(%s); colt-web restarted" % _repo)
                 else:
                     print("  [!] could not correct ENRICH_MODELS on the droplet — it still reads: %s"
                           % _now)

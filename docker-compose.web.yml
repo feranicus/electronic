@@ -43,7 +43,11 @@ services:
       - ALERT_STORM_CAP=12            # never more than 12 alerts/hour (an alert flood is an outage)
       # TELEMETRY_HASH_IPS=1 would store salted IP hashes instead of raw IPs (GDPR minimisation).
       # Left off deliberately: you asked for forensic IPs.
-      - ENRICH_MODELS=gemma-4-31B-it,deepseek-3.2,llama-4-maverick
+      # ENRICH_MODELS intentionally NOT set here: compose `environment:`
+      # beats `env_file`, so hardcoding it defeated enrich.py::_FALLBACKS
+      # (the committed, documented chain) and silently kept gemma at the
+      # head for weeks. Default = _FALLBACKS; override via
+      # `python set_secret.py ENRICH_MODELS` which writes assess-bot/.env.
       # Measured: a 13-finding estate (Huawei) with the rich contract needs >81s. The old 90s
       # ceiling + an even 3-way split of a 245s budget capped every model at 81s => 3 timeouts and
       # an English deck. Head now gets ~55% of the remaining budget, up to ENRICH_TIMEOUT.

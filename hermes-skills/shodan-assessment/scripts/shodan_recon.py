@@ -891,8 +891,24 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     if seed_apex:
         candidate_apexes.add(seed_apex)
 
-    # 3c) DNS subdomain probe — OWNED apexes only (never a client's apex).
-    probed = _probe_subdomains(sorted(candidate_apexes))
+    # 3c) DNS subdomain probe — OWNED apexes only (never a client's apex), and only those that
+    #     actually CARRY THE BRAND. The ~60-name wordlist costs one DNS query per name per apex, so
+    #     probing every group domain took the angermann run from 27s to 181s and produced 122
+    #     "live" names, 14 of them under oaklins.com — a GLOBAL M&A NETWORK whose international
+    #     infrastructure (careers-nl, porto2026, bedrijf-verkopen) is emphatically not the
+    #     customer's attack surface. Non-brand group domains still get full CT enumeration above,
+    #     which is what actually found the real netbid/leaseback/nordleasing names; they just do not
+    #     get the expensive speculative probe. Recall is preserved, noise and wall-clock are not.
+    _probe_apexes = {a for a in candidate_apexes
+                     if a == seed_apex
+                     or any(t and len(t) >= 4 and t in re.sub(r"[^a-z0-9]", "", a.split(".")[0])
+                            for t in btoks)}
+    _skipped = sorted(candidate_apexes - _probe_apexes)
+    if _skipped:
+        print("[auto] DNS probe SKIPPED for %d non-brand group domain(s) (CT enumeration only, "
+              "avoids speculative noise on a partner/network brand): %s"
+              % (len(_skipped), ", ".join(_skipped[:6])), file=sys.stderr)
+    probed = _probe_subdomains(sorted(_probe_apexes))
     for fqdn, ips in probed.items():
         low = fqdn.lower()
         ap = _apex(low)

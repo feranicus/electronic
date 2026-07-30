@@ -1146,3 +1146,24 @@ kept gemma at the head, and telling the operator to run a second script breaks t
 STILL OPEN (honest): the 3CX host reaches scope via `_owns_host`, but nothing yet ENUMERATES vendor
 tenant space proactively (we find it only if a cert or CT record names it). A `ssl.cert.subject.CN:
 "<brand>.<vendor>"` sweep per TENANT_APEX entry is the next increment.
+
+## ENRICH_MODELS — the chain was hardcoded in COMPOSE, which beats everything (2026-07)
+deepseek-v4-flash never ran even after `_FALLBACKS` was changed AND deployed. Cause: BOTH
+`docker-compose.web.yml` and `docker-compose.reuse.yml` carried
+`- ENRICH_MODELS=gemma-4-31B-it,deepseek-3.2,llama-4-maverick` under `environment:`, and compose
+`environment:` BEATS `env_file:`. So the committed chain could never take effect, and
+`set_secret.py ENRICH_MODELS` (which writes assess-bot/.env) could not override it either. Two
+sources of truth for one value = the bug; gemma stayed at the head for weeks as a result.
+FIX: the compose lines are DELETED (with a comment saying why). `enrich.py::_FALLBACKS` is now the
+single default; `.env` remains the per-deployment override. ship.py gained a static guard that
+FAILS the deploy if `- ENRICH_MODELS=` reappears in any compose file, and its drift check now
+DELETES a stale .env override instead of rewriting it.
+RULE: if a value has a documented home in code, compose must not restate it.
+
+## DNS probe scope — recall is cheap, speculative probing is not
+Feeding subsidiaries into discovery took the angermann run 27s -> 181s and produced 122 "live"
+subdomains, 14 of them under oaklins.com (a GLOBAL M&A network whose careers-nl / porto2026 /
+bedrijf-verkopen infrastructure is not the customer's). The ~60-name wordlist costs one DNS query
+per name PER APEX. Now the speculative probe runs ONLY on the seed and brand-carrying apexes;
+non-brand group domains still get full CT enumeration (which is what actually found the real
+netbid/leaseback/nordleasing names). ~63% fewer DNS queries, same recall.
