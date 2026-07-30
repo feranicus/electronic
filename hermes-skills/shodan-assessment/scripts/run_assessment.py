@@ -668,7 +668,26 @@ def main():
                 _done = [f for f in _all if (f.get("what") or f.get("why")) and f.get("_enriched")]
                 # a finding counts as enriched only if enrich.py marked it, or it carries prose
                 # that is demonstrably not the canned template
-                _cov0 = (len([f for f in _all if f.get("_enriched")]) / float(len(_all))) if _all else 1.0
+                # COVERAGE MUST MEASURE DEPTH, NOT JUST PRESENCE. llama-4-maverick rewrote all six
+                # findings — coverage 100% — but wrote 2,367 output tokens TOTAL, roughly a third of
+                # what deepseek produces. Every finding was "enriched" and the deck was still thin,
+                # so the top-up never fired. A finding only counts if it carries SUBSTANTIVE prose.
+                def _depth(f):
+                    n = len(str(f.get("what") or "")) + len(str(f.get("why") or ""))
+                    for r in (f.get("rem") or []):
+                        if isinstance(r, dict):
+                            n += len(str(r.get("body") or "")) + len(str(r.get("title") or ""))
+                        else:
+                            n += len(str(r))
+                    return n
+                _THIN = int(os.environ.get("ENRICH_MIN_CHARS", "420"))
+                _rich = [f for f in _all if f.get("_enriched") and _depth(f) >= _THIN]
+                _cov0 = (len(_rich) / float(len(_all))) if _all else 1.0
+                _thin_n = len([f for f in _all if f.get("_enriched") and _depth(f) < _THIN])
+                if _thin_n:
+                    print("[enrich] %d/%d finding(s) rewritten but THIN (<%d chars of prose) — "
+                          "they will render like templates" % (_thin_n, len(_all), _THIN),
+                          file=sys.stderr)
                 if _all and _cov0 < float(os.environ.get("ENRICH_MIN_COVERAGE", "0.8")):
                     print("[enrich] coverage %.0f%% after the single call — topping up with "
                           "parallel shards" % (_cov0 * 100), file=sys.stderr)

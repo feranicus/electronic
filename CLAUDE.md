@@ -1269,3 +1269,19 @@ and trims on a word boundary with an ellipsis; rem rows now use an ADAPTIVE rowH
 TEST GAP THAT LET IT SHIP: test_deck_quality only inspected SLIDE 1. It now walks EVERY slide and
 additionally asserts no body text crosses y5.32 (the footer). Verified against real 502-char
 deepseek `why` + 449-char COLT bodies: worst ratio 0.99x, zero footer collisions.
+
+## max_tokens truncated the head model — that is the "thin deck" (2026-07)
+`[warn] OUTPUT TRUNCATED at max_tokens=6500 (finish_reason=length, 13290 chars)` then
+`JSONDecodeError at char 13290`. deepseek-3.2 did not fail: WE cut it off mid-JSON. The chain then
+failed over to llama-4-maverick, which COMPLETED but wrote only 2,367 output tokens for six
+findings (~395/finding vs deepseek's ~1,500) — that is exactly the "very small amount of addon
+text" in the deck. The rich contract (3 sentences of `why` + three WHY-COLT/WHAT/HOW bodies) needs
+roughly 1.5k tokens per finding, so six findings never fit in 6500. Raised to **11000**
+(~108s at the measured 102 tok/s, inside the 175s head cap with 67s headroom).
+SECOND, DEEPER BUG: coverage measured PRESENCE, not DEPTH. maverick rewrote all six findings, so
+`_enriched` was true for every one, coverage read **100%**, and the map-reduce top-up never fired
+on a deck that was visibly thin. `run_assessment` now computes `_depth(f)` (what + why + rem
+titles/bodies) and only counts a finding as covered above `ENRICH_MIN_CHARS` (default 420).
+Measured: a deepseek finding scores ~2,190 chars, a maverick one ~260 — so a thin run now reads 0%
+coverage and the parallel shards fill it in.
+RULE: "the model answered" is not "the model delivered". Measure the artifact, not the status code.

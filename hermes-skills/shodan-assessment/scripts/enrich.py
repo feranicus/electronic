@@ -205,7 +205,12 @@ def _post(payload, timeout=None):
 def _call(text, model=None, timeout=None):
     model = model or MODEL
     payload = {"model": model, "messages": [{"role": "user", "content": text}],
-               "temperature": 0.35, "max_tokens": 6500,   # rich rem bodies need room, but every extra
+               # 6500 TRUNCATED deepseek-3.2 mid-JSON on a 6-finding estate (finish_reason=length
+               # at 13,290 chars -> JSONDecodeError -> failover to a model that writes far less,
+               # which is what "very small amount of addon text" in the deck actually was. The
+               # contract asks for 3 sentences of `why` plus three WHY-COLT/WHAT/HOW bodies per
+               # finding: roughly 1.5k tokens EACH, so six findings simply do not fit in 6500.
+               "temperature": 0.35, "max_tokens": 11000,  # rich rem bodies need room, but every extra
                                            # token is wall-clock: 8000 pushed a 13-finding
                                            # deck past the per-call budget.
                "response_format": {"type": "json_object"},
