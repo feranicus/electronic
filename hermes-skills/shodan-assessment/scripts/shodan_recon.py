@@ -1299,11 +1299,15 @@ def run(ident, F, audience, limit_per_query=500):
     for _d in (list(ident.get("domains") or []) + list(ident.get("group_domains") or [])):
         _a = _apex(_d)
         if _a: _own_aps.add(_a)
-    if seed_apex: _own_aps.add(seed_apex)
-    _cotenant = []
+    if _seed_apex0: _own_aps.add(_seed_apex0)
+    # NOTE: do NOT skip on identity_ips here. It is assigned as set(hosts) AFTER every filter has
+    # run, so on a net/prefix sweep it contains the co-tenants too and the guard would never fire.
+    # Only a PINNED host (resolved from the target's own DNS) is ours by definition.
+    _pinned_ips = set(ident.get("pinned") or [])
+    _cotenant, _dropped_backup = [], {}
     for ip in list(hosts.keys()):
-        if ip in identity_ips or ip in set(ident.get("pinned") or []):
-            continue                                    # proven ours by identity / the target's DNS
+        if ip in _pinned_ips:
+            continue                                    # the target's own DNS points here
         _orgs_h, _names = set(), set()
         for m in hosts[ip]:
             if m.get("org"): _orgs_h.add(str(m["org"]))
@@ -1312,12 +1316,24 @@ def run(ident, F, audience, limit_per_query=500):
             if cn: _names.add(str(cn).lower().lstrip("*."))
         if not _orgs_h:
             continue                                    # no org recorded -> no evidence -> keep
-        if any(_org_is_the_target(o, seed_apex) for o in _orgs_h):
+        if any(_org_is_the_target(o, _seed_apex0) for o in _orgs_h):
             continue                                    # the host's OWN whois names the customer
         if any(nm == ap or nm.endswith("." + ap) for nm in _names for ap in _own_aps):
             continue                                    # carries one of the customer's own names
         _cotenant.append((ip, sorted(_orgs_h)[0][:38]))
+        _dropped_backup[ip] = hosts[ip]
         del hosts[ip]
+    # GUARDRAIL, same doctrine as audit_fp: an automatic filter that can EMPTY a deck is worse than
+    # no filter. If the org data would delete everything (or almost everything) the org data is what
+    # is wrong, not the estate - keep it all and say so loudly.
+    if _cotenant and (not hosts or len(_cotenant) > 0.75 * (len(hosts) + len(_cotenant))):
+        for ip, _o in _cotenant:
+            hosts.setdefault(ip, _dropped_backup.get(ip, []))
+        print("[auto] co-tenant guard REFUSED: it would have dropped %d of %d hosts - keeping "
+              "everything (the whois data is the suspect, not the estate)"
+              % (len(_cotenant), len(_cotenant) + len(hosts)), file=sys.stderr)
+        ident["cotenants_refused"] = [{"ip": i, "org": o} for i, o in _cotenant][:40]
+        _cotenant = []
     if _cotenant:
         ident["cotenants_dropped"] = [{"ip": i, "org": o} for i, o in _cotenant][:40]
         print("[auto] co-tenant guard: dropped %d host(s) sharing a netblock but whois-owned by "

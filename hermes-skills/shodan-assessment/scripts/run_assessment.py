@@ -833,5 +833,5 @@ if __name__ == "__main__":
                 _fh.write(json.dumps(_rec) + "\n")
         except Exception:
             pass
-        print("PROGRESS: [100%] FAILED — %s: %s" % (type(_e).__name__, str(_e)[:160]), flush=True)
+        print("PROGRESS: [100%%] FAILED — %s: %s" % (type(_e).__name__, str(_e)[:160]), flush=True)
         raise

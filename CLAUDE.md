@@ -1063,3 +1063,41 @@ effort by default" — exactly the reasoning-model failure mode that already bro
 contract with deepseek-r1-distill and qwen3.5-397b. DO has **not published a K3 serverless rate**
 (pricing page verified 1 Jul 2026 lists K2.5 and K2.6 only). It is a candidate for ATTRIBUTION
 research (1M context, long-horizon agentic), never for the deck-prose JSON contract.
+
+## The angermann NameError outage — why unit tests did not catch it (2026-07, HARD RULE)
+I shipped `if seed_apex:` into `shodan_recon.run()` where the local is `_seed_apex0`. Production
+crashed on every assessment. test_recall/test_ca_pivot/pytest ALL passed, because they exercise
+HELPERS (`_owns_apex`, `_org_is_the_target`, `_apex`) and NOTHING executed `run()`. A NameError only
+fires when the line runs.
+THREE gates added, in ship.py, in this order:
+1. **`ruff check --select F821,F811,F822`** over engine + webapp + root. Catches undefined names
+   STATICALLY in under a second. F-rules (pyflakes) only — real bugs, never style. F401 excluded:
+   an unused import is not an outage. This alone would have stopped the incident.
+2. **`scripts/test_run_path.py`** — EXECUTES `run()` against a mocked `shodan` module and asserts the
+   co-tenant guard's outcome on the real shared Colt /24. GOTCHA: the engine calls
+   `api.search_cursor()`, so a stub providing only `.search()` silently yields ZERO hosts and the
+   test passes while testing nothing. Filter dicts also need `"run": True` or the sweep is skipped.
+3. The error handler itself was broken: `print("PROGRESS: [100%] FAILED — %s: %s" % (...))` raises
+   `ValueError: unsupported format character ']'` because `%]` is read as a format spec. So the real
+   traceback was MASKED by a second exception. Fixed to `[100%%]`. **RULE: a literal % in a
+   %-formatted string must be `%%` — and the failure path must be exercised, not assumed.**
+
+## group_discovery — the first cut harvested M&A CLIENTS (2026-07, tightened)
+Loose hints (`gruppe|unternehmen|portfolio|about`) matched EIGHT pages on the live angermann.de —
+newsroom, references, careers, history — and returned 15 "subsidiaries" including **spiegel.de** (a
+press mention), **xing-share.com** (a share widget) and **bewatec.com / vesselbid.com /
+clarus-am.com / einkaufsfinanzierer.com / executive-solutions.de** (M&A TRANSACTION CLIENTS of the
+Oaklins arm). Putting an M&A client's estate in the adviser's deck is exactly the S-KON failure.
+FIXES: STRUCTURE_HINTS is now narrow and matched against the URL **path** only (anchor text is
+useless — "Gruppe" is in every German nav); ANTI_HINTS hard-excludes
+newsroom/presse/referenz/transaktion/projekt/objekt/karriere/archiv/historie/team/kontakt/impressum;
+WIDGET_RE drops share widgets (but NOT `utm_` — a campaign param is normal on a legitimate internal
+link, and matching it silently deleted the real subsidiary buerosuche.de); major DACH + global MEDIA
+domains are in NOISE_APEX; MAX_PAGES 8 -> 4. Verified 7/7 subsidiaries, 0/8 traps.
+
+## Co-tenant guard — `identity_ips` is NOT proof of ownership
+`identity_ips = set(hosts)` is assigned AFTER every filter has run, so on a net/prefix sweep it
+contains the co-tenants too. Skipping on it meant the guard never fired. Only a **pinned** host
+(resolved from the target's own DNS) is ours by definition. Guardrail, same doctrine as audit_fp:
+if the guard would drop >75% of hosts it REFUSES and keeps everything (`cotenants_refused`) — an
+automatic filter that can empty a deck is worse than no filter. Guarded by test_run_path.py.

@@ -57,14 +57,34 @@ import argparse, html as _html, json, re, sys, urllib.parse, urllib.request
 
 UA = "Mozilla/5.0 (compatible; cybergod-recon/1.0; +https://cybergod.ai)"
 TIMEOUT = 8
-MAX_PAGES = 8           # structure pages to read
+MAX_PAGES = 4           # structure pages to read (a company has ONE structure page)
 MAX_CANDIDATES = 25     # hard cap: a group page cannot legitimately name 200 companies
 
-# Pages that describe a corporate structure. DE + EN, because the customers are DACH.
+# ONLY a genuinely structural page counts. The first cut of this used loose hints (gruppe|
+# unternehmen|portfolio|about) and on the REAL angermann.de it matched EIGHT pages — newsroom,
+# references, careers, history — and harvested spiegel.de (a press article), xing-share.com (a
+# share widget) and bewatec.com / vesselbid.com / clarus-am.com / einkaufsfinanzierer.com
+# (M&A TRANSACTION CLIENTS). Putting an M&A client's estate in the adviser's deck is the exact
+# S-KON failure this engine exists to prevent, so the pattern is now narrow and anchored.
 STRUCTURE_HINTS = re.compile(
-    r"(struktur|gruppe|group|konzern|beteiligung|tochter|unternehmensbereich|gesellschaft"
-    r"|companies|our-companies|subsidiar|divisions|brands|portfolio|at-a-glance|auf-einen-blick"
-    r"|ueber-uns|about-us|unternehmen)", re.I)
+    r"(struktur|structure|auf-einen-blick|at-a-glance|our-companies|group-companies"
+    r"|konzernstruktur|unternehmensstruktur|beteiligungen|tochtergesellschaft|subsidiar"
+    r"|/gruppe/?$|/group/?$|/companies/?$|/divisions/?$)", re.I)
+
+# Pages that LOOK corporate but publish OTHER companies' names: press releases quote media,
+# reference/transaction pages name clients, property pages name assets, career pages name tools.
+# Anything matching this is never read as a structure page, whatever else it matches.
+ANTI_HINTS = re.compile(
+    r"(newsroom|presse|press|news|mitteilung|publikation|referenz|reference|transaktion"
+    r"|transaction|deal|case-stud|projekt|project|objekt|immobilie|expose|karriere|career"
+    r"|job|stellen|archiv|blog|historie|history|geschichte|team|kontakt|contact|impressum"
+    r"|datenschutz|privacy|recht|agb|terms|cookie|sitemap|suche|search|login|umfrage)", re.I)
+
+# Share/tracking widgets masquerading as links.
+# NB: do NOT match utm_ here. A campaign parameter is normal on a legitimate internal link —
+# angermann.de links its own subsidiary as buerosuche.de/?utm_source=anghh, and an earlier version
+# of this filter silently deleted a real subsidiary because of it.
+WIDGET_RE = re.compile(r"(\bshare\b|sharer|addthis|addtoany|/intent/|share\.com|/share/)", re.I)
 
 # Never treat these as subsidiaries: social, tooling, CDNs, standards bodies, gov, common SaaS.
 NOISE_APEX = {
@@ -74,6 +94,13 @@ NOISE_APEX = {
     "schema.org", "wordpress.org", "typo3.org", "creativecommons.org", "europa.eu",
     "whatsapp.com", "t.me", "telegram.me", "vimeo.com", "tiktok.com", "github.com",
     "mozilla.org", "wikipedia.org", "openstreetmap.org", "bing.com", "yahoo.com",
+    # MEDIA. A structure or holding page routinely links a press mention ("as reported in ...").
+    # A newspaper is never a Mittelstand subsidiary, and scanning one would be both a false
+    # positive and an embarrassment. spiegel.de reached the live angermann.de run this way.
+    "spiegel.de", "handelsblatt.com", "faz.net", "welt.de", "zeit.de", "sueddeutsche.de",
+    "manager-magazin.de", "wiwo.de", "immobilien-zeitung.de", "iz.de", "thomas-daily.de",
+    "bloomberg.com", "reuters.com", "ft.com", "wsj.com", "forbes.com", "cnbc.com",
+    "n-tv.de", "ard.de", "zdf.de", "dpa.com", "presseportal.de", "finanzen.net",
 }
 
 # Public suffixes that need two labels kept (tiny built-in list; the estate is DACH-centric).
@@ -165,12 +192,19 @@ def discover(seed_apex, fetch=None, log=None, max_pages=MAX_PAGES):
 
     # 1) find candidate STRUCTURE pages: same-site links whose URL or anchor text looks like
     #    a corporate-structure page. The homepage itself always counts as a weak source.
+    # Selection is deliberately STRICT and URL-anchored. Anchor TEXT is not enough: the string
+    # "Gruppe" appears in the nav of every page on a German corporate site, which is how the first
+    # version wandered into the newsroom. The URL PATH is what identifies a structure page.
     struct_urls, seen_u = [], set()
     for url, text in _links(home, home_url):
-        if _apex(urllib.parse.urlparse(url).netloc) != seed_apex:
+        pu = urllib.parse.urlparse(url)
+        if _apex(pu.netloc) != seed_apex:
             continue
-        if not (STRUCTURE_HINTS.search(url) or STRUCTURE_HINTS.search(text)):
-            continue
+        path = pu.path or "/"
+        if ANTI_HINTS.search(path):
+            continue                        # press/references/careers publish OTHER companies
+        if not STRUCTURE_HINTS.search(path):
+            continue                        # must be structural in the PATH, not merely in the nav text
         if url in seen_u:
             continue
         seen_u.add(url)
@@ -185,6 +219,8 @@ def discover(seed_apex, fetch=None, log=None, max_pages=MAX_PAGES):
             apex = _apex(urllib.parse.urlparse(url).netloc)
             if not apex or apex == seed_apex or apex in NOISE_APEX:
                 continue
+            if WIDGET_RE.search(url) or WIDGET_RE.search(apex):
+                continue                    # xing-share.com et al are widgets, not subsidiaries
             if apex in bucket:
                 continue
             bucket[apex] = {"domain": apex, "why": why, "source": src_url,

@@ -250,6 +250,40 @@ def do_tests():
     else:
         print('  legal: Impressum operator details complete')
 
+    # c''''') STATIC UNDEFINED-NAME CHECK - the gate that would have stopped the angermann outage.
+    #        I shipped `if seed_apex:` into run() where the local is named _seed_apex0. Every unit
+    #        test passed because they exercised the HELPERS, not the module: NameError only fires
+    #        when the line actually executes, and no test executed run(). ruff F821 finds it
+    #        statically in under a second. F-rules only (pyflakes): real bugs, never style.
+    #        F821=undefined name, F811=redefinition, F822=undefined export, F401 is excluded
+    #        because unused imports are not outages.
+    _lint = subprocess.run([sys.executable, '-m', 'ruff', 'check', '--no-cache',
+                            '--select', 'F821,F811,F822', '--quiet',
+                            os.path.join(engine, '.'),
+                            os.path.join(HERE, 'webapp', 'backend', 'app'), HERE],
+                           capture_output=True, text=True, timeout=180)
+    if _lint.returncode not in (0,):
+        _out = (_lint.stdout or '') + (_lint.stderr or '')
+        if 'No module named' in _out or 'not found' in _out.lower():
+            print('  [!] ruff not installed - static name check SKIPPED (pip install ruff)')
+        else:
+            print(_out.strip()[:4000])
+            sys.exit('[X] undefined/duplicate names found - this is the angermann NameError '
+                     'class; it WILL crash at runtime. Fix before deploying.')
+    else:
+        print('  static check: no undefined names in engine, webapp or root scripts')
+
+    # c'''''') EXECUTE run() — the test that was missing when the angermann NameError shipped.
+    #          Every other engine test exercises HELPERS; a NameError only fires when the line
+    #          actually runs. This drives shodan_recon.run() against a mocked Shodan API and
+    #          asserts the co-tenant guard's behaviour on the real shared Colt /24.
+    _rp = subprocess.run([sys.executable, os.path.join(engine, 'test_run_path.py')],
+                         capture_output=True, text=True, timeout=120)
+    if _rp.returncode != 0:
+        print((_rp.stdout or '') + (_rp.stderr or ''))
+        sys.exit('[X] run() path test failed - the engine would crash or mis-scope in production')
+    print('  run() path: executes clean, co-tenant guard correct on the shared /24')
+
     # c'''') The creed (the Cassandra line) sits on the cover of all five decks and is translated by
     #       TWO independent paths: deck_i18n/de.json for the four security builders, and creed.js
     #       itself for build_compliance_deck.js (which has no deck_i18n). test_creed.js pins them
