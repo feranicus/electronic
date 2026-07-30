@@ -273,6 +273,18 @@ def do_tests():
     else:
         print('  static check: no undefined names in engine, webapp or root scripts')
 
+    # c''''''') PARITY — the acceptance test the operator asked for: the platform must not find
+    #           LESS than his own manual Shodan filtering. Replays his real angermann.de exports
+    #           (75 host:port) and asserts recall (subsidiaries, vendor-hosted tenants, the
+    #           Passbolt vault, the netbid.io mail cluster) AND precision (co-tenants, the law
+    #           firm, the dental practice) AND severity (a password vault is not 'standard service').
+    _pa = subprocess.run([sys.executable, os.path.join(engine, 'test_parity.py')],
+                         capture_output=True, text=True, timeout=180)
+    if _pa.returncode != 0:
+        print((_pa.stdout or '') + (_pa.stderr or ''))
+        sys.exit('[X] PARITY FAILED - the platform disagrees with manual Shodan work. Do not ship.')
+    print('  parity: engine matches the operator\'s manual Shodan harvest (recall + precision + severity)')
+
     # c'''''') EXECUTE run() — the test that was missing when the angermann NameError shipped.
     #          Every other engine test exercises HELPERS; a NameError only fires when the line
     #          actually runs. This drives shodan_recon.run() against a mocked Shodan API and
@@ -553,11 +565,26 @@ def do_verify(web, bots):
                                      _l.split("[", 1)[1].rstrip("]\n ").split(","))
                     break
             if _envchain and _repo and _envchain.replace(" ", "") != _repo.replace(" ", ""):
-                print("  [!] ENRICH_MODELS drift — the droplet OVERRIDES the committed chain:")
-                print("        droplet : %s" % _envchain)
-                print("        repo    : %s" % _repo)
-                print("      The droplet wins. To make the repo authoritative:")
-                print("        python set_secret.py ENRICH_MODELS     (enter the repo order)")
+                # AUTO-CORRECT, do not merely warn. A stale ENRICH_MODELS in the droplet .env wins
+                # over the committed chain, which silently breaks "GitHub is the single source of
+                # truth" — that is how gemma stayed at the head of the chain for weeks, timing out
+                # and burning ~46% of the enrichment budget, while the repo said deepseek. Telling
+                # the operator to run a SECOND script is also a violation of the one-command rule.
+                print("  [!] ENRICH_MODELS drift — droplet %s vs repo %s; correcting the droplet"
+                      % (_envchain, _repo))
+                _sed = ("sed -i 's|^ENRICH_MODELS=.*|ENRICH_MODELS=%s|' "
+                        "/opt/colt-stack/assess-bot/.env" % _repo)
+                ssh(_sed)
+                _now = ssh("grep -h '^ENRICH_MODELS=' /opt/colt-stack/assess-bot/.env "
+                           "| tail -1 || true").strip()
+                if _repo.replace(" ", "") in _now.replace(" ", ""):
+                    ssh("cd /opt/colt-stack && docker compose -p colt-stack "
+                        "-f docker-compose.web.yml up -d web >/dev/null 2>&1 || true")
+                    print("  enrich chain: droplet corrected to the repo order (%s), colt-web restarted"
+                          % _repo)
+                else:
+                    print("  [!] could not correct ENRICH_MODELS on the droplet — it still reads: %s"
+                          % _now)
             elif _repo:
                 print("  enrich chain: repo order in force (%s)" % _repo)
         except Exception as _e:

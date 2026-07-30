@@ -29,7 +29,20 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # The real-prompt bake-off measured deepseek-3.2 at 25.0s and llama-4-maverick at 44.6s, both
 # contract-valid with good German. So: fastest-and-best measured goes first, the erratic one last.
 # Re-decide with `python compare_models.py --lang de` + check_enrich.py — never from theory.
-_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+# CHAIN ORDER IS EVIDENCE, NOT TASTE (see CLAUDE.md "Model bake-off").
+#   deepseek-v4-flash  $0.112/$0.224 per 1M  <- NEW HEAD. DO's published rate makes it ~4x cheaper
+#                                               on input and ~6x on output than V3.2, same vendor
+#                                               lineage, instruct (not a thinking model).
+#   deepseek-3.2       $0.425/$1.36          <- proven on the REAL prompt: 25.0s, contract-valid,
+#                                               good German. Demoted to backup, not deleted.
+#   llama-4-maverick   $0.25/$0.87           <- DIFFERENT VENDOR (Meta): a 429 is provider-wide, so
+#                                               the backup must not share a failure domain.
+#   gemma-4-31B-it     $0.18/$0.50           <- last. Measured ERRATIC on identical input:
+#                                               53s/2758tok good | 81s timeout | 162s top-level list
+#                                               | 4s empty {}. Kept as a third chance only.
+# NOT in the chain, deliberately: kimi-k3 (DO's changelog: "tuned for max thinking effort by
+# default" -> breaks the strict-JSON contract, and DO has published no serverless rate for it).
+_FALLBACKS = ["deepseek-v4-flash", "deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
 
 def _chain():
     """ENRICH_MODELS wins outright. Otherwise a legacy single ENRICH_MODEL becomes the HEAD of the

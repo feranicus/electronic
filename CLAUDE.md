@@ -1101,3 +1101,48 @@ contains the co-tenants too. Skipping on it meant the guard never fired. Only a 
 (resolved from the target's own DNS) is ours by definition. Guardrail, same doctrine as audit_fp:
 if the guard would drop >75% of hosts it REFUSES and keeps everything (`cotenants_refused`) — an
 automatic filter that can empty a deck is worse than no filter. Guarded by test_run_path.py.
+
+## A2Z RECON STRATEGY — the five things that close the manual-vs-platform gap (2026-07)
+The operator's acceptance criterion, verbatim: *"I do not want to have any difference between what
+I harvest in shodan with manual filters and using our platform."* That is now a TEST
+(`scripts/test_parity.py`, wired into ship.py) that replays his real angermann.de exports (75
+host:port) and FAILS THE DEPLOY on any regression. The five changes, in order of impact:
+
+**1. Subsidiaries must be SCANNED, not merely "owned".**  `group_domains` was consulted by the
+ownership gate but never added to `ident["domains"]` — and `ident["domains"]` is what drives CT
+enumeration, the DNS probe and the `hostname:`/cert-CN clauses. netbid.com was "owned" and never
+searched, which is why the second angermann deck was byte-identical to the first. Each subsidiary is
+now a first-class seed with its own CT enumeration and subdomain probe.
+
+**2. Sibling TLDs of a published group domain.**  The structure page names netbid.com; the group's
+MAIL cluster (expired cert on SEVEN ports — the best finding in the engagement) is netbid.io.
+Matched on EXACT registrable label, so netbid-fake.com can never qualify.
+
+**3. Vendor-hosted tenants (`_owns_host`).**  angermann.de's 3CX PBX is `angermann.3cx.eu` on
+netcup — the apex belongs to 3CX, so `_owns_apex` rejected it, yet the certificate names the
+customer outright. TENANT_APEX covers 3CX/M365/Zoom/Atlassian/Azure/Heroku-class vendor domains and
+requires the label to EQUAL a brand token. **Consumer dynamic-DNS is deliberately EXCLUDED**
+(dyndns.org, ddns.net, no-ip.org, synology.me): anyone can register any label there, and including
+them admitted `praxisangermann.dyndns.org` — a DENTAL PRACTICE — into a property group's deck.
+
+**4. High-value management planes (`_high_value_hit`), checked BEFORE the port buckets.**
+217.110.51.7 served *"Passbolt | Open source password manager for teams"* behind nginx on 443, so
+classify() filed it as `standard_service` and the deck reported **CRITICAL 0** while an
+internet-facing PASSWORD VAULT sat on the perimeter. New CRITICAL detectors: `secrets_manager`
+(Passbolt/Vaultwarden/Bitwarden/Vault/Keycloak/CyberArk), `nas_exposed` (Synology/QNAP/TrueNAS —
+the #1 SME ransomware target), `backup_console` (Veeam/Acronis — own the backups, own the recovery);
+HIGH: `pbx_exposed` (3CX/Asterisk/FreePBX — toll fraud + the CVE-2023-29059 supply chain). Detection
+is by product AND http.title AND cert CN, because a reverse proxy hides the product. Each has a full
+TEMPLATES entry (3 why-sentences + 3 Colt-first remediation objects), so the decks are not empty.
+
+**5. The chain is now cheapest-proven-first, and the droplet can no longer override it silently.**
+`_FALLBACKS = deepseek-v4-flash -> deepseek-3.2 -> llama-4-maverick -> gemma-4-31B-it`.
+V4 Flash is $0.112/$0.224 per 1M vs V3.2's $0.425/$1.36 (~4-6x cheaper, same vendor lineage,
+instruct not thinking). gemma is LAST because it is measured erratic on identical input.
+**ship.py now AUTO-CORRECTS a drifted `ENRICH_MODELS` on the droplet** (sed + colt-web restart)
+instead of printing "run set_secret.py" — a stale env var beat the committed chain for weeks and
+kept gemma at the head, and telling the operator to run a second script breaks the one-command rule.
+
+STILL OPEN (honest): the 3CX host reaches scope via `_owns_host`, but nothing yet ENUMERATES vendor
+tenant space proactively (we find it only if a cert or CT record names it). A `ssl.cert.subject.CN:
+"<brand>.<vendor>"` sweep per TENANT_APEX entry is the next increment.

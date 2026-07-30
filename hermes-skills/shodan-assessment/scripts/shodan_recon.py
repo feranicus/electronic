@@ -443,6 +443,14 @@ def _owns_apex(apex, brand_tokens, seed_apex, group_domains=None, structure_know
     # checked first.
     if apex in set(group_domains or ()):
         return True, "named on the customer's own group-structure page"
+    # A group publishes one TLD and often operates others: angermann.de's structure page names
+    # netbid.com, while the group's MAIL cluster (expired cert on 7 ports - the best finding in the
+    # engagement) lives on netbid.io. Same registrable LABEL, different TLD. Matched EXACTLY, so
+    # "netbid-fake.com" (label netbid-fake) can never qualify.
+    _lab = apex.split(".")[0]
+    for _g in (group_domains or ()):
+        if _lab and _lab == str(_g).split(".")[0]:
+            return True, "sibling TLD of the published group domain %s" % _g
     squash = re.sub(r"[^a-z0-9]", "", apex.split(".")[0])   # the registrable label, separators removed
     for t in brand_tokens:
         if t and len(t) >= 4 and t in squash:
@@ -459,6 +467,53 @@ def _owns_apex(apex, brand_tokens, seed_apex, group_domains=None, structure_know
                                "structure - needs operator confirmation" % t)
             return True, "brand token %r" % t
     return False, "third-party apex (no brand token, not in the published group structure)"
+
+
+# Vendor/SaaS domains where the customer is a TENANT: the apex belongs to the vendor but a
+# subdomain labelled with the brand is unambiguously the customer's own service instance.
+# angermann.de's 3CX phone system lives at angermann.3cx.eu on netcup — the certificate names it
+# outright, yet _owns_apex rejected it because the apex (3cx.eu) is 3CX's, not Angermann's. An
+# exposed 3CX management interface is a first-rank finding (CVE-2023-29059 supply-chain attack),
+# so losing it is expensive. Same shape: <brand>.sharepoint.com, <brand>.zoom.us, <brand>.myshopify.com.
+TENANT_APEX = (
+    "3cx.eu", "3cx.us", "3cx.com.au", "my3cx.com",
+    "sharepoint.com", "onmicrosoft.com", "zoom.us", "atlassian.net", "myshopify.com",
+    "zendesk.com", "freshdesk.com", "service-now.com", "salesforce.com", "force.com",
+    "hubspotpagebuilder.com", "sitecore.net", "cloudapp.azure.com", "azurewebsites.net",
+    "elasticbeanstalk.com", "herokuapp.com", "netlify.app", "vercel.app", "web.app",
+    "firebaseapp.com", "github.io", "gitlab.io", "bitbucket.io", "wixsite.com",
+)
+
+# DELIBERATELY EXCLUDED from TENANT_APEX: consumer dynamic-DNS (dyndns.org, ddns.net, no-ip.org,
+# goip.de, synology.me, quickconnect.to). Anyone can register ANY label there, so the label carries
+# no ownership signal whatsoever. Including them admitted 79.214.82.129 —
+# cert CN praxisangermann.dyndns.org, O "Zahnarztpraxis Angermann" — a DENTAL PRACTICE on a Telekom
+# dynamic IP, into a commercial property group's attack surface.
+
+
+def _owns_host(fqdn, brand_tokens, seed_apex, group_domains=None, structure_known=False):
+    """Ownership for a FULL hostname, not just its registrable apex. -> (bool, reason)
+
+    Needed because a vendor-hosted tenant carries the brand in the LEFTMOST LABEL while the apex
+    belongs to the vendor. Deliberately narrow: the label must carry a brand token AND the apex must
+    be a KNOWN multi-tenant vendor domain, so this can never widen scope to a random third party.
+    """
+    low = (fqdn or "").strip().lower().rstrip(".")
+    if not low or "." not in low:
+        return False, "empty"
+    ap = _apex(low)
+    ok, why = _owns_apex(ap, brand_tokens, seed_apex, group_domains, structure_known)
+    if ok:
+        return True, why
+    if ap in TENANT_APEX or any(ap.endswith("." + t) or ap == t for t in TENANT_APEX):
+        # EXACT label match only. A substring test admitted "praxisangermann" (a dentist) because it
+        # contains "angermann". A vendor provisions the tenant subdomain as the customer's name, so
+        # equality is the correct test and it costs no real recall.
+        label = re.sub(r"[^a-z0-9]", "", low.split(".")[0])
+        for t in brand_tokens:
+            if t and len(t) >= 4 and t == label:
+                return True, "brand %r is the tenant label on vendor domain %s" % (t, ap)
+    return False, why
 
 
 # Legal-form suffixes to strip when building an `org:` filter. The S-KON WatchGuard was MISSED
@@ -805,6 +860,28 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
             if ap != seed_apex:
                 print("[auto] owned domain (%s): %s [%s]" % (source, d, why), file=sys.stderr)
 
+    # 3-pre) FEED THE SUBSIDIARIES INTO DISCOVERY. This is the step whose absence made the whole
+    #        group-structure fix invisible: `group_domains` was consulted by the ownership GATE but
+    #        never added to ident["domains"], and ident["domains"] is what drives CT enumeration,
+    #        the DNS probe and the hostname:/cert-CN Shodan clauses. Result: netbid.com was
+    #        "owned" and never searched, and the deck came out byte-identical. Each subsidiary is
+    #        now treated as a first-class seed: its own CT enumeration, its own subdomain probe,
+    #        its own identity clauses.
+    for _gd in sorted(_group_doms):
+        if _gd in exclude_apexes:
+            continue
+        candidate_apexes.add(_gd)
+        if _gd not in domains and _gd not in ident["domains"]:
+            domains.append(_gd)
+            print("[auto] subsidiary INTO SCOPE (will be enumerated + swept): %s" % _gd,
+                  file=sys.stderr)
+        # CT-enumerate the subsidiary too — netbid.io was found this way in the operator's export
+        try:
+            for _sd in _crtsh_domains(domain=_gd, org=None):
+                _consider_domain(_sd, "CT/%s" % _gd)
+        except Exception:
+            pass
+
     # 3) CT logs (crt.sh + CertSpotter fallback)
     for d in _crtsh_domains(domain=seed_dom, org=(name if (is_name and not seed_dom) else None)):
         _consider_domain(d, "CT")
@@ -1037,6 +1114,57 @@ _APPLIANCE_RE = re.compile(
     r"cisco\s*asa|meraki|zyxel|draytek|kemp|f5\s*big-?ip|big-?ip|silverpeak|velocloud")
 
 
+# CATEGORIES THAT PRODUCED "CRIT 0" ON A GENUINELY CRITICAL ESTATE (angermann.de, 2026-07)
+# 217.110.51.7:443 served "Passbolt | Open source password manager for teams" behind nginx with a
+# valid cert. classify() saw port 443 + nginx and filed it as standard_service, so a deck containing
+# an INTERNET-FACING PASSWORD VAULT reported CRITICAL 0. A secrets manager is the single highest-value
+# target on an estate: it is the credentials to everything else. Likewise 94.16.117.249:5001 is a 3CX
+# PBX web client (angermann.3cx.eu) — 3CX is the CVE-2023-29059 supply-chain vector and its mgmt plane
+# is heavily targeted; and NAS appliances (Synology/QNAP) are the #1 ransomware target for SMEs.
+# Detection is by PRODUCT, HTTP TITLE, cert CN and PORT, because a reverse proxy hides the product.
+_SECRETS_RE = re.compile(
+    r"(?i)(passbolt|vaultwarden|bitwarden|hashicorp vault|\bvault\b|keycloak|authelia|authentik"
+    r"|psono|teampass|passwordstate|cyberark|thycotic|delinea|secret server|keeper security"
+    r"|1password|lastpass|padloc|pleasant password)")
+_PBX_RE = re.compile(
+    r"(?i)(3cx|asterisk|freepbx|elastix|issabel|yeastar|grandstream|mitel|avaya|innovaphone"
+    r"|starface|pascom|sip ?server|voipmonitor|kamailio|opensips)")
+_NAS_RE = re.compile(
+    r"(?i)(synology|diskstation|rackstation|qnap|qts|truenas|freenas|openmediavault|unraid"
+    r"|western digital my ?cloud|netgear readynas|buffalo terastation)")
+_BACKUP_RE = re.compile(
+    r"(?i)(veeam|acronis|bacula|bareos|urbackup|nakivo|altaro|arcserve|commvault|rubrik|cohesity)")
+_NAS_PORTS = {5000, 5001, 8080, 8443}          # Synology DSM / QNAP QTS web UI (5000/5001 canonical)
+_PBX_PORTS = {5060, 5061, 5090, 5001}          # SIP + 3CX web client
+
+
+def _hay(m):
+    """Every string on a host record that can name a product: banner, cert, HTTP server + title."""
+    ssl = (m.get("ssl") or {}).get("cert") or {}
+    subj = ssl.get("subject") or {}
+    http = m.get("http") or {}
+    return " ".join([str(m.get("product") or ""), str(m.get("version") or ""),
+                     str(subj.get("CN", "")), str(subj.get("O", "")),
+                     str(http.get("server") or ""), str(http.get("title") or ""),
+                     str(http.get("html_hash") or ""), str(m.get("data") or "")[:400],
+                     " ".join(str(h) for h in (m.get("hostnames") or []))])
+
+
+def _high_value_hit(m):
+    """(sev, kind) for a high-value management plane, or ('','') — checked BEFORE generic buckets."""
+    hay = _hay(m)
+    port = m.get("port")
+    if _SECRETS_RE.search(hay):
+        return "CRITICAL", "secrets_manager"        # the credentials to everything else
+    if _NAS_RE.search(hay) or (port in _NAS_PORTS and re.search(r"(?i)dsm|diskstation|qnap", hay)):
+        return "CRITICAL", "nas_exposed"            # #1 SME ransomware target
+    if _BACKUP_RE.search(hay):
+        return "CRITICAL", "backup_console"         # own the backups, own the recovery
+    if _PBX_RE.search(hay) or port in (5060, 5061):
+        return "HIGH", "pbx_exposed"                # toll fraud + 3CX supply-chain history
+    return "", ""
+
+
 def _appliance_hit(m):
     """Return the appliance family name if this host is an edge security appliance, else ''."""
     prod = (m.get("product") or "") + " " + (m.get("version") or "")
@@ -1054,6 +1182,12 @@ def classify(m):
     port = m.get("port"); prod = (m.get("product") or ""); vulns = m.get("vulns") or {}
     ssl = m.get("ssl") or {}; tags = m.get("tags") or []
     title = ((m.get("http") or {}).get("title") or "")
+    # HIGH-VALUE MANAGEMENT PLANES FIRST. These hide behind a generic reverse proxy (nginx on 443),
+    # so they must be tested before the port-based buckets or they fall through to standard_service —
+    # which is exactly how an internet-facing Passbolt vault produced "CRITICAL 0".
+    _hv_sev, _hv_kind = _high_value_hit(m)
+    if _hv_sev:
+        return _hv_sev, _hv_kind
     if "ics" in tags or "scada" in tags or port in ICS_PORTSET: return "CRITICAL","ics"
     if port in DB_PORTS:  return "CRITICAL","db_exposed"
     if port in (3389, 3390): return "CRITICAL","rdp"
@@ -1083,6 +1217,48 @@ def classify(m):
     return "LOW","standard_service"
 
 TEMPLATES = {
+ "secrets_manager": ("Internet-facing secrets / password manager",
+   ["This is the credential store for the rest of the estate: one successful authentication bypass or unpatched CVE here yields the keys to every other system, so it is the single highest-value target on the perimeter.",
+    "Vault and password-manager products are actively scanned for and exploited within days of a CVE (Passbolt, Vaultwarden and Keycloak have all had authentication-bypass advisories), and a public login page permits unlimited offline credential stuffing.",
+    "Under DSGVO Art. 32 and NIS2 Art. 21(2)(d)(i) a credential store is a critical asset requiring state-of-the-art access control; exposing its login to the whole internet is difficult to defend to a regulator."],
+   [{"tag":"COLT","title":"Colt SASE / ZTNA — remove the vault from the public internet",
+     "body":"WHY COLT: a patch closes one CVE; brokering the vault behind identity-aware access removes the entire public attack surface, so the next authentication-bypass advisory is a non-event. WHAT YOU GET: the vault reachable only by enrolled, MFA-verified identities on managed devices — credential stuffing and pre-auth exploits become impossible from the internet. HOW: Colt ZTNA connector inside your network, no inbound firewall rule, no published DNS record; delivered and operated by Colt with 24x7 monitoring."},
+    {"tag":"COLT","title":"Colt Managed Security — patch orchestration prioritised by KEV/EPSS",
+     "body":"WHY COLT: vault CVEs are exploited in days, faster than a quarterly maintenance window. WHAT YOU GET: the vault tracked as a tier-0 asset with emergency patch SLAs. HOW: KEV/EPSS-driven prioritisation with Colt-operated change execution."},
+    {"tag":"PSF","title":"Colt WAF — rate-limit and geofence the login until ZTNA is live",
+     "body":"WHY COLT: an immediate compensating control while the ZTNA rollout completes. WHAT YOU GET: brute-force and stuffing traffic stopped at the edge. HOW: managed WAF policy in front of the host, no application change."}],
+   ["MITRE T1190","MITRE T1555","NIS2 Art.21(2)(d)","DSGVO Art.32"]),
+ "nas_exposed": ("Internet-facing NAS / storage appliance",
+   ["A NAS is where the file shares and often the backups live, which makes it the primary ransomware objective for a mid-sized business rather than a stepping stone.",
+    "Synology and QNAP management interfaces are continuously scanned; Deadbolt and eCh0raix campaigns encrypted tens of thousands of internet-exposed appliances, and vendor advisories are frequently exploited before customers patch.",
+    "If the appliance also holds the backup copies, a single compromise removes the recovery path — the NIS2 Art. 21(2)(c) business-continuity obligation."],
+   [{"tag":"COLT","title":"Colt SASE / ZTNA — take the NAS management plane off the internet",
+     "body":"WHY COLT: appliance firmware lags and cannot be hardened enough to survive continuous exploitation; removing public reachability ends the exposure class outright. WHAT YOU GET: staff and site-to-site access without a published management port. HOW: Colt-operated ZTNA broker with MFA, no inbound NAT."},
+    {"tag":"COLT","title":"Colt Managed Firewall — allowlist management to known sources",
+     "body":"WHY COLT: a default-deny edge policy is enforced independently of the appliance's own settings. WHAT YOU GET: scanners never reach the login. HOW: Colt-managed rulebase, change-controlled."},
+    {"tag":"VENDOR","title":"Offline / immutable backup copy",
+     "body":"WHY: an encrypted NAS must not also destroy the recovery point. WHAT YOU GET: a restorable copy outside the blast radius. HOW: immutable object storage or offline rotation, verified by restore test."}],
+   ["MITRE T1190","MITRE T1486","NIS2 Art.21(2)(c)"]),
+ "backup_console": ("Internet-facing backup / recovery console",
+   ["Modern ransomware deletes backups before encrypting production, so the backup console is targeted first; owning it converts a recoverable incident into an existential one.",
+    "Veeam and Acronis management components have carried critical pre-authentication CVEs (for example CVE-2023-27532) that were weaponised quickly, and the console holds credentials to every system it protects.",
+    "NIS2 Art. 21(2)(c) requires backup and crisis management; an internet-reachable backup control plane undermines the control it is meant to provide."],
+   [{"tag":"COLT","title":"Colt SASE / ZTNA — the backup plane must never be internet-reachable",
+     "body":"WHY COLT: the console stores credentials for the whole estate, so exposure is a full-estate risk, not a single-host one. WHAT YOU GET: administrative access brokered per identity with MFA and session logging. HOW: Colt ZTNA, no published port."},
+    {"tag":"COLT","title":"Colt Managed Security — monitor and alert on backup-plane authentication",
+     "body":"WHY COLT: backup deletion is the earliest reliable ransomware indicator. WHAT YOU GET: alerting on anomalous console logins and job deletions. HOW: log ingestion into Colt monitoring with 24x7 response."}],
+   ["MITRE T1490","MITRE T1190","NIS2 Art.21(2)(c)"]),
+ "pbx_exposed": ("Internet-facing PBX / telephony management",
+   ["An exposed PBX carries direct financial risk through toll fraud — attackers place premium-rate international calls, and losses accrue in hours, billed to the customer.",
+    "3CX specifically was the vector of the CVE-2023-29059 supply-chain compromise, and SIP registrars are brute-forced continuously for extension credentials.",
+    "Call metadata and recordings are personal data under DSGVO Art. 32, and a compromised PBX also enables convincing voice-phishing against staff and customers."],
+   [{"tag":"COLT","title":"Colt SASE / ZTNA — publish the PBX web client only to enrolled users",
+     "body":"WHY COLT: the softphone must reach the PBX, but the whole internet does not. WHAT YOU GET: remote working preserved while the management interface disappears from scans. HOW: Colt ZTNA for the web client; SIP trunk kept on Colt Voice transport instead of the public internet."},
+    {"tag":"COLT","title":"Colt Voice / SIP trunking — carrier-side fraud controls",
+     "body":"WHY COLT: destination and spend limits stop toll fraud at the carrier, not after the invoice. WHAT YOU GET: capped exposure with anomaly alerting. HOW: Colt SIP trunk policy plus monitoring."},
+    {"tag":"COLT","title":"Colt Managed Firewall — restrict SIP and mgmt to known peers",
+     "body":"WHY COLT: SIP needs a handful of peers, never 0.0.0.0/0. WHAT YOU GET: registrar brute-force eliminated. HOW: Colt-managed allowlist."}],
+   ["MITRE T1190","MITRE T1621","DSGVO Art.32"]),
  "rdp":        ("Internet-facing RDP", ["#1 ransomware entry vector","Credential brute-force"], ["Colt SASE / ZTNA — retire the exposed RDP; broker access with MFA","Colt Managed Firewall — block 3389 at the edge"], ["MITRE T1133"]),
  "db_exposed": ("Exposed database", ["Direct data-exfiltration path","Often unauthenticated"], ["Colt Managed Firewall — remove the DB from the internet","Colt DPI/NDR — detect exfiltration attempts"], ["MITRE T1190"]),
  "ics":        ("Exposed ICS/OT protocol", ["Safety/availability impact","NIS2 / ISO 27001 driver"], ["Colt Managed Firewall + IT/OT segmentation","Colt SD-WAN secure OT transport; Colt IP Guardian (DDoS)"], ["MITRE ICS","NIS2 Art.21"]),
