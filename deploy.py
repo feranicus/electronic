@@ -59,10 +59,26 @@ def run(cmd, check=True, capture=False, echo=True, timeout=None):
         print("!! command failed (%d)" % r.returncode); sys.exit(r.returncode)
     return r
 
-def ssh(cmd, check=True, capture=False, echo=True, timeout=90):
+def ssh(cmd, check=True, capture=False, echo=True, timeout=90, retries=2):
     # every ssh gets a hard ceiling; read-only probes pass a tighter one.
-    return run(["ssh", *SSH_OPTS, "%s@%s" % (USER, HOST), cmd], check=check, capture=capture,
-               echo=echo, timeout=timeout)
+    #
+    # THROTTLE RETRY. deploy.py opens ~18 sessions in under a minute and OpenSSH's MaxStartups /
+    # PerSourcePenalties will refuse or stall the Nth one. That is what killed a deploy on a
+    # command as trivial as `printf ... > .env` — the droplet was healthy, sshd simply would not
+    # accept another connection that second. A transient throttle must cost 5 seconds, not the run.
+    last = None
+    for i in range(max(1, retries)):
+        try:
+            return run(["ssh", *SSH_OPTS, "%s@%s" % (USER, HOST), cmd], check=check,
+                       capture=capture, echo=(echo and i == 0), timeout=timeout)
+        except SystemExit:
+            raise
+        except Exception as e:
+            last = e
+            if i < retries - 1:
+                print("  (ssh failed/timed out — sshd throttle? retrying in 5s)", flush=True)
+                time.sleep(5)
+    raise last if last else RuntimeError("ssh failed")
 def sshout(cmd, timeout=30, tries=3):
     # deploy.py opens ~12 rapid ssh connections; sshd (MaxStartups) can throttle the Nth one, so a
     # read-only probe occasionally times out even though the droplet is fine. Retry a couple of times
@@ -83,16 +99,31 @@ def scp(local_path, remote_path):
     return run(["scp", *SSH_OPTS, local_path, "%s@%s:%s" % (USER, HOST, remote_path)], timeout=300)
 
 def inspect():
-    print("\n=== READ-ONLY inventory of %s (nothing changed) ===\n" % HOST)
-    ssh("docker --version 2>/dev/null || echo 'docker: NOT INSTALLED'", check=False)
-    print("\n-- running containers (Amnezia VPN / VideoDead / jobhuntwow — we must NOT disturb them) --")
-    ssh("docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' 2>/dev/null || true", check=False)
-    print("\n-- existing Loki (we will ship into it) --")
-    ssh("docker ps --format '{{.Names}}  {{.Image}}  net={{.Networks}}' 2>/dev/null | grep -i loki || echo '(no loki container found)'", check=False)
-    print("\n-- listening ports / memory / swap --")
-    ssh("(ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null) | awk 'NR==1||/LISTEN/'; echo; free -h; echo; swapon --show 2>/dev/null || echo '(no swap)'", check=False)
-    print("\n-- our stack already present? --")
-    ssh("docker ps -a --filter name=colt- --format '  {{.Names}} ({{.Status}})' 2>/dev/null || true", check=False)
+    """ONE ssh session for the whole read-only inventory.
+
+    This used to be FIVE separate connections before any real work started, and deploy.py opens
+    ~18 in total. OpenSSH throttles rapid repeats (MaxStartups / PerSourcePenalties), and the
+    session that got refused was a trivial `printf > .env` — the droplet was healthy, sshd simply
+    would not take another connection. Batching the probes is free: they are all read-only and the
+    output is identical."""
+    print("\n=== READ-ONLY inventory of %s (nothing changed, ONE ssh session) ===\n" % HOST)
+    ssh("; ".join([
+        "docker --version 2>/dev/null || echo 'docker: NOT INSTALLED'",
+        "echo",
+        "echo '-- running containers (Amnezia VPN / VideoDead / jobhuntwow — do NOT disturb) --'",
+        "docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' 2>/dev/null || true",
+        "echo",
+        "echo '-- existing Loki (we will ship into it) --'",
+        "docker ps --format '{{.Names}}  {{.Image}}  net={{.Networks}}' 2>/dev/null "
+        "| grep -i loki || echo '(no loki container found)'",
+        "echo",
+        "echo '-- listening ports / memory / swap --'",
+        "(ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null) | awk 'NR==1||/LISTEN/'",
+        "echo", "free -h", "echo", "swapon --show 2>/dev/null || echo '(no swap)'",
+        "echo",
+        "echo '-- our stack already present? --'",
+        "docker ps -a --filter name=colt- --format '  {{.Names}} ({{.Status}})' 2>/dev/null || true",
+    ]), check=False, timeout=120)
 
 def discover_loki():
     name = sshout("docker ps --format '{{.Names}}|{{.Image}}' 2>/dev/null | grep -i loki | head -1 | cut -d'|' -f1")
@@ -174,9 +205,12 @@ def deploy_reuse(loki_url, loki_net, assume_yes):
     print("\n=== prerequisites (guarded) ==="); ensure_docker(); ensure_swap()
     print("\n=== upload ==="); upload()
     print("\n=== configure + launch (reuse mode, project '%s') ===" % PROJECT)
-    ssh("cd %s && printf 'LOKI_URL=%s\\nLOKI_NETWORK=%s\\n' > .env && cat .env" % (REMOTE, loki_url, loki_net))
-    ssh("cd %s && docker compose -f docker-compose.reuse.yml -p %s up -d --build" % (REMOTE, PROJECT), timeout=600)
-    ssh("cd %s && docker compose -f docker-compose.reuse.yml -p %s ps" % (REMOTE, PROJECT), check=False)
+    # ONE ssh session for write-env + build + status. Three separate connections here is what
+    # tripped sshd's rate limit; the compose build is also the long pole, so batching costs nothing.
+    ssh("set -e; cd {r}; printf 'LOKI_URL={u}\\nLOKI_NETWORK={n}\\n' > .env; cat .env; "
+        "docker compose -f docker-compose.reuse.yml -p {p} up -d --build; "
+        "docker compose -f docker-compose.reuse.yml -p {p} ps"
+        .format(r=REMOTE, u=loki_url, n=loki_net, p=PROJECT), timeout=900)
     print("\nDONE. The bots now ship into your EXISTING Loki. Next:")
     print("  1) In your Grafana (godeyes.ai/observe): Dashboards -> New -> Import ->")
     print("     upload  obs/grafana/dashboards/assess.json  -> pick your existing Loki datasource -> Import.")

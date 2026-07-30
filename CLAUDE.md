@@ -1191,3 +1191,22 @@ EVERY domain: ~4,000 characters rendered into a 3.1-inch DATA SOURCE footer box,
 `ASN — · 0 prefixes · 7 domains: a.de, b.de +5 more (144 hostnames)` (90 chars). The full
 inventory already has its own slide. Also separated the two creed text boxes (they overlapped by
 0.01in).
+
+## deploy.py — sshd THROTTLING is what kills the bots step (2026-07)
+`python ship.py` failed at `printf 'LOKI_URL=...' > .env` — a trivial write — after 90s. The droplet
+was healthy; OpenSSH simply refused the ~13th rapid connection (MaxStartups / PerSourcePenalties).
+CLAUDE.md ALREADY recorded the cause ("deploy.py opens ~12 separate ssh sessions... prefer the
+single-connection pattern") and it had never been applied to deploy.py itself.
+FIX, three parts:
+- `inspect()` batches the whole read-only inventory into ONE session (was five).
+- configure + build + `ps` is ONE session (was three) with a 900s ceiling for the compose build.
+- `ssh()` retries once after 5s on a timeout/refusal, so a transient throttle costs seconds, not
+  the deploy. Session count 18 -> 12.
+NOTE: the WEB app deploys BEFORE the bots, in a single-session script (deploy_web_direct.py), which
+is why cybergod.ai was already updated when this failed. Only colt-assessbot (Telegram) was stale.
+
+## A gate that silently skips is not a gate
+ship.py printed `[!] ruff not installed - static name check SKIPPED` on every run on the operator's
+machine. That check is the one that would have caught the angermann NameError outage, and it had
+been skipping since the day it was added. ship.py now pip-installs ruff once and re-runs the check
+(operating principle 1: no manual steps).

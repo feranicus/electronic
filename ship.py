@@ -278,7 +278,26 @@ def do_tests():
     if _lint.returncode not in (0,):
         _out = (_lint.stdout or '') + (_lint.stderr or '')
         if 'No module named' in _out or 'not found' in _out.lower():
-            print('  [!] ruff not installed - static name check SKIPPED (pip install ruff)')
+            # A gate that silently skips is not a gate. This check is the one that would have
+            # stopped the angermann NameError outage, and it was skipping on the operator's
+            # machine every run. Install it once, automatically — "no manual steps" (principle 1).
+            print('  ruff missing - installing it once so the static check cannot be skipped...')
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet', 'ruff'],
+                           capture_output=True, text=True, timeout=300)
+            _lint = subprocess.run([sys.executable, '-m', 'ruff', 'check', '--no-cache',
+                                    '--select', 'F821,F811,F822', '--quiet',
+                                    os.path.join(engine, '.'),
+                                    os.path.join(HERE, 'webapp', 'backend', 'app'), HERE],
+                                   capture_output=True, text=True, timeout=180)
+            if _lint.returncode == 0:
+                print('  static check: no undefined names (ruff installed)')
+            else:
+                _o2 = (_lint.stdout or '') + (_lint.stderr or '')
+                if 'No module named' in _o2:
+                    print('  [!] could not install ruff - static check SKIPPED. Run: pip install ruff')
+                else:
+                    print(_o2.strip()[:4000])
+                    sys.exit('[X] undefined/duplicate names found - the angermann NameError class.')
         else:
             print(_out.strip()[:4000])
             sys.exit('[X] undefined/duplicate names found - this is the angermann NameError '
