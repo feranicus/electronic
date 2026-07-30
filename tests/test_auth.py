@@ -35,3 +35,20 @@ def test_otp_2fa_flow(tmp_path, monkeypatch):
     assert a.verify(5, "000000")[0] is False           # wrong code
     assert a.verify(5, cap["code"])[0] is True         # correct code
     assert a.is_authed(5)
+
+def test_partner_allowlist():
+    """Who may START auth. Locked in so a future refactor cannot silently lock a partner out —
+    or silently widen a named partner into a whole trusted domain."""
+    # named partners (individual addresses)
+    assert CA.email_allowed("ud@objectale.ch")            # Objectale
+    assert CA.email_allowed("r.helle@lancon.de")          # LANCON
+    assert CA.email_allowed("R.Helle@LANCON.de")          # case-insensitive
+    assert CA.email_allowed("  r.helle@lancon.de  ")      # tolerant of stray whitespace
+    # the other two routes still work
+    assert CA.email_allowed("anyone@s4biz.io")            # trusted DOMAIN
+    assert CA.email_allowed("jev.vainsteins@colt.net")    # Colt AE pattern
+    # and what must stay out
+    assert not CA.email_allowed("someone@lancon.de")      # the DOMAIN is NOT trusted, only the person
+    assert not CA.email_allowed("r.helle@lancon.de.evil.com")   # suffix attack
+    assert not CA.email_allowed("attacker@gmail.com")
+    assert not CA.email_allowed("")

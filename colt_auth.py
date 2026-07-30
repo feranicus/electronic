@@ -17,7 +17,8 @@ EMAIL_RE    = re.compile(r"^[a-z]+(?:-[a-z]+)*\.[a-z]+(?:-[a-z]+)*@colt\.net$", 
 #   PARTNER_DOMAINS -> a whole trusted domain (anyone@that-domain)
 # Add more at runtime WITHOUT a code change:
 #   EXTRA_ALLOWED_EMAILS="a@x.ch,b@y.com"     EXTRA_ALLOWED_DOMAINS="foo.io,bar.com"
-PARTNER_EMAILS  = {"ud@objectale.ch"}          # Objectale partner
+PARTNER_EMAILS  = {"ud@objectale.ch",          # Objectale partner
+                   "r.helle@lancon.de"}        # LANCON partner
 PARTNER_DOMAINS = {"s4biz.io"}                 # S4BIZ — whole domain trusted
 
 _GENERIC_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
