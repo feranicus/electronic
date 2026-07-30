@@ -17,8 +17,9 @@ EMAIL_RE    = re.compile(r"^[a-z]+(?:-[a-z]+)*\.[a-z]+(?:-[a-z]+)*@colt\.net$", 
 #   PARTNER_DOMAINS -> a whole trusted domain (anyone@that-domain)
 # Add more at runtime WITHOUT a code change:
 #   EXTRA_ALLOWED_EMAILS="a@x.ch,b@y.com"     EXTRA_ALLOWED_DOMAINS="foo.io,bar.com"
-PARTNER_EMAILS  = {"ud@objectale.ch",          # Objectale partner
-                   "r.helle@lancon.de"}        # LANCON partner
+PARTNER_EMAILS  = {"ud@objectale.ch",                 # Objectale partner
+                   "r.helle@lancon.de",               # LANCON partner
+                   "frank.oldenburg@abakus-tk.de"}    # abakus tk — Colt reseller
 PARTNER_DOMAINS = {"s4biz.io"}                 # S4BIZ — whole domain trusted
 
 _GENERIC_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
@@ -27,8 +28,11 @@ EXTRA_ALLOWED_EMAILS  = {e.strip().lower() for e in
                          os.environ.get("EXTRA_ALLOWED_EMAILS", "").split(",") if e.strip()}
 EXTRA_ALLOWED_DOMAINS = {d.strip().lower().lstrip("@") for d in
                          os.environ.get("EXTRA_ALLOWED_DOMAINS", "").split(",") if d.strip()}
-ALLOWED_EMAILS  = PARTNER_EMAILS  | EXTRA_ALLOWED_EMAILS
-ALLOWED_DOMAINS = PARTNER_DOMAINS | EXTRA_ALLOWED_DOMAINS
+# NORMALISE AT DEFINITION. email_allowed() lowercases the address it is given, so an entry written
+# as "Frank.Oldenburg@abakus-tk.de" would never compare equal and would silently lock that partner
+# out — a failure that looks exactly like "the allow-list is broken". Fold case here, once.
+ALLOWED_EMAILS  = {e.strip().lower() for e in (PARTNER_EMAILS | EXTRA_ALLOWED_EMAILS) if e.strip()}
+ALLOWED_DOMAINS = {d.strip().lower().lstrip("@") for d in (PARTNER_DOMAINS | EXTRA_ALLOWED_DOMAINS) if d.strip()}
 
 def email_allowed(email: str) -> bool:
     """True if the address may authenticate:

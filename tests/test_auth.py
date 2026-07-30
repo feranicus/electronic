@@ -43,12 +43,18 @@ def test_partner_allowlist():
     assert CA.email_allowed("ud@objectale.ch")            # Objectale
     assert CA.email_allowed("r.helle@lancon.de")          # LANCON
     assert CA.email_allowed("R.Helle@LANCON.de")          # case-insensitive
+    assert CA.email_allowed("frank.oldenburg@abakus-tk.de")   # abakus tk (Colt reseller)
+    assert CA.email_allowed("Frank.Oldenburg@abakus-tk.de")   # as written by the operator
+    # every entry must be stored folded, or a capitalised one silently never matches
+    assert all(e == e.lower() for e in CA.ALLOWED_EMAILS)
     assert CA.email_allowed("  r.helle@lancon.de  ")      # tolerant of stray whitespace
     # the other two routes still work
     assert CA.email_allowed("anyone@s4biz.io")            # trusted DOMAIN
     assert CA.email_allowed("jev.vainsteins@colt.net")    # Colt AE pattern
     # and what must stay out
     assert not CA.email_allowed("someone@lancon.de")      # the DOMAIN is NOT trusted, only the person
+    assert not CA.email_allowed("someone@abakus-tk.de")   # ditto for the reseller
+    assert not CA.email_allowed("frank.oldenburg@abakus-tk.de.evil.com")
     assert not CA.email_allowed("r.helle@lancon.de.evil.com")   # suffix attack
     assert not CA.email_allowed("attacker@gmail.com")
     assert not CA.email_allowed("")
