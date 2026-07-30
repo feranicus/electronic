@@ -34,6 +34,80 @@ def check(cond, label):
 
 print("=" * 78)
 print("  recall guards — bibeltv.de regression")
+
+# ---------------------------------------------------------------------------------------------
+# [16] rightmart.de — the HOSTER'S IDENTITY MUST NEVER BECOME THE TARGET'S
+# rightmart.de sits on IP-Projects (a shared hoster), so its cert-O and netblock whois both read
+# "IP-PROJECTS Michael Sebastian Schinzel trading as IP-Projects GmbH & Co. KG". Every token of that
+# became a brand token, which then authorised org: pivots into two unrelated hosting companies:
+#     org:"Michael Sebastian Schinzel trading as IP-Projects"  +343 hosts
+#     org:"Marcus Hoffmann trading as VCServer Network"        +120 hosts
+#     org:"IP-Projects"                                        +119 hosts
+# Result: 1,417 IPs "in scope", 78 evidence IPs in the deck, ZERO belonging to the customer.
+# ---------------------------------------------------------------------------------------------
+print("\n[16] rightmart.de — a hoster's identity must never become the target's")
+HOSTER_O = "IP-PROJECTS Michael Sebastian Schinzel trading as IP-Projects GmbH & Co. KG"
+
+_t = R._brand_tokens_from("rightmart.de", [HOSTER_O])
+check(_t == {"rightmart"}, "hoster cert-O contributes NO brand tokens (got %s)" % sorted(_t))
+for _p in ("michael", "schinzel", "sebastian", "trading", "projects"):
+    check(_p not in _t, "'%s' never becomes a brand token" % _p)
+
+for _org in (HOSTER_O,
+             "Michael Sebastian Schinzel trading as IP-Projects",
+             "Marcus Hoffmann trading as VCServer Network",
+             "IP-Projects GmbH & Co. KG"):
+    check(not R._org_is_the_target(_org, "rightmart.de"), "org pivot refused: %s" % _org[:46])
+
+check(R._looks_like_provider("Marcus Hoffmann trading as VCServer Network"), "'trading as' = provider shape")
+check(R._looks_like_provider("Some Holder", prefix_count=130), "130 announced prefixes = provider")
+check(not R._looks_like_provider("Bibel TV GmbH", prefix_count=2), "a 2-prefix media company is not a provider")
+
+# the previously-fixed targets MUST still work — their cert-O really is the customer's
+SKON_O = "S-KON Sales Kontor Hamburg GmbH"
+check(R._org_is_the_target(SKON_O, "skon.de"), "S-KON cert-O still corroborates its seed")
+_st = R._brand_tokens_from("skon.de", [SKON_O])
+check("skon" in _st and "kontor" in _st, "S-KON still yields {skon, kontor} (got %s)" % sorted(_st))
+check(R._org_is_the_target("Bibel TV GmbH", "bibeltv.de"), "bibeltv cert-O still corroborates")
+
+check(not R._org_is_the_target("", "rightmart.de"), "empty org is not the target")
+check(not R._org_is_the_target(HOSTER_O, ""), "no seed label -> fails closed")
+
+
+# ---------------------------------------------------------------------------------------------
+# [17] CERTIFICATES ARE THE HIGHEST-YIELD IDENTITY SOURCE — harvest CN + SAN from swept hosts.
+# rightmart.de's mail archive lives on 'email-archiv-rightmart.de': a SEPARATE registrable domain,
+# so CT enumeration of '%.rightmart.de' can never return it and the subdomain probe never guessed
+# it. Its certificate named it outright — self-signed, EXPIRED, mailcow, IMAPS/993. Exactly the
+# bibeltv.de -> bibel.tv sibling-domain class, and the single most material finding on that target.
+# ---------------------------------------------------------------------------------------------
+print("\n[17] certificates: CN + SAN harvest finds sibling domains CT cannot")
+_m = {"ip_str": "3.77.104.100", "port": 993,
+      "ssl": {"cert": {"subject": {"CN": "email-archiv-rightmart.de", "O": "mailcow"},
+                       "issuer":  {"CN": "email-archiv-rightmart.de", "O": "mailcow"},
+                       "expired": True,
+                       "extensions": [{"name": "subjectAltName",
+                                       "data": "0\\x82\\x19email-archiv-rightmart.de\\x82\\x1b*.email-archiv-rightmart.de"}]}}}
+_n = R._cert_names(_m)
+check("email-archiv-rightmart.de" in _n, "cert CN harvested from the mailcow host")
+check(not any(x.startswith("x") and x[1:3].isalnum() and "rightmart" in x for x in _n),
+      "DER length-prefix bytes are stripped (no 'x0crightmart.de' garbage)")
+check(all("*" not in x for x in _n), "wildcard SAN normalised to its base name")
+
+_tok = R._brand_tokens_from("rightmart.de", [])
+_own, _why = R._owns_apex("email-archiv-rightmart.de", _tok, "rightmart.de")
+check(_own, "the sibling domain is OWNED via the brand token (%s)" % _why)
+
+# a neighbour on the same shared host must NOT drag its own domain into scope
+_nb = {"ip_str": "1.2.3.4", "ssl": {"cert": {"subject": {"CN": "someoneelse.de"}, "issuer": {"CN": "R3"}}}}
+_no, _ = R._owns_apex(R._apex(list(R._cert_names(_nb))[0]), _tok, "rightmart.de")
+check(not _no, "a co-tenant's certificate domain is NOT adopted")
+
+# the expired + self-signed pair must both be gradeable findings
+check(R.classify({"port": 993, "ssl": {"cert": {"expired": True,
+      "subject": {"CN": "x.de"}, "issuer": {"CN": "y"}}}})[1] in ("expired_tls", "self_signed"),
+      "an expired/self-signed cert is classified, not ignored")
+
 print("=" * 78)
 
 # ---- the real Bibel TV estate, from the operator's verified super-filter doc ----

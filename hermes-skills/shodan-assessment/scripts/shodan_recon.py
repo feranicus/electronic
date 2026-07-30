@@ -28,7 +28,11 @@ CARRIERS = ("deutsche telekom","telekom","vodafone","telefonica","orange","bt ",
 CDNS = ("cloudflare","akamai","fastly","cloudfront","amazon","aws","google","incapsula",
         "imperva","sucuri","edgecast","stackpath","bunny","cdn77","limelight","azure","microsoft",
         "hetzner","ovh","mittwald","leaseweb","digitalocean","hosttech","exoscale","contabo",
-        "plusserver","strato","1blu","netcup","gcore","oracle")
+        "plusserver","strato","1blu","netcup","gcore","oracle",
+        # named from real engagements: these announce large multi-tenant estates
+        "ip-projects","ip projects","vcserver","vcserver network","myloc","velia","combahton",
+        "df.eu","domainfactory","host europe","hosteurope","all-inkl","alfahosting","goneo",
+        "profihost","noris","anexia","artfiles","evanzo","serverloft","webgo","timme","wiit")
 
 def _is(name, tup): return bool(name) and any(t in name.lower() for t in tup)
 
@@ -100,20 +104,40 @@ def resolve_identity(seed):
             ip = socket.gethostbyname(dom); ident["seed_ip"] = ip
             asn, prefix, holder = _ip_to_asn(ip)
             if asn:
-                ident["asns"].append(asn); ident["asn_holder"] = holder
+                ident["asn_holder"] = holder
                 ident["org_is_carrier"] = _is(holder,CARRIERS); ident["org_is_cdn"] = _is(holder,CDNS)
-                if ident["org_is_cdn"]:
+                # ---- OWNERSHIP GATE ON THE SEED'S OWN ASN (the rightmart.de collapse, 2026-07) ----
+                # The ASN that announces the seed's IP belongs to whoever HOSTS the seed. Adopting it
+                # is only safe when its holder corroborates the target's brand. rightmart.de sits in
+                # AS48314 (IP-Projects, ~130 prefixes): the old CDN/CARRIER check did not list that
+                # hoster, so 24 of ITS prefixes were swept as if rightmart owned them — which is
+                # where all 1,417 "in scope" IPs and all 78 evidence IPs came from.
+                _prefs = _ripe_prefixes(asn)
+                _owned = _org_is_the_target(holder, apex) and not _looks_like_provider(holder, len(_prefs))
+                if not _owned:
+                    ident.setdefault("shared_asns", []).append(asn)
+                    ident["org_is_cdn"] = True      # reuse the proven "cert/hostname only" path
+                    ident["org"] = None
+                    print("[auto] ASN %s holder %r does NOT corroborate the seed brand %r — treating "
+                          "it as PROVIDER space. Not an ownership anchor; scope falls back to pinned "
+                          "hosts + cert/hostname identity (%d prefixes NOT swept)."
+                          % (asn, str(holder)[:60], apex, len(_prefs)), file=sys.stderr)
+                elif ident["org_is_cdn"]:
+                    ident["asns"].append(asn)
                     pass                                   # CDN: rely on cert/hostname only
                 elif ident["org_is_carrier"]:
+                    ident["asns"].append(asn)
                     # carrier: announced prefixes are the CARRIER's — use the RDAP assignment (the /27)
                     cidr, netname = _rdap_assignment(ip)
                     if cidr: ident["nets"] = [cidr]; ident["assignment_netname"] = netname
                     elif prefix: ident["nets"] = [prefix]
-                else:
-                    nets = _ripe_prefixes(asn)
+                elif _owned:
+                    ident["asns"].append(asn)
+                    nets = list(_prefs)
                     if prefix and prefix not in nets: nets = [prefix] + nets
                     ident["nets"] = nets
-                ident["org"] = None if (ident["org_is_carrier"] or ident["org_is_cdn"]) else holder
+                if _owned:
+                    ident["org"] = None if (ident["org_is_carrier"] or ident["org_is_cdn"]) else holder
         except Exception as e:
             print(f"[warn] DNS resolve {dom}: {e}", file=sys.stderr)
     else:                                                             # ---- org name
@@ -437,6 +461,103 @@ def _org_core(o):
     return core if len(core) >= 4 else o
 
 
+# Generic markers of a PROVIDER's whois/cert organisation. A blocklist of hoster names can never be
+# complete (there are thousands), so these are shape markers, used only as a secondary signal — the
+# primary test is always _org_is_the_target() below.
+PROVIDER_MARKERS = ("trading as", " t/a ", "hosting", "hoster", "rootserver", "root-server",
+                    "datacenter", "data center", "rechenzentrum", "colocation", "colo ",
+                    "webhosting", "server network", "servernetwork", "vserver", "vps",
+                    "dedicated server", "internet services", "internet service", "network operations")
+
+
+def _squash(x):
+    return re.sub(r"[^a-z0-9]", "", str(x or "").lower())
+
+
+def _seed_label(seed_apex):
+    """'rightmart.de' -> 'rightmart'. The one token we know is genuinely the target's."""
+    if not seed_apex:
+        return ""
+    return re.sub(r"[^a-z0-9]", "", str(seed_apex).split(".")[0].lower())
+
+
+def _org_is_the_target(org, seed_ref):
+    """Does this organisation name belong to the SEED, or to whoever hosts the seed?
+
+    THE rightmart.de COLLAPSE (2026-07): rightmart.de resolves into IP-Projects, a shared hoster.
+    The seed's TLS cert-O and its netblock whois-org therefore both read
+    'IP-PROJECTS Michael Sebastian Schinzel trading as IP-Projects GmbH & Co. KG'. Every token of
+    that string became a "brand token" (michael, schinzel, sebastian, trading, projects), which then
+    authorised org: pivots into TWO UNRELATED HOSTING COMPANIES — +582 hosts, 78 evidence IPs in the
+    deck, none of them the customer's.
+
+    An org name may only act as an identity anchor if it CORROBORATES the seed label:
+        seed 'skon.de'      + O 'S-KON Sales Kontor Hamburg GmbH'
+                            -> squashes to '...skonsaleskontor...' which CONTAINS 'skon'  -> the
+                               target's own O; its tokens ('kontor') are trustworthy.
+        seed 'rightmart.de' + O 'IP-PROJECTS Michael ... GmbH & Co. KG'
+                            -> no 'rightmart' anywhere -> somebody else's O. Contributes NOTHING.
+
+    Fails CLOSED: no usable seed label -> no corroboration -> not the target."""
+    lbl = _seed_label(seed_ref) if (seed_ref and "." in str(seed_ref)) else _squash(seed_ref)
+    if len(lbl) < 4:
+        return False
+    o = _squash(org)
+    if not o:
+        return False
+    if lbl in o:                      # the org carries the brand: 'skon' inside 'S-KON Sales Kontor'
+        return True
+    for t in re.split(r"[^a-z0-9]+", str(org or "").lower()):
+        if len(t) >= 5 and t in lbl:  # or the brand carries a distinctive org token
+            return True
+    return False
+
+
+def _looks_like_provider(name, prefix_count=None):
+    """Secondary signal: a hoster/carrier shape, or an ASN announcing a provider-sized estate.
+    Never the sole basis for a decision — _org_is_the_target() is."""
+    n = str(name or "").lower()
+    if any(m in n for m in PROVIDER_MARKERS):
+        return True
+    if _is(n, CDNS) or _is(n, CARRIERS):
+        return True
+    if prefix_count is not None and prefix_count > 20:
+        return True                   # AS48314 announces ~130 prefixes; no SMB owns that
+    return False
+
+
+def _cert_names(m):
+    """Every DNS name a host's certificate asserts: subject CN + all subjectAltName entries.
+
+    Certificates are the highest-yield identity source in the whole pipeline — a cert is the one
+    place the operator has DECLARED which names a host serves. Shodan stores the SAN extension with
+    its raw DER length prefix still attached ('0\x1e\x82\x0crightmart.de\x82\x0e*.rightmart.de'),
+    so a naive split returns binary garbage; pull hostnames out with a regex instead."""
+    out = set()
+    cert = ((m.get("ssl") or {}).get("cert") or {})
+    cn = (cert.get("subject") or {}).get("CN")
+    if cn:
+        out.add(str(cn))
+    for ext in (cert.get("extensions") or []):
+        if str(ext.get("name", "")).lower() != "subjectaltname":
+            continue
+        raw = str(ext.get("data", ""))
+        # The DER length bytes arrive either as real control characters or as the LITERAL text
+        # '\x0c'. Blank both to a space first, or the regex welds the prefix onto the hostname and
+        # yields 'x0crightmart.de' instead of 'rightmart.de'.
+        raw = re.sub(r"\\x[0-9a-fA-F]{2}", " ", raw)
+        raw = re.sub(r"[^\x20-\x7e]", " ", raw)
+        for nm in re.findall(r"[A-Za-z0-9*_-]+(?:\.[A-Za-z0-9*_-]+)+", raw):
+            out.add(nm)
+    clean = set()
+    for n in out:
+        n = str(n).strip().lstrip("*.").strip(".").lower()
+        n = re.sub(r"^x[0-9a-f]{2}(?=[a-z0-9])", "", n)      # belt and braces
+        if "." in n and not n.replace(".", "").isdigit() and len(n) > 3:
+            clean.add(n)
+    return clean
+
+
 def _brand_tokens_from(seed_apex, org_names):
     """Distinctive tokens from the seed domain label AND the cert subject Organization.
 
@@ -451,8 +572,20 @@ def _brand_tokens_from(seed_apex, org_names):
             toks.add(lbl)
     NOISE = {"gmbh", "corp", "inc", "ltd", "group", "holding", "www", "the", "and", "company",
              "sales", "hamburg", "berlin", "munich", "deutschland", "germany", "services",
-             "solutions", "systems", "technologies", "technology", "international", "und", "co", "kg"}
+             "solutions", "systems", "technologies", "technology", "international", "und", "co", "kg",
+             # legal-form / proprietor filler that turned a hoster's whois into "brand" tokens
+             "trading", "mbh", "ohg", "gbr", "kgaa", "ug", "haftungsbeschraenkt", "projects",
+             "project", "network", "networks", "server", "servers", "hosting", "host", "media",
+             "consulting", "partner", "partners", "digital", "online", "web", "cloud", "data"}
     for name in (org_names or []):
+        # THE GATE. An organisation only contributes brand tokens if it is demonstrably the TARGET's
+        # organisation. Without this, a shared hoster's whois-O donates its proprietor's personal
+        # name to the target's identity — which is exactly how rightmart.de acquired 'michael',
+        # 'schinzel' and 'sebastian' and then pivoted into two unrelated hosting companies.
+        if not _org_is_the_target(name, seed_apex):
+            print("[auto] org %r contributes NO brand tokens — it does not corroborate the seed "
+                  "(likely the hoster/registrar, not the target)" % str(name)[:70], file=sys.stderr)
+            continue
         for t in re.split(r"[^a-z0-9]+", str(name).lower()):
             if len(t) >= 4 and t not in NOISE:
                 toks.add(t)
@@ -560,9 +693,10 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
                 # "Bibel TV" instead of "bibeltv.de" would therefore adopt AS24940 (Hetzner) as an
                 # OWNED ASN and sweep every other tenant of that hoster.
                 _h = _ripe_holder(a)
-                if _is(_h, CDNS) or _is(_h, CARRIERS):
-                    print("[auto] ASN %s holder %r is shared hosting/carrier — kept as context, "
-                          "NOT an ownership anchor" % (a, _h), file=sys.stderr)
+                _ref = (ident["domains"][0] if ident.get("domains") else None) or name
+                if _looks_like_provider(_h, len(_ripe_prefixes(a))) or not _org_is_the_target(_h, _ref):
+                    print("[auto] ASN %s holder %r is provider space / does not corroborate %r — kept "
+                          "as context, NOT an ownership anchor" % (a, _h, _ref), file=sys.stderr)
                     ident.setdefault("shared_asns", []).append(a)
                     continue
                 ident["asns"].append(a); ident["asn_holder"] = ident["asn_holder"] or _h
@@ -579,9 +713,18 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     seed_sans, seed_cert_o = _cert_info(seed_dom) if seed_dom else ([], None)
     if seed_cert_o:
         ident["cert_org_seen"] = seed_cert_o
-        if seed_cert_o not in cert_orgs:
-            cert_orgs.append(seed_cert_o)            # -> ssl.cert.subject.o: pivot (best filter)
-        print("[auto] seed cert subject-O: %r (used as ownership anchor)" % seed_cert_o, file=sys.stderr)
+        # ssl.cert.subject.o: is normally the HIGHEST-precision pivot — but only when the O is the
+        # target's. rightmart.de's seed cert carried its hoster's Plesk O, which inverted it into the
+        # LOWEST-precision pivot in the run: it returns the hoster's entire TLS-serving fleet.
+        if _org_is_the_target(seed_cert_o, seed_apex) and not _looks_like_provider(seed_cert_o):
+            if seed_cert_o not in cert_orgs:
+                cert_orgs.append(seed_cert_o)        # -> ssl.cert.subject.o: pivot (best filter)
+            print("[auto] seed cert subject-O: %r (used as ownership anchor)" % seed_cert_o, file=sys.stderr)
+        else:
+            ident["cert_org_rejected"] = seed_cert_o
+            print("[auto] seed cert subject-O %r REJECTED as an anchor — it does not corroborate %r "
+                  "(hoster/registrar certificate, not the target's)"
+                  % (str(seed_cert_o)[:70], seed_apex), file=sys.stderr)
     btoks = _brand_tokens_from(seed_apex, ([seed_cert_o] if seed_cert_o else []) +
                                ([name] if is_name else []) + list(orgs))
     ident["brand_tokens"] = sorted(btoks)
@@ -979,6 +1122,36 @@ def run(ident, F, audience, limit_per_query=500):
     # estate's OWN appliances. skon.de: the WatchGuard Firebox at 213.61.141.198 presents
     # O="S-KON Sales Kontor Hamburg GmbH"; harvesting it here and re-pivoting on
     # ssl.cert.subject.o: is what finds the owned Colt-netblock hosts the seed cert never revealed.
+    # ---- CERT-NAME HARVEST: the highest-yield identity source we were not using -------------
+    # A certificate is the one place the operator DECLARES which names a host serves, so it finds
+    # what CT and the DNS probe cannot. rightmart.de proved it: the mail archive lives on
+    # 'email-archiv-rightmart.de' — a SEPARATE REGISTRABLE DOMAIN, so CT enumeration of
+    # '%.rightmart.de' could never return it, and the subdomain probe never guessed it. Its cert
+    # (self-signed, EXPIRED, mailcow, IMAPS/993) named it outright. Same class as the
+    # bibeltv.de -> bibel.tv sibling. Ownership still goes through _owns_apex, so a shared-hosting
+    # neighbour's cert can never drag its own domain into scope.
+    _seed_apex0 = _apex(ident["domains"][0]) if ident.get("domains") else None
+    _btoks0 = set(ident.get("brand_tokens") or [])
+    _cert_new = {}
+    for _ip, _ms in hosts.items():
+        for _m in _ms:
+            for _nm in _cert_names(_m):
+                _ap = _apex(_nm)
+                if _ap in (ident.get("exclude_apexes") or []):
+                    continue
+                _own, _why = _owns_apex(_ap, _btoks0, _seed_apex0)
+                if not _own:
+                    continue
+                if _nm not in ident["domains"]:
+                    _cert_new.setdefault(_nm, set()).add(_ip)
+                if _ip not in ident["pinned"]:
+                    ident["pinned"].append(_ip)      # the cert proves this host is the target's
+    for _nm, _ips in sorted(_cert_new.items()):
+        ident["domains"].append(_nm)
+        print("[auto] cert-name discovery: %s (from the certificate on %s) — OWNED, added to scope"
+              % (_nm, ", ".join(sorted(_ips)[:3])), file=sys.stderr)
+    ident["cert_names_found"] = sorted(_cert_new)
+
     seen_o = {}
     seen_org = {}
     for _ms in hosts.values():

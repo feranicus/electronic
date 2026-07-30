@@ -950,3 +950,71 @@ loop is how the operator confirms/corrects them (answers OVERRIDE the inference)
   so the engine-hash verify proves the container holds them. ONE command: `python ship.py`.
 - NOT legal advice — the reference and every deck footer say so; deadlines/penalties are quoted from
   the primary legal texts as at 20 Jul 2026 and should be re-checked (national NIS2 transposition moves).
+
+## HARD RULE — the HOSTER's identity is never the TARGET's (rightmart.de, 2026-07)
+rightmart.de shipped a deck with **1,417 IPs "in scope" and 78 evidence IPs, ZERO of them the
+customer's** — every one belonged to IP-Projects (its shared hoster) and that hoster's other tenants.
+The customer's real estate (`pve.` Proxmox hypervisor, `akte.` case-file system, `api.` on a Bremen
+carrier line) was DISCOVERED and printed in the log, then buried under the hoster's address space.
+ONE decision caused all of it, and it cascaded:
+1. `resolve_identity` adopted **AS48314** (holder "IP-PROJECTS Michael Sebastian Schinzel trading as
+   IP-Projects GmbH & Co. KG", ~130 prefixes) as rightmart's own ASN — the old gate only refused
+   holders in CDNS/CARRIERS, and no keyword list can ever name every hoster. 24 of ITS prefixes were
+   swept as if the customer owned them.
+2. The seed's cert-O and netblock whois are the HOSTER's, so `_brand_tokens_from` harvested
+   `michael, projects, schinzel, sebastian, trading` as the customer's "brand tokens".
+3. `_brandish()` then read those tokens back out of hoster org strings and authorised THREE org:
+   pivots — `+343`, `+120` (**Marcus Hoffmann / VCServer Network, a completely unrelated hosting
+   company**, matched purely on the tokenised phrase "trading as"), `+119` = **+582 hosts**.
+FIX — one principle, applied at every anchor: **an identity anchor must CORROBORATE the seed brand.**
+`_org_is_the_target(org, seed_ref)` squashes both and requires the seed label to appear in the org
+(or a distinctive org token inside the seed label). Fails CLOSED with no seed label.
+  * `_brand_tokens_from` — an org contributes tokens ONLY if it corroborates; otherwise it logs the
+    refusal and contributes nothing. S-KON still works ('S-KON Sales Kontor' contains 'skon' -> keeps
+    'kontor'); rightmart's hoster contributes nothing.
+  * `resolve_identity` — the seed IP's ASN is adopted ONLY if the holder corroborates AND is not
+    provider-shaped. Otherwise -> `shared_asns`, `org_is_cdn=True` (reusing the proven "cert/hostname
+    only" path), no prefixes swept.
+  * `autodiscover` name-seed ASN loop — same gate.
+  * cert-O pivot — `ssl.cert.subject.o:` is the HIGHEST-precision pivot when the O is the target's and
+    the LOWEST when it is the hoster's Plesk cert. Rejected unless it corroborates.
+  * `_looks_like_provider()` — SECONDARY signal only: "trading as"/hosting/rootserver/datacenter
+    markers, CDNS/CARRIERS, or **>20 announced prefixes** (no SMB announces 130).
+RULE FOR EVERY FUTURE ANCHOR: a name that arrives from infrastructure the customer merely RENTS
+(whois-org, netblock holder, hoster cert-O, PTR domain) is evidence about the PROVIDER, not the
+customer. Guarded by `test_recall.py` §16.
+STILL OPEN from the rightmart forensics (not yet implemented): FP audit is not blocking when
+`auditor=none` (D5); vuln findings/KEV badges are not suppressed when the plan skipped `vuln:` (D6);
+ASN-holder names on the inventory slide are not re-resolved at render time (D7); slide counts come
+from more than one metrics object (D8); framework set is not bound to the detected industry (D9).
+
+## Certificates are the highest-yield identity source — harvest CN + SAN (rightmart.de, 2026-07)
+The operator's own Shodan export found 13 real rightmart hosts by CERTIFICATE CN that the run never
+surfaced — including the whole engagement's best finding: **`email-archiv-rightmart.de`**, a mailcow
+mail archive on IMAPS/993 with a SELF-SIGNED, **EXPIRED** certificate. For a §203-StGB law firm that
+is privileged client correspondence.
+WHY IT WAS INVISIBLE: it is a SEPARATE REGISTRABLE DOMAIN, not a subdomain — CT enumeration of
+`%.rightmart.de` can never return it, and the DNS probe list never guesses it. Its certificate names
+it outright. Identical class to the bibeltv.de -> bibel.tv sibling.
+FIX: `_cert_names(m)` extracts subject-CN + every subjectAltName from each swept host, and `run()`
+harvests them BEFORE the org pivots. A name whose apex passes `_owns_apex` (brand token / seed apex)
+is added to `ident["domains"]` and its host IP is PINNED — a cert naming the target is proof of
+ownership. A co-tenant's cert can never drag its own domain in, because the ownership gate still runs.
+GOTCHA: Shodan stores the SAN extension with the raw DER length prefix attached, sometimes as real
+control bytes and sometimes as the LITERAL text `\x0c`. Blank both to a space before the regex or you
+extract `x0crightmart.de` instead of `rightmart.de`. Guarded by test_recall.py §17.
+
+## Enrichment chain order is EVIDENCE, not taste — gemma demoted (2026-07)
+Why gemma-4-31B-it "fails a lot": it was the HEAD of the chain, so it took the largest slice of the
+budget (55% = 175s), timed out at exactly that cap, and burned ~46% of the whole enrichment budget
+producing nothing — leaving deepseek only 112s. It is also erratic on IDENTICAL input (measured:
+53s/2758 tok good · 81s timeout · 162s top-level list · 4s `{}` · 175s timeout), and it was the ONLY
+model in the chain **never measured by compare_models.py on the real prompt**.
+The real-prompt bake-off measured deepseek-3.2 at 25.0s and llama-4-maverick at 44.6s, both
+contract-valid with good German. So `_FALLBACKS` is now
+`["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]` — fastest-and-best measured first, erratic
+last (kept as a third chance, not deleted).
+ALSO: a `finish_reason == "length"` is OUR max_tokens ceiling truncating the JSON mid-string, not a
+model fault — it surfaced on rightmart as `JSONDecodeError at char 30117` against max_tokens=6500 and
+was reported as a generic "bad response". `_call()` now says so explicitly. Raise max_tokens or send
+fewer findings; do not blame the model. Re-decide order with `compare_models.py` + `check_enrich.py`.

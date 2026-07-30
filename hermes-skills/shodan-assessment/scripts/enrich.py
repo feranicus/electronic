@@ -21,7 +21,15 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 #   llama-4-maverick  44.6s, German, accurate but GENERIC precedents     <- backup #2 (Meta)
 # THREE VENDORS. Measured failures: qwen3-32b + glm-5.2 = 180s timeout; kimi-k2.6 = no JSON;
 # openai-gpt-oss-120b = 429 every time; anthropic-*/openai-gpt-5* = 403 on this tier.
-_FALLBACKS = ["gemma-4-31B-it", "deepseek-3.2", "llama-4-maverick"]
+# ORDER IS EVIDENCE, NOT TASTE (2026-07). gemma-4-31B-it was HEAD and is the reason runs were slow:
+# as head it takes the biggest slice (55% of the budget = 175s), then times out at exactly the cap,
+# burning ~46% of the whole budget producing nothing — and it does this erratically on IDENTICAL
+# input (measured: 53s/2758tok good · 81s timeout · 162s top-level-list · 4s '{}' · 175s timeout).
+# It was also the ONLY model in the chain never measured by compare_models.py on the real prompt.
+# The real-prompt bake-off measured deepseek-3.2 at 25.0s and llama-4-maverick at 44.6s, both
+# contract-valid with good German. So: fastest-and-best measured goes first, the erratic one last.
+# Re-decide with `python compare_models.py --lang de` + check_enrich.py — never from theory.
+_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
 
 def _chain():
     """ENRICH_MODELS wins outright. Otherwise a legacy single ENRICH_MODEL becomes the HEAD of the
@@ -140,6 +148,16 @@ def _call(text, model=None, timeout=None):
             raise                                   # 429/5xx must reach the retry/failover logic
     msg = d["choices"][0]["message"]
     txt = msg.get("content") or msg.get("reasoning_content") or ""
+    # finish_reason == "length" means WE cut the model off at max_tokens — the JSON is then
+    # truncated mid-string and the parser reports a misleading "bad response". rightmart.de:
+    # deepseek-3.2 died on JSONDecodeError at char 30117 (~7.5k tokens) against max_tokens=6500.
+    # Say which it is, so the next person raises the ceiling instead of blaming the model.
+    _fin = d["choices"][0].get("finish_reason")
+    if _fin == "length":
+        print("[warn] enrich %s: OUTPUT TRUNCATED at max_tokens=%d (finish_reason=length, %d chars). "
+              "This is OUR ceiling, not a model fault — raise max_tokens or send fewer findings."
+              % (model, payload.get("max_tokens", 0), len(txt)), file=sys.stderr)
+    globals()["_LAST_FINISH"] = _fin
     # post-mortem log the raw model output so failures are debuggable (the "logs" to check)
     try:
         with open(os.path.join(os.environ.get("OUTDIR", "/root/work"), "enrich_last.json"), "w") as fh:
