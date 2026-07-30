@@ -68,7 +68,19 @@ def ssh(cmd, check=False):
     print("  $ ssh %s@%s %r" % (USER, HOST, cmd[:70]), flush=True)
     if DRY:
         return ""
-    r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), cmd], text=True, capture_output=True)
+    # HARD TIMEOUT. CLAUDE.md already mandates this for every ssh in every script — ship.py's own
+    # helper never got it, and a remote command that hangs (sshd throttling after ~12 rapid
+    # sessions, or a slow docker restart) froze the deploy with no output and no way to tell why.
+    try:
+        r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), cmd], text=True, capture_output=True,
+                           timeout=180)
+    except subprocess.TimeoutExpired:
+        print("    [!] ssh TIMED OUT after 180s: %s" % cmd[:90])
+        if check:
+            sys.exit("[X] remote command timed out: %s" % cmd[:120])
+        class _R:                       # keep the caller's contract; a timeout is not a crash
+            stdout, stderr, returncode = "", "timeout", 124
+        r = _R()
     if r.stdout.strip():
         print("    " + r.stdout.rstrip().replace("\n", "\n    "))
     if check and r.returncode != 0:
@@ -101,7 +113,8 @@ def _test_python():
 # checked that /api/me returned 401 — which a stale container answers perfectly well.
 ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
-                "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py"]
+                "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py",
+                "scripts/enrich_parallel.py", "scripts/attribution.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -301,6 +314,36 @@ def do_tests():
         sys.exit('[X] ENRICH_MODELS is hardcoded in compose - it will BEAT enrich.py::_FALLBACKS '
                  'and the committed chain will never run. Remove it.')
     print('  enrich chain: not hardcoded in compose - enrich.py::_FALLBACKS is authoritative')
+
+    # DECK QUALITY GATE — the customer-facing artifact finally has a test. Renders real decks and
+    # inspects OOXML geometry: text must fit its shape, boxes must not overlap, no undefined/NaN
+    # leakage, no empty deck. The 4,000-character DATA SOURCE footer that produced 'all the
+    # letters are on top of each other' is reproduced verbatim as the fixture.
+    _dq = subprocess.run([sys.executable, os.path.join(engine, 'test_deck_quality.py')],
+                         capture_output=True, text=True, timeout=300)
+    if _dq.returncode != 0:
+        print((_dq.stdout or '') + (_dq.stderr or ''))
+        sys.exit('[X] deck quality gate failed - do not ship a deck that renders badly')
+    print('  deck quality: text fits, no overlaps, no placeholder leakage')
+
+    # ATTRIBUTION scorer — graded confidence must keep discriminating on the real angermann hosts.
+    _at = subprocess.run([sys.executable, os.path.join(engine, 'attribution.py'), '--demo'],
+                         capture_output=True, text=True, timeout=60,
+                         env={**os.environ, 'SHODAN_API_KEY': os.environ.get('SHODAN_API_KEY', 'x')})
+    _ao = _at.stdout or ''
+    _bad_attr = []
+    for _needle, _want in (('Passbolt', 'CONFIRMED'), ('NetBid (subsidiary)', 'CONFIRMED'),
+                           ('LAW FIRM', 'REJECTED'), ('DENTIST', 'REJECTED'),
+                           ('co-tenant', 'REJECTED')):
+        _ln = next((l for l in _ao.splitlines() if _needle in l), '')
+        if _want not in _ln:
+            _bad_attr.append('%s -> expected %s, got: %s' % (_needle, _want, _ln.strip()[:80]))
+    if _bad_attr:
+        print(_ao)
+        for _b in _bad_attr:
+            print('    ' + _b)
+        sys.exit('[X] attribution scorer regressed on the known angermann ground truth')
+    print('  attribution: confidence bands correct on the real angermann hosts')
 
     # c''''''') PARITY — the acceptance test the operator asked for: the platform must not find
     #           LESS than his own manual Shodan filtering. Replays his real angermann.de exports
@@ -607,7 +650,7 @@ def do_verify(web, bots):
                 # enrich._chain(), so it silently REORDERS the committed order — that is why
                 # deepseek-v4-flash sat at position 2 and was never called even after the plural
                 # override was removed. Four homes for one value; the repo is the only one that stays.
-                ssh("sed -i '/^ENRICH_MODELS\?=/d' /opt/colt-stack/assess-bot/.env")
+                ssh("sed -i -E '/^ENRICH_MODELS?=/d' /opt/colt-stack/assess-bot/.env")
                 _now = ssh("grep -hE '^ENRICH_MODELS?=' /opt/colt-stack/assess-bot/.env "
                            "| tail -1 || true").strip()
                 if not _now.strip():

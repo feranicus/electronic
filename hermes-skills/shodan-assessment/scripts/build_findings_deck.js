@@ -229,10 +229,16 @@ function drawTable(slide, rows, opts) {
   // 4-field footer metadata strip
   s.addShape(pres.shapes.RECTANGLE, { x: 0, y: 4.75, w: 10, h: 0.875,
     fill: { color: C.black }, line: { type: "none" } });
+  // CLAMP. The title-slide footer boxes are 1.6-3.1in wide; target.scope is engine-supplied and
+  // once carried a whole corporate group's 144 domains (~4,000 chars), which rendered as a solid
+  // block of overlapping glyphs. _scope_line() now summarises upstream, but the RENDERER must not
+  // depend on its input being sane — clamp here too. Guarded by test_deck_quality.py.
+  const clamp = (v, n) => { const s = String(v == null ? "" : v);
+                            return s.length > n ? s.slice(0, n - 1).trimEnd() + "\u2026" : s; };
   const meta = [
     ["PREPARED", "Colt Sales Engineering"],
-    ["FOR", t.audience || "Internal " + EMDASH + " Colt Sales Engineering"],
-    ["DATA SOURCE", t.scope || "Shodan host-record export"],
+    ["FOR", clamp(t.audience || "Internal " + EMDASH + " Colt Sales Engineering", 110)],
+    ["DATA SOURCE", clamp(t.scope || "Shodan host-record export", 190)],
     ["STATUS", "INTERNAL " + EMDASH + " CONFIDENTIAL"],
   ];
   let mx = 0.5;

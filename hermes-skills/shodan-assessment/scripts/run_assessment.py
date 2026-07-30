@@ -653,6 +653,35 @@ def main():
             if r.returncode != 0:
                 print(f"[warn] enrich exit={r.returncode}: {r.stderr.strip()[-500:]}", file=sys.stderr)
             fj = json.load(open(os.path.join(a.outdir, "findings.json")))
+
+            # ---- COVERAGE CONTRACT + MAP-REDUCE TOP-UP -------------------------------------
+            # The single whole-estate call returns prose for whichever findings the model felt
+            # like. Un-rewritten findings fall back to canned TEMPLATES text and are visually
+            # indistinguishable in the deck — "AI added something to the first critical and then
+            # bubkes". Measure it, and if the model under-delivered, fill the gaps with parallel
+            # per-finding shards (independent sub-problems -> map-reduce is the topology the
+            # research supports; see enrich_parallel.py header).
+            try:
+                import enrich_parallel as _MR
+                _all = [f for f in (fj.get("findings") or [])
+                        if isinstance(f, dict) and f.get("id")]
+                _done = [f for f in _all if (f.get("what") or f.get("why")) and f.get("_enriched")]
+                # a finding counts as enriched only if enrich.py marked it, or it carries prose
+                # that is demonstrably not the canned template
+                _cov0 = (len([f for f in _all if f.get("_enriched")]) / float(len(_all))) if _all else 1.0
+                if _all and _cov0 < float(os.environ.get("ENRICH_MIN_COVERAGE", "0.8")):
+                    print("[enrich] coverage %.0f%% after the single call — topping up with "
+                          "parallel shards" % (_cov0 * 100), file=sys.stderr)
+                    _merged, _rep = _MR.run(fj, a.lang)
+                    fj = _MR.apply(fj, _merged)
+                    _cov0 = _rep["coverage"]
+                fj.setdefault("target", {})["enrich_coverage"] = round(_cov0, 3)
+                _ev(evt="enrich_coverage", company=fj.get("target", {}).get("company"),
+                    coverage=round(_cov0, 3), findings=len(_all))
+                json.dump(fj, open(os.path.join(a.outdir, "findings.json"), "w"),
+                          indent=2, ensure_ascii=False)
+            except Exception as _e:
+                print("[warn] coverage top-up skipped: %s" % type(_e).__name__, file=sys.stderr)
         except subprocess.TimeoutExpired:
             print("[warn] enrich TIMED OUT (240s) — model too slow; kept templated text", file=sys.stderr)
         except Exception as e:
