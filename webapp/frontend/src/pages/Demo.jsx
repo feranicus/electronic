@@ -15,54 +15,89 @@ import { Link } from "react-router-dom";
 
 const CONTACT = "jevgenijs.vainsteins@colt.net";
 
-/* The third avatar: a Trojan horse on wheels, drawn inline so it needs no asset pipeline,
- * scales cleanly on any display and matches the teal-on-near-black palette exactly. */
+/* The third avatar: a flat 2D wooden Trojan horse on a wheeled cart.
+ *
+ * Drawn as SOLID SHAPES, not outlines: an earlier attempt traced a naturalistic horse with hand-
+ * tuned beziers and produced a blob. Flat geometry (a barrel, a tapered neck slab, a rotated
+ * capsule head, triangular ears, post legs, a plank cart) reads unmistakably at any size and suits
+ * the subject — the thing in the story was a carpentered object, not an animal.
+ *
+ * DRAW ORDER IS LOAD-BEARING: the neck is painted BEFORE the body so the body's smooth back edge
+ * cuts the join. Trying to hand-fit that corner left a sharp fin every time; letting the body
+ * overlap it is exact by construction.
+ *
+ * Inline SVG, no asset pipeline, no gradients — it inherits the page palette and stays crisp on a
+ * phone, a 5K display and a print stylesheet alike.
+ */
 function TrojanHorse() {
+  const T = "#12726b";          // wood body
+  const E = "#00B2A9";          // teal edge
+  const D = "#0d564f";          // cart / shadowed wood
+  const INK = "#0a1526";        // page background, used for the wheel voids
+  const GOLD = "#F7C844";
   return (
-    <svg className="th-avatar" viewBox="0 0 240 200" role="img"
-         aria-label="A wooden Trojan horse on wheels">
-      <defs>
-        <linearGradient id="thWood" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#1a6f68" /><stop offset="100%" stopColor="#0c3f3b" />
-        </linearGradient>
-        <linearGradient id="thGlow" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#00B2A9" stopOpacity=".55" />
-          <stop offset="100%" stopColor="#00B2A9" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-
-      <ellipse cx="120" cy="186" rx="86" ry="9" fill="url(#thGlow)" />
-
-      {/* body */}
-      <path d="M62 96 q6-26 30-30 l44-4 q22-2 32 12 l14 20 q6 9 2 18 l-6 14 q-4 9-14 9 H78
-               q-12 0-16-10 l-6-16 q-3-9 6-13 Z" fill="url(#thWood)" stroke="#00B2A9" strokeWidth="2.5"/>
-      {/* plank lines — it is a wooden horse, and the seams are the point */}
-      <path d="M70 104 H188 M68 120 H192 M74 136 H186" stroke="#00B2A9" strokeWidth="1.1" opacity=".45"/>
-      {/* neck + head */}
-      <path d="M150 70 q16-16 30-10 q12 5 10 18 l-3 18 q-2 10-12 10 l-18 2"
-            fill="url(#thWood)" stroke="#00B2A9" strokeWidth="2.5"/>
-      <path d="M186 74 l10-16 l4 18 Z" fill="#00B2A9" opacity=".9"/>   {/* ear  */}
-      <circle cx="178" cy="84" r="3.4" fill="#F7C844" />                {/* eye  */}
-      {/* legs */}
-      <path d="M84 152 v20 M112 152 v20 M148 152 v20 M176 152 v20"
-            stroke="#0c3f3b" strokeWidth="9" strokeLinecap="round"/>
-      <path d="M84 152 v20 M112 152 v20 M148 152 v20 M176 152 v20"
-            stroke="#00B2A9" strokeWidth="2" strokeLinecap="round" opacity=".7"/>
-      {/* WHEELS — the detail that makes it the Troy horse and not a statue */}
-      {[[84, 176], [176, 176]].map(([cx, cy]) => (
-        <g key={cx}>
-          <circle cx={cx} cy={cy} r="17" fill="#0a1526" stroke="#00B2A9" strokeWidth="2.5"/>
-          <circle cx={cx} cy={cy} r="4.5" fill="#00B2A9"/>
-          <path d={`M${cx - 17} ${cy} H${cx + 17} M${cx} ${cy - 17} V${cy + 17}
-                    M${cx - 12} ${cy - 12} L${cx + 12} ${cy + 12}
-                    M${cx - 12} ${cy + 12} L${cx + 12} ${cy - 12}`}
-                stroke="#00B2A9" strokeWidth="1.6" opacity=".75"/>
+    <svg className="th-avatar" viewBox="0 0 440 380" role="img"
+         aria-label="A wooden Trojan horse standing on a wheeled cart">
+      <g stroke={E} strokeWidth="3" strokeLinejoin="round">
+        {/* tail */}
+        <path d="M118 138 C84 146,54 182,50 226 C47 254,58 278,76 292
+                 C74 268,72 240,78 214 C86 178,104 156,130 150 Z" fill="#0f6259"/>
+        {/* legs — same tone as the barrel, or they sink into the cart and read as slats */}
+        <g fill={T}>
+          <rect x="112" y="188" width="31" height="80" rx="4"/>
+          <rect x="153" y="188" width="31" height="80" rx="4"/>
+          <rect x="231" y="188" width="31" height="80" rx="4"/>
+          <rect x="271" y="188" width="31" height="80" rx="4"/>
         </g>
-      ))}
-      {/* the hidden door — closed, hinged, and slightly ajar */}
-      <rect x="104" y="112" width="30" height="30" rx="3" fill="#0a1526"
-            stroke="#F7C844" strokeWidth="1.8" opacity=".95"/>
-      <path d="M104 127 h30" stroke="#F7C844" strokeWidth="1" opacity=".6"/>
+        {/* neck (before the body — see the note above) */}
+        <path d="M240 182 L306 42 L330 96 L322 182 Z" fill={T}/>
+        {/* barrel: withers higher than the croup, rounded rump, soft belly */}
+        <path d="M92 180 C92 148,104 132,130 128
+                 C170 138,214 140,252 130
+                 C278 123,302 132,311 156
+                 L313 196 C313 214,300 224,284 224
+                 C230 230,170 230,118 224 C100 222,92 212,92 196 Z" fill={T}/>
+        {/* ears */}
+        <path d="M304 40 L296 4 L322 30 Z" fill={T}/>
+        <path d="M326 28 L342 2 L344 38 Z" fill={T}/>
+        {/* head */}
+        <g transform="rotate(20 352 80)">
+          <rect x="306" y="55" width="92" height="50" rx="21" fill={T}/>
+        </g>
+      </g>
+
+      {/* mane, as strokes rather than a slab — a slab turns the neck into a plank */}
+      <g stroke="#0b4a45" strokeWidth="7" strokeLinecap="round" opacity=".8">
+        <path d="M272 120 l20 7"/><path d="M285 95 l20 7"/><path d="M297 70 l20 7"/>
+      </g>
+      {/* plank seams: it is a wooden horse and the carpentry is the whole point */}
+      <g stroke={E} strokeWidth="1.7" opacity=".32" fill="none">
+        <path d="M104 158 H300"/><path d="M96 186 H306"/>
+      </g>
+
+      {/* the cart */}
+      <g stroke={E} strokeWidth="3" strokeLinejoin="round">
+        <rect x="90" y="266" width="230" height="21" rx="4" fill={D}/>
+        <rect x="106" y="287" width="18" height="12" fill={D}/>
+        <rect x="288" y="287" width="18" height="12" fill={D}/>
+        <circle cx="148" cy="315" r="33" fill={INK}/>
+        <circle cx="266" cy="315" r="33" fill={INK}/>
+      </g>
+      <g stroke={E} strokeWidth="2" opacity=".85">
+        <path d="M115 315h66M148 282v66M125 292l46 46M125 338l46-46"/>
+        <path d="M233 315h66M266 282v66M243 292l46 46M243 338l46-46"/>
+      </g>
+      <circle cx="148" cy="315" r="7" fill={E}/><circle cx="266" cy="315" r="7" fill={E}/>
+
+      {/* eye, nostril, mouth */}
+      <circle cx="352" cy="76" r="5" fill={GOLD}/>
+      <circle cx="392" cy="108" r="3.4" fill={INK} opacity=".8"/>
+      <path d="M378 122 l16 6" stroke={INK} strokeWidth="2.6" opacity=".5" fill="none"/>
+
+      {/* the hidden door — the reason anyone remembers the horse */}
+      <rect x="150" y="152" width="54" height="54" rx="4" fill={INK} stroke={GOLD} strokeWidth="3"/>
+      <path d="M150 179 h54" stroke={GOLD} strokeWidth="1.8" opacity=".6"/>
+      <circle cx="195" cy="179" r="2.8" fill={GOLD}/>
     </svg>
   );
 }

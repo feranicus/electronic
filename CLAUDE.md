@@ -1338,3 +1338,19 @@ deliverables, built by the real deck builders, from FABRICATED data for a fictio
 - NOTE, deliberate and unchanged: `BOT_404=1` serves crawlers a 404 on page routes, so /demo is
   NOT indexable by Google. Flip with `BOT_404_ALLOW="googlebot,bingbot"` if the demo should be
   found by search; that is a product decision, not a bug.
+
+## The /demo Trojan-horse avatar — draw flat geometry, and LOOK at it (2026-07)
+First attempt traced a naturalistic horse with hand-tuned beziers: "beyond terrible ... it doesnt
+look like horse". Two lessons, both general:
+- **Flat solid geometry beats an outlined silhouette.** The final avatar is a barrel path, a
+  tapered neck slab, a rotated rounded-rect head, triangular ears, four post legs and a plank cart
+  with spoked wheels. It reads at 40px and at 400px. Naturalistic bezier tuning does not converge
+  by guesswork, and the subject is a carpentered object anyway.
+- **DRAW ORDER fixed the join that hand-tuning could not.** The neck is painted BEFORE the body, so
+  the body's smooth back edge cuts the neck base. Every attempt to fit that corner by hand left a
+  sharp fin; overlap makes it exact by construction. Legs must use the SAME fill as the barrel or
+  they sink into the cart and read as slats.
+- **METHOD: render and look, do not imagine.** `cairosvg` -> PNG -> read the image, iterate. Nine
+  versions, each judged from the pixels. Then re-render the SVG *as emitted by the React component*
+  (SSR -> extract `<svg class="th-avatar">` -> PNG) to prove the JSX matches the artwork that was
+  approved — same doctrine as the engine-hash deploy verify: check the artifact, not the intention.
