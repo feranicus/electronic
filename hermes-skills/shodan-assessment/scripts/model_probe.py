@@ -77,6 +77,13 @@ _VARIANTS = [
 
 def _post(model, extra, timeout):
     payload = dict(extra)
+    # Apply the SAME per-model policy production uses, so the probe and enrich.py can never
+    # disagree about what a model requires (Kimi: temperature must be 1).
+    try:
+        import enrich as _E
+        payload.update(_E._model_params(model))
+    except Exception:
+        pass
     payload["model"] = model
     payload["messages"] = [{"role": "user", "content": CONTRACT}]
     req = urllib.request.Request(

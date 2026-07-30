@@ -49,7 +49,29 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # this class of mistake cannot reach production again. To adopt a V4 model, run inside the container:
 #     docker exec colt-web python3 /opt/shodan-skill/scripts/model_probe.py --all
 # and use the exact id it prints.
-_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+_FALLBACKS = ["kimi-k2.6", "deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+
+# KIMI IS HEAD, and this time on evidence rather than hope. `model_probe.py --model kimi-k2.6`
+# tried six payload shapes and the API answered in one line:
+#     HTTP 400 {"message":"temperature must be 1 for this model","type":"invalid_request_error"}
+# We were sending temperature=0.35. That single constraint is the whole reason kimi-k2.5/k2.6
+# looked broken for three rounds — the model was entitled and healthy throughout; we were
+# discarding the error body that said so. MODEL_PARAMS now forces temperature=1.0 for kimi-*.
+#
+# WATCH THE FIRST RUN: the probe reported "ACCEPTED, 0 chars back" at max_tokens=300. Kimi reasons
+# before answering, so a small ceiling can be consumed entirely by thinking. Production sends
+# max_tokens=11000 with chat_template_kwargs.enable_thinking=false, so it should have room — but if
+# `qwen` events show kimi returning empty, _contract_ok rejects it in seconds and deepseek-3.2
+# takes over. Cost of being wrong is one fast failover, which is why head is an acceptable bet.
+#
+#   deepseek-3.2      fastest contract-valid model measured (870ms) — the safety net
+#   llama-4-maverick  DIFFERENT VENDOR (Meta): a 429/outage is provider-wide, so the backup must
+#                     not share a failure domain with the head
+#   gemma-4-31B-it    last: measured erratic on identical input (53s good / 81s timeout / 4s empty)
+#
+# NOT chained: deepseek-4-flash (200 ok but 16s on a tiny prompt; note the id — "deepseek-v4-flash"
+# 404s), kimi-k3 / glm-5.x / minimax / qwen3.5-397b (200 but JSON-invalid: thinking models),
+# anthropic-* and commercial openai-gpt-* (403, visible but not entitled).
 
 # KIMI-K2.6 IS NOT CHAINED YET — and the operator asked for it, so here is exactly why.
 # It has now returned HTTP 400 through TWO DIFFERENT request shapes:
@@ -196,6 +218,25 @@ Die JSON-SCHLUESSEL bleiben unveraendert englisch — nur die WERTE sind deutsch
 Fakten, Zahlen, IDs und Nachweise bleiben unveraendert.
 """
 
+# PER-MODEL PARAMETER POLICY. Some models reject the generic payload outright. Moonshot's Kimi
+# answers `HTTP 400 {"message":"temperature must be 1 for this model"}` to our standard
+# temperature=0.35 — that single constraint is why kimi-k2.5/k2.6 looked broken for three rounds
+# while being perfectly healthy and entitled. The API said so plainly; we were discarding the error
+# body. Encode the requirement instead of guessing, and keep it next to the call that sends it.
+MODEL_PARAMS = {
+    "kimi": {"temperature": 1.0},          # matches kimi-k2.5 / kimi-k2.6 / kimi-*
+}
+
+
+def _model_params(model):
+    """Overrides this model REQUIRES, matched on an id prefix."""
+    m = str(model or "").lower()
+    for key, over in MODEL_PARAMS.items():
+        if m.startswith(key):
+            return dict(over)
+    return {}
+
+
 def _post(payload, timeout=None):
     req = urllib.request.Request(BASE + "/chat/completions", data=json.dumps(payload).encode(),
           headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
@@ -215,10 +256,20 @@ def _call(text, model=None, timeout=None):
                                            # deck past the per-call budget.
                "response_format": {"type": "json_object"},
                "chat_template_kwargs": {"enable_thinking": False}}
+    payload.update(_model_params(model))     # e.g. Kimi demands temperature == 1
     try:
         d = _post(payload, timeout)
     except urllib.error.HTTPError as e:
         if e.code in (400, 422):
+            # PRINT WHAT THE SERVER SAID. Discarding this body is exactly how "temperature must be 1
+            # for this model" stayed invisible while Kimi was written off as broken.
+            try:
+                _b = (e.read() or b"").decode("utf-8", "replace")[:200].replace("\n", " ")
+                if _b:
+                    print("[warn] enrich %s: HTTP %d from the API -> %s" % (model, e.code, _b),
+                          file=sys.stderr)
+            except Exception:
+                pass
             payload.pop("response_format", None)   # model may not accept it — raw_decode still saves us
             payload.pop("chat_template_kwargs", None)
             d = _post(payload, timeout)

@@ -1285,3 +1285,22 @@ titles/bodies) and only counts a finding as covered above `ENRICH_MIN_CHARS` (de
 Measured: a deepseek finding scores ~2,190 chars, a maverick one ~260 — so a thin run now reads 0%
 coverage and the parallel shards fill it in.
 RULE: "the model answered" is not "the model delivered". Measure the artifact, not the status code.
+
+## Kimi solved — "temperature must be 1 for this model" (2026-07)
+Three rounds of treating kimi-k2.5/k2.6 as broken, and the API had been saying why the whole time:
+    HTTP 400 {"message":"temperature must be 1 for this model","type":"invalid_request_error"}
+We send temperature=0.35. That is the ENTIRE bug. It was invisible because both the probe and
+`enrich._call` discarded the HTTPError BODY — the one field that contained the answer.
+FIXES:
+- `enrich.MODEL_PARAMS` = per-model REQUIRED overrides, matched on id prefix (`kimi` -> temperature
+  1.0), applied in `_call` before the request. Encode the constraint; do not guess at it.
+- `_call` now PRINTS the API's error body on any 400/422 before retrying.
+- `model_probe._post` imports the same `_model_params`, so probe and production can never disagree
+  about what a model requires.
+- Chain: `kimi-k2.6 -> deepseek-3.2 -> llama-4-maverick -> gemma-4-31B-it`.
+CAVEAT TO WATCH: the probe reported "ACCEPTED, 0 chars back" at max_tokens=300 — Kimi reasons
+before answering and a small ceiling can be entirely consumed by thinking. Production sends
+max_tokens=11000 with enable_thinking=false, so it should have room; if `qwen` events show kimi
+returning empty, `_contract_ok` rejects it in seconds and deepseek-3.2 takes over.
+RULE (third time this exact lesson has cost a round): NEVER discard an API error body. A 4xx is the
+server telling you what it wants.
