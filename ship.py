@@ -315,6 +315,30 @@ def do_tests():
         if _l.strip():
             print('  ' + _l)
 
+    # STRIP THE LEGACY OVERRIDE FROM THE *LOCAL* .env FIRST.
+    # CLAUDE.md's own landmine: `deploy.py --reuse` PACKS the local assess-bot/.env and extracts
+    # it OVER the droplet's copy. So deleting ENRICH_MODEL on the droplet is undone by the very
+    # next bots deploy — which is why the chain kept coming back as
+    #   ['deepseek-3.2', 'kimi-k2.6', ...]  instead of the committed kimi-first order.
+    # _chain() prepends a singular ENRICH_MODEL as the HEAD, silently reordering everything.
+    # The repo is the source of truth; strip both forms locally, then the droplet copy follows.
+    _lenv = os.path.join(HERE, 'assess-bot', '.env')
+    if os.path.exists(_lenv):
+        try:
+            _lines = open(_lenv, encoding='utf-8').read().splitlines()
+            _isover = lambda l: l.strip().startswith(('ENRICH_MODEL=', 'ENRICH_MODELS='))
+            _keep = [l for l in _lines if not _isover(l)]
+            if len(_keep) != len(_lines):
+                _drop = [l.strip() for l in _lines if _isover(l)]
+                open(_lenv, 'w', encoding='utf-8').write('\n'.join(_keep) + '\n')
+                print('  local assess-bot/.env: removed %d stale chain override(s): %s'
+                      % (len(_drop), ', '.join(_drop)))
+                print('    (this is what kept reordering the chain after every bots deploy)')
+            else:
+                print('  local assess-bot/.env: no chain override - repo order will apply')
+        except Exception as _e:
+            print('  [!] could not clean local assess-bot/.env (%s)' % type(_e).__name__)
+
     # c'''''''') NOTHING may hardcode ENRICH_MODELS. docker-compose `environment:` BEATS
     #            `env_file`, so a value committed there silently outranks enrich.py::_FALLBACKS —
     #            that is exactly why gemma stayed at the head of the chain and deepseek-v4-flash
