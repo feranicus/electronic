@@ -336,6 +336,16 @@ export default function Landing() {
         </div>
       </section>
 
+      <section className="creed"><div className="wrap reveal">
+        <div className="creed-kick">The name is not an accident</div>
+        <blockquote className="creed-q">
+          <span className="l1">Cassandra foretold the fall of Troy &mdash; and no one believed her.</span>
+          <span className="l2">We predict the <b>critical cyber risks</b>, stop them
+            <b> before they materialise</b>, and keep every <b>Trojan horse</b> out of your IT landscape.</span>
+        </blockquote>
+        <div className="creed-rule" aria-hidden="true"><i></i><span>&#9670;</span><i></i></div>
+      </div></section>
+
       <section id="edge" className="lp edge"><div className="wrap reveal">
         <div className="kick2">For boards, CISOs and risk owners</div>
         <h2>What you cannot see is <span className="g">already public</span></h2>

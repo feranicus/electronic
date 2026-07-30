@@ -569,3 +569,24 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 @media (prefers-reduced-motion: reduce){
   .tb,.tb:active{transition:none;transform:none}
 }
+
+/* ---------- the creed: the Cassandra line, the centrepiece of the page ---------- */
+.creed{padding:74px 0;text-align:center;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  background:radial-gradient(900px 320px at 50% 50%,rgba(0,178,169,.10),transparent 70%)}
+.creed-kick{color:var(--gold);font-weight:800;letter-spacing:3px;text-transform:uppercase;
+  font-size:11.5px;margin-bottom:22px}
+.creed-q{margin:0 auto;max-width:960px;border:0;padding:0;display:flex;flex-direction:column;gap:18px}
+.creed-q .l1{font-family:'Space Grotesk','Segoe UI',sans-serif;font-size:clamp(20px,3vw,32px);
+  font-weight:600;color:var(--mut);line-height:1.3;letter-spacing:-.3px}
+.creed-q .l2{font-family:'Space Grotesk','Segoe UI',sans-serif;font-size:clamp(22px,3.6vw,38px);
+  font-weight:700;color:var(--ink);line-height:1.28;letter-spacing:-.5px}
+.creed-q .l2 b{color:var(--teal);font-weight:700}
+.creed-rule{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:30px;color:var(--teal)}
+.creed-rule i{display:block;width:min(140px,22vw);height:1px;background:linear-gradient(90deg,transparent,var(--teal))}
+.creed-rule i:last-child{background:linear-gradient(90deg,var(--teal),transparent)}
+.creed-rule span{font-size:11px;opacity:.9}
+@media (max-width:720px){
+  .creed{padding:52px 0}
+  .creed-q{gap:14px;text-align:left}
+  .creed-rule i{width:60px}
+}
