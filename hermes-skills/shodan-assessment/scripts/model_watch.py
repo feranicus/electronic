@@ -58,7 +58,7 @@ NON_TEXT_RE = re.compile(r"(embed|rerank|whisper|tts|stt|image|sdxl|flux|diffusi
 # Used to cost a candidate BEFORE we adopt it. Unknown ids simply report price "?" - we never
 # invent a number for a customer-facing cost ledger.
 PRICES = {
-    "deepseek-v4-flash":  (0.112, 0.224),
+    "deepseek-4-flash":   (0.112, 0.224),
     "deepseek-v4-pro":    (1.392, 2.784),
     "deepseek-3.2":       (0.425, 1.36),
     "llama-4-maverick":   (0.25,  0.87),

@@ -1232,3 +1232,25 @@ enrich.py did not. So a run where deepseek-3.2 rewrote ALL SIX findings measured
 pointless map-reduce top-up (which then also 404'd on the phantom head model). enrich.py now sets
 `f["_enriched"] = True` on every finding it rewrites, so the coverage number is honest and the
 top-up only fires when the model genuinely under-delivered.
+
+## Model chain — kimi-k2.6 at head, from a LIVE 66-model probe (2026-07)
+`model_probe.py --all` inside colt-web measured the whole catalog with a real contract call. Facts:
+- **`deepseek-v4-flash` does not exist; `deepseek-4-flash` does** (200 ok, but 16,043ms on a TINY
+  prompt). The pricing-page name was never an API id.
+- **`kimi-k2.5`/`kimi-k2.6` return HTTP 400, NOT 403/404** — they exist and the key is entitled; the
+  request SHAPE was rejected. `enrich._call()` already retries `if e.code in (400,422)` by dropping
+  `response_format`, which is the documented cause, so Kimi is very likely healthy in production
+  even though the raw probe fails. model_probe gained `--via-enrich` to test the REAL path, plus
+  payload-variant retries and capture of the API's error BODY (discarding it is how Kimi got written
+  off twice).
+- Entitlement map: anthropic-* and commercial openai-gpt-* = **403** (visible != entitled);
+  openai-gpt-oss-120b / nemotron-3-super-120b / router:* = **429** (account quota).
+- Contract-valid and fast: deepseek-3.2 **870ms**, qwen3-coder-flash 894ms, mistral-3-14B 1334ms,
+  mimo-v2.5-pro 1838ms, gemma 3615ms, maverick 3837ms.
+- 200-but-JSON-INVALID: kimi-k3, glm-5/5.1/5.2, minimax-m2.5, qwen3.5-397b, nemotron-*,
+  deepseek-r1-distill. Reasoning/thinking models keep failing the strict-JSON contract.
+CHAIN: `kimi-k2.6 -> deepseek-3.2 -> llama-4-maverick -> gemma-4-31B-it`. Kimi is head by operator
+preference and is UNPROVEN on the real 10k-char prompt — its failure mode is a ~280ms 400 and an
+instant failover, not a 175s timeout, so the downside is bounded. Confirm with
+`model_probe.py --via-enrich` and `compare_models.py --lang de`; latency ranking INVERTS with prompt
+size, so the toy-probe numbers above rank validity, not real-workload speed.

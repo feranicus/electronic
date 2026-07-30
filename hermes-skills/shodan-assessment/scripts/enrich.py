@@ -49,7 +49,30 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # this class of mistake cannot reach production again. To adopt a V4 model, run inside the container:
 #     docker exec colt-web python3 /opt/shodan-skill/scripts/model_probe.py --all
 # and use the exact id it prints.
-_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+_FALLBACKS = ["kimi-k2.6", "deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+
+# WHY THIS ORDER (from the operator's live `model_probe.py --all` against the real catalog):
+#   kimi-k2.6        HEAD by operator preference. It EXISTS and the key is entitled — the probe got
+#                    HTTP 400, not 403/404, i.e. the request SHAPE was rejected, not the model. The
+#                    raw probe does not send the retry logic production uses; `_call()` below already
+#                    does `if e.code in (400, 422): payload.pop("response_format")`, which is the
+#                    documented cause of Kimi 400s. Risk of being wrong is ~280ms and an instant
+#                    failover, not a 175s timeout — materially different from the deepseek-v4-flash
+#                    phantom-id incident. UNPROVEN on the real 10k-char prompt: confirm with
+#                    `model_probe.py --via-enrich` and `compare_models.py --lang de` after deploy.
+#   deepseek-3.2     the SAFETY NET, and the fastest contract-valid model measured: 870ms, JSON ok.
+#   llama-4-maverick DIFFERENT VENDOR (Meta) — a 429/outage is provider-wide, so the backup must not
+#                    share a failure domain with the head.
+#   gemma-4-31B-it   last: measured erratic on identical input (53s good / 81s timeout / 4s empty).
+#
+# NOT chained, with evidence from that same probe run:
+#   deepseek-4-flash  200 ok but 16,043ms on a TINY prompt — cheap per token, slow per call.
+#                     (Note the id: deepseek-4-flash, NOT "deepseek-v4-flash", which 404s.)
+#   kimi-k3           200 but JSON-invalid — DO's changelog says "max thinking effort by default",
+#                     the exact reasoning-model failure mode that breaks the strict-JSON contract.
+#   glm-5/5.1/5.2, minimax-m2.5, qwen3.5-397b, nemotron-*  200 but JSON-invalid.
+#   anthropic-*, openai-gpt-* (except oss)  HTTP 403 — visible in the catalog, NOT entitled.
+#   openai-gpt-oss-120b, nemotron-3-super-120b, router:*   HTTP 429 — account quota.
 
 def _chain():
     """ENRICH_MODELS wins outright. Otherwise a legacy single ENRICH_MODEL becomes the HEAD of the

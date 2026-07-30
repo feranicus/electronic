@@ -61,8 +61,76 @@ def catalog():
         return None, "%s: %s" % (type(e).__name__, e)
 
 
-def call(model, timeout=45):
-    """One real contract call. -> dict(ok, http, ms, json_ok, err, tokens_out)."""
+# Payload VARIANTS, tried in order until one is accepted. A 400 means the model exists and the key
+# is entitled — the request shape is what it rejected. kimi-k2.5/k2.6 both returned HTTP 400 to the
+# standard payload while every other open-weight model accepted it, so the probe must distinguish
+# "model is broken" from "model wants a different request" instead of writing the model off.
+_VARIANTS = [
+    ("standard",           {"temperature": 0.2, "max_tokens": 300}),
+    ("no-temperature",     {"max_tokens": 300}),
+    ("no-max_tokens",      {"temperature": 0.2}),
+    ("bare",               {}),
+    ("large-max_tokens",   {"temperature": 0.2, "max_tokens": 1024}),
+    ("temperature-1",      {"temperature": 1.0, "max_tokens": 300}),
+]
+
+
+def _post(model, extra, timeout):
+    payload = dict(extra)
+    payload["model"] = model
+    payload["messages"] = [{"role": "user", "content": CONTRACT}]
+    req = urllib.request.Request(
+        BASE + "/chat/completions", method="POST",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def call(model, timeout=45, variants=True):
+    """One real contract call. -> dict(ok, http, ms, json_ok, err, tokens_out, variant).
+
+    On HTTP 400 the API's own error BODY is captured and the alternative payload shapes are tried:
+    a 400 is the server telling us what it wants, and discarding that message is how kimi-k2.6 got
+    written off as broken when it is very likely fine.
+    """
+    t0 = time.time()
+    tried, last_detail = [], ""
+    for vname, extra in (_VARIANTS if variants else _VARIANTS[:1]):
+        try:
+            body = _post(model, extra, timeout)
+            ms = int((time.time() - t0) * 1000)
+            txt = (((body.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+            out_tok = ((body.get("usage") or {}).get("completion_tokens")) or len(txt) // 4
+            try:
+                j = json.loads(re.sub(r"^```(?:json)?|```$", "", txt.strip(), flags=re.M).strip())
+                json_ok = isinstance(j, dict) and bool(j.get("findings") or j.get("exec_summary"))
+            except Exception:
+                json_ok = False
+            return {"ok": True, "http": 200, "ms": ms, "json_ok": json_ok,
+                    "err": "" if vname == "standard" else "accepted with payload=%s" % vname,
+                    "tokens_out": out_tok, "variant": vname}
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = (e.read() or b"").decode("utf-8", "replace")[:200].replace("\n", " ")
+            except Exception:
+                pass
+            tried.append("%s->%s" % (vname, e.code))
+            if e.code != 400:                       # 403/404/429 are not payload problems
+                return {"ok": False, "http": e.code, "ms": int((time.time() - t0) * 1000),
+                        "json_ok": False, "err": ("HTTP %s %s" % (e.code, detail)).strip(),
+                        "tokens_out": 0, "variant": vname}
+            last_detail = detail
+        except Exception as e:
+            return {"ok": False, "http": 0, "ms": int((time.time() - t0) * 1000), "json_ok": False,
+                    "err": str(e)[:70], "tokens_out": 0, "variant": vname}
+    return {"ok": False, "http": 400, "ms": int((time.time() - t0) * 1000), "json_ok": False,
+            "err": "400 on every payload shape [%s] :: %s" % (",".join(tried), last_detail[:110]),
+            "tokens_out": 0, "variant": "none"}
+
+
+def _legacy_call(model, timeout=45):
     t0 = time.time()
     payload = {"model": model, "temperature": 0.2, "max_tokens": 300,
                "messages": [{"role": "user", "content": CONTRACT}]}
@@ -97,6 +165,9 @@ def main():
     ap.add_argument("--all", action="store_true", help="probe every text model in the catalog")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--timeout", type=int, default=45)
+    ap.add_argument("--via-enrich", action="store_true",
+                    help="call through enrich._call — the REAL production path, which already "
+                         "retries a 400 without response_format (my raw probe does not)")
     a = ap.parse_args()
 
     try:
@@ -146,7 +217,24 @@ def main():
             print("  %-30s %-7s %-8s %-8s %s" % (m, "404", "-", "-", "not in catalog"))
             report["probes"].append({"model": m, "http": 404, "ok": False})
             continue
-        r = call(m, a.timeout)
+        if a.via_enrich:
+            # THE REAL PATH. enrich._call carries the retry logic production actually uses —
+            # notably `if e.code in (400, 422): payload.pop("response_format")`. A model that 400s
+            # my raw probe can still be perfectly healthy in production, which is exactly the
+            # situation kimi-k2.5/k2.6 are in. Test what ships, not a simplification of it.
+            t0 = time.time()
+            try:
+                import enrich as _E
+                raw = _E._call(CONTRACT, model=m, timeout=a.timeout)
+                j = _E._json(raw)
+                ok = isinstance(j, dict) and bool(j.get("exec_summary") or j.get("findings"))
+                r = {"ok": True, "http": 200, "ms": int((time.time() - t0) * 1000),
+                     "json_ok": ok, "err": "via enrich._call", "tokens_out": len(str(raw)) // 4}
+            except Exception as _e:
+                r = {"ok": False, "http": 0, "ms": int((time.time() - t0) * 1000),
+                     "json_ok": False, "err": ("enrich._call: %s" % _e)[:90], "tokens_out": 0}
+        else:
+            r = call(m, a.timeout)
         print("  %-30s %-7s %-8s %-8s %s"
               % (m, r["http"] or "err", r["ms"], "ok" if r["json_ok"] else "no", r["err"]))
         r["model"] = m
