@@ -1210,3 +1210,25 @@ ship.py printed `[!] ruff not installed - static name check SKIPPED` on every ru
 machine. That check is the one that would have caught the angermann NameError outage, and it had
 been skipping since the day it was added. ship.py now pip-installs ruff once and re-runs the check
 (operating principle 1: no manual steps).
+
+## A phantom model id — "DeepSeek V4 Flash" is not `deepseek-v4-flash` (2026-07)
+I put `deepseek-v4-flash` at the HEAD of the chain from DigitalOcean's PRICING PAGE. The API
+returned **HTTP 404 on every call**: a marketing name is not an API model id. Each assessment burned
+a wasted round-trip and silently degraded to deepseek-3.2. CLAUDE.md ALREADY warned about this
+("Catalog ids are exact and easy to get wrong: it is `openai-gpt-oss-120b`, NOT `gpt-oss-120b`") —
+repeated anyway, because NOTHING CHECKED.
+Why model_watch.py did not catch it: it needs OPENAI_API_KEY, which lives on the DROPLET, not the
+operator's PC, so it printed "catalog unavailable - skipping" every single run. **A check that
+cannot see the thing it checks is not a check** — same class as the silently-skipped ruff gate.
+FIX: `scripts/model_probe.py` runs INSIDE colt-web (`docker exec`, where the key is) and asserts
+every id in the effective chain exists in the live `/v1/models` catalog. Free, zero tokens, and
+BLOCKING — ship.py exits non-zero on a MISSING id and prints difflib near-matches so the correct id
+is obvious. `--all` probes every text model with the real JSON contract for latency + validity.
+Chain is back to the MEASURED `deepseek-3.2 -> llama-4-maverick -> gemma-4-31B-it`.
+
+## Enrichment coverage was measured against a flag nobody set
+`run_assessment` computed coverage from `_enriched`, but only enrich_parallel.py ever set it —
+enrich.py did not. So a run where deepseek-3.2 rewrote ALL SIX findings measured **0%** and fired a
+pointless map-reduce top-up (which then also 404'd on the phantom head model). enrich.py now sets
+`f["_enriched"] = True` on every finding it rewrites, so the coverage number is honest and the
+top-up only fires when the model genuinely under-delivered.

@@ -114,7 +114,8 @@ def _test_python():
 ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
                 "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py",
-                "scripts/enrich_parallel.py", "scripts/attribution.py"]
+                "scripts/enrich_parallel.py", "scripts/attribution.py",
+                "scripts/model_probe.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -646,6 +647,21 @@ def do_verify(web, bots):
         # chain (angermann.de ran gemma-first even though the repo had already demoted it). The repo
         # is meant to be the source of truth, so surface the disagreement instead of hiding it.
         try:
+            # MODEL PROBE — run INSIDE the container, where OPENAI_API_KEY actually lives. On the
+            # PC the key is absent, so model_watch.py printed "catalog unavailable - skipping" on
+            # every run: a check that cannot see the thing it checks is not a check. This one asserts
+            # every model in the effective chain EXISTS in the live catalog (free, no tokens) and
+            # FAILS the deploy if not. deepseek-v4-flash 404'd in production because nothing looked.
+            _mp = ssh("docker exec colt-web python3 /opt/shodan-skill/scripts/model_probe.py "
+                      "--existence 2>&1 || true", check=False, timeout=90)
+            for _l in (_mp or "").splitlines():
+                if _l.strip():
+                    print("    " + _l.rstrip())
+            if "MISSING" in (_mp or ""):
+                sys.exit("[X] a model in the enrichment chain does NOT exist on the inference API. "
+                         "Every assessment would waste a round-trip and silently degrade. "
+                         "Fix enrich.py::_FALLBACKS using the ids model_probe.py printed.")
+
             _envline = ssh("grep -hE '^ENRICH_MODELS?=' /opt/colt-stack/assess-bot/.env 2>/dev/null "
                            "| tail -1 || true").strip()
             _envchain = _envline.split("=", 1)[1].strip().strip('\'"') if "=" in _envline else ""

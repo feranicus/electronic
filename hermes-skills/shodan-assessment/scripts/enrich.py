@@ -42,7 +42,14 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 #                                               | 4s empty {}. Kept as a third chance only.
 # NOT in the chain, deliberately: kimi-k3 (DO's changelog: "tuned for max thinking effort by
 # default" -> breaks the strict-JSON contract, and DO has published no serverless rate for it).
-_FALLBACKS = ["deepseek-v4-flash", "deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+# deepseek-v4-flash REMOVED: DigitalOcean's pricing page lists "DeepSeek V4 Flash" but that string
+# is NOT an API model id — every call returned HTTP 404 and each assessment burned a wasted
+# round-trip before silently degrading to deepseek-3.2. A marketing name is not a model id.
+# `model_probe.py` now checks every chained id against the LIVE catalog and FAILS the deploy, so
+# this class of mistake cannot reach production again. To adopt a V4 model, run inside the container:
+#     docker exec colt-web python3 /opt/shodan-skill/scripts/model_probe.py --all
+# and use the exact id it prints.
+_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
 
 def _chain():
     """ENRICH_MODELS wins outright. Otherwise a legacy single ENRICH_MODEL becomes the HEAD of the
@@ -370,7 +377,13 @@ def enrich(fj, lang="en"):
                      if isinstance(x, dict)}
             for f in fj["findings"]:
                 x = by_id.get(_nid(f["id"]))
-                if not x: continue
+                if not x:
+                    f.setdefault("_enriched", False)
+                    continue
+                # MARK IT. Without this flag nothing downstream can tell LLM prose from the canned
+                # TEMPLATES fallback — which is why "coverage 0%" fired a pointless map-reduce
+                # top-up on a run where deepseek-3.2 had in fact rewritten every finding.
+                f["_enriched"] = True
                 for k in ("what", "why"):
                     if isinstance(x.get(k), list) and x[k]:
                         f[k] = [str(v) for v in x[k]][:3]
