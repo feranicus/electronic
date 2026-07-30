@@ -49,7 +49,28 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # this class of mistake cannot reach production again. To adopt a V4 model, run inside the container:
 #     docker exec colt-web python3 /opt/shodan-skill/scripts/model_probe.py --all
 # and use the exact id it prints.
-_FALLBACKS = ["kimi-k2.6", "deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+
+# KIMI-K2.6 IS NOT CHAINED YET — and the operator asked for it, so here is exactly why.
+# It has now returned HTTP 400 through TWO DIFFERENT request shapes:
+#   1. model_probe's raw payload  (model + temperature + max_tokens + messages)
+#   2. THIS function's payload after the 400-retry already dropped `response_format` AND
+#      `chat_template_kwargs` — i.e. the documented Kimi workaround did not rescue it.
+# Two strikes with different payloads is evidence, not bad luck. Chaining it anyway would repeat
+# the deepseek-v4-flash mistake: an unproven head that costs every assessment a wasted round-trip.
+# It is NOT a 403/404, so the model exists and the key is entitled — something in the request is
+# still wrong and we do not yet know what. Find out in one command, then promote it:
+#     docker exec colt-web python3 /opt/shodan-skill/scripts/model_probe.py --model kimi-k2.6
+# That prints the API's own error BODY for six payload shapes. When one is ACCEPTED, apply that
+# shape here and move kimi-k2.6 to the head.
+#
+# Current order, all measured on the live catalog (model_probe --all):
+#   deepseek-3.2      870ms, contract-valid  <- fastest valid model on the account
+#   llama-4-maverick  3837ms, contract-valid, DIFFERENT VENDOR (a 429 is provider-wide)
+#   gemma-4-31B-it    3615ms, contract-valid but measured erratic on identical input — last resort
+# Also measured: deepseek-4-flash 200 ok but 16,043ms on a tiny prompt (id is deepseek-4-flash,
+# NOT "deepseek-v4-flash", which 404s). kimi-k3 / glm-5.x / minimax / qwen3.5-397b: 200 but
+# JSON-invalid (thinking models). anthropic-* and commercial openai-gpt-*: 403, not entitled.
 
 # WHY THIS ORDER (from the operator's live `model_probe.py --all` against the real catalog):
 #   kimi-k2.6        HEAD by operator preference. It EXISTS and the key is entitled — the probe got

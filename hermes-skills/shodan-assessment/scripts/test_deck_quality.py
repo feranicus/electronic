@@ -110,6 +110,28 @@ def main():
         check(not bad, "no overlapping text boxes in the left column%s"
               % ("" if not bad else " (%d pairs, e.g. y=%s vs y=%s)" % (len(bad), bad[0][0], bad[0][1])))
 
+    print("\n== 2b. EVERY slide: text must fit, and nothing may run into the footer ==")
+    # The title slide was the only slide checked, so the real overflow — `why` running through the
+    # footer and remediation bodies running into the next row on the FINDING slides — sailed past.
+    if ok:
+        import zipfile as _zf
+        n_sl = len([n for n in _zf.ZipFile(out).namelist()
+                    if re.match(r"ppt/slides/slide\d+\.xml$", n)])
+        worst_all, worst_sl, over_footer = 0.0, 0, []
+        for sn in range(1, n_sl + 1):
+            for txt, x, y, w, h, pt in shapes(out, sn):
+                r = len(txt) / float(capacity(w, h, pt))
+                if r > worst_all:
+                    worst_all, worst_sl = r, sn
+                # the confidentiality footer sits at y5.32; body text must stop above it
+                if x < 5.0 and y < 5.30 and (y + h) > 5.36 and len(txt) > 60:
+                    over_footer.append((sn, round(y + h, 2)))
+        check(worst_all <= 1.6, "no text on ANY of the %d slides exceeds 1.6x its box "
+                                "(worst %.1fx on slide %d)" % (n_sl, worst_all, worst_sl))
+        check(not over_footer, "no body text runs into the confidentiality footer%s"
+              % ("" if not over_footer else " (%d, e.g. slide %s ends at y%s)"
+                 % (len(over_footer), over_footer[0][0], over_footer[0][1])))
+
     print("\n== 3. no leaked placeholders anywhere in any deck ==")
     decks = []
     for builder, args, name in (

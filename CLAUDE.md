@@ -1254,3 +1254,18 @@ preference and is UNPROVEN on the real 10k-char prompt — its failure mode is a
 instant failover, not a 175s timeout, so the downside is bounded. Confirm with
 `model_probe.py --via-enrich` and `compare_models.py --lang de`; latency ranking INVERTS with prompt
 size, so the toy-probe numbers above rank validity, not real-workload speed.
+
+## Deck text overflow — the boxes were sized for the OLD contract (2026-07)
+"the text is slipping": on the FINDING slides `why` ran straight through the confidentiality footer
+and each remediation body ran into the row beneath it. Cause is arithmetic, not rendering:
+- WHY box  w4.55 h0.46 @8.0pt  = ~243 chars, but the enrichment bible demands 3 full sentences
+  (~400-500). Footer sits at y5.32; the box started at 4.82 and overflowed straight into it.
+- rem body w3.85 h0.30 @7.4pt  = ~148 chars, but the rem contract demands WHY COLT / WHAT YOU GET /
+  HOW (~450). Worse, `rowH` was a FIXED 0.62in sized for five rows, so a typical three-row finding
+  left 1.24in of the column EMPTY while its text overflowed.
+FIX: `fitText(t,w,h,pt)` computes real capacity (~0.5*pt/char wide, ~1.25*pt/line high, 72pt/inch)
+and trims on a word boundary with an ellipsis; rem rows now use an ADAPTIVE rowH
+(`min(1.05, (5.24-2.06)/rows)`), so 3 rows get 370 chars of body instead of 148.
+TEST GAP THAT LET IT SHIP: test_deck_quality only inspected SLIDE 1. It now walks EVERY slide and
+additionally asserts no body text crosses y5.32 (the footer). Verified against real 502-char
+deepseek `why` + 449-char COLT bodies: worst ratio 0.99x, zero footer collisions.

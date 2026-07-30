@@ -165,6 +165,8 @@ def main():
     ap.add_argument("--all", action="store_true", help="probe every text model in the catalog")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--timeout", type=int, default=45)
+    ap.add_argument("--model", help="probe ONE model through every payload variant and print the "
+                                    "API's own error body (use this on a model that returns 400)")
     ap.add_argument("--via-enrich", action="store_true",
                     help="call through enrich._call — the REAL production path, which already "
                          "retries a 400 without response_format (my raw probe does not)")
@@ -176,6 +178,27 @@ def main():
     except Exception as e:
         print("[model-probe] cannot import enrich.py: %s" % e)
         return 0
+
+    if a.model:
+        print("[model-probe] deep-probing %r through %d payload variant(s)\n" % (a.model, len(_VARIANTS)))
+        for vname, extra in _VARIANTS:
+            try:
+                body = _post(a.model, extra, a.timeout)
+                txt = (((body.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+                print("  %-18s ACCEPTED  %d chars back" % (vname, len(txt)))
+                print("\n[model-probe] %r works with payload=%s -> %s" % (a.model, vname, extra))
+                return 0
+            except urllib.error.HTTPError as e:
+                det = ""
+                try:
+                    det = (e.read() or b"").decode("utf-8", "replace")[:300].replace("\n", " ")
+                except Exception:
+                    pass
+                print("  %-18s HTTP %-4s %s" % (vname, e.code, det))
+            except Exception as e:
+                print("  %-18s ERR       %s" % (vname, str(e)[:90]))
+        print("\n[model-probe] %r rejected EVERY payload shape — do not chain it." % a.model)
+        return 3
 
     ids, err = catalog()
     report = {"base": BASE, "chain": chain, "catalog_error": err, "missing": [], "probes": []}
@@ -225,7 +248,9 @@ def main():
             t0 = time.time()
             try:
                 import enrich as _E
-                raw = _E._call(CONTRACT, model=m, timeout=a.timeout)
+                # _call returns a TUPLE (text, usage) — passing the tuple straight to _json is what
+                # produced "'tuple' object has no attribute 'find'" for every model.
+                raw, _usage = _E._call(CONTRACT, model=m, timeout=a.timeout)
                 j = _E._json(raw)
                 ok = isinstance(j, dict) and bool(j.get("exec_summary") or j.get("findings"))
                 r = {"ok": True, "http": 200, "ms": int((time.time() - t0) * 1000),

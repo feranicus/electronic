@@ -152,6 +152,24 @@ function tracer(slide, color = C.tealDark) {
   slide.addText(RAQUO + RAQUO + " " + pageNum + "/" + TOTAL, { x: 8.62, y: 5.28, w: 1.23, h: 0.28,
     fontSize: 9, fontFace: FB, color, bold: true, align: "right", valign: "middle", margin: 0 });
 }
+// FIT TEXT TO ITS BOX. The enrichment contract asks for 3 full sentences of `why` and rich
+// WHY-COLT/WHAT-YOU-GET/HOW remediation bodies (~400 chars each), but these boxes were sized for
+// one short line. The result was text running THROUGH the footer and through the next remediation
+// row — "the text is slipping". Capacity is deterministic: ~0.5*pt per character wide,
+// ~1.25*pt per line high, 72pt to the inch. Compute it, then trim on a word boundary.
+function fitText(t, wIn, hIn, pt) {
+  t = String(t == null ? "" : t).trim();
+  if (!t) return t;
+  const perLine = Math.max(8, Math.floor((wIn * 72) / (pt * 0.5)));
+  const lines   = Math.max(1, Math.floor((hIn * 72) / (pt * 1.25)));
+  const max     = perLine * lines;
+  if (t.length <= max) return t;
+  let cut = t.slice(0, max - 1);
+  const sp = cut.lastIndexOf(" ");
+  if (sp > max * 0.6) cut = cut.slice(0, sp);      // never break mid-word
+  return cut.replace(/[\s,;:.\u2014-]+$/, "") + "\u2026";
+}
+
 function footer(slide) {
   slide.addText("INTERNAL " + EMDASH + " COLT CONFIDENTIAL " + MIDDOT + " NOT FOR EXTERNAL DISTRIBUTION", {
     x: 0.4, y: 5.32, w: 6.4, h: 0.22, fontSize: 7.5, fontFace: FB, color: C.inkMuted,
@@ -500,25 +518,35 @@ function findingCard(f) {
 
   s.addText("WHY IT MATTERS", { x: 0.4, y: 4.64, w: 4.5, h: 0.18, fontSize: 8.5, fontFace: FB,
     color: C.tealDark, bold: true, charSpacing: 2, margin: 0 });
-  s.addText(asText(f.why) || EMDASH, { x: 0.4, y: 4.82, w: 4.55, h: 0.46,
-    fontSize: 8.0, fontFace: FB, color: C.ink, valign: "top", margin: 0 });
+  // y4.82 -> footer at y5.32 leaves 0.50in; at 7.6pt that is ~4 lines. Previously 0.46in at 8pt
+  // (~243 chars) while deepseek writes ~400 — so it ran straight through the footer.
+  s.addText(fitText(asText(f.why) || EMDASH, 4.55, 0.48, 7.6), { x: 0.4, y: 4.82, w: 4.55, h: 0.48,
+    fontSize: 7.6, fontFace: FB, color: C.ink, valign: "top", margin: 0 });
 
   s.addShape(pres.shapes.RECTANGLE, { x: 5.05, y: 1.70, w: 0.08, h: 0.24, fill: { color: C.teal }, line: { type: "none" } });
   s.addText("REMEDIATION  &  COLT FIT", { x: 5.21, y: 1.70, w: 4.5, h: 0.24, fontSize: 10, fontFace: FB,
     color: C.ink, bold: true, charSpacing: 2, valign: "middle", margin: 0 });
 
   const rem = remRows(f);
-  const startY = 2.06, rowH = 0.62;
-  (rem.length ? rem : [{ tag: "VENDOR", title: EMDASH, body: "" }]).slice(0, 5).forEach((r, i) => {
+  // ADAPTIVE ROW HEIGHT. rowH was a fixed 0.62in sized for five rows, so a finding with three rows
+  // left 1.24in of the column empty WHILE its body text overflowed into the row below. Divide the
+  // real estate by the rows we actually have, capped so two rows do not become absurdly tall.
+  const rows = (rem.length ? rem : [{ tag: "VENDOR", title: EMDASH, body: "" }]).slice(0, 5);
+  const startY = 2.06, endY = 5.24;                       // footer is at 5.32
+  const rowH = Math.min(1.05, (endY - startY) / rows.length);
+  const bodyH = Math.max(0.26, rowH - 0.30);
+  rows.forEach((r, i) => {
     const y = startY + i * rowH;
     const [bg, fg] = tagMap[r.tag] || tagMap.VENDOR;
     s.addShape(pres.shapes.RECTANGLE, { x: 5.05, y: y + 0.03, w: 0.72, h: 0.24, fill: { color: bg }, line: { type: "none" } });
     s.addText(r.tag, { x: 5.05, y: y + 0.03, w: 0.72, h: 0.24, fontSize: 8, fontFace: FB,
       bold: true, color: fg, align: "center", valign: "middle", charSpacing: 1, margin: 0 });
-    s.addText(r.title, { x: 5.85, y: r.body ? y - 0.01 : y, w: 3.85, h: r.body ? 0.24 : rowH - 0.06,
-      fontSize: 8.6, fontFace: FB, color: C.ink, bold: !!r.body, valign: "middle", margin: 0 });
-    if (r.body) s.addText(r.body, { x: 5.85, y: y + 0.22, w: 3.85, h: 0.30, fontSize: 7.4, fontFace: FB,
-      color: C.inkMuted, valign: "top", margin: 0 });
+    s.addText(fitText(r.title, 3.85, r.body ? 0.24 : rowH - 0.06, 8.6),
+      { x: 5.85, y: r.body ? y - 0.01 : y, w: 3.85, h: r.body ? 0.24 : rowH - 0.06,
+        fontSize: 8.6, fontFace: FB, color: C.ink, bold: !!r.body, valign: "middle", margin: 0 });
+    if (r.body) s.addText(fitText(r.body, 3.85, bodyH, 7.4),
+      { x: 5.85, y: y + 0.24, w: 3.85, h: bodyH, fontSize: 7.4, fontFace: FB,
+        color: C.inkMuted, valign: "top", margin: 0 });
   });
 
   footer(s); tracer(s);
