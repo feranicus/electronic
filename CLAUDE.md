@@ -1167,3 +1167,27 @@ bedrijf-verkopen infrastructure is not the customer's). The ~60-name wordlist co
 per name PER APEX. Now the speculative probe runs ONLY on the seed and brand-carrying apexes;
 non-brand group domains still get full CT enumeration (which is what actually found the real
 netbid/leaseback/nordleasing names). ~63% fewer DNS queries, same recall.
+
+## /api/diag + engine_config.py — stop guessing where config lives (2026-07, operator's fix)
+The operator: *"maybe its a good idea to make some sort of API? and not to hard code things and
+then try to guess where they are and what is working or not"* — correct, and this cost three
+deploys. The enrichment chain had **FOUR** homes and we found them one at a time:
+  1. `enrich.py::_FALLBACKS`            the committed, evidence-based default
+  2. `docker-compose.*.yml environment:` BEATS env_file — silently defeated (1) for weeks
+  3. `.env ENRICH_MODELS`               documented per-deployment override
+  4. `.env ENRICH_MODEL` **(singular, LEGACY)** — prepended as the chain HEAD by `_chain()`, so it
+     silently REORDERS the chain. This is why deepseek-v4-flash sat at position 2 and was never
+     called even after (2) was deleted: 3.2 was promoted to head and won on attempt 1.
+`scripts/engine_config.py` RESOLVES the effective config and reports it WITH PROVENANCE — chain,
+head, every source and whether they conflict, plus detectors loaded, budgets and engine file
+sha256. It never re-implements logic: it imports `enrich._chain()` and asks. Served at
+**GET /api/diag** (authenticated) and printed by every `python ship.py`. ship.py now deletes BOTH
+`ENRICH_MODEL` and `ENRICH_MODELS` from the droplet .env.
+
+## Deck title slide — a summary belongs in the footer, an inventory does not
+Once group discovery started enumerating the whole corporate group, `target.scope` interpolated
+EVERY domain: ~4,000 characters rendered into a 3.1-inch DATA SOURCE footer box, which is what
+"all the letters are on top of each other" was. `_scope_line()` now emits
+`ASN — · 0 prefixes · 7 domains: a.de, b.de +5 more (144 hostnames)` (90 chars). The full
+inventory already has its own slide. Also separated the two creed text boxes (they overlapped by
+0.01in).

@@ -202,6 +202,29 @@ def auth_logout():
     return resp
 
 
+@app.get("/api/diag")
+def diag(request: Request):
+    """What is ACTUALLY in force in this container — chain, detectors, budgets, engine hashes.
+
+    Exists because the enrichment chain had FOUR possible homes (committed _FALLBACKS, compose
+    `environment:`, .env ENRICH_MODELS, legacy .env ENRICH_MODEL) and answering "which model will
+    run?" meant SSH-ing in and reading five files. Authenticated: it reports configuration and
+    file hashes, which is operational detail, not public information.
+    """
+    email = _current_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="not authenticated")
+    try:
+        import importlib.util as _ilu
+        _p = os.path.join(os.path.dirname(ENGINE), "engine_config.py")
+        _s = _ilu.spec_from_file_location("engine_config", _p)
+        _m = _ilu.module_from_spec(_s)
+        _s.loader.exec_module(_m)
+        return _m.collect()
+    except Exception as e:
+        return {"error": "%s: %s" % (type(e).__name__, e)}
+
+
 @app.get("/api/me")
 def me(request: Request):
     email = _current_email(request)

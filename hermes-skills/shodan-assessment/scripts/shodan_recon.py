@@ -1194,6 +1194,28 @@ def _appliance_hit(m):
     return mm.group(0) if mm else ""
 
 
+def _scope_line(ident):
+    """One SHORT line for the deck's DATA SOURCE footer field.
+
+    This used to interpolate EVERY domain. Once group discovery started enumerating the whole
+    corporate group the string reached ~4,000 characters and was rendered into a 3.1-inch footer
+    box — the deck's title slide became an unreadable block of overlapping text. A summary belongs
+    in the footer; the full inventory belongs on the asset slide, where it already is.
+    """
+    doms = list(ident.get("domains") or [])
+    apexes = sorted({_apex(d) for d in doms if _apex(d)})
+    asns = ",".join(ident.get("asns") or []) or "\u2014"
+    nets = len(ident.get("nets") or [])
+    if not doms:
+        dom_txt = "\u2014"
+    elif len(apexes) <= 3:
+        dom_txt = ", ".join(apexes)
+    else:
+        dom_txt = "%s +%d more (%d hostnames)" % (", ".join(apexes[:2]), len(apexes) - 2, len(doms))
+    return "ASN %s \u00b7 %d prefixes \u00b7 %d domain%s: %s" % (
+        asns, nets, len(apexes), "" if len(apexes) == 1 else "s", dom_txt)
+
+
 def classify(m):
     port = m.get("port"); prod = (m.get("product") or ""); vulns = m.get("vulns") or {}
     ssl = m.get("ssl") or {}; tags = m.get("tags") or []
@@ -1591,7 +1613,7 @@ def run(ident, F, audience, limit_per_query=500):
     ident["scanned_ips"] = sorted(hosts.keys())
     return {"target": {"company": company_name(ident), "audience": audience or "Internal — Colt Sales Engineering",
                        "date": datetime.date.today().isoformat(),
-                       "scope": f"ASN {','.join(ident['asns']) or '—'} · {len(ident['nets'])} prefixes · domains {','.join(ident['domains']) or '—'}"},
+                       "scope": _scope_line(ident)},
             "identity": ident,
             "summary": {"records": records, "unique_ips": len(hosts), "asns": len(asns) or len(ident["asns"]),
                         "countries": len(countries), "dropped_false_positives": dropped,

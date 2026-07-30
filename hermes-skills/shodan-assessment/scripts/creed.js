@@ -43,7 +43,7 @@ function draw(pres, s, o) {
   const s1 = o.size1 != null ? o.size1 : 9.5;
   const s2 = o.size2 != null ? o.size2 : 10.5;
   const h2 = o.h2 != null ? o.h2 : 0.40;
-  const dy2 = o.dy2 != null ? o.dy2 : 0.31;
+  const dy2 = o.dy2 != null ? o.dy2 : 0.34;
   // only non-i18n builders pass lang; the wrapped ones leave it unset and deck_i18n translates
   const de = String(o.lang || "en").toLowerCase().startsWith("de");
   const l1 = de ? LINE1_DE : LINE1, l2 = de ? LINE2_DE : LINE2;
@@ -53,7 +53,7 @@ function draw(pres, s, o) {
     s.addShape(pres.shapes.RECTANGLE, { x, y, w: 0.34, h: 0.025,
       fill: { color: acc }, line: { type: "none" } });
   }
-  s.addText(l1, { x, y: y + 0.10, w, h: 0.22,
+  s.addText(l1, { x, y: y + 0.09, w, h: 0.20,
     fontSize: s1, fontFace: FF, color: col, italic: true, margin: 0 });
   s.addText(l2, { x, y: y + dy2, w, h: h2,
     fontSize: s2, fontFace: FF, color: col, bold: true, margin: 0 });

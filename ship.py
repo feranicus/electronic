@@ -101,7 +101,7 @@ def _test_python():
 # checked that /api/me returned 401 — which a stale container answers perfectly well.
 ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
-                "scripts/creed.js", "scripts/group_discovery.py"]
+                "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -272,6 +272,15 @@ def do_tests():
                      'class; it WILL crash at runtime. Fix before deploying.')
     else:
         print('  static check: no undefined names in engine, webapp or root scripts')
+
+    # c''''''''') Print the RESOLVED config. The operator's own fix for three deploys of guessing:
+    #             stop reading five files to answer 'which model will actually run?' — resolve it
+    #             once, with provenance, and print it. Same payload is served at GET /api/diag.
+    _dg = subprocess.run([sys.executable, os.path.join(engine, 'engine_config.py')],
+                         capture_output=True, text=True, timeout=60)
+    for _l in (_dg.stdout or '').splitlines():
+        if _l.strip():
+            print('  ' + _l)
 
     # c'''''''') NOTHING may hardcode ENRICH_MODELS. docker-compose `environment:` BEATS
     #            `env_file`, so a value committed there silently outranks enrich.py::_FALLBACKS —
@@ -575,7 +584,7 @@ def do_verify(web, bots):
         # chain (angermann.de ran gemma-first even though the repo had already demoted it). The repo
         # is meant to be the source of truth, so surface the disagreement instead of hiding it.
         try:
-            _envline = ssh("grep -h '^ENRICH_MODELS=' /opt/colt-stack/assess-bot/.env 2>/dev/null "
+            _envline = ssh("grep -hE '^ENRICH_MODELS?=' /opt/colt-stack/assess-bot/.env 2>/dev/null "
                            "| tail -1 || true").strip()
             _envchain = _envline.split("=", 1)[1].strip().strip('\'"') if "=" in _envline else ""
             _repo = ""
@@ -594,8 +603,12 @@ def do_verify(web, bots):
                       % (_envchain, _repo))
                 # DELETE the override rather than rewrite it: enrich.py::_FALLBACKS is the single
                 # source of truth, and a value present in .env silently outranks it forever after.
-                ssh("sed -i '/^ENRICH_MODELS=/d' /opt/colt-stack/assess-bot/.env")
-                _now = ssh("grep -h '^ENRICH_MODELS=' /opt/colt-stack/assess-bot/.env "
+                # BOTH forms. The legacy singular ENRICH_MODEL is prepended as the chain HEAD by
+                # enrich._chain(), so it silently REORDERS the committed order — that is why
+                # deepseek-v4-flash sat at position 2 and was never called even after the plural
+                # override was removed. Four homes for one value; the repo is the only one that stays.
+                ssh("sed -i '/^ENRICH_MODELS\?=/d' /opt/colt-stack/assess-bot/.env")
+                _now = ssh("grep -hE '^ENRICH_MODELS?=' /opt/colt-stack/assess-bot/.env "
                            "| tail -1 || true").strip()
                 if not _now.strip():
                     ssh("cd /opt/colt-stack && docker compose -p colt-stack "
