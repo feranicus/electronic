@@ -574,6 +574,8 @@ def main():
             "asns": list(ident.get("asns") or []),
             "cert_org": ident.get("cert_org_seen"),
             "related_unscoped": list(ident.get("related_unscoped") or []),
+            "cert_names": list(ident.get("cert_names_found") or []),
+            "cert_siblings": list(ident.get("cert_sibling_apexes") or []),
             "excluded": (list(ident.get("exclude_apexes") or []) + list(ident.get("exclude_ips") or [])),
             "platform_operator": bool(ident.get("platform_operator")),
         }

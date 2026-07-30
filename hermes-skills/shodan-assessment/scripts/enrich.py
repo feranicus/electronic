@@ -40,6 +40,15 @@ def _chain():
     explicit = os.environ.get("ENRICH_MODELS", "").strip()
     if explicit:
         out = [m.strip() for m in explicit.split(",") if m.strip()]
+        # A stale env var silently beating committed code is the exact class of bug this repo has
+        # already paid for twice. If the droplet's ENRICH_MODELS disagrees with the committed order,
+        # SAY SO — otherwise a carefully evidence-based chain change has no effect and nobody knows.
+        if out != _FALLBACKS:
+            print("[warn] ENRICH_MODELS env OVERRIDES the committed chain.\n"
+                  "         env  : %s\n         repo : %s\n"
+                  "       The env wins. If that is not deliberate, clear it so the repo is the source "
+                  "of truth:  python set_secret.py ENRICH_MODELS   (enter the repo order)"
+                  % (",".join(out), ",".join(_FALLBACKS)), file=sys.stderr)
     else:
         head = os.environ.get("ENRICH_MODEL", "").strip()
         out = ([head] if head else []) + _FALLBACKS

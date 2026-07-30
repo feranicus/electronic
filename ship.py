@@ -493,6 +493,31 @@ def do_verify(web, bots):
                 print("      " + s)
             ok = False
     if web and not DRY:
+        # CONFIG DRIFT: a stale ENRICH_MODELS in the droplet's .env silently beats the committed
+        # chain (angermann.de ran gemma-first even though the repo had already demoted it). The repo
+        # is meant to be the source of truth, so surface the disagreement instead of hiding it.
+        try:
+            _envline = ssh("grep -h '^ENRICH_MODELS=' /opt/colt-stack/assess-bot/.env 2>/dev/null "
+                           "| tail -1 || true").strip()
+            _envchain = _envline.split("=", 1)[1].strip().strip('\'"') if "=" in _envline else ""
+            _repo = ""
+            for _l in open(os.path.join(ENGINE_LOCAL, "scripts", "enrich.py"), encoding="utf-8"):
+                if _l.startswith("_FALLBACKS = ["):
+                    _repo = ",".join(x.strip().strip('"\'') for x in
+                                     _l.split("[", 1)[1].rstrip("]\n ").split(","))
+                    break
+            if _envchain and _repo and _envchain.replace(" ", "") != _repo.replace(" ", ""):
+                print("  [!] ENRICH_MODELS drift — the droplet OVERRIDES the committed chain:")
+                print("        droplet : %s" % _envchain)
+                print("        repo    : %s" % _repo)
+                print("      The droplet wins. To make the repo authoritative:")
+                print("        python set_secret.py ENRICH_MODELS     (enter the repo order)")
+            elif _repo:
+                print("  enrich chain: repo order in force (%s)" % _repo)
+        except Exception as _e:
+            print("  [i] enrich-chain drift check skipped (%s)" % type(_e).__name__)
+
+    if web and not DRY:
         # Prove the bot-404 gate: real users must be served, crawlers must get 404, and /api/me must
         # still answer 401 (every deploy verifier in this repo depends on that — see check_bot_gate.py).
         try:

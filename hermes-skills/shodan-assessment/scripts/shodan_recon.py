@@ -1151,6 +1151,17 @@ def run(ident, F, audience, limit_per_query=500):
         print("[auto] cert-name discovery: %s (from the certificate on %s) — OWNED, added to scope"
               % (_nm, ", ".join(sorted(_ips)[:3])), file=sys.stderr)
     ident["cert_names_found"] = sorted(_cert_new)
+    # A brand token that is also a SURNAME over-matches: angermann.de (Angermann Group) pulled in
+    # ra-angermann.de and renner-angermann.de — plausibly different legal entities that merely share
+    # a family name. Cert evidence justifies SCOPING them, but a separate registrable domain must be
+    # CONFIRMED by the operator, not silently trusted. Surfaced by clarify.py.
+    ident["cert_sibling_apexes"] = sorted({_apex(n) for n in _cert_new
+                                           if _seed_apex0 and _apex(n) != _seed_apex0})
+    if ident["cert_sibling_apexes"]:
+        print("[auto] cert discovery crossed into %d separate domain(s): %s — scoped on certificate "
+              "evidence, flagged for operator confirmation"
+              % (len(ident["cert_sibling_apexes"]), ", ".join(ident["cert_sibling_apexes"])),
+              file=sys.stderr)
 
     seen_o = {}
     seen_org = {}

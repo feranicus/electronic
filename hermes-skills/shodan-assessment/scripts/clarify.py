@@ -102,6 +102,22 @@ def build(fj):
             "maps_to": "platform_operator",
         })
 
+    # 1b) Certificate discovery crossed into a SEPARATE registrable domain. That is strong evidence
+    #     (a cert named it) but not proof of the same legal entity — a shared surname is enough to
+    #     match. angermann.de pulled in ra-angermann.de / renner-angermann.de this way.
+    siblings = owned.get("cert_siblings") or []
+    if siblings:
+        qs.append({
+            "id": "confirm_cert_siblings",
+            "kind": "domains_multi",
+            "title": "These separate domains came from your certificates — any NOT yours?",
+            "body": ("A TLS certificate on your estate names these domains, so I included them. They "
+                     "are separate registrable domains though, not subdomains — if any belongs to a "
+                     "different company that happens to share the name, tick it and I will remove it."),
+            "options": siblings[:20],
+            "maps_to": "exclude_domains",
+        })
+
     # 2) No owned ASN / CDN-fronted (skon.de on Google): auto-discovery cannot see owned netblocks.
     #    Ask for them directly — a known CIDR or AS number is the highest-value manual anchor.
     if not asns or is_cdn:
