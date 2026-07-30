@@ -590,3 +590,65 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .creed-q{gap:14px;text-align:left}
   .creed-rule i{width:60px}
 }
+
+/* ---------- /demo : the public Trojan Empire demonstration ----------
+   Reuses .wrap / .btn / the creed classes so the demo can never drift from the landing page's
+   voice. Only the horse, the fabrication notice and the artifact cards are new. */
+.demo-page{padding-bottom:80px}
+.demo-hero{padding:64px 0 56px;text-align:center;border-bottom:1px solid var(--line);
+  background:radial-gradient(1000px 420px at 50% 30%,rgba(0,178,169,.13),transparent 72%)}
+.th-avatar{width:min(300px,58vw);height:auto;display:block;margin:0 auto 26px;
+  filter:drop-shadow(0 18px 40px rgba(0,178,169,.28))}
+.demo-sec{padding:56px 0 0}
+.demo-sec h2{font-family:'Space Grotesk','Segoe UI',sans-serif;font-size:clamp(22px,3vw,32px);
+  font-weight:700;letter-spacing:-.5px;margin:0 0 14px;color:var(--ink)}
+.demo-lead{color:var(--mut);max-width:820px;line-height:1.6;margin:0 0 22px}
+
+/* The fabrication notice. GOLD, not red: it is an honesty statement, not an error. It sits
+   directly under the hero because a disclaimer nobody scrolls to is not a disclaimer. */
+.demo-warn{margin:34px 0 0;border:1px solid rgba(247,200,68,.5);border-left:4px solid var(--gold);
+  border-radius:10px;padding:20px 22px;background:rgba(247,200,68,.07)}
+.demo-warn-h{color:var(--gold);font-weight:800;letter-spacing:2px;font-size:12px;margin-bottom:10px}
+.demo-warn p{margin:0 0 8px;color:var(--ink);line-height:1.62;font-size:14.5px}
+.demo-warn p:last-child{margin-bottom:0}
+.demo-warn-sub{color:var(--mut) !important;font-size:13.5px !important}
+
+.demo-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.demo-card{border:1px solid var(--line);border-radius:12px;padding:20px 22px;
+  background:rgba(255,255,255,.02);position:relative}
+.demo-num{position:absolute;top:16px;right:18px;font-family:'JetBrains Mono',monospace;
+  font-size:30px;font-weight:700;color:var(--teal);opacity:.22;line-height:1}
+.demo-card h3{margin:0 0 8px;font-size:16.5px;color:var(--teal);font-weight:700;padding-right:38px}
+.demo-card p{margin:0;color:var(--mut);line-height:1.62;font-size:14px}
+
+.demo-decks{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.demo-deck{display:flex;flex-direction:column;gap:5px;border:1px solid var(--line);border-radius:12px;
+  padding:18px 20px;background:rgba(255,255,255,.02);text-decoration:none;
+  transition:border-color .18s,transform .18s,background .18s}
+.demo-deck:hover{border-color:var(--teal);transform:translateY(-2px);background:rgba(0,178,169,.07)}
+.demo-deck-tag{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:1.6px;
+  color:var(--gold);font-weight:700}
+.demo-deck-name{color:var(--ink);font-weight:700;font-size:15.5px}
+.demo-deck-file{color:var(--mut);font-size:12px;font-family:'JetBrains Mono',monospace;
+  overflow-wrap:anywhere}
+
+.demo-tech{display:flex;flex-direction:column;gap:12px}
+.demo-tech>div{border-left:2px solid var(--teal);padding:2px 0 2px 16px;color:var(--mut);
+  line-height:1.62;font-size:14.5px}
+.demo-tech b{color:var(--ink)}
+
+.demo-access{border:1px solid var(--line);border-radius:14px;padding:30px 32px;
+  background:radial-gradient(700px 260px at 20% 0%,rgba(0,178,169,.10),transparent 70%)}
+.demo-access p{color:var(--mut);line-height:1.65;margin:0 0 12px;max-width:820px}
+.demo-mail{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:16px;
+  color:var(--teal);font-weight:700;text-decoration:none;border-bottom:1px dashed var(--teal);
+  margin:4px 0 14px;overflow-wrap:anywhere}
+.demo-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+
+@media (max-width:720px){
+  .demo-hero{padding:44px 0 40px}
+  .demo-grid,.demo-decks{grid-template-columns:1fr}
+  .demo-sec{padding:40px 0 0}
+  .demo-access{padding:24px 20px}
+  .demo-actions .btn{flex:1 1 100%;text-align:center}
+}

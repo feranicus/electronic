@@ -3,6 +3,7 @@ import Impressum from "./pages/Impressum.jsx";
 import Contact from "./pages/Contact.jsx";
 import Privacy from "./pages/Privacy";
 import Landing from "./pages/Landing.jsx";
+import Demo from "./pages/Demo.jsx";
 import Login from "./pages/Login.jsx";
 import Cabinet from "./pages/Cabinet.jsx";
 
@@ -10,6 +11,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/demo" element={<Demo />} />
       <Route path="/login" element={<Login />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/impressum" element={<Impressum />} />

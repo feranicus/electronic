@@ -1304,3 +1304,37 @@ max_tokens=11000 with enable_thinking=false, so it should have room; if `qwen` e
 returning empty, `_contract_ok` rejects it in seconds and deepseek-3.2 takes over.
 RULE (third time this exact lesson has cost a round): NEVER discard an API error body. A 4xx is the
 server telling you what it wants.
+
+## Public DEMO — "Trojan Empire" (/demo, 2026-07)
+A fourth front door beside Assess / Compliance / Assistant, open to ANONYMOUS visitors: the real
+deliverables, built by the real deck builders, from FABRICATED data for a fictional company.
+- **PRE-BAKED, never a live run.** `scripts/demo_build.py` writes findings.json -> `RA.derive_cbiq`
+  / `RA.derive_geopol` -> the 3 pptx builders + `author_geopol.py`, once, into `/data/demo` (the
+  persistent `colt_webdata` volume). Running the engine per visitor would burn Shodan credits and
+  inference tokens on an invented company and a crawler could drain both; and the numbers are
+  invented anyway, so there is nothing to discover. `_ensure_demo()` builds under a
+  `threading.Lock` (public endpoint = concurrent cold visitors = half-written .pptx) and an
+  `on_event("startup")` executor warms it so the first visitor never waits ~40s.
+- **SAFETY = RFC 5737.** Every fixture IP is in 192.0.2.0/24 / 198.51.100.0/24 / 203.0.113.0/24,
+  reserved by the IETF so it can never route to a real host. A real address in that fixture would
+  be an unsolicited, unauthorised public exposure claim about a stranger's machine. ship.py greps
+  the fixture SOURCE for dotted quads and FAILS THE DEPLOY on anything outside those ranges.
+- **Honesty is in the artifacts, not only on the page.** The decks carry the FABRICATED notice on a
+  slide and demo_build injects a fixed gold banner into the animated HTML — those files get
+  forwarded by email and a link carries none of /demo's context. ship.py asserts both.
+- **A file existing is not a file being right.** The first cut called `build_geopol_html.js` with a
+  content file that was NEVER WRITTEN; node rendered the bare skeleton, a 35KB html appeared, the
+  build printed success — and every headline was `<h1></h1>`. Fixed by going through
+  `author_geopol.py` (deterministic path, no model needed) exactly as run_assessment does, plus a
+  self-check that DELETES a hollow shell. ship.py now asserts 0 blank headings, 5 canvases, the
+  company name and the banner.
+- Endpoints are public and engine-free: `GET /api/demo` (meta + artifact list) and
+  `GET /api/demo/deck/{name}` (traversal-guarded, .pptx attachment / .html inline).
+  `webapp/frontend/src/pages/Demo.jsx` + route `/demo` + a `.btn` nav link on Landing (it must be a
+  `.btn` — the phone rule `#hd nav a:not(.btn){display:none}` would hide a plain link, and this is
+  the one entry point an anonymous visitor can use). Access note: live assessments are Colt
+  employees + Colt Partners only -> jevgenijs.vainsteins@colt.net.
+- `_APP_ROUTES` in main.py::_is_probe must list every App.jsx route (it was already stale).
+- NOTE, deliberate and unchanged: `BOT_404=1` serves crawlers a 404 on page routes, so /demo is
+  NOT indexable by Google. Flip with `BOT_404_ALLOW="googlebot,bingbot"` if the demo should be
+  found by search; that is a product decision, not a bug.

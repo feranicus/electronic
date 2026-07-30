@@ -124,6 +124,29 @@ reloads, and verifies `401`. Nothing is built on the droplet; nothing is hand-ed
   domain (that was the 404/502 flip-flop). The landing is served by the droplet. `webapp/unpublish_pages.py`
   releases the domain from Pages.
 
+## Public demo — "Trojan Empire" (`/demo`)
+
+A no-login showcase at **https://cybergod.ai/demo**. Anyone can open it and download the real
+deliverables — built by the real deck builders — for a **fictional** company on **fabricated** data.
+
+* **Pre-baked, not a live run.** `hermes-skills/shodan-assessment/scripts/demo_build.py` renders the
+  four artifacts once into `/data/demo` (persistent volume). No Shodan credits, no inference tokens,
+  no per-visit cost, nothing for a crawler to drain.
+* **Safe by construction.** Every fabricated IP is inside an RFC 5737 documentation range
+  (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24), which can never route to a real host.
+  `python ship.py` fails the deploy if a non-documentation address ever appears in the fixture.
+* **Labelled everywhere.** The page, the slides and the animated HTML all state that the data is
+  fabricated — the artifacts get forwarded, so the notice travels inside them.
+* **Access.** Live assessments against a real estate stay restricted to Colt employees and Colt
+  Partners: contact **jevgenijs.vainsteins@colt.net**.
+
+Rebuild the artifacts by hand (rarely needed — the app builds them on boot):
+
+    python hermes-skills/shodan-assessment/scripts/demo_build.py --out /data/demo
+
+Note: `BOT_404=1` serves crawlers a 404 on page routes, so `/demo` is not indexed by search engines.
+Set `BOT_404_ALLOW="googlebot,bingbot"` if you want it discoverable.
+
 ## Repo map
 | Path | Purpose |
 |------|---------|

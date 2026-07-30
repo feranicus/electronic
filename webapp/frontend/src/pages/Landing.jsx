@@ -316,6 +316,9 @@ export default function Landing() {
         <nav>
           <a href="#edge">Why it matters</a><a href="#demo">See it live</a><a href="#map">The machine</a>
           <a href="#deep">Deep dive</a><a href="#secure">Security</a><Link to="/contact">Contact</Link>
+          {/* Demo is a .btn so the phone rule (#hd nav a:not(.btn){display:none}) keeps it visible —
+              it is the one entry point an anonymous visitor can actually use. */}
+          <Link className="btn sm ghost" to="/demo">Demo</Link>
           <Link className="btn sm" to="/login">Open the app</Link>
         </nav>
       </div></header>
@@ -331,7 +334,7 @@ export default function Landing() {
             a single one of your systems.</p>
           <div className="cta-row">
             <Link className="btn" to="/login">Open the app / Log in</Link>
-            <a className="btn ghost" href="#demo">Watch it work</a>
+            <Link className="btn ghost" to="/demo">See a full demo report</Link>
           </div>
         </div>
       </section>

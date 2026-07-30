@@ -8,12 +8,14 @@ Turns the Telegram-bot logic into a web app:
   * cassandra assistant (DeepSeek + allowlisted live research) behind /api/assist.
   * serves the built SPA (webapp/frontend/dist) with SPA fallback.
 """
+import subprocess, sys
 import os
 import re
 import json
 import time
 import uuid
 import asyncio
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -200,6 +202,96 @@ def auth_logout():
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(SESSION_COOKIE, path="/")
     return resp
+
+
+# ------------------------------------------------------------------ PUBLIC DEMO ---
+# "Trojan Empire" — a FICTIONAL company with FABRICATED findings, open to anyone.
+# Deliberately NOT gated behind auth and deliberately NOT running the engine:
+#   * running the real pipeline for every anonymous visitor would burn Shodan query credits and
+#     inference tokens, and a crawler could drain both;
+#   * the data is invented anyway, so there is nothing to discover.
+# The artifacts are pre-built once by scripts/demo_build.py using the SAME deterministic deck
+# builders the paid product uses, then served as static files. Every host uses an RFC 5737
+# documentation range (192.0.2.x / 198.51.100.x / 203.0.113.x) which can never route to a real
+# machine, so a demo finding can never be mistaken for a live one.
+DEMO_DIR = Path(os.environ.get("DEMO_DIR", "/data/demo"))
+DEMO_COMPANY = "Trojan Empire"
+DEMO_NOTICE = ("All results on this page are FABRICATED. Trojan Empire is a fictional company; "
+               "every host, certificate, CVE and euro figure is invented to demonstrate the format "
+               "of the deliverable. Nothing was scanned and no real organisation is described.")
+
+
+def _demo_ready() -> bool:
+    return DEMO_DIR.exists() and any(DEMO_DIR.glob("*.pptx"))
+
+
+_DEMO_LOCK = threading.Lock()
+
+
+def _ensure_demo() -> bool:
+    """Build the demo artifacts once. Idempotent, serialised and best-effort.
+
+    The LOCK is load-bearing, not decoration: /api/demo is public, so N simultaneous visitors on a
+    cold volume would otherwise each fork node and write the same four files concurrently — a
+    half-written .pptx served to the visitor who arrived second. One builder, everyone else waits,
+    and the double-check inside the lock means the wait is a no-op once the first has finished.
+    """
+    if _demo_ready():
+        return True
+    with _DEMO_LOCK:
+        if _demo_ready():
+            return True
+        try:
+            DEMO_DIR.mkdir(parents=True, exist_ok=True)
+            r = subprocess.run([sys.executable,
+                                os.path.join(os.path.dirname(ENGINE), "demo_build.py"),
+                                "--out", str(DEMO_DIR)],
+                               capture_output=True, text=True, timeout=300)
+            if not _demo_ready():
+                # A demo that silently fails to build looks identical to "no demo exists". Say so.
+                _log(evt="demo_build", result="error", rc=r.returncode,
+                     err=(r.stderr or r.stdout or "")[-300:])
+        except Exception as e:
+            _log(evt="demo_build", result="error", err=repr(e)[:200])
+    return _demo_ready()
+
+
+@app.on_event("startup")
+async def _warm_demo():
+    """Build the demo at boot, off the request path, so the first visitor never waits ~40s."""
+    asyncio.get_event_loop().run_in_executor(None, _ensure_demo)
+
+
+@app.get("/api/demo")
+def demo_meta():
+    """Everything the Demo page needs: the notice, the company, and the artifact list."""
+    ready = _ensure_demo()
+    decks = []
+    if ready:
+        decks = [{"name": p.name, "url": "/api/demo/deck/%s" % p.name}
+                 for p in sorted(DEMO_DIR.glob("*.pptx"))]
+        decks += [{"name": p.name, "url": "/api/demo/deck/%s" % p.name}
+                  for p in sorted(DEMO_DIR.glob("*_Animated*.html"))]
+    return {"company": DEMO_COMPANY, "fabricated": True, "notice": DEMO_NOTICE,
+            "ready": ready, "decks": decks,
+            "access_contact": "jevgenijs.vainsteins@colt.net",
+            "access_note": ("Live assessments against your own estate are available to Colt "
+                            "employees and Colt Partners only.")}
+
+
+@app.get("/api/demo/deck/{name}")
+def demo_deck(name: str):
+    low = name.lower()
+    if "/" in name or "\\" in name or ".." in name or not (low.endswith(".pptx") or low.endswith(".html")):
+        raise HTTPException(status_code=400, detail="bad filename")
+    _ensure_demo()
+    path = DEMO_DIR / name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="demo artifact not found")
+    media = ("text/html" if low.endswith(".html")
+             else "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    return FileResponse(str(path), media_type=media, filename=name,
+                        content_disposition_type=("inline" if low.endswith(".html") else "attachment"))
 
 
 @app.get("/api/diag")
@@ -757,7 +849,10 @@ if (_DIST / "assets").is_dir():
 #      written for never fired.
 # Real SPA routes are a short, known list. Everything else that looks like a FILE (has an extension)
 # or matches a known probe gets an honest 404.
-_APP_ROUTES = {"", "login", "app", "privacy"}
+# Keep this in step with App.jsx's <Route> list. It was already stale (impressum/contact were
+# missing) — harmless only because _is_probe ALSO requires a probe hint, but a whitelist that does
+# not list the real routes is a trap waiting for the first route whose name contains ".git" or "sh".
+_APP_ROUTES = {"", "login", "app", "privacy", "impressum", "contact", "demo"}
 _PROBE_HINT = (".php", ".asp", ".aspx", ".jsp", ".cgi", ".env", ".git", ".sql", ".bak", ".old",
                ".zip", ".tar", ".gz", ".yml", ".yaml", ".ini", ".conf", ".sh", ".py", ".rb",
                "wp-", "wordpress", "phpmyadmin", "xmlrpc", "vendor/", "cgi-bin", "shell",

@@ -115,7 +115,7 @@ ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
                 "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py",
                 "scripts/enrich_parallel.py", "scripts/attribution.py",
-                "scripts/model_probe.py"]
+                "scripts/model_probe.py", "scripts/demo_build.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -461,6 +461,74 @@ def do_tests():
     print("  compliance decks + HTML + clarify build: %s" % ("OK" if comp_ok else "BROKEN"))
     if not comp_ok:
         sys.exit("[X] compliance module failed its smoke (enrich/deck/html/clarify)")
+
+    # c'''') PUBLIC DEMO — "Trojan Empire". This one is customer-facing to ANONYMOUS visitors, which
+    #        makes two properties non-negotiable and therefore testable:
+    #          1. the artifacts BUILD (a demo that 404s is worse than no demo — it is the first thing
+    #             a prospect clicks, and /api/demo builds lazily so a broken builder shows as an
+    #             empty page rather than an error anyone would notice);
+    #          2. every IP is inside an RFC 5737 documentation range. That is the whole safety story.
+    #             If a real address ever leaks into the fixture we are publishing an unsolicited
+    #             exposure claim about a stranger's host, worldwide, with no authorisation.
+    #        Both are cheap to check and expensive to get wrong, so they block the ship.
+    try:
+        import glob as _glob, zipfile as _zipfile, re
+        _dout = os.path.join(tempfile.gettempdir(), "ship_demo")
+        _r = subprocess.run([sys.executable, os.path.join(engine, "demo_build.py"), "--out", _dout],
+                            capture_output=True, text=True, timeout=420)
+        _dfiles = sorted(_glob.glob(os.path.join(_dout, "*.pptx")) +
+                         _glob.glob(os.path.join(_dout, "*.html")))
+        demo_ok = _r.returncode == 0 and len(_dfiles) >= 4
+        if not demo_ok:
+            print("    demo build rc=%s out=%s" % (_r.returncode, (_r.stderr or _r.stdout)[-300:]))
+
+        # Pull every dotted quad out of the fixture SOURCE (not the rendered pptx — a version string
+        # like 1.24.0 is not an address, and the source is where a mistake would actually be made).
+        _dsrc = open(os.path.join(engine, "demo_build.py"), encoding="utf-8").read()
+        _ips = set(re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", _dsrc))
+        _docnet = ("192.0.2.", "198.51.100.", "203.0.113.")     # RFC 5737 TEST-NET-1/2/3
+        _real = sorted(i for i in _ips
+                       if not i.startswith(_docnet)
+                       and not re.match(r"^\d+\.\d+\.\d+$", i))  # (belt and braces)
+        if _real:
+            demo_ok = False
+            print("    !! demo fixture contains NON-documentation IPs: %s" % _real[:8])
+
+        # The fabrication notice must physically reach the artifacts, not just the web page. A deck
+        # forwarded by email loses every bit of surrounding context the /demo page provides.
+        if demo_ok:
+            _pptx = [f for f in _dfiles if f.endswith(".pptx")]
+            _txt = ""
+            for _f in _pptx:
+                _z = _zipfile.ZipFile(_f)
+                _txt += " ".join("".join(re.findall(r"<a:t>(.*?)</a:t>",
+                                                    _z.read(_n).decode("utf8"), re.S))
+                                 for _n in _z.namelist()
+                                 if re.match(r"ppt/slides/slide\d+\.xml$", _n))
+            demo_ok = ("FABRICATED" in _txt.upper()) and ("Trojan Empire" in _txt)
+            if not demo_ok:
+                print("    !! demo decks do not carry the FABRICATED notice on any slide")
+
+        # And the HTML must be POPULATED, not a hollow skeleton. Caught for real: the builder was
+        # handed a content file that was never written, so node rendered the empty shell, a 35KB
+        # file appeared, the build reported success — and every headline was <h1></h1>. "The file
+        # exists" is not "the file is right"; assert on the content.
+        if demo_ok:
+            _hs = [f for f in _dfiles if f.endswith(".html")]
+            _hh = open(_hs[0], encoding="utf-8").read() if _hs else ""
+            _blank = _hh.count("<h1></h1>") + _hh.count('<p class="sub"></p>')
+            demo_ok = (bool(_hs) and _blank == 0 and "Trojan Empire" in _hh
+                       and "FABRICATED DATA" in _hh and _hh.count("<canvas") >= 5)
+            if not demo_ok:
+                print("    !! demo GEOPOL HTML is hollow or unlabelled "
+                      "(%d blank headings, %d canvases, banner=%s)"
+                      % (_blank, _hh.count("<canvas"), "FABRICATED DATA" in _hh))
+    except Exception as _e:
+        demo_ok = False; print("    demo smoke error: %r" % _e)
+    print("  public demo artifacts (Trojan Empire, RFC 5737 only): %s"
+          % ("OK" if demo_ok else "BROKEN"))
+    if not demo_ok:
+        sys.exit("[X] public demo failed its smoke (build / documentation-IPs / fabrication notice)")
 
     # c) the unit suite. Bootstrap the runner if it is missing — "pytest not installed" is a setup
     #    gap, not a reason to hand the operator a second command. A failing TEST blocks the ship;
