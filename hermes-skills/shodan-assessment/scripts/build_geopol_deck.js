@@ -23,6 +23,7 @@
    escapes so this source survives cross-platform writes intact. Hex colours WITHOUT '#'. */
 
 const fs = require("fs");
+const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
 
 // ---- typographic glyphs (avoid raw multibyte literals in source) ----
@@ -276,6 +277,7 @@ pageNum++;
   s.addShape(R(), { x: 0.57, y: 3.22, w: 0.22, h: 0.22, fill: { color: C.gold }, line: { type: "none" } });
   s.addText(cust + " " + EMDASH + " named adversaries, motives, methods and a probability index.",
     { x: 0.9, y: 3.18, w: 8.4, h: 0.4, fontSize: 12.5, fontFace: FA, color: "121212", italic: true, margin: 0 });
+  CREED.draw(pres, s, { y: 3.66, color: "121212", accent: C.white, fontFace: FB });
   s.addShape(R(), { x: 0, y: 4.5, w: 10, h: 1.12, fill: { color: C.tealDark }, line: { type: "none" } });
   const fw = (d.frameworks && d.frameworks.length) ? d.frameworks.join(" " + MIDDOT + " ")
     : "MITRE ATT&CK " + MIDDOT + " Diamond " + MIDDOT + " Kill-Chain " + MIDDOT + " Admiralty";

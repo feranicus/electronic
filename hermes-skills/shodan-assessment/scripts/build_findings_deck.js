@@ -16,6 +16,7 @@
    emitted via \u escapes so the file survives cross-platform writes intact. */
 
 const fs = require("fs");
+const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
 
 // typographic glyphs (avoid raw multibyte literals in source)
@@ -224,6 +225,7 @@ function drawTable(slide, rows, opts) {
     { x: 0.9, y: 2.74, w: 8.2, h: 0.3, fontSize: 13, fontFace: FA, color: C.black, bold: true, margin: 0 });
   s.addText(t.date || new Date().toISOString().slice(0, 10), { x: 0.5, y: 3.95, w: 4, h: 0.3,
     fontSize: 14, fontFace: FA, color: C.black, bold: true, margin: 0 });
+  CREED.draw(pres, s, { y: 3.16, color: C.black, accent: C.white, fontFace: FB });
   // 4-field footer metadata strip
   s.addShape(pres.shapes.RECTANGLE, { x: 0, y: 4.75, w: 10, h: 0.875,
     fill: { color: C.black }, line: { type: "none" } });

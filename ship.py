@@ -100,7 +100,8 @@ def _test_python():
 # colt-web because the CI deploy failed, ship_web.py still printed DONE, and the verify step only
 # checked that /api/me returned 401 — which a stale container answers perfectly well.
 ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
-                "scripts/compliance_assess.py", "scripts/compliance_enrich.py"]
+                "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
+                "scripts/creed.js"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -248,6 +249,17 @@ def do_tests():
         print('  ' + '!' * 68 + '\n')
     else:
         print('  legal: Impressum operator details complete')
+
+    # c'''') The creed (the Cassandra line) sits on the cover of all five decks and is translated by
+    #       TWO independent paths: deck_i18n/de.json for the four security builders, and creed.js
+    #       itself for build_compliance_deck.js (which has no deck_i18n). test_creed.js pins them
+    #       together so one family can never silently ship different German.
+    _cr = subprocess.run(['node', os.path.join(engine, 'test_creed.js')],
+                         capture_output=True, text=True, timeout=60)
+    if _cr.returncode != 0:
+        print(_cr.stdout + _cr.stderr)
+        sys.exit('[X] creed check failed - the Cassandra line drifted between de.json and creed.js')
+    print('  creed: Cassandra line pinned EN + DE')
 
     # c''') COMPLIANCE module — the deterministic path must produce a valid compliance.json, render a
     #       regime deck + roadmap deck + the HTML report (no undefined/NaN leaks), and yield clarify

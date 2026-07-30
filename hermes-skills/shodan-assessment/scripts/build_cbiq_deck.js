@@ -20,6 +20,7 @@
    the file survives cross-platform writes intact. Hex colours WITHOUT '#'. */
 
 const fs = require("fs");
+const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
 
 // typographic glyphs (pure-ASCII source, emitted via \u escapes)
@@ -220,6 +221,7 @@ function titleSlide() {
   s.addShape(R(), { x: 0.54, y: 3.34, w: 0.22, h: 0.22, fill: { color: C.med }, line: { type: "none" } });
   s.addText(String(cust) + " " + EMDASH + " turning the external-surface findings into " + WORD + ", and pricing each Colt remediation.",
     { x: 0.9, y: 3.30, w: 8.4, h: 0.42, fontSize: 12.5, fontFace: FA, color: C.black, italic: true, margin: 0 });
+  CREED.draw(pres, s, { y: 3.74, color: C.black, accent: C.white, fontFace: FB });
   s.addShape(R(), { x: 0, y: 4.5, w: 10, h: 1.12, fill: { color: C.tealDark }, line: { type: "none" } });
   const meta = [
     ["FRAMEWORK", (d.frameworks && d.frameworks.join(" " + MIDDOT + " ")) || ("FAIR " + MIDDOT + " NIST IR 8286D")],

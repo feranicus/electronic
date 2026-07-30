@@ -16,6 +16,7 @@
  * gaps, colt, exec_summary) is already written in the requested language by the model.
  */
 const fs = require("fs");
+const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
 
 const [, , jsonPath, outPath, regimeArg] = process.argv;
@@ -140,6 +141,8 @@ function titleSlide(bigTitle, subline, classText, applies) {
     s.addShape(pres.shapes.RECTANGLE, { x: 0.5, y: 3.55, w: 9.0, h: 0.5, fill: { color: C.black }, line: { type: "none" } });
     s.addText((classText || ""), { x: 0.66, y: 3.55, w: 8.7, h: 0.5, fontSize: 13, fontFace: FB, color: C.teal, bold: true, valign: "middle", margin: 0 });
   }
+  CREED.draw(pres, s, { y: 4.06, w: 7.9, color: C.black, fontFace: FB, rule: false, lang: LANG,
+                        size1: 8.5, size2: 9.5, h2: 0.32, dy2: 0.28 });
   s.addShape(pres.shapes.RECTANGLE, { x: 0, y: 4.75, w: 10, h: 0.875, fill: { color: C.black }, line: { type: "none" } });
   const meta = [["PREPARED", L("prepared")], ["FOR", company], ["SOURCE", "EU primary law (see appendix)"], ["STATUS", L("status")]];
   let mx = 0.5;

@@ -11,6 +11,7 @@
    target.qwen{status,model,tokens_in,tokens_out,cost_usd}. cbiq/geopol are the derived decks. */
 
 const fs = require("fs");
+const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
 
 const EMDASH = "—", MIDDOT = "·", BULLET = "•", RAQUO = "»", APPROX = "≈";
@@ -133,6 +134,7 @@ const tierCol = t => ({ CRIT: C.crit, CRITICAL: C.crit, HIGH: C.high, MEDIUM: C.
   s.addText(company + "  " + EMDASH + "  raw scan vs pursuit-grade, across all 3 reports", { x: 0.9, y: 2.70, w: 8.4, h: 0.34,
     fontSize: 14, fontFace: FA, color: C.black, bold: true, margin: 0 });
   s.addText(qLine, { x: 0.5, y: 3.66, w: 8.6, h: 0.30, fontSize: 12, fontFace: FM, color: C.black, bold: true, margin: 0 });
+  CREED.draw(pres, s, { y: 4.00, color: C.black, accent: C.white, fontFace: FB });
   s.addShape(pres.shapes.RECTANGLE, { x: 0, y: 4.75, w: 10, h: 0.875, fill: { color: C.black }, line: { type: "none" } });
   const meta = [
     ["PREPARED", "Colt Sales Engineering"], ["MODEL", qModel],
