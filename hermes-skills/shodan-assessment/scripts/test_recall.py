@@ -256,4 +256,38 @@ if FAILED:
         print("   - " + f)
     sys.exit(1)
 print("  ALL CHECKS PASSED — recall keeps owned assets; client/white-label domains stay OUT")
+# ---------------------------------------------------------------------------------------------
+# S18 - angermann.de: the brand-token gate failed in BOTH directions at once (2026-07)
+#   too tight -> netbid.com / nordleasing.com / leaseback.de / buerosuche.de were unreachable
+#   too loose -> ra-angermann.de (a law firm) and a DENTAL practice walked straight in
+# group_discovery.py supplies the customer's own published roster; it is authoritative in both
+# directions. Absent a published structure, the historic behaviour must be untouched (S-KON).
+# ---------------------------------------------------------------------------------------------
+print("\n== S18: angermann - group structure fixes recall AND precision ==")
+_G = {"netbid.com", "nordleasing.com", "leaseback.de", "buerosuche.de", "angermann-consult.de"}
+for _d in sorted(_G):
+    check(R._owns_apex(_d, {"angermann"}, "angermann.de", _G, True)[0],
+          "S18 recall: %s is owned via the published group structure" % _d)
+check(R._owns_apex("angermann.de", {"angermann"}, "angermann.de", _G, True)[0],
+      "S18: the seed apex is still owned")
+for _d in ("ra-angermann.de", "renner-angermann.de", "angermann-webdesign.de"):
+    _ok, _why = R._owns_apex(_d, {"angermann"}, "angermann.de", _G, True)
+    check(not _ok, "S18 precision: %s rejected as a surname lookalike" % _d)
+    check("lookalike" in _why, "S18: %s is flagged for operator confirmation, not silently dropped" % _d)
+check(not R._owns_apex("otto.de", {"angermann"}, "angermann.de", _G, True)[0],
+      "S18: an unrelated apex is still rejected")
+# REGRESSION: with no published structure the kontor-token recall (S-KON) must be unchanged
+for _d in ("saleskontor.de", "praemienkontor.de", "ekontor24.de"):
+    check(R._owns_apex(_d, {"skon", "kontor"}, "skon.de", set(), False)[0],
+          "S18 regression: %s still owned when no group structure exists" % _d)
+check(not R._owns_apex("mediamarkt.de", {"skon", "kontor"}, "skon.de", set(), False)[0],
+      "S18 regression: a client apex is still rejected")
+# the co-tenant guard's discriminator: per-IP whois org, on the real shared Colt /24
+check(R._org_is_the_target("Horst F.G. Angermann GmbH", "angermann.de"),
+      "S18 co-tenant: Angermann's own whois org corroborates the seed")
+for _o in ("NORDRHEINISCHE AERZTEVERSORGUNG", "FACT Informationssysteme und Consulting GmbH",
+           "Regus Gmbh and Co Kg", "NAGASE (Europa) GmbH"):
+    check(not R._org_is_the_target(_o, "angermann.de"),
+          "S18 co-tenant: %s does NOT corroborate -> dropped from the shared /24" % _o[:28])
+
 print("=" * 78)

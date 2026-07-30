@@ -1018,3 +1018,48 @@ ALSO: a `finish_reason == "length"` is OUR max_tokens ceiling truncating the JSO
 model fault — it surfaced on rightmart as `JSONDecodeError at char 30117` against max_tokens=6500 and
 was reported as a generic "bad response". `_call()` now says so explicitly. Raise max_tokens or send
 fewer findings; do not blame the model. Re-decide order with `compare_models.py` + `check_enrich.py`.
+
+## angermann.de — the brand-token gate failed in BOTH directions (2026-07, group discovery)
+The deck found **1 of the customer's 8 domains** and added 2 that belong to a law firm. ONE
+mechanism caused both halves: `_owns_apex`'s brand token.
+- too LOOSE: "Angermann" is a SURNAME -> ra-angermann.de (Rechtsanwalt), renner-angermann.de,
+  angermann-webdesign.de and a *Zahnarztpraxis Angermann* all matched.
+- too TIGHT: the subsidiaries trade as **NetBid / Nord Leasing / leaseback / buerosuche** — ZERO
+  string overlap with the seed — so CT, cert-SANs and the DNS probe could never reach them. They
+  held the best findings in the engagement (netbid.io mail cluster: **expired cert on 7 ports**).
+FIX = `scripts/group_discovery.py`: crawl the customer's OWN site for its group-structure pages
+(struktur/gruppe/companies/auf-einen-blick/...) and harvest the external domains they link to. A
+first-party published roster is STRONGER ownership evidence than a substring, and it works in both
+directions:
+- **recall**: a domain on the structure page is owned even with a totally different name;
+- **precision**: when a structure WAS published, a lookalike apex absent from it is positive
+  evidence it is someone else's -> rejected as `lookalike`, surfaced via clarify.py for the
+  operator to confirm. Never silently dropped.
+- **fails closed**: no structure page (or no network) -> `structure_known=False` -> the historic
+  brand-token behaviour is untouched, so the S-KON `kontor` recall is unaffected. An outage must
+  never silently shrink a customer's estate.
+Group domains are ALSO put to the operator, because a group page lists joint ventures and global
+network brands the customer does not run (Angermann's M&A arm trades as Oaklins Germany AG, but
+oaklins.com is a worldwide network's shared infrastructure).
+
+## CO-TENANT GUARD — a netblock is not a customer (angermann.de)
+`217.110.51.0/24` is a **shared Colt /24**: Angermann holds .2 and .7; the rest is Nordrheinische
+Aerzteversorgung (a doctors' pension fund), FACT, NAGASE, Regus and Mane — with their SNMP,
+MikroTik Winbox and Exchange exposure. Shodan carries a **per-IP whois org**, so the discriminator
+was already in the data. `run()` now keeps a host only if its OWN org corroborates the target, or
+it carries one of the target's names, or an identity query found it. Replayed against the real
+export: **2 Angermann IPs kept, 22 co-tenants dropped.** Guarded by test_recall.py S18.
+
+## model_watch.py — the catalog check is now part of every deploy
+The chain is chosen from EVIDENCE, but that evidence goes stale silently: gemma sat at the head
+returning empty answers for weeks, and **DeepSeek V4 Flash ($0.112/$0.224 per 1M) shipped while we
+still run V3.2 ($0.425/$1.36)** — ~4-6x cheaper — and nothing looked. `ship.py` now ends with
+`model_watch.py`: GET /v1/models, diff against committed `models_seen.json`, report NEW and
+DISAPPEARED ids, and probe new text models with the REAL enrichment contract (never a toy prompt —
+latency ranking INVERTS with prompt size: maverick 3.3s toy vs 44.6s real). **Non-blocking by
+design**: a new model is information, not a broken build.
+**Kimi K3 is auto-flagged DO-NOT-CHAIN.** DO's own changelog says it is "tuned for max thinking
+effort by default" — exactly the reasoning-model failure mode that already broke the strict-JSON
+contract with deepseek-r1-distill and qwen3.5-397b. DO has **not published a K3 serverless rate**
+(pricing page verified 1 Jul 2026 lists K2.5 and K2.6 only). It is a candidate for ATTRIBUTION
+research (1M context, long-horizon agentic), never for the deck-prose JSON contract.

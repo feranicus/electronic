@@ -118,6 +118,23 @@ def build(fj):
             "maps_to": "exclude_domains",
         })
 
+    # 1c) Subsidiaries discovered from the customer's OWN group-structure page. Strong first-party
+    #     evidence, but a group page also lists joint ventures and global network brands the customer
+    #     does not operate (Angermann's M&A arm trades as Oaklins Germany AG, yet oaklins.com is a
+    #     worldwide network's shared infrastructure). Confirm rather than assume.
+    group = owned.get("group_domains") or []
+    if group:
+        qs.append({
+            "id": "confirm_group_domains",
+            "kind": "domains_multi",
+            "title": "I found these companies in your group - any you do NOT operate?",
+            "body": ("Your own group-structure page names these domains, so I brought them into "
+                     "scope. Tick any that are a joint venture, a franchise or an international "
+                     "network brand whose infrastructure someone else runs, and I will drop them."),
+            "options": group[:25],
+            "maps_to": "exclude_domains",
+        })
+
     # 2) No owned ASN / CDN-fronted (skon.de on Google): auto-discovery cannot see owned netblocks.
     #    Ask for them directly — a known CIDR or AS number is the highest-value manual anchor.
     if not asns or is_cdn:

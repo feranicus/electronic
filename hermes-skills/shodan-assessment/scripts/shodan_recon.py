@@ -422,7 +422,7 @@ _MICROSITE_PREFIXES = ("vorteile", "vorteil", "praemie", "prämie", "aktion", "b
                        "rewards", "loyalty", "kampagne", "campaign", "promo")
 
 
-def _owns_apex(apex, brand_tokens, seed_apex):
+def _owns_apex(apex, brand_tokens, seed_apex, group_domains=None, structure_known=False):
     """Is this registrable apex plausibly the TARGET'S OWN domain?  -> (bool, reason)
 
     THE S-KON INCIDENT: the domain-discovery step (CertSpotter + DNS probe + cert SANs) pulled in
@@ -435,11 +435,30 @@ def _owns_apex(apex, brand_tokens, seed_apex):
         return False, "empty"
     if apex == (seed_apex or "").lower():
         return True, "seed apex"
+    # THE ANGERMANN FIX (recall). A brand token can only ever find domains that SPELL the brand, so
+    # netbid.com / nordleasing.com / leaseback.de / buerosuche.de were structurally unreachable from
+    # seed angermann.de — and they held the best findings in the engagement. group_domains comes from
+    # group_discovery.py: domains the customer's OWN group-structure page links to. That is a
+    # first-party assertion of ownership and is STRONGER evidence than a string match, so it is
+    # checked first.
+    if apex in set(group_domains or ()):
+        return True, "named on the customer's own group-structure page"
     squash = re.sub(r"[^a-z0-9]", "", apex.split(".")[0])   # the registrable label, separators removed
     for t in brand_tokens:
         if t and len(t) >= 4 and t in squash:
+            # THE ANGERMANN FIX (precision). "Angermann" is a SURNAME, so the token also matches a
+            # law firm (ra-angermann.de), renner-angermann.de, a web agency and a DENTAL PRACTICE.
+            # When the customer has PUBLISHED its group structure we have an authoritative roster of
+            # its companies — and a lookalike apex absent from that roster is positive evidence it is
+            # someone else's, not merely missing evidence. So it becomes a CANDIDATE the operator
+            # confirms (clarify.py), never an auto-scoped host. If no structure page was found we
+            # know nothing extra, so the historic brand-token behaviour is left exactly as it was
+            # (this is what keeps the S-KON kontor-token recall intact).
+            if structure_known:
+                return False, ("lookalike: token %r but absent from the customer's published group "
+                               "structure - needs operator confirmation" % t)
             return True, "brand token %r" % t
-    return False, "third-party apex (no brand token)"
+    return False, "third-party apex (no brand token, not in the published group structure)"
 
 
 # Legal-form suffixes to strip when building an `org:` filter. The S-KON WatchGuard was MISSED
@@ -730,6 +749,37 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     ident["brand_tokens"] = sorted(btoks)
     print("[auto] brand tokens: %s" % (", ".join(sorted(btoks)) or "(none)"), file=sys.stderr)
 
+    # ---- FIRST-PARTY GROUP STRUCTURE (the angermann.de recall fix) -----------------------------
+    # A brand token can only find domains that SPELL the brand. Angermann's subsidiaries trade as
+    # NetBid, Nord Leasing, leaseback and buerosuche — zero string overlap with the seed — so they
+    # were structurally unreachable, and they carried the engagement's best findings (an expired
+    # certificate on the netbid.io mail cluster across 7 ports). The customer's own group-structure
+    # page names and links every one of them: a first-party assertion of ownership, which is
+    # STRONGER evidence than a substring match. Best-effort and fails closed (no page -> no domains).
+    _group_doms, _group_weak, _structure_known = set(), [], False
+    if seed_apex and not platform_operator:
+        try:
+            import group_discovery as _GD
+            _g = _GD.discover(seed_apex)
+            _group_doms = {x["domain"] for x in _g.get("strong") or []}
+            _group_weak = [x["domain"] for x in _g.get("weak") or []]
+            ident["group_domains"] = sorted(_group_doms)
+            ident["group_pages"] = list(_g.get("pages") or [])
+            # Recorded so clarify.py can ASK. A group page legitimately lists joint ventures and
+            # global network brands the customer does not operate (Angermann's M&A arm trades as
+            # Oaklins Germany AG, but oaklins.com is a worldwide network's shared infrastructure).
+            ident["group_domains_unconfirmed"] = sorted(_group_doms)
+            # Authoritative only if the customer actually published a structure page AND it named
+            # companies. An empty or unreachable page must NOT be read as "they have no subsidiaries"
+            # (absence of evidence is never a finding) - that would silently drop real lookalikes.
+            _structure_known = bool(_g.get("pages")) and bool(_group_doms)
+        except Exception as _e:
+            print("[auto] group-structure discovery unavailable (%s) - continuing without it"
+                  % type(_e).__name__, file=sys.stderr)
+    if _group_doms:
+        print("[auto] group structure: %d subsidiary domain(s) from the customer's own site: %s"
+              % (len(_group_doms), ", ".join(sorted(_group_doms))), file=sys.stderr)
+
     # A candidate is any apex/host surfaced by CT, cert-SANs or the DNS probe. It enters scope ONLY
     # if it carries the target's identity. Everything else is recorded as related-but-unscoped and
     # NEVER pinned or swept — this is what stops a platform operator's client estate from flooding in.
@@ -745,7 +795,7 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
         if ap in exclude_apexes:
             unowned.add(ap)
             return
-        ok, why = _owns_apex(ap, btoks, seed_apex)
+        ok, why = _owns_apex(ap, btoks, seed_apex, _group_doms, _structure_known)
         if not ok:
             unowned.add(ap)
             return
@@ -772,9 +822,9 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
         # belt-and-braces: a microsite prefix must never sneak in on a non-brand apex
         first = low.split(".")[0]
         if any(first.startswith(mp) for mp in _MICROSITE_PREFIXES) and \
-           not _owns_apex(ap, btoks, seed_apex)[0]:
+           not _owns_apex(ap, btoks, seed_apex, _group_doms, _structure_known)[0]:
             continue
-        if not _owns_apex(ap, btoks, seed_apex)[0]:
+        if not _owns_apex(ap, btoks, seed_apex, _group_doms, _structure_known)[0]:
             continue
         if fqdn not in domains and fqdn not in ident["domains"]:
             domains.append(fqdn)
@@ -1139,7 +1189,8 @@ def run(ident, F, audience, limit_per_query=500):
                 _ap = _apex(_nm)
                 if _ap in (ident.get("exclude_apexes") or []):
                     continue
-                _own, _why = _owns_apex(_ap, _btoks0, _seed_apex0)
+                _own, _why = _owns_apex(_ap, _btoks0, _seed_apex0, (ident.get("group_domains") or []),
+                                          bool(ident.get("group_pages")))
                 if not _own:
                     continue
                 if _nm not in ident["domains"]:
@@ -1236,6 +1287,43 @@ def run(ident, F, audience, limit_per_query=500):
               % (len(identity_ips), len(hosts)), file=sys.stderr)
         ident["scope_blowout"] = {"identity_hosts": len(identity_ips), "total_hosts": len(hosts),
                                   "pivot_added": pivot_added}
+    # ---- CO-TENANT GUARD: a netblock is not a customer (angermann.de, 2026-07) ------------------
+    # 217.110.51.0/24 is a SHARED Colt /24. Angermann holds .2 and .7; the rest of the block belongs
+    # to Nordrheinische Aerzteversorgung (a doctors' pension fund), FACT, NAGASE, Regus and Mane —
+    # complete with their SNMP, MikroTik Winbox and Exchange exposure. Sweeping the prefix as "the
+    # customer's" would put another company's attack surface in an Angermann deck, which is the
+    # worst failure this engine can produce. Shodan carries a PER-IP whois org, so the discriminator
+    # already exists in the data: keep a host only if its own org corroborates the target, or it
+    # carries one of the target's own names, or an identity query found it in the first place.
+    _own_aps = set()
+    for _d in (list(ident.get("domains") or []) + list(ident.get("group_domains") or [])):
+        _a = _apex(_d)
+        if _a: _own_aps.add(_a)
+    if seed_apex: _own_aps.add(seed_apex)
+    _cotenant = []
+    for ip in list(hosts.keys()):
+        if ip in identity_ips or ip in set(ident.get("pinned") or []):
+            continue                                    # proven ours by identity / the target's DNS
+        _orgs_h, _names = set(), set()
+        for m in hosts[ip]:
+            if m.get("org"): _orgs_h.add(str(m["org"]))
+            for h in (m.get("hostnames") or []): _names.add(str(h).lower())
+            cn = (((m.get("ssl") or {}).get("cert") or {}).get("subject") or {}).get("CN")
+            if cn: _names.add(str(cn).lower().lstrip("*."))
+        if not _orgs_h:
+            continue                                    # no org recorded -> no evidence -> keep
+        if any(_org_is_the_target(o, seed_apex) for o in _orgs_h):
+            continue                                    # the host's OWN whois names the customer
+        if any(nm == ap or nm.endswith("." + ap) for nm in _names for ap in _own_aps):
+            continue                                    # carries one of the customer's own names
+        _cotenant.append((ip, sorted(_orgs_h)[0][:38]))
+        del hosts[ip]
+    if _cotenant:
+        ident["cotenants_dropped"] = [{"ip": i, "org": o} for i, o in _cotenant][:40]
+        print("[auto] co-tenant guard: dropped %d host(s) sharing a netblock but whois-owned by "
+              "someone else (e.g. %s)" % (len(_cotenant),
+              ", ".join("%s=%s" % (i, o) for i, o in _cotenant[:3])), file=sys.stderr)
+
     # REFINE exclusions: drop any host the operator said is not theirs (by IP, or by any hostname/
     # rDNS/cert-CN under an excluded apex). Applied AFTER all pivots so it prunes whatever slipped in.
     _ex_ips = set(ident.get("exclude_ips") or [])

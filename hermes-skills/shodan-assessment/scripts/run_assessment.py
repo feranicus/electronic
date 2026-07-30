@@ -575,6 +575,8 @@ def main():
             "cert_org": ident.get("cert_org_seen"),
             "related_unscoped": list(ident.get("related_unscoped") or []),
             "cert_names": list(ident.get("cert_names_found") or []),
+            "group_domains": list(ident.get("group_domains") or []),
+            "cotenants_dropped": list(ident.get("cotenants_dropped") or []),
             "cert_siblings": list(ident.get("cert_sibling_apexes") or []),
             "excluded": (list(ident.get("exclude_apexes") or []) + list(ident.get("exclude_ips") or [])),
             "platform_operator": bool(ident.get("platform_operator")),

@@ -101,7 +101,7 @@ def _test_python():
 # checked that /api/me returned 401 — which a stale container answers perfectly well.
 ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
-                "scripts/creed.js"]
+                "scripts/creed.js", "scripts/group_discovery.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -606,6 +606,22 @@ def main():
         do_bots()
 
     ok = do_verify(web, bots)
+
+    # ---- FINAL STEP: has DigitalOcean shipped anything new, and does it answer fast? ----------
+    #      Runs after verify so it can never delay the deploy, and is NON-BLOCKING by design: a
+    #      new model is information, not a broken build. It exists because the enrichment chain is
+    #      chosen from evidence that goes stale SILENTLY - gemma sat at the head of the chain
+    #      returning empty answers for weeks, and DeepSeek V4 Flash shipped at ~4x cheaper than
+    #      the V3.2 we still run, and nothing ever looked. Now every deploy looks.
+    try:
+        _eng = os.path.join(HERE, 'hermes-skills', 'shodan-assessment', 'scripts')
+        _mw = subprocess.run([sys.executable, os.path.join(_eng, 'model_watch.py')],
+                             capture_output=True, text=True, timeout=240)
+        print('')
+        print((_mw.stdout or '').rstrip() or '  model-watch: no output')
+    except Exception as _e:
+        print('  [!] model-watch skipped (%s) - never blocks a deploy' % type(_e).__name__)
+
 
     if ok and not DRY:
         # only tag a SAFE-POINT when the deployed engine actually verified current + live
