@@ -527,12 +527,43 @@ _LEGAL_SUFFIX = re.compile(
     re.I)
 
 
+# A whois org field very often carries a POSTAL ADDRESS after the company name:
+#     "Lotto24 AG Hamburg, Germany"
+# _LEGAL_SUFFIX is anchored with $, so it strips nothing here (the string ends in "Germany") and the
+# CITY AND COUNTRY were shipped to Shodan as the identity anchor. `org:` is a full-text match, not a
+# string equality, so org:"Lotto24 AG Hamburg, Germany" matched every Hamburg-registered netblock:
+# +381 hosts on an estate whose identity queries had proved 15. That is the lotto24.de failure.
+#
+# THE DISCRIMINATOR IS POSITIONAL, and it is a property of how companies are registered, not a
+# heuristic: in a registered name the legal form comes LAST ("… GmbH", "… AG"). So if a legal form
+# appears MID-STRING, everything after it is address, not name — truncate there.
+#     "Lotto24 AG Hamburg, Germany"     -> AG is mid-string      -> "Lotto24"
+#     "S-KON Sales Kontor Hamburg GmbH" -> GmbH is final         -> "S-KON Sales Kontor Hamburg"
+#     "Rosneft Deutschland GmbH"        -> GmbH is final         -> "Rosneft Deutschland"
+# Note this is why we cannot simply strip trailing place names: "Deutschland" is part of Rosneft's
+# registered name, while "Hamburg" is Lotto24's address. Position tells them apart; a word list cannot.
+#
+# Deliberately EXCLUDED from the mid-string rule: co / company / group / holding / as / se — too
+# word-like, and a false truncation would narrow the pivot for no reason. Narrower is fail-safe;
+# these are excluded only to avoid pointless damage, not for safety.
+_ORG_LEGAL_MID = re.compile(
+    r"\s(?:gmbh|ag|kg|mbh|ug|ltd|limited|inc|incorporated|llc|l\.l\.c|plc|corp|corporation|"
+    r"bv|nv|sarl|srl|sas|s\.?p\.?a|oy|ab|a/s)\b[\s,.]+\S", re.I)
+
+
 def _org_core(o):
-    """The distinctive part of an org name, legal suffix stripped, for a robust `org:` phrase.
-    'S-KON Sales Kontor Hamburg GmbH' -> 'S-KON Sales Kontor Hamburg' (matches the …AG variant too)."""
+    """The distinctive part of an org name: address tail cut, legal suffix stripped.
+
+    Used to build `org:"…"` pivots, so over-broadness here is not cosmetic — it imports a
+    stranger's infrastructure into a customer's deck.
+    """
     o = re.sub(r"\s+", " ", str(o or "").strip())
-    core = _LEGAL_SUFFIX.sub("", o).strip(" .,-")
-    return core if len(core) >= 4 else o
+    m = _ORG_LEGAL_MID.search(o)
+    head = o[:m.start()].strip(" .,-") if m else o
+    if len(head) < 4:                       # truncation ate the name -> keep the original
+        head = o
+    core = _LEGAL_SUFFIX.sub("", head).strip(" .,-")
+    return core if len(core) >= 4 else head
 
 
 # Generic markers of a PROVIDER's whois/cert organisation. A blocklist of hoster names can never be
@@ -1354,6 +1385,42 @@ def run(ident, F, audience, limit_per_query=500):
             _cn = (((_m.get("ssl") or {}).get("cert") or {}).get("issuer") or {}).get("CN")
             if _cn: seen_iss[_cn] = seen_iss.get(_cn, 0) + 1
     pivot_added = 0
+
+    # ---- PER-PIVOT BUDGET (the lotto24.de failure, 2026-07) --------------------------------------
+    # A malformed pivot phrase (org:"Lotto24 AG Hamburg, Germany") added 381 hosts to an estate whose
+    # identity queries had proved 15. Every downstream guard then behaved exactly as designed and the
+    # run still died: the co-tenant guard correctly identified 379 of them, hit its own >75% "an
+    # automatic filter must not empty a deck" valve, refused, and the scope-blowout check aborted the
+    # whole assessment. The operator got nothing.
+    #
+    # The lesson is not "fix that string" (done above) — it is that ONE unverified selector was able
+    # to own the estate at all. A pivot exists to WIDEN scope at the margin. If a single one adds
+    # more than the whole proven estate several times over, it has over-matched, whatever the reason,
+    # and the correct response is to discard THAT PIVOT and keep the assessment, not to discard the
+    # assessment. Recall is cheap; a stranger's infrastructure in a customer deck is not; and a
+    # refusal that produces no deck at all helps nobody.
+    #
+    # Rollback is whole-pivot and includes its ASNs: a bad selector's ASNs must not survive to widen
+    # a later sweep. Raise PIVOT_MAX_ADD only for a target you have verified by hand.
+    PIVOT_MAX_ADD = int(os.environ.get("PIVOT_MAX_ADD", "60"))
+    _pivot_budget = max(PIVOT_MAX_ADD, 3 * len(identity_ips))
+    ident["pivot_budget"] = _pivot_budget
+
+    def _accept_pivot(label, added, added_asns):
+        """Commit a pivot's hosts, or roll the whole pivot back if it dominates the estate."""
+        if len(added) <= _pivot_budget:
+            for _a in added_asns:
+                asns.add(_a)
+            return len(added)
+        for _ip in added:
+            hosts.pop(_ip, None)
+        print("[auto] pivot ROLLED BACK: %s added %d hosts but the budget is %d "
+              "(identity queries proved %d). A single selector may widen scope, never own it."
+              % (label, len(added), _pivot_budget, len(identity_ips)), file=sys.stderr)
+        ident.setdefault("pivots_rolled_back", []).append(
+            {"pivot": label, "added": len(added), "budget": _pivot_budget})
+        return 0
+
     for _cn in [c for c, n in sorted(seen_iss.items(), key=lambda x: -x[1]) if n >= 2][:6]:
         if _cn in ident.get("internal_cas", []): continue
         ok, why = _private_ca_ok(_cn, ident, api)
@@ -1363,7 +1430,7 @@ def run(ident, F, audience, limit_per_query=500):
         ident.setdefault("internal_cas", []).append(_cn)
         print(f"[auto] internal-CA pivot on {_cn!r} ({why})", file=sys.stderr)
         try:
-            k = 0; kept = 0; skipped = 0
+            k = 0; skipped = 0; _add, _aasn = [], []
             for _m in api.search_cursor(f'ssl.cert.issuer.cn:"{_cn}"'):
                 ip2 = _m.get("ip_str")
                 if ip2 and ip2 not in hosts:
@@ -1372,10 +1439,12 @@ def run(ident, F, audience, limit_per_query=500):
                         skipped += 1
                     else:
                         hosts.setdefault(ip2, []).append(_m)
-                        if _m.get("asn"): asns.add(_m["asn"])
-                        kept += 1; pivot_added += 1
+                        if _m.get("asn"): _aasn.append(_m["asn"])
+                        _add.append(ip2)
                 k += 1
                 if k >= limit_per_query: break
+            kept = _accept_pivot("internal-CA %r" % _cn, _add, _aasn)
+            pivot_added += kept
             print(f"[auto]   pivot {_cn!r}: +{kept} hosts, {skipped} rejected (no tie to target)",
                   file=sys.stderr)
         except shodan.APIError:
@@ -1452,15 +1521,17 @@ def run(ident, F, audience, limit_per_query=500):
         ident.setdefault("cert_orgs", []).append(_o)
         print(f"[auto] cert subject-O pivot on {_o!r}", file=sys.stderr)
         try:
-            k = 0; kept = 0
+            k = 0; _add, _aasn = [], []
             for _m in api.search_cursor('ssl.cert.subject.o:"%s"' % _o):
                 ip2 = _m.get("ip_str")
                 if ip2 and ip2 not in hosts:
                     hosts.setdefault(ip2, []).append(_m)      # a target-O cert IS proof of ownership
-                    if _m.get("asn"): asns.add(_m["asn"])
-                    kept += 1; pivot_added += 1
+                    if _m.get("asn"): _aasn.append(_m["asn"])
+                    _add.append(ip2)
                 k += 1
                 if k >= limit_per_query: break
+            kept = _accept_pivot("cert-O %r" % _o, _add, _aasn)
+            pivot_added += kept
             print(f"[auto]   ssl.cert.subject.o: +{kept} hosts", file=sys.stderr)
         except shodan.APIError:
             pass
@@ -1475,7 +1546,7 @@ def run(ident, F, audience, limit_per_query=500):
             continue
         print(f"[auto] whois-org pivot on org:\"{_oc}\" (legal suffix stripped)", file=sys.stderr)
         try:
-            k = 0; kept = 0
+            k = 0; _add, _aasn = [], []
             for _m in api.search_cursor('org:"%s"' % _oc):
                 ip2 = _m.get("ip_str")
                 if ip2 and ip2 not in hosts:
@@ -1485,10 +1556,12 @@ def run(ident, F, audience, limit_per_query=500):
                     if _oc.lower() not in _ho and not _corroborates(_m, ident, own_asns):
                         continue
                     hosts.setdefault(ip2, []).append(_m)
-                    if _m.get("asn"): asns.add(_m["asn"])
-                    kept += 1; pivot_added += 1
+                    if _m.get("asn"): _aasn.append(_m["asn"])
+                    _add.append(ip2)
                 k += 1
                 if k >= limit_per_query: break
+            kept = _accept_pivot('org:"%s"' % _oc, _add, _aasn)
+            pivot_added += kept
             print(f"[auto]   org:\"{_oc}\": +{kept} hosts", file=sys.stderr)
         except shodan.APIError:
             pass
@@ -1500,7 +1573,8 @@ def run(ident, F, audience, limit_per_query=500):
               "A pivot has over-matched — treat this assessment as UNSAFE."
               % (len(identity_ips), len(hosts)), file=sys.stderr)
         ident["scope_blowout"] = {"identity_hosts": len(identity_ips), "total_hosts": len(hosts),
-                                  "pivot_added": pivot_added}
+                                  "pivot_added": pivot_added,
+                                  "pivots_rolled_back": len(ident.get("pivots_rolled_back") or [])}
     # ---- CO-TENANT GUARD: a netblock is not a customer (angermann.de, 2026-07) ------------------
     # 217.110.51.0/24 is a SHARED Colt /24. Angermann holds .2 and .7; the rest of the block belongs
     # to Nordrheinische Aerzteversorgung (a doctors' pension fund), FACT, NAGASE, Regus and Mane —
@@ -1541,11 +1615,17 @@ def run(ident, F, audience, limit_per_query=500):
     # no filter. If the org data would delete everything (or almost everything) the org data is what
     # is wrong, not the estate - keep it all and say so loudly.
     if _cotenant and (not hosts or len(_cotenant) > 0.75 * (len(hosts) + len(_cotenant))):
+        # Snapshot the denominator BEFORE restoring. The old message computed it after the restore
+        # loop, so the co-tenants were counted twice and lotto24.de reported "dropped 379 of 783"
+        # against a real estate of 404. A guard that misreports its own arithmetic sends the next
+        # investigation down the wrong path — which is exactly what it did.
+        _total_before = len(hosts) + len(_cotenant)
         for ip, _o in _cotenant:
             hosts.setdefault(ip, _dropped_backup.get(ip, []))
-        print("[auto] co-tenant guard REFUSED: it would have dropped %d of %d hosts - keeping "
-              "everything (the whois data is the suspect, not the estate)"
-              % (len(_cotenant), len(_cotenant) + len(hosts)), file=sys.stderr)
+        print("[auto] co-tenant guard REFUSED: it would have dropped %d of %d hosts (%.0f%%) - "
+              "keeping everything (the whois data is the suspect, not the estate)"
+              % (len(_cotenant), _total_before, 100.0 * len(_cotenant) / max(1, _total_before)),
+              file=sys.stderr)
         ident["cotenants_refused"] = [{"ip": i, "org": o} for i, o in _cotenant][:40]
         _cotenant = []
     if _cotenant:

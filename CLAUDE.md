@@ -1366,3 +1366,36 @@ LESSON KEPT FROM THE ABANDONED AVATAR: when judging a visual, RENDER IT AND LOOK
 *as emitted by the React component* to prove the JSX matched the approved artwork. Same doctrine as
 the engine-hash deploy verify: check the artifact, not the intention. (It still was not good enough,
 which is the other half of the lesson: iterate against a human, not against your own taste.)
+
+## lotto24.de — a whois ADDRESS became the identity anchor (2026-07)
+`org:"Lotto24 AG Hamburg, Germany"` returned **+381 hosts** against 15 the identity queries had
+proved, and the whole assessment died with "assessment failed" — no decks at all.
+ROOT CAUSE: `_LEGAL_SUFFIX` is anchored with `$`, so it strips a legal form only at the END of the
+string. That org ends in "Germany", so NOTHING was stripped and the CITY AND COUNTRY were shipped to
+Shodan as the anchor. `org:` is a FULL-TEXT match, not string equality, so "Hamburg, Germany" matched
+every Hamburg-registered netblock.
+FIX 1 — `_org_core()` truncates at a MID-STRING legal form. The discriminator is POSITIONAL and is a
+property of company registration, not a heuristic: in a registered name the legal form comes LAST, so
+anything after a mid-string one is address.
+  "Lotto24 AG Hamburg, Germany"     -> AG is mid-string -> "Lotto24"
+  "S-KON Sales Kontor Hamburg GmbH" -> GmbH is final    -> "S-KON Sales Kontor Hamburg"  (unchanged)
+  "Rosneft Deutschland GmbH"        -> GmbH is final    -> "Rosneft Deutschland"          (unchanged)
+This is exactly why a place-name word list CANNOT work: "Deutschland" is part of Rosneft's registered
+name while "Hamburg" is Lotto24's address. Only position tells them apart.
+FIX 2 (the important one) — **PER-PIVOT BUDGET + WHOLE-PIVOT ROLLBACK**. Every downstream guard
+worked exactly as designed and the run still died: the co-tenant guard correctly flagged 379 of the
+381, hit its own >75% "an automatic filter must never empty a deck" valve, refused, and the
+scope-blowout check then aborted everything. Three correct guards composed into a total failure.
+RULE: a pivot exists to WIDEN scope at the margin; it may never OWN the estate. `_accept_pivot()`
+collects each pivot's hosts and rolls the WHOLE pivot back (hosts + its ASNs, so a bad selector
+cannot widen a later sweep) when it adds more than `max(PIVOT_MAX_ADD=60, 3 x identity_hosts)`.
+Recorded in `ident["pivots_rolled_back"]`. Replayed on the real numbers: 381 > 60 -> rolled back ->
+estate ~23 -> under the blow-out threshold of 60 -> **the decks build**. This defence does not depend
+on anyone having spotted the bad string, which is the point.
+FIX 3 — the co-tenant guard reported "dropped 379 of 783" on an estate of 404: it computed the
+denominator AFTER the restore loop, double-counting. Snapshot before restoring. A guard that
+misreports its own arithmetic sends the next investigation down the wrong path.
+Guarded by test_run_path.py (the lotto24 section). NOTE the test bug this exposed: the original fake
+`shodan` returned every record for EVERY query, so the identity sweep already held the junk and a
+per-pivot assertion measured nothing — `_install_routing_shodan()` routes by query substring. A fake
+that cannot tell the queries apart cannot test a per-query rule.

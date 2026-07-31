@@ -555,11 +555,19 @@ def main():
         _blow = ident.get("scope_blowout")
         if _blow:
             _ev(evt="scope_blowout", company=_tag, **_blow)
+            # Reaching here now means the per-pivot budget ALREADY rolled back whatever it could and
+            # the estate is still unverifiable — so the remedy is an operator-supplied anchor, not
+            # another guard. Say which pivots were discarded: on lotto24.de the single most useful
+            # fact was that one org: phrase had contributed 381 of the 404 hosts, and the old message
+            # never mentioned pivots at all.
             print("[FATAL] scope blow-out: identity queries proved %d hosts but the sweep produced "
-                  "%d (pivot added %d). Refusing to build decks from an unverified estate.\n"
+                  "%d (pivots added %d; %d pivot(s) already rolled back automatically).\n"
+                  "        Refusing to build decks from an unverified estate.\n"
                   "        Re-run with explicit anchors, e.g.  --domain <their-domain> --org \"<Legal Name>\"\n"
-                  "        or raise PIVOT_MAX_HOSTS only if you have verified the issuer by hand."
-                  % (_blow["identity_hosts"], _blow["total_hosts"], _blow["pivot_added"]),
+                  "        or raise PIVOT_MAX_ADD / PIVOT_MAX_HOSTS only if you have verified the "
+                  "anchor by hand."
+                  % (_blow["identity_hosts"], _blow["total_hosts"], _blow["pivot_added"],
+                     _blow.get("pivots_rolled_back", 0)),
                   file=sys.stderr)
             _pg("FAILED — scope blow-out: estate could not be verified", 100)
             sys.exit(3)
