@@ -86,10 +86,24 @@ def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None):
     sub["findings"] = batch
     ids = [f.get("id") for f in batch]
     t0 = time.time()
-    prompt = E.PROMPT + (E.LANG_DE if str(lang).lower().startswith("de") else "")
+    # BUILD THE PROMPT EXACTLY AS THE SERIAL PATH DOES.
+    #
+    # E.PROMPT is a %-FORMAT TEMPLATE with three placeholders: (bible, language block, findings).
+    # This function used to CONCATENATE instead of formatting, which did two invisible things:
+    #   * left three literal "%s" in the text the model was asked to follow, and
+    #   * dropped the DELTAS BIBLE entirely — 10,435 characters that define the whole contract
+    #     (3 full sentences of `why`; 3-5 remediation OBJECTS each answering WHY COLT / WHAT YOU
+    #     GET / HOW). The shard prompt was 2,462 chars against the serial path's 12,844.
+    # So the shards asked for a vague rewrite with no contract, the model obliged with one short
+    # sentence and a single remediation row, and the deck rendered exactly that: lotto24.de finding
+    # H1 came back with a 38-char `what`, a 259-char `why` and ONE `rem` where the slide has room
+    # for five. Coverage said 100% because every id came back. Presence is not depth.
+    _lang = E.LANG_DE if str(lang).lower().startswith("de") else ""
+    prompt = E.PROMPT % (E._bible(), _lang, json.dumps(sub, ensure_ascii=False)[:14000])
     prompt += ("\n\nYou are enriching a SUBSET of the estate. You MUST return a rewritten object "
-               "for EVERY one of these finding ids, with no omissions: %s\n\nRAW FINDINGS:\n%s"
-               % (", ".join(str(i) for i in ids), json.dumps(sub, ensure_ascii=False)[:14000]))
+               "for EVERY one of these finding ids, with no omissions: %s\n"
+               "Every rule in the bible above applies in full to each of them — 3 sentences of "
+               "`why`, and 3-5 `rem` objects with COLT first." % ", ".join(str(i) for i in ids))
     try:
         # E._call returns (text, usage). Passing the TUPLE to _json() raised
         #     'tuple' object has no attribute 'find'
@@ -98,14 +112,21 @@ def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None):
         # problem in the logs; it was a two-value return being caught in one name.
         raw, _usage = E._call(prompt, model=model, timeout=timeout)
         j = E._json(raw)
+        _out = int((_usage or {}).get("completion_tokens") or 0)
         if not isinstance(j, dict):
             j = {}
         got = {}
         for x in (j.get("findings") or []):
             if isinstance(x, dict) and x.get("id"):
                 got[str(x["id"])] = x
+        _ms = int((time.time() - t0) * 1000)
         return got, {"shard": idx, "ids": ids, "returned": sorted(got),
-                     "ms": int((time.time() - t0) * 1000), "exec": j.get("exec_summary") or "",
+                     # MEASURE THROUGHPUT. Every timeout diagnosis so far has turned on "how many
+                     # tokens per second does this account actually deliver", and we have been
+                     # estimating it. Record it per shard so the next answer is read, not guessed.
+                     "tokens_out": _out, "tok_s": round(_out / max(0.001, _ms / 1000.0), 1),
+                     "model": model or getattr(E, "MODEL", "?"),
+                     "ms": _ms, "exec": j.get("exec_summary") or "",
                      "extra": {k: v for k, v in j.items()
                                if k in ("geopol_context", "strengths", "posture")}}
     except Exception as e:
@@ -137,8 +158,9 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
             got, meta = fut.result()
             merged.update(got)
             metas.append(meta)
-            _log("[enrich-mr]   shard %d: %d/%d ids in %dms%s"
+            _log("[enrich-mr]   shard %d: %d/%d ids in %dms  %s tok out @ %s tok/s (%s)%s"
                  % (meta["shard"], len(meta["returned"]), len(meta["ids"]), meta["ms"],
+                    meta.get("tokens_out", "?"), meta.get("tok_s", "?"), meta.get("model", "?"),
                     "  ERROR: " + meta["error"] if meta.get("error") else ""))
 
     # ---- COVERAGE CONTRACT: retry ONLY the ids nobody returned --------------------------------
@@ -160,7 +182,24 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
                  % (_alt, len(meta["returned"]), len(meta["ids"]),
                     "  ERROR: " + meta["error"] if meta.get("error") else ""))
 
-    rewritten = len(set(merged) & want)
+    # COVERAGE MUST MEASURE DEPTH, NOT PRESENCE. run_assessment already learned this the hard way
+    # and applies a `_depth()` floor to the serial call — but this function reported its own
+    # coverage as "did an id come back", so a shard that returned one thin sentence per finding
+    # scored 100% and the caller stopped worrying. Same rule, same floor, both sides.
+    _min = int(os.environ.get("ENRICH_MIN_CHARS", "420"))
+
+    def _depth(x):
+        n = len(str(x.get("what") or "")) + len(str(x.get("why") or ""))
+        for r in (x.get("rem") or []):
+            n += (len(str(r.get("body") or "")) + len(str(r.get("title") or ""))
+                  if isinstance(r, dict) else len(str(r)))
+        return n
+
+    _thin = sorted(i for i in (set(merged) & want) if _depth(merged[i]) < _min)
+    if _thin:
+        _log("[enrich-mr] %d id(s) came back THIN (<%d chars) and do not count as covered: %s"
+             % (len(_thin), _min, ", ".join(_thin)))
+    rewritten = len((set(merged) & want) - set(_thin))
     cov = rewritten / float(len(want)) if want else 1.0
     report = {"coverage": round(cov, 3), "total": len(want), "rewritten": rewritten,
               "missing": sorted(want - set(merged)), "shards": metas,

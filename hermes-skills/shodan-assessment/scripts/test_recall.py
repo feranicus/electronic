@@ -336,3 +336,39 @@ check("response_format" in _sent, "other models still get response_format=json_o
 _E._post = _saved_post
 check(_E._FALLBACKS[0] == "deepseek-3.2",
       "chain head is the model MEASURED fastest+valid on the real prompt, not the slowest")
+
+print("\n[20] a shard must be sent the CONTRACT, and coverage must measure DEPTH")
+# lotto24.de DE run: coverage said 6/6 = 100%, and finding H1 still shipped a 38-char `what`, a
+# 259-char `why` and ONE remediation row where the slide renders five. Cause: E.PROMPT is a
+# %-FORMAT template (bible, language, findings) and _call_shard CONCATENATED it — so three literal
+# "%s" went to the model and the 10,435-char DELTAS BIBLE was dropped entirely.
+import json as _j3
+_seen = {}
+def _fake_rich(text, model=None, timeout=None, max_tokens=None):
+    _seen["p"] = text
+    return _j3.dumps({"findings": [{"id": i, "what": ["w" * 60], "why": ["y" * 300],
+                                    "rem": [{"tag": "COLT", "title": "t", "body": "b" * 200}] * 3}
+                                   for i in ["H1", "H2"]]}), {"completion_tokens": 3200}
+_sv = _E._call
+_E._call = _fake_rich
+_fj3 = {"target": {"company": "T"},
+        "findings": [{"id": i, "sev": "HIGH", "title": "t", "evidence": ["203.0.113.1:443"]}
+                     for i in ["H1", "H2"]]}
+_P._call_shard(_E, _fj3, _fj3["findings"], "de", 0, "deepseek-3.2", 150)
+check(_E._bible()[:60] in _seen["p"], "the shard prompt carries the DELTAS BIBLE (the rich contract)")
+check(_seen["p"].count("%s") == 0, "no literal '%s' placeholders are sent to the model")
+check(len(_seen["p"]) > 10000, "shard prompt is contract-sized (%d chars, was 2462)" % len(_seen["p"]))
+
+def _fake_thin(text, model=None, timeout=None, max_tokens=None):
+    return _j3.dumps({"findings": [{"id": i, "what": ["short"], "why": ["one sentence."],
+                                    "rem": [{"tag": "COLT", "title": "t", "body": "b"}]}
+                                   for i in ["H1", "H2"]]}), {"completion_tokens": 90}
+_E._call = _fake_thin
+_, _rep3 = _P.run(_fj3, "de")
+check(_rep3["coverage"] == 0.0, "a THIN answer scores 0%% coverage, not 100%% (presence != depth)")
+_E._call = _fake_rich
+_, _rep4 = _P.run(_fj3, "de")
+check(_rep4["coverage"] == 1.0, "a full-depth answer scores 100%")
+check(_rep4["shards"][0].get("tok_s") is not None,
+      "throughput is recorded per shard so the next timeout is read, not guessed")
+_E._call = _sv

@@ -1431,3 +1431,27 @@ The scope fix worked (decks built), but every finding rendered CANNED TEXT: `cov
 Guarded by test_recall.py §19 (shard returns findings · every slice can finish · kimi's payload ·
 chain head). LESSON: "the model failed" is a conclusion, not an observation — check whether the
 request we sent could ever have succeeded.
+
+## The shards were sent a prompt with NO CONTRACT (lotto24.de DE run, 2026-07)
+The tuple fix worked — `COVERAGE 6/6 = 100%` in 33s — and the deck was STILL thin. Measured from
+the delivered .pptx, finding H1: `what` 38 chars (a template sentence), `why` 259 chars (ONE
+sentence; the contract demands three), and ONE `rem` row where the slide renders five.
+ROOT CAUSE: `enrich.PROMPT` is a **%-FORMAT TEMPLATE** with three placeholders
+(bible, language block, findings). The serial path does `PROMPT % (_bible(), lang, slim)` = 12,844
+chars. `enrich_parallel._call_shard` CONCATENATED instead: `E.PROMPT + E.LANG_DE + "..."` = 2,462
+chars — so three literal `%s` were sent to the model AND the entire 10,435-char DELTAS BIBLE (the
+rules that demand 3 sentences of `why` and 3-5 WHY-COLT/WHAT/HOW `rem` objects) was DROPPED. The
+model was asked for a vague rewrite and delivered exactly that.
+FIXES:
+- `_call_shard` now formats the prompt the same way the serial path does, plus the subset clause.
+- **Coverage measures DEPTH, not presence, on BOTH sides.** run_assessment already applied a
+  `_depth()` >= ENRICH_MIN_CHARS floor to the serial call; enrich_parallel scored its own coverage
+  as "did an id come back", so thin shards reported 100% and the caller stopped worrying.
+- Each shard now records `tokens_out` and `tok/s`. Every timeout diagnosis so far has turned on the
+  account's real throughput and we have been estimating it; now it is in the log.
+STILL OPEN (measured, not yet fixed): the MONOLITHIC 6-finding call has now failed 8/8 model
+attempts across two runs (deepseek 175s, kimi 112s, maverick 60s, gemma 60s — twice), while
+3-finding shards succeed in ~30s. The single whole-estate call is too large to complete on this
+endpoint and burns ~407s of every run before the shards rescue it. The fix is to make sharding the
+PRIMARY path and leave the serial chain only the short estate-level prose (exec_summary/strengths).
+Decide it from the new tok/s telemetry rather than from theory.
