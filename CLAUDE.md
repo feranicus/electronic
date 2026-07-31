@@ -1541,3 +1541,23 @@ and remembers a per-user override.
 - cassandra: language is enforced in the SYSTEM PROMPT (`LANG_INSTRUCTION`), not by translating a
   few canned strings — for an LLM assistant, translating the wrapper while every generated answer
   stays English is worse than not translating at all.
+
+## The language toggle only moved the component it lived in (2026-07)
+Symptom, reported from the live site: "when I move to German I need to refresh the page or move to
+contact and only then everything is in german". Same in reverse.
+CAUSE: `useLegalLang()` was a plain `useState`. Every component that called it got its OWN
+independent copy — SiteHeader, Landing, Demo, Privacy and NewAssessment each held a separate piece
+of state seeded from localStorage. Clicking the toggle set the HEADER's copy and re-rendered the
+header; nothing else was subscribed to anything, so nothing else could know. The other components
+only picked up the new value when they happened to REMOUNT, which is exactly what navigating to
+another page or refreshing does. The state was never shared, so there was nothing to notify.
+FIX: ONE module-scope store in legal.jsx (`getLang`/`setLang`/`subscribe`) read through
+**`useSyncExternalStore`** — React's supported way to subscribe to an external mutable source. One
+writer, many readers, all of them re-render on change. No context provider to wrap the tree in, and
+every existing caller of `useLegalLang()` got the fix without being touched.
+Also: `setLang` writes `document.documentElement.lang` (a11y + browser spellcheck), and `subscribe`
+listens for the `storage` event so a SECOND OPEN TAB switches with the first.
+RULE: a value that more than one component renders is APPLICATION state, not component state.
+`useState` inside a shared hook silently gives every caller a private copy — it compiles, it renders,
+and it is wrong only when two components disagree.
+Guarded by an SSR test that flips the store between two renders and asserts BOTH pages changed.

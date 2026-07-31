@@ -5,22 +5,70 @@
 //
 // Language: follows the browser (de* -> German), overridable by the reader, remembered per browser.
 // German is the reference text (German customers, German regulator); English is the translation.
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 const KEY = "cg_legal_lang";
 
-export function useLegalLang() {
-  const [lang, setLangState] = useState(() => {
-    try {
-      const saved = localStorage.getItem(KEY);
-      if (saved === "de" || saved === "en") return saved;
-      return (navigator.language || "en").toLowerCase().startsWith("de") ? "de" : "en";
-    } catch {
-      return "en";
+// ---------------------------------------------------------------------------------------------
+// ONE SHARED LANGUAGE STORE — not per-component state.
+//
+// THE BUG THIS FIXES: `useLegalLang` used to be a plain `useState`. Every component that called it
+// got its OWN independent copy, so clicking Deutsch in the header re-rendered ONLY the header. The
+// landing page, the demo page and the privacy text each still held their own stale state and did
+// not update until they happened to REMOUNT — which is why the language appeared to change only
+// after a refresh or after navigating to another page. The state was never shared, so there was
+// nothing to notify.
+//
+// The store lives at module scope and components subscribe to it via useSyncExternalStore, which is
+// React's supported way to read an external mutable source. One writer, many readers, every one of
+// them re-renders on change — no provider to wrap the tree in, and every existing caller of
+// useLegalLang() gets the fix for free.
+// ---------------------------------------------------------------------------------------------
+function readInitial() {
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved === "de" || saved === "en") return saved;
+    return (navigator.language || "en").toLowerCase().startsWith("de") ? "de" : "en";
+  } catch {
+    return "en";                                   // private mode / SSR
+  }
+}
+
+let _lang = readInitial();
+const _subs = new Set();
+
+function notify() { _subs.forEach((fn) => fn()); }
+
+export function setLang(next) {
+  const v = next === "de" ? "de" : "en";
+  if (v === _lang) return;
+  _lang = v;
+  try { localStorage.setItem(KEY, v); } catch { /* private mode: still works for this session */ }
+  try { document.documentElement.lang = v; } catch { /* SSR */ }
+  notify();
+}
+
+export function getLang() { return _lang; }
+
+function subscribe(fn) {
+  _subs.add(fn);
+  // Keep two open tabs in step: localStorage fires `storage` in the OTHER tabs on write.
+  const onStorage = (e) => {
+    if (e.key === KEY && (e.newValue === "de" || e.newValue === "en") && e.newValue !== _lang) {
+      _lang = e.newValue;
+      notify();
     }
-  });
-  useEffect(() => { try { localStorage.setItem(KEY, lang); } catch { /* private mode */ } }, [lang]);
-  return [lang, setLangState];
+  };
+  try { window.addEventListener("storage", onStorage); } catch { /* SSR */ }
+  return () => {
+    _subs.delete(fn);
+    try { window.removeEventListener("storage", onStorage); } catch { /* SSR */ }
+  };
+}
+
+export function useLegalLang() {
+  const lang = useSyncExternalStore(subscribe, getLang, getLang);
+  return [lang, setLang];
 }
 
 export function LangToggle({ lang, setLang }) {
