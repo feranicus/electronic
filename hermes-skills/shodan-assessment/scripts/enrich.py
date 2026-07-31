@@ -49,7 +49,21 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # this class of mistake cannot reach production again. To adopt a V4 model, run inside the container:
 #     docker exec colt-web python3 /opt/shodan-skill/scripts/model_probe.py --all
 # and use the exact id it prints.
-_FALLBACKS = ["kimi-k2.6", "deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"]
+#
+# KIMI DEMOTED FROM HEAD (lotto24.de, 2026-07) — measured, not preference. On one real run it:
+#   * was rejected outright for `response_format` ("not supported for this model"), costing a round
+#     trip before the 400-retry path even started (now pre-empted by MODEL_PARAMS["kimi"]["_drop"]);
+#   * then consumed its ENTIRE 175s head slice and timed out, three separate times (serial chain,
+#     shard 0, shard 1) — roughly 7.5 minutes of an 18-minute assessment, for zero output;
+#   * and because the head takes 55% of the budget, its failure left deepseek only 112s and the last
+#     two models 60s each, which is less than an 11000-token answer can physically take.
+# The earlier note here predicted Kimi's downside was "bounded" because its failure mode was a fast
+# 400. That prediction was wrong: the 400 is retried transparently and the retry then hangs.
+# It stays in the chain — with the response_format constraint encoded, it may well answer fine — but
+# the head slot belongs to the model MEASURED fastest and contract-valid on the real prompt
+# (deepseek-3.2: 25.0s, valid German, compare_models.py). Put Kimi back with one env var if you
+# want it: ENRICH_MODELS="kimi-k2.6,deepseek-3.2,llama-4-maverick,gemma-4-31B-it".
+_FALLBACKS = ["deepseek-3.2", "kimi-k2.6", "llama-4-maverick", "gemma-4-31B-it"]
 
 # KIMI IS HEAD, and this time on evidence rather than hope. `model_probe.py --model kimi-k2.6`
 # tried six payload shapes and the API answered in one line:
@@ -224,12 +238,19 @@ Fakten, Zahlen, IDs und Nachweise bleiben unveraendert.
 # while being perfectly healthy and entitled. The API said so plainly; we were discarding the error
 # body. Encode the requirement instead of guessing, and keep it next to the call that sends it.
 MODEL_PARAMS = {
-    "kimi": {"temperature": 1.0},          # matches kimi-k2.5 / kimi-k2.6 / kimi-*
+    # matches kimi-k2.5 / kimi-k2.6 / kimi-*
+    #   temperature: the API rejects anything but 1.0 ("temperature must be 1 for this model")
+    #   _drop response_format: lotto24.de logged, verbatim,
+    #       "response_format type 'json_object' is not supported for this model"
+    #     The 400-retry path did recover by re-posting without it, but that costs a whole round trip
+    #     AND the retry then ran with no deadline of its own and hung for the full 175s cap. Encode
+    #     the constraint so the request is right the FIRST time; do not pay to rediscover it.
+    "kimi": {"temperature": 1.0, "_drop": ["response_format"]},
 }
 
 
 def _model_params(model):
-    """Overrides this model REQUIRES, matched on an id prefix."""
+    """Overrides this model REQUIRES, matched on an id prefix. May include `_drop`: [keys]."""
     m = str(model or "").lower()
     for key, over in MODEL_PARAMS.items():
         if m.startswith(key):
@@ -243,7 +264,26 @@ def _post(payload, timeout=None):
     with urllib.request.urlopen(req, timeout=(timeout or TIMEOUT)) as r:
         return json.loads(r.read())
 
-def _call(text, model=None, timeout=None):
+# Measured generation rate on this account (~100 output tokens/second). Used to size a request to
+# the time it is actually given: see _call's max_tokens note.
+TOK_PER_S = int(os.environ.get("ENRICH_TOK_PER_S", "100"))
+
+
+def feasible_max_tokens(seconds, ceiling=11000, floor=2500):
+    """How many output tokens can realistically be generated inside `seconds`.
+
+    THE lotto24.de ARITHMETIC. max_tokens was a flat 11000, which needs ~110s at the measured rate.
+    The chain's per-call floor is 60s. So models 3 and 4 were ALWAYS handed a slice in which the
+    request they were sent could not physically complete — 60s of guaranteed timeout each, twice,
+    burning budget to produce nothing. All four models "failed"; two of them never had a chance.
+
+    Asking for fewer tokens yields shorter prose, which is a real cost — but shorter real prose beats
+    the templated text that a timeout leaves behind, and it beats spending the budget on nothing.
+    """
+    return int(max(floor, min(ceiling, seconds * TOK_PER_S * 0.8)))
+
+
+def _call(text, model=None, timeout=None, max_tokens=None):
     model = model or MODEL
     payload = {"model": model, "messages": [{"role": "user", "content": text}],
                # 6500 TRUNCATED deepseek-3.2 mid-JSON on a 6-finding estate (finish_reason=length
@@ -256,7 +296,14 @@ def _call(text, model=None, timeout=None):
                                            # deck past the per-call budget.
                "response_format": {"type": "json_object"},
                "chat_template_kwargs": {"enable_thinking": False}}
-    payload.update(_model_params(model))     # e.g. Kimi demands temperature == 1
+    if max_tokens:
+        payload["max_tokens"] = int(max_tokens)
+    elif timeout:
+        payload["max_tokens"] = feasible_max_tokens(timeout)
+    _over = _model_params(model)             # e.g. Kimi demands temperature == 1
+    for _k in _over.pop("_drop", []):        # ...and rejects response_format outright
+        payload.pop(_k, None)
+    payload.update(_over)
     try:
         d = _post(payload, timeout)
     except urllib.error.HTTPError as e:
@@ -464,8 +511,17 @@ def enrich(fj, lang="en"):
         per_call = int(max(60, min(TIMEOUT, left * share)))
         if left < 30:
             last = last or "budget exhausted"; break
+        # SIZE THE REQUEST TO THE SLICE. A flat max_tokens=11000 needs ~110s at the measured rate,
+        # while the floor above hands out 60s — so on lotto24.de models 3 and 4 were each issued a
+        # request that could not physically finish, and each burned its whole 60s timing out. Two of
+        # the four "model failures" in that run were arithmetic, not models.
+        _mt = feasible_max_tokens(per_call)
+        if _mt < 11000:
+            print("[enrich] %s: %ds slice -> max_tokens %d (a full 11000-token answer needs ~%ds)"
+                  % (model, per_call, _mt, 11000 // max(1, TOK_PER_S)), file=sys.stderr)
         try:
-            t = time.time(); content, usage = _call(prompt, model, per_call); j = _json(content)
+            t = time.time()
+            content, usage = _call(prompt, model, per_call, max_tokens=_mt); j = _json(content)
             ti = int(usage.get("prompt_tokens", 0)); to = int(usage.get("completion_tokens", 0))
             _ok, _why_bad = _contract_ok(j, to)
             if not _ok:

@@ -291,3 +291,48 @@ for _o in ("NORDRHEINISCHE AERZTEVERSORGUNG", "FACT Informationssysteme und Cons
           "S18 co-tenant: %s does NOT corroborate -> dropped from the shared /24" % _o[:28])
 
 print("=" * 78)
+
+# ---------------------------------------------------------------------------------------------
+print("\n[19] enrichment must be ABLE to answer: the lotto24.de 0%-coverage failure")
+# The deck was pure template text because all four models 'failed'. Two of them never had a chance,
+# and the map-reduce top-up had never worked at all. Guard each cause.
+import os as _os
+_os.environ.setdefault("OPENAI_API_KEY", "test")
+import enrich as _E, enrich_parallel as _P, json as _json2
+
+# (a) THE SHARD CRASH. _call returns (text, usage); the shard fed the whole TUPLE to _json(),
+#     raising "'tuple' object has no attribute 'find'" on every shard, every run, silently.
+_saved_call = _E._call
+_E._call = lambda t, model=None, timeout=None, max_tokens=None: (
+    _json2.dumps({"exec_summary": "s" * 120,
+                  "findings": [{"id": i, "what": ["w"], "why": ["y" * 120],
+                                "rem": [{"tag": "COLT", "title": "t", "body": "b" * 120}]}
+                               for i in ["A1", "A2"]]}), {"completion_tokens": 800})
+_fjs = {"target": {"company": "T"},
+        "findings": [{"id": i, "sev": "HIGH", "title": "t", "evidence": ["203.0.113.9:443"]}
+                     for i in ["A1", "A2"]]}
+_g, _m = _P._call_shard(_E, _fjs, _fjs["findings"], "en", 0, "deepseek-3.2", 120)
+check(len(_g) == 2 and not _m.get("error"),
+      "a map-reduce shard returns findings instead of 'tuple object has no attribute find'")
+_E._call = _saved_call
+
+# (b) THE ARITHMETIC. A request must fit the slice it is given. max_tokens was a flat 11000
+#     (~110s at the measured rate) while the per-call floor hands out 60s -> guaranteed timeout.
+for _s in (60, 112, 175):
+    _mt = _E.feasible_max_tokens(_s)
+    check(_mt / _E.TOK_PER_S <= _s,
+          "a %ds slice asks for %d tokens (~%ds) - it can actually finish" % (_s, _mt, _mt // _E.TOK_PER_S))
+
+# (c) PER-MODEL CONSTRAINTS ARE ENCODED, not rediscovered by paying for a 400 every call.
+_sent = {}
+_saved_post = _E._post
+_E._post = lambda p, timeout=None: (_sent.clear() or _sent.update(p) or
+    {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}], "usage": {}})
+_E._call("x", model="kimi-k2.6", timeout=120)
+check("response_format" not in _sent and _sent.get("temperature") == 1.0,
+      "kimi is sent temperature=1.0 and NO response_format (the API rejects it)")
+_E._call("x", model="deepseek-3.2", timeout=120)
+check("response_format" in _sent, "other models still get response_format=json_object")
+_E._post = _saved_post
+check(_E._FALLBACKS[0] == "deepseek-3.2",
+      "chain head is the model MEASURED fastest+valid on the real prompt, not the slowest")

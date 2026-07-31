@@ -1399,3 +1399,35 @@ Guarded by test_run_path.py (the lotto24 section). NOTE the test bug this expose
 `shodan` returned every record for EVERY query, so the identity sweep already held the junk and a
 per-pivot assertion measured nothing — `_install_routing_shodan()` routes by query substring. A fake
 that cannot tell the queries apart cannot test a per-query rule.
+
+## lotto24.de round 2 — 0% enrichment coverage, 18 minutes, a template deck (2026-07)
+The scope fix worked (decks built), but every finding rendered CANNED TEXT: `coverage 0/6 = 0%`,
+`qwen_used: false`, `total_ms 1119415`. FOUR independent faults, none of them "the model was bad":
+
+1. **The map-reduce top-up had NEVER worked, in any run.** `enrich._call()` returns `(text, usage)`;
+   `enrich_parallel._call_shard` did `raw = E._call(prompt)` and handed the TUPLE to `_json()`:
+       'tuple' object has no attribute 'find'
+   Every shard errored, every time, and the log blamed a model. FIX: `raw, _usage = E._call(...)`.
+   A two-value return caught in one name is invisible until something calls a string method.
+2. **Two of the four "model timeouts" were ARITHMETIC.** `max_tokens` is 11000 = ~110s at the
+   measured ~100 tok/s, while the chain's per-call FLOOR is 60s. So models 3 and 4 were each issued
+   a request that could not physically complete, and each burned its full 60s failing.
+   FIX: `feasible_max_tokens(seconds)` sizes the request to the slice it was given (60s -> 4800 tok).
+   Shorter real prose beats template text, and it beats spending the budget on nothing.
+   RULE: never issue a request whose completion time exceeds its own timeout.
+3. **Kimi was rejected for `response_format` and then hung.** The API said, verbatim,
+   "response_format type 'json_object' is not supported for this model". The 400-retry recovered but
+   cost a round trip, and the retry then consumed the whole 175s head slice — three times over
+   (serial chain + both shards) = ~7.5 min of an 18-min run for zero output. FIX: `MODEL_PARAMS`
+   gained `_drop`, so kimi is never SENT response_format. Encode a known constraint; do not pay a
+   400 every call to rediscover it.
+4. **Kimi DEMOTED from head** — on evidence, reversing the earlier "its downside is bounded" note,
+   which was wrong: the fast 400 is retried transparently and the retry hangs. Head is now
+   `deepseek-3.2` (measured 25.0s, contract-valid, good German on the REAL prompt). Kimi stays in
+   the chain. Restore it with ENRICH_MODELS if a future probe justifies it.
+   Also: shards inherited `E.MODEL` (the head) with NO failover, so the top-up hit the identical
+   wall the serial chain had just hit — `_call_shard` now takes an explicit model and the targeted
+   retry uses a DIFFERENT one.
+Guarded by test_recall.py §19 (shard returns findings · every slice can finish · kimi's payload ·
+chain head). LESSON: "the model failed" is a conclusion, not an observation — check whether the
+request we sent could ever have succeeded.

@@ -75,8 +75,13 @@ def shard(findings, size=SHARD_SIZE):
     return [b for b in buckets if b]
 
 
-def _call_shard(E, fj, batch, lang, idx):
-    """One map task: full contract, but only this batch's findings. Returns (dict_by_id, meta)."""
+def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None):
+    """One map task: full contract, but only this batch's findings. Returns (dict_by_id, meta).
+
+    `model` is explicit because the shards used to inherit E.MODEL — the HEAD of the chain — with no
+    failover of any kind. On lotto24.de the head was a model that could not answer at all, so all
+    three top-up attempts hit exactly the same wall the serial chain had just hit.
+    """
     sub = dict(fj)
     sub["findings"] = batch
     ids = [f.get("id") for f in batch]
@@ -86,7 +91,12 @@ def _call_shard(E, fj, batch, lang, idx):
                "for EVERY one of these finding ids, with no omissions: %s\n\nRAW FINDINGS:\n%s"
                % (", ".join(str(i) for i in ids), json.dumps(sub, ensure_ascii=False)[:14000]))
     try:
-        raw = E._call(prompt)
+        # E._call returns (text, usage). Passing the TUPLE to _json() raised
+        #     'tuple' object has no attribute 'find'
+        # inside every shard, so the map-reduce top-up has NEVER once succeeded — it reported
+        # "0/3 ids ... ERROR" and the deck fell back to template text. It looked like a model
+        # problem in the logs; it was a two-value return being caught in one name.
+        raw, _usage = E._call(prompt, model=model, timeout=timeout)
         j = E._json(raw)
         if not isinstance(j, dict):
             j = {}
@@ -114,9 +124,15 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
     _log("[enrich-mr] %d finding(s) -> %d shard(s) of <=%d, %d worker(s)"
          % (len(findings), len(batches), shard_size, workers))
 
+    # A shard is SMALL (<= shard_size findings), so it needs far less wall-clock than the monolithic
+    # call — give it a cap that is actually achievable rather than inheriting the chain's.
+    _per = int(os.environ.get("ENRICH_SHARD_TIMEOUT", "150"))
+    _chain = list(getattr(E, "MODELS", None) or [getattr(E, "MODEL", None)])
+
     merged, metas = {}, []
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(batches)))) as pool:
-        futs = {pool.submit(_call_shard, E, fj, b, lang, i): i for i, b in enumerate(batches)}
+        futs = {pool.submit(_call_shard, E, fj, b, lang, i, _chain[0], _per): i
+                for i, b in enumerate(batches)}
         for fut in as_completed(futs):
             got, meta = fut.result()
             merged.update(got)
@@ -132,10 +148,17 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
         _log("[enrich-mr] %d finding(s) not rewritten -> targeted retry: %s"
              % (len(missing), ", ".join(missing)))
         retry = [f for f in findings if str(f["id"]) in set(missing)]
-        for b in shard(retry, max(1, shard_size - 1)):
-            got, meta = _call_shard(E, fj, b, lang, 900)
+        # FAIL OVER TO A DIFFERENT MODEL on the retry. Re-asking the model that just failed to answer
+        # is not a retry, it is the same call again — which is precisely what produced three
+        # identical failures on lotto24.de. A different vendor does not share the failure domain.
+        for _bi, b in enumerate(shard(retry, max(1, shard_size - 1))):
+            _alt = _chain[min(_bi + 1, len(_chain) - 1)] if len(_chain) > 1 else _chain[0]
+            got, meta = _call_shard(E, fj, b, lang, 900 + _bi, _alt, _per)
             merged.update(got)
             metas.append(meta)
+            _log("[enrich-mr]   retry via %s: %d/%d ids%s"
+                 % (_alt, len(meta["returned"]), len(meta["ids"]),
+                    "  ERROR: " + meta["error"] if meta.get("error") else ""))
 
     rewritten = len(set(merged) & want)
     cov = rewritten / float(len(want)) if want else 1.0
