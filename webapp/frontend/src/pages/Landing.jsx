@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import TabBar from "../components/TabBar.jsx";
+import WhatsAppFab from "../components/WhatsAppFab.jsx";
 
 export default function Landing() {
   const rootRef = useRef(null);
@@ -86,7 +87,7 @@ export default function Landing() {
     }
 
     const CONV = [
-      { s: "me", t: "/auth WhatsApp +351 939 994 642 ********", cmd: "/auth" },
+      { s: "me", t: "/auth anna.schmidt@yourcompany.com ********", cmd: "/auth" },
       { s: "them", typ: 900, t: "Code emailed. Reply /verify <code> (valid 10 min)." },
       { s: "me", t: "/verify 483920", cmd: "/verify" },
       { s: "them", typ: 700, t: "Verified. You're in." },
@@ -311,6 +312,7 @@ export default function Landing() {
 
   return (
     <div ref={rootRef}>
+      <WhatsAppFab />
       <header id="hd"><div className="wrap">
         <span className="brand"><span className="chev">❯</span> cybergod<span class="g">.ai</span></span>
         <nav>

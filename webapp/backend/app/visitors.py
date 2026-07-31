@@ -32,7 +32,7 @@ Env:
   VISIT_DEDUPE_S=21600            one alert per visitor per this many seconds (default 6h)
   VISIT_MAX_PER_HOUR=30           hard cap on visit alerts per hour
 """
-import os, time
+import os, re, time
 from collections import deque
 
 try:
@@ -96,8 +96,26 @@ p{color:#93a9ce;margin:10px 0 0;font-size:16px}
 b{color:#00B2A9;font-weight:800}
 </style></head><body><div>
 <h1>404</h1><p>This page could not be found.</p>
-<p style="margin-top:18px;font-size:14px"><b>&#10095; colt</b></p>
+<p style="margin-top:18px;font-size:14px"><b>&#10095; cybergod.ai</b></p>
 </div></body></html>"""
+
+
+def _probe_path(path):
+    """True when the PATH itself is scanner behaviour, whatever the user agent claims.
+
+    Deliberately independent of main.py's `_is_probe`: this module must keep working if it is ever
+    imported without the app, and the rule here is narrower on purpose — it only has to be right
+    about paths a HUMAN would never request, because the only consequence is suppressing an alert.
+    """
+    p = str(path or "/").lower()
+    if p.startswith("/.well-known/"):
+        return False
+    if re.search(r"(?:^|/)\.[^/]", p):        # /.svn /.git /.env /.aws /.ssh — dot-directories
+        return True
+    return any(h in p for h in (
+        ".php", ".asp", ".jsp", ".cgi", ".sql", ".bak", ".db", ".sqlite", ".pem", ".key",
+        "wp-", "wordpress", "phpmyadmin", "xmlrpc", "cgi-bin", "adminer", "actuator",
+        "struts", "vendor/", "id_rsa", "credentials", "backup", "dump", "/null"))
 
 
 def _key(ip, cls):
@@ -118,6 +136,14 @@ def note_visit(ev, cls):
             return                                   # errors are the alert engine's business
         if ev.get("user"):
             return                                   # signed-in people already trigger a login alert
+        # CLASSIFY BY PATH, NOT ONLY BY USER AGENT. A scanner asked for /.svn/wc.db while
+        # announcing itself as "Safari / iOS / mobile", so the UA-based bot check passed it through
+        # and the alert claimed a person had arrived — on a path no person has ever typed. A user
+        # agent is attacker-controlled; the path they asked for is the actual evidence.
+        if _probe_path(path):
+            notify._log(evt="visit_suppressed", reason="probe path (spoofed UA)",
+                        ip=ev.get("ip", "-"), path=path, ua=(ev.get("ua") or "")[:120])
+            return
         ip = ev.get("ip", "-")
         now = time.time()
         k = _key(ip, cls)

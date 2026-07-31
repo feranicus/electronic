@@ -604,6 +604,8 @@ def do_tests():
             (os.path.join(_fe, "public", "manifest.webmanifest"), "html"),  # phone home screen
             (os.path.join(HERE, "assess-bot", "bot.py"), "py"),           # Telegram
             (os.path.join(HERE, "cassandra-bot", "cassandra_bot.py"), "py"),
+            # the 404 page every scanner AND every mistyped URL lands on
+            (os.path.join(HERE, "webapp", "backend", "app", "visitors.py"), "py"),
         ]
         # Infrastructure identifiers legitimately keep the old name (log paths, the auth-store key,
         # the shared auth module, container/volume names). They are never shown to a user.

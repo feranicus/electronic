@@ -1483,3 +1483,33 @@ the Caddy block and every Grafana query for zero customer benefit.
   the instruction that made the assistant describe itself as Colt in every reply.
 - Marketing (`marketing/*.md`, the release GIF) carries Cybergod LLC · S4Biz Group and
   WhatsApp +351 939 994 642. The access gate no longer mentions employees of anyone.
+
+## The dot-directory scanner gap + WhatsApp as a real channel (2026-07)
+**THE LEAK.** A scanner asked for `/.svn/wc.db` and got **200**, then triggered a "a person just
+opened cybergod.ai" alert. Two independent defects:
+1. `_is_probe` looked for the substring `"/."` AFTER `strip("/")` had removed the leading slash, so
+   `.svn/wc.db` never matched. `.aws/credentials` and `.ssh/id_rsa` leaked identically — the three
+   highest-value paths a scanner asks for (source, cloud keys, private keys). FIX: `_DOTSEG`
+   matches any path SEGMENT starting with a dot; `/.well-known/` is the one exemption (ACME,
+   security.txt). Extra hints added: .db .sqlite .pem .key id_rsa credentials backup dump.
+2. **The visitor alert trusted the USER AGENT.** The scanner announced itself as "Safari / iOS /
+   mobile", so the UA-based bot check passed and the alert claimed a human had arrived — on a path
+   no human has ever typed. RULE: a user agent is ATTACKER-CONTROLLED; the path they requested is
+   the evidence. `visitors._probe_path()` now suppresses the alert by PATH regardless of UA, and
+   logs `visit_suppressed reason="probe path (spoofed UA)"` so the sighting is still queryable.
+Deliberately NOT added: IP blocking or firewall rules. Amnezia VPN shares this host and the standing
+rule is detection-only. The 404 + AbuseIPDB (opt-in) remain the response; Cloudflare WAF is the
+documented next step if volume justifies it.
+NOTE: `/null` in the logs is OUR bug class, not an attack — referrer was our own /login. It is now
+classified as a probe so it stops paging, but if it recurs from real browsers, find the null href.
+
+**WHATSAPP.** `OPERATOR.whatsapp` (wa.me deep link) joins email/LinkedIn/Telegram/GitHub as a
+first-class channel: a card on /contact (listed FIRST — shortest time-to-reply), a prefilled deep
+link on /demo, and `WhatsAppFab` — a floating button on the public pages. The FAB exists because the
+phone tab bar already holds six items and a seventh makes every target too small; contact is an
+ACTION, not a place. Before it, the installed PWA had NO way to contact anyone at all. It clears the
+tab bar with `bottom: calc(76px + env(safe-area-inset-bottom))`.
+**A BLIND SUBSTITUTION BUG WORTH REMEMBERING:** the Colt rebrand replaced the email address inside
+`href={`mailto:${CONTACT}...`}` with the string "WhatsApp +351 939 994 642", producing
+`mailto:WhatsApp +351...` — a dead link — and mangled the Telegram demo's `/auth` line the same way.
+Search-and-replace across code must be verified on the RENDERED output, which is how both were found.

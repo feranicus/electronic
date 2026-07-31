@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import WhatsAppFab from "../components/WhatsAppFab.jsx";
 
 /* Public DEMO — "Trojan Empire".
  *
@@ -13,7 +14,9 @@ import { Link } from "react-router-dom";
  *  - the company does not exist, and no real organisation is named anywhere on the page.
  */
 
-const CONTACT = "WhatsApp +351 939 994 642";
+const WHATSAPP     = "https://wa.me/351939994642";
+const WHATSAPP_TEXT = "Hi — I sell cyber security and I would like access to cybergod.ai.";
+const CONTACT      = "WhatsApp +351 939 994 642";
 
 /* The hero: a short Cassandra film, not an illustration.
  *
@@ -93,6 +96,7 @@ export default function Demo() {
 
   return (
     <div className="demo-page">
+      <WhatsAppFab />
       {/* ---------- hero: the horse, then the creed ---------- */}
       <section className="demo-hero">
         <div className="wrap">
@@ -235,7 +239,8 @@ export default function Demo() {
           <p>
             If you sell cyber security and would like access, get in touch:
           </p>
-          <a className="demo-mail" href={`mailto:${CONTACT}?subject=cybergod.ai%20access%20request`}>
+          <a className="demo-mail" href={`${WHATSAPP}?text=${encodeURIComponent(WHATSAPP_TEXT)}`}
+             target="_blank" rel="noreferrer">
             {CONTACT}
           </a>
           <p className="demo-warn-sub">

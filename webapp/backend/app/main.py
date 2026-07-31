@@ -855,8 +855,19 @@ if (_DIST / "assets").is_dir():
 _APP_ROUTES = {"", "login", "app", "privacy", "impressum", "contact", "demo"}
 _PROBE_HINT = (".php", ".asp", ".aspx", ".jsp", ".cgi", ".env", ".git", ".sql", ".bak", ".old",
                ".zip", ".tar", ".gz", ".yml", ".yaml", ".ini", ".conf", ".sh", ".py", ".rb",
+               ".db", ".sqlite", ".pem", ".key", ".log", ".swp", ".htpasswd",
                "wp-", "wordpress", "phpmyadmin", "xmlrpc", "vendor/", "cgi-bin", "shell",
-               "adminer", "solr", "actuator", "struts", "/.")
+               "adminer", "solr", "actuator", "struts", "config.json", "credentials",
+               "id_rsa", "backup", "dump")
+
+# THE DOT-DIRECTORY GAP (found in production, 2026-07). A scanner asked for `/.svn/wc.db` and got
+# 200 — because the old rule looked for the substring "/." while `strip("/")` had already removed
+# the LEADING slash, so ".svn/wc.db" never matched. `.aws/credentials` and `.ssh/id_rsa` leaked the
+# same way. These are the highest-value paths a scanner asks for: a readable .svn or .git working
+# copy leaks SOURCE, .aws leaks cloud keys, .ssh leaks private keys.
+# Any path SEGMENT beginning with a dot is a probe. We serve no dotfiles; /.well-known is exempt
+# because ACME and security.txt legitimately live there.
+_DOTSEG = re.compile(r"(?:^|/)\.[^/]")
 
 
 def _is_probe(path: str) -> bool:
@@ -866,6 +877,10 @@ def _is_probe(path: str) -> bool:
     root = p.split("/", 1)[0]
     if root in _APP_ROUTES:
         return False
+    if p.startswith(".well-known/"):
+        return False
+    if _DOTSEG.search("/" + p):
+        return True
     return any(h in p for h in _PROBE_HINT)
 
 
@@ -887,7 +902,7 @@ def spa(full_path: str):
         return FileResponse(str(index))
     # tolerate dist/ being absent during dev
     return HTMLResponse(
-        "<h1>Colt Cyber Pre-Sales</h1>"
+        "<h1>cybergod.ai</h1>"
         "<p>Frontend build not found (webapp/frontend/dist). The API is live under /api/.</p>",
         status_code=200,
     )

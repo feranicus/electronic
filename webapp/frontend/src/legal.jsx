@@ -93,6 +93,10 @@ export const OPERATOR = {
   // --- contact channels (verified from jev.best) ---
   linkedin: "https://www.linkedin.com/in/feranicus",
   telegram: "https://t.me/feranicus",
+  // WhatsApp deep link. wa.me wants the number in INTERNATIONAL form with no +, spaces or dashes;
+  // `whatsappLabel` is the human-readable version shown on the page.
+  whatsapp: "https://wa.me/351939994642",
+  whatsappLabel: "+351 939 994 642",
   github:   "https://github.com/feranicus",
 };
 export const operatorReady = () =>
@@ -157,6 +161,7 @@ export const CONTACT = {
     lead: "Fragen zum Zugang, zu einer Analyse, zum Datenschutz oder zur Partnerschaft? Schreiben Sie direkt.",
     email: "E-Mail", emailD: "Für Zugang, Datenschutz­anfragen und alles Geschäftliche. Antwort in der Regel am selben Arbeitstag.",
     li: "LinkedIn", liD: "Der schnellste Weg für eine berufliche Kontaktaufnahme.",
+    wa: "WhatsApp", waD: "Der schnellste Weg. Direkt aufs Handy, Antwort meist binnen Minuten.",
     tg: "Telegram", tgD: "Direktnachricht — dieselbe Plattform, auf der auch die Assessment-Bots laufen.",
     gh: "GitHub", ghD: "Technischer Hintergrund und Projekte.",
     access: "Zugang anfragen",
@@ -168,6 +173,7 @@ export const CONTACT = {
     lead: "Questions about access, an assessment, data protection or partnering? Get in touch directly.",
     email: "Email", emailD: "For access, data-protection requests and anything commercial. Usually answered the same working day.",
     li: "LinkedIn", liD: "The fastest route for a professional introduction.",
+    wa: "WhatsApp", waD: "The fastest route. Straight to my phone, usually answered within minutes.",
     tg: "Telegram", tgD: "Direct message — the same platform the assessment bots run on.",
     gh: "GitHub", ghD: "Technical background and projects.",
     access: "Request access",
