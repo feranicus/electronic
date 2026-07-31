@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 /* Public DEMO — "Trojan Empire".
@@ -15,90 +15,66 @@ import { Link } from "react-router-dom";
 
 const CONTACT = "jevgenijs.vainsteins@colt.net";
 
-/* The third avatar: a flat 2D wooden Trojan horse on a wheeled cart.
+/* The hero: a short Cassandra film, not an illustration.
  *
- * Drawn as SOLID SHAPES, not outlines: an earlier attempt traced a naturalistic horse with hand-
- * tuned beziers and produced a blob. Flat geometry (a barrel, a tapered neck slab, a rotated
- * capsule head, triangular ears, post legs, a plank cart) reads unmistakably at any size and suits
- * the subject — the thing in the story was a carpentered object, not an animal.
+ * It replaces a hand-drawn Trojan horse that never read as a horse at any size. A ten-second shot
+ * of Cassandra on the walls of Troy carries the idea the page is actually about — a warning nobody
+ * acted on — and does it without asking the viewer to decode a logo.
  *
- * DRAW ORDER IS LOAD-BEARING: the neck is painted BEFORE the body so the body's smooth back edge
- * cuts the join. Trying to hand-fit that corner left a sharp fin every time; letting the body
- * overlap it is exact by construction.
- *
- * Inline SVG, no asset pipeline, no gradients — it inherits the page palette and stays crisp on a
- * phone, a 5K display and a print stylesheet alike.
+ * Playback rules, all of them forced by how browsers and people actually behave:
+ *  - MUTED is mandatory for autoplay. Every current browser blocks audible autoplay, and a hero
+ *    that silently fails to start is worse than no hero. The film carries real audio, so there is
+ *    an explicit sound toggle for anyone who wants it — chosen by the visitor, never sprung on them.
+ *  - playsInline stops iOS hijacking the page into the native fullscreen player.
+ *  - A POSTER covers the first paint, so a slow connection shows the opening frame instead of a
+ *    black box; if the file fails outright the poster simply stays, and the page still reads.
+ *  - prefers-reduced-motion is respected: those visitors get the still frame and no autoplay.
+ *    Motion sensitivity is an accessibility requirement, not a preference to override.
  */
-function TrojanHorse() {
-  const T = "#12726b";          // wood body
-  const E = "#00B2A9";          // teal edge
-  const D = "#0d564f";          // cart / shadowed wood
-  const INK = "#0a1526";        // page background, used for the wheel voids
-  const GOLD = "#F7C844";
+function CassandraFilm() {
+  const reduced = typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false;
+  const ref = useRef(null);
+  const [muted, setMuted] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  function toggleSound() {
+    const v = ref.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setMuted(v.muted);
+    if (!v.muted && v.paused) v.play().catch(() => {});
+  }
+
+  if (failed) {
+    return (
+      <div className="cass-film">
+        <img src="/media/cassandra-poster.jpg" alt="Cassandra on the walls of Troy" />
+      </div>
+    );
+  }
   return (
-    <svg className="th-avatar" viewBox="0 0 440 380" role="img"
-         aria-label="A wooden Trojan horse standing on a wheeled cart">
-      <g stroke={E} strokeWidth="3" strokeLinejoin="round">
-        {/* tail */}
-        <path d="M118 138 C84 146,54 182,50 226 C47 254,58 278,76 292
-                 C74 268,72 240,78 214 C86 178,104 156,130 150 Z" fill="#0f6259"/>
-        {/* legs — same tone as the barrel, or they sink into the cart and read as slats */}
-        <g fill={T}>
-          <rect x="112" y="188" width="31" height="80" rx="4"/>
-          <rect x="153" y="188" width="31" height="80" rx="4"/>
-          <rect x="231" y="188" width="31" height="80" rx="4"/>
-          <rect x="271" y="188" width="31" height="80" rx="4"/>
-        </g>
-        {/* neck (before the body — see the note above) */}
-        <path d="M240 182 L306 42 L330 96 L322 182 Z" fill={T}/>
-        {/* barrel: withers higher than the croup, rounded rump, soft belly */}
-        <path d="M92 180 C92 148,104 132,130 128
-                 C170 138,214 140,252 130
-                 C278 123,302 132,311 156
-                 L313 196 C313 214,300 224,284 224
-                 C230 230,170 230,118 224 C100 222,92 212,92 196 Z" fill={T}/>
-        {/* ears */}
-        <path d="M304 40 L296 4 L322 30 Z" fill={T}/>
-        <path d="M326 28 L342 2 L344 38 Z" fill={T}/>
-        {/* head */}
-        <g transform="rotate(20 352 80)">
-          <rect x="306" y="55" width="92" height="50" rx="21" fill={T}/>
-        </g>
-      </g>
-
-      {/* mane, as strokes rather than a slab — a slab turns the neck into a plank */}
-      <g stroke="#0b4a45" strokeWidth="7" strokeLinecap="round" opacity=".8">
-        <path d="M272 120 l20 7"/><path d="M285 95 l20 7"/><path d="M297 70 l20 7"/>
-      </g>
-      {/* plank seams: it is a wooden horse and the carpentry is the whole point */}
-      <g stroke={E} strokeWidth="1.7" opacity=".32" fill="none">
-        <path d="M104 158 H300"/><path d="M96 186 H306"/>
-      </g>
-
-      {/* the cart */}
-      <g stroke={E} strokeWidth="3" strokeLinejoin="round">
-        <rect x="90" y="266" width="230" height="21" rx="4" fill={D}/>
-        <rect x="106" y="287" width="18" height="12" fill={D}/>
-        <rect x="288" y="287" width="18" height="12" fill={D}/>
-        <circle cx="148" cy="315" r="33" fill={INK}/>
-        <circle cx="266" cy="315" r="33" fill={INK}/>
-      </g>
-      <g stroke={E} strokeWidth="2" opacity=".85">
-        <path d="M115 315h66M148 282v66M125 292l46 46M125 338l46-46"/>
-        <path d="M233 315h66M266 282v66M243 292l46 46M243 338l46-46"/>
-      </g>
-      <circle cx="148" cy="315" r="7" fill={E}/><circle cx="266" cy="315" r="7" fill={E}/>
-
-      {/* eye, nostril, mouth */}
-      <circle cx="352" cy="76" r="5" fill={GOLD}/>
-      <circle cx="392" cy="108" r="3.4" fill={INK} opacity=".8"/>
-      <path d="M378 122 l16 6" stroke={INK} strokeWidth="2.6" opacity=".5" fill="none"/>
-
-      {/* the hidden door — the reason anyone remembers the horse */}
-      <rect x="150" y="152" width="54" height="54" rx="4" fill={INK} stroke={GOLD} strokeWidth="3"/>
-      <path d="M150 179 h54" stroke={GOLD} strokeWidth="1.8" opacity=".6"/>
-      <circle cx="195" cy="179" r="2.8" fill={GOLD}/>
-    </svg>
+    <div className="cass-film">
+      <video
+        ref={ref}
+        src="/media/cassandra.mp4"
+        poster="/media/cassandra-poster.jpg"
+        autoPlay={!reduced}
+        loop
+        muted
+        playsInline
+        preload="metadata"
+        controls={reduced}
+        onError={() => setFailed(true)}
+        aria-label="Cassandra on the walls of Troy"
+      />
+      {!reduced && (
+        <button type="button" className="cass-sound" onClick={toggleSound}
+                aria-label={muted ? "Turn sound on" : "Turn sound off"}>
+          {muted ? "\u266A  Sound off" : "\u266A  Sound on"}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -120,7 +96,7 @@ export default function Demo() {
       {/* ---------- hero: the horse, then the creed ---------- */}
       <section className="demo-hero">
         <div className="wrap">
-          <TrojanHorse />
+          <CassandraFilm />
           <div className="creed-kick">The name is not an accident</div>
           <blockquote className="creed-q">
             <span className="l1">Cassandra foretold the fall of Troy &mdash; and no one believed her.</span>

@@ -137,6 +137,9 @@ deliverables — built by the real deck builders — for a **fictional** company
   `python ship.py` fails the deploy if a non-documentation address ever appears in the fixture.
 * **Labelled everywhere.** The page, the slides and the animated HTML all state that the data is
   fabricated — the artifacts get forwarded, so the notice travels inside them.
+* **Hero.** A 10-second Cassandra film (`webapp/frontend/public/media/cassandra.mp4`, committed,
+  faststart) plays muted-and-looping above the creed, with a sound toggle. Replace it by dropping in
+  a new file of the same name; `python ship.py` verifies it exists and is faststart.
 * **Access.** Live assessments against a real estate stay restricted to Colt employees and Colt
   Partners: contact **jevgenijs.vainsteins@colt.net**.
 

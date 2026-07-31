@@ -530,6 +530,40 @@ def do_tests():
     if not demo_ok:
         sys.exit("[X] public demo failed its smoke (build / documentation-IPs / fabrication notice)")
 
+    # c''''') The /demo HERO FILM. Demo.jsx hard-codes /media/cassandra.mp4 and its poster. A missing
+    #         binary is invisible to vite (it copies public/ verbatim and never validates references)
+    #         and invisible to the SSR render (the src is just a string) — the failure only shows up
+    #         as a black hero in a customer's browser. So assert the files exist, are non-trivial,
+    #         and that every /media/ path the page references is actually present in public/.
+    _refs = []
+    try:
+        _fe = os.path.join(HERE, "webapp", "frontend")
+        _dj = open(os.path.join(_fe, "src", "pages", "Demo.jsx"), encoding="utf-8").read()
+        _refs = sorted(set(re.findall(r'"(/media/[^"]+)"', _dj)))
+        media_ok = bool(_refs)
+        for _r in _refs:
+            _p = os.path.join(_fe, "public", _r.lstrip("/").replace("/", os.sep))
+            _sz = os.path.getsize(_p) if os.path.exists(_p) else 0
+            if _sz < 10000:
+                media_ok = False
+                print("    !! %s missing or truncated (%d bytes)" % (_r, _sz))
+        # faststart: the moov atom must precede mdat or the browser buffers the whole file before
+        # the first frame. `ffmpeg -movflags +faststart` puts it first; verify, do not assume.
+        _mp4 = os.path.join(_fe, "public", "media", "cassandra.mp4")
+        if media_ok and os.path.exists(_mp4):
+            _hd = open(_mp4, "rb").read(65536)
+            _mv, _md = _hd.find(b"moov"), _hd.find(b"mdat")
+            if _mv < 0 or (0 <= _md < _mv):
+                media_ok = False
+                print("    !! cassandra.mp4 is not faststart (moov=%d mdat=%d) — re-run "
+                      "ffmpeg -movflags +faststart" % (_mv, _md))
+    except Exception as _e:
+        media_ok = False; print("    demo media smoke error: %r" % _e)
+    print("  /demo hero film present + faststart (%d ref(s)): %s"
+          % (len(_refs), "OK" if media_ok else "BROKEN"))
+    if not media_ok:
+        sys.exit("[X] /demo hero media missing, truncated, or not faststart")
+
     # c) the unit suite. Bootstrap the runner if it is missing — "pytest not installed" is a setup
     #    gap, not a reason to hand the operator a second command. A failing TEST blocks the ship;
     #    a missing test RUNNER we fix ourselves and, if we cannot, warn loudly and continue.

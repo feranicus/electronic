@@ -1339,18 +1339,30 @@ deliverables, built by the real deck builders, from FABRICATED data for a fictio
   NOT indexable by Google. Flip with `BOT_404_ALLOW="googlebot,bingbot"` if the demo should be
   found by search; that is a product decision, not a bug.
 
-## The /demo Trojan-horse avatar — draw flat geometry, and LOOK at it (2026-07)
-First attempt traced a naturalistic horse with hand-tuned beziers: "beyond terrible ... it doesnt
-look like horse". Two lessons, both general:
-- **Flat solid geometry beats an outlined silhouette.** The final avatar is a barrel path, a
-  tapered neck slab, a rotated rounded-rect head, triangular ears, four post legs and a plank cart
-  with spoked wheels. It reads at 40px and at 400px. Naturalistic bezier tuning does not converge
-  by guesswork, and the subject is a carpentered object anyway.
-- **DRAW ORDER fixed the join that hand-tuning could not.** The neck is painted BEFORE the body, so
-  the body's smooth back edge cuts the neck base. Every attempt to fit that corner by hand left a
-  sharp fin; overlap makes it exact by construction. Legs must use the SAME fill as the barrel or
-  they sink into the cart and read as slats.
-- **METHOD: render and look, do not imagine.** `cairosvg` -> PNG -> read the image, iterate. Nine
-  versions, each judged from the pixels. Then re-render the SVG *as emitted by the React component*
-  (SSR -> extract `<svg class="th-avatar">` -> PNG) to prove the JSX matches the artwork that was
-  approved — same doctrine as the engine-hash deploy verify: check the artifact, not the intention.
+## The /demo hero is a Cassandra FILM, not an illustration (2026-07)
+Two hand-drawn Trojan horses were rejected ("beyond terrible ... it doesnt look like horse"). A flat
+geometric rebuild read better but still was not good enough. The operator supplied a 10s cinematic
+clip of Cassandra on the walls of Troy; that is now the hero and the SVG is DELETED (no dead code).
+- Assets are COMMITTED binaries: `webapp/frontend/public/media/cassandra.mp4` (2.4MB, h264/aac,
+  1280x720, remuxed with `-movflags +faststart`) + `cassandra-poster.jpg` (frame 0). vite copies
+  `public/` verbatim, so they land in `dist/media/` and are served by main.py's `spa()` static branch.
+- **Autoplay MUST be muted** — every browser blocks audible autoplay, and a hero that silently
+  refuses to start is worse than none. The clip has real audio (mean -24.4 dB), so there is an
+  explicit sound toggle. `playsInline` stops iOS grabbing fullscreen. `prefers-reduced-motion` gets
+  the poster + controls, no autoplay.
+- **faststart is verified, not assumed**: if `mdat` precedes `moov` the browser buffers the whole
+  file before the first frame. ship.py reads the header and FAILS the deploy on a bad layout.
+- **Range requests were checked, not trusted**: Safari will not play a `<video>` served as a single
+  200 blob. Starlette 0.46 `FileResponse` answers `206 + Content-Range` — proven with a TestClient
+  request against the same class `spa()` uses, not by reading release notes.
+- `sw.js` does not match `.mp4`/`.jpg`, so the service worker passes the video straight through —
+  caching it would both bloat the shell cache and break range/seek.
+- ship.py gate: every `"/media/..."` string in Demo.jsx must exist in `public/`, be >10KB, and the
+  mp4 must be faststart. vite never validates a src string and SSR renders it as text, so a missing
+  binary is invisible until a customer sees a black box.
+
+LESSON KEPT FROM THE ABANDONED AVATAR: when judging a visual, RENDER IT AND LOOK — `cairosvg` -> PNG
+-> read the image, iterate. Nine versions were judged from pixels, and the final SVG was re-rendered
+*as emitted by the React component* to prove the JSX matched the approved artwork. Same doctrine as
+the engine-hash deploy verify: check the artifact, not the intention. (It still was not good enough,
+which is the other half of the lesson: iterate against a human, not against your own taste.)
