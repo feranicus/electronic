@@ -139,7 +139,7 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 
 /* ---------- LOGIN ---------- */
 .iam{min-height:100vh;display:grid;grid-template-columns:1.05fr 1fr;background:var(--navy)}
-/* LEFT brand panel — Colt IAM */
+/* LEFT brand panel — IAM */
 .iam-brand{position:relative;overflow:hidden;padding:44px 46px;display:flex;flex-direction:column;
   color:#eafffb;background:
     radial-gradient(900px 500px at 12% -10%,rgba(0,178,169,.55),transparent 60%),

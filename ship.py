@@ -564,6 +564,52 @@ def do_tests():
     if not media_ok:
         sys.exit("[X] /demo hero media missing, truncated, or not faststart")
 
+    # c'''''') BRAND GATE. The product is Cybergod LLC / S4Biz Group; nothing a customer sees may say
+    #          Colt. Grep the RENDERED ARTIFACT, never the source: the enum key "COLT" legitimately
+    #          survives in tagMap / TAGWORDS / enrich's tag validation (renaming an enum makes
+    #          remediation rows silently vanish), and `coltControl` is a JSON key shared by engine and
+    #          builder. Only what reaches a slide or a screen is in scope, so only that is checked.
+    try:
+        brand_ok = True
+        _bd = os.path.join(tempfile.gettempdir(), "ship_brand")
+        os.makedirs(_bd, exist_ok=True)
+        for _lang in ("en", "de"):
+            for _b, _fx in (("findings", "findings"), ("cbiq", "cbiq"), ("geopol", "geopol")):
+                _o = os.path.join(_bd, "%s_%s.pptx" % (_b, _lang))
+                subprocess.run(["node", os.path.join(engine, "build_%s_deck.js" % _b),
+                                os.path.join(engine, "..", "sample", "%s.sample.json" % _fx), _o],
+                               capture_output=True, text=True, timeout=180,
+                               env={**os.environ, "DECK_LANG": _lang})
+                if not os.path.exists(_o):
+                    continue
+                _z = _zipfile.ZipFile(_o)
+                _t = " ".join("".join(re.findall(r"<a:t>(.*?)</a:t>", _z.read(_n).decode("utf8"), re.S))
+                              for _n in _z.namelist()
+                              if re.match(r"ppt/slides/slide\d+\.xml$", _n))
+                _h = re.findall(r"(?i)\S{0,22}colt\S{0,22}", _t)
+                if _h:
+                    brand_ok = False
+                    print("    !! %s_%s.pptx renders 'Colt': %s" % (_b, _lang, _h[:3]))
+        # and the pages the customer actually loads
+        _fe = os.path.join(HERE, "webapp", "frontend", "src")
+        for _pg in ("pages/Landing.jsx", "pages/Login.jsx", "pages/Demo.jsx", "legal.jsx",
+                    "components/Sidebar.jsx"):
+            _p = os.path.join(_fe, _pg.replace("/", os.sep))
+            if os.path.exists(_p):
+                _src = open(_p, encoding="utf-8").read()
+                # strip // and /* */ comments before matching: a code comment is not customer-facing
+                _vis = re.sub(r"/\*.*?\*/", "", re.sub(r"//[^\n]*", "", _src), flags=re.S)
+                if re.search(r"(?i)colt", _vis):
+                    brand_ok = False
+                    print("    !! %s still shows 'Colt': %s"
+                          % (_pg, re.findall(r"(?i).{0,40}colt.{0,40}", _vis)[:2]))
+    except Exception as _e:
+        brand_ok = False; print("    brand gate error: %r" % _e)
+    print("  brand: nothing customer-facing says 'Colt' (6 decks EN+DE, 5 pages): %s"
+          % ("OK" if brand_ok else "BROKEN"))
+    if not brand_ok:
+        sys.exit("[X] brand gate failed - a customer-facing surface still says Colt")
+
     # c) the unit suite. Bootstrap the runner if it is missing — "pytest not installed" is a setup
     #    gap, not a reason to hand the operator a second command. A failing TEST blocks the ship;
     #    a missing test RUNNER we fix ourselves and, if we cannot, warn loudly and continue.

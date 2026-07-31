@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Colt-branded GEOPOL (geo-political / threat-actor) deck generator (data-driven).
+/* Cybergod-branded GEOPOL (geo-political / threat-actor) deck generator (data-driven).
    Layout ported VERBATIM from the hand-authored VIP builder (build_rosneft_de_geopol.js)
    and sharing the exact helper style / palette / fonts with build_findings_deck.js so all
    three decks match: palette C{}, fonts FH/FB/FM/FD/FA, corner()/bigChevrons()/tracer()/
@@ -57,7 +57,7 @@ const asText = v => Array.isArray(v) ? v.filter(x => x != null).map(String).join
 const I18N = require("./i18n/deck_i18n");   // EN by default; DECK_LANG=de -> Hoch-Deutsch
 const pres = I18N.install(new pptxgen());   // translates every string at the pptxgenjs boundary
 pres.layout = "LAYOUT_16x9"; // 10 x 5.625"
-pres.author = "Colt / S4Biz Sales Engineering";
+pres.author = "Cybergod LLC / S4Biz Group";
 pres.title = cust + " " + EMDASH + " GEOPOL Cyber Threat Assessment";
 
 // ---- Palette (COLT_DESIGN_SYSTEM.md 1.4) -- copied verbatim from VIP builder ----
@@ -70,7 +70,7 @@ const C = {
 };
 const FH = "Georgia", FB = "Calibri", FM = "Consolas", FD = "Arial Black", FA = "Arial";
 
-const FOOT = "INTERNAL " + EMDASH + " COLT / S4BIZ CONFIDENTIAL " + MIDDOT +
+const FOOT = "INTERNAL " + EMDASH + " CYBERGOD / S4BIZ CONFIDENTIAL " + MIDDOT +
   " NOT FOR EXTERNAL DISTRIBUTION " + MIDDOT + " STRATEGIC CTI";
 const CLASS = (d.classification || "INTERNAL " + EMDASH + " CONFIDENTIAL").toUpperCase();
 const R = () => pres.shapes.RECTANGLE;
@@ -99,7 +99,7 @@ let pageNum = 0;
 
 // ---------- chrome helpers (from VIP builder) ----------
 function corner(s, color) {
-  s.addText("colt", { x: 9.10, y: 0.18, w: 0.8, h: 0.32, fontSize: 18, fontFace: FA,
+  s.addText("cybergod.ai", { x: 7.9, y: 0.18, w: 2.0, h: 0.32, fontSize: 13, fontFace: FA,
     color, bold: true, align: "right", margin: 0 });
 }
 function bigChevrons(s, o = {}) {
@@ -178,7 +178,10 @@ function evBlock(s, lines, x, y, w, h) {
     { x: x + 0.12, y: y + 0.05, w: w - 0.18, h: h - 0.10, valign: "top", margin: 0 });
 }
 // tagMap: VENDOR->orange, COLT->teal, PSF->tealDark, OSS->dark grey
+// The KEY stays "COLT" — it is an ENUM matched by the engine and by enrich's tag validation, and
+// renaming an enum makes rows silently vanish. Only the chip TEXT is rebranded, via tagLabel.
 const tagMap = { VENDOR: [C.high, C.white], COLT: [C.teal, "121212"], PSF: [C.tealDark, C.white], OSS: [C.dark, C.white] };
+const tagLabel = { COLT: "MANAGED", VENDOR: "VENDOR", PSF: "PSF", OSS: "OSS" };
 
 // band section divider (big Arial-Black word, coloured by highest tier in band)
 function bandColor(acts) {
@@ -246,7 +249,8 @@ function actorCard(a) {
   (a.rem || []).slice(0, 3).forEach((r, i) => {
     const y = startY + i * rowH; const [bg, fg] = tagMap[String(r.tag || "").toUpperCase()] || tagMap.COLT;
     s.addShape(R(), { x: 5.15, y, w: 0.72, h: 0.24, fill: { color: bg }, line: { type: "none" } });
-    s.addText(String(r.tag || "COLT").toUpperCase(), { x: 5.15, y, w: 0.72, h: 0.24, fontSize: 8,
+    s.addText(tagLabel[String(r.tag || "COLT").toUpperCase()] || String(r.tag || "").toUpperCase(),
+              { x: 5.15, y, w: 0.72, h: 0.24, fontSize: 8,
       fontFace: FB, bold: true, color: fg, align: "center", valign: "middle", margin: 0 });
     s.addText(r.title || "", { x: 5.95, y: y - 0.01, w: 3.78, h: 0.22, fontSize: 8.3, fontFace: FB,
       color: C.ink, bold: true, valign: "middle", margin: 0 });
@@ -518,7 +522,7 @@ BANDS.forEach(band => {
   s.addShape(R(), { x: 0.4, y: 4.5, w: 9.3, h: 0.5, fill: { color: C.evBg }, line: { type: "none" } });
   s.addShape(R(), { x: 0.4, y: 4.5, w: 0.06, h: 0.5, fill: { color: C.teal }, line: { type: "none" } });
   s.addText([{ text: "Portfolio (C-BIQ):  ", options: { bold: true, color: C.teal } },
-    { text: "each threat scenario is priced in the companion Colt C-BIQ model; figures are illustrative model output. Staged Colt remediation drives external-surface risk toward " + APPROX + " 0.", options: { color: C.evInk } }],
+    { text: "each threat scenario is priced in the companion C-BIQ model; figures are illustrative model output. Staged remediation drives external-surface risk toward " + APPROX + " 0.", options: { color: C.evInk } }],
     { x: 0.6, y: 4.5, w: 9.0, h: 0.5, fontSize: 8.4, fontFace: FB, valign: "middle", margin: 0 });
 })();
 
@@ -531,7 +535,7 @@ BANDS.forEach(band => {
     [{ text: "Admiralty grades shown", bold: true, color: C.tealDark }, "Source reliability A" + EMDASH + "F " + TIMES + " information credibility 1" + EMDASH + "6 (NATO AJP-2.1). Grades are on every actor card."],
     [{ text: "Relevance, not fame", bold: true, color: C.tealDark }, "Relevance = Intent " + TIMES + " Capability " + TIMES + " Exposure-fit. Each actor is included for a sourced reason it would hit this entity."],
     [{ text: "Sourced, not assumed", bold: true, color: C.tealDark }, "Named campaigns, CVEs and joint advisories back each actor; single-vendor claims are graded down."],
-    [{ text: "FAIR-aligned loss bridge", bold: true, color: C.tealDark }, "C-BIQ figures are illustrative model output; they support " + EMDASH + " never replace " + EMDASH + " Colt remediation and monitoring."],
+    [{ text: "FAIR-aligned loss bridge", bold: true, color: C.tealDark }, "C-BIQ figures are illustrative model output; they support " + EMDASH + " never replace " + EMDASH + " remediation and monitoring."],
     [{ text: "~" + shelf + "-month shelf life", bold: true, color: C.tealDark }, "The threat landscape shifts fast. Date and re-grade this product before re-use."],
   ];
   drawTable(s, 0.4, 1.4, [3.1, 6.2], ["TOPIC", "POSITION"], rows,

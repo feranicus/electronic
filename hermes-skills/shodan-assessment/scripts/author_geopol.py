@@ -37,7 +37,7 @@ Inline emphasis tokens allowed in h1/sub/caption: {hl}teal highlight{/hl}, {ink}
 Return this exact shape:
 {
  "scene1": {
-   "h1": "<one line, <=9 words, one {hl}..{/hl} span> e.g. A VPN edge on {hl}Colt's own backbone{/hl}.",
+   "h1": "<one line, <=9 words, one {hl}..{/hl} span> e.g. A VPN edge on {hl}the carrier backbone{/hl}.",
    "sub": "<2-4 sentences on the verified estate: host count, the hosting ASNs, and the single most
            important exposed door — name it with {red}host:port{/red} and its ASN>",
    "stats": [ {"n":"<int>","l":"Verified exposed hosts"}, {"n":"<int>","l":"Hosting ASNs"},

@@ -80,7 +80,7 @@ export const NOTICE = {
 // ======================================================================================
 export const OPERATOR = {
   // Verified from your own jev.best source (src/data.jsx, index.html) — legal spelling as used on
-  // your Colt address jevgenijs.vainsteins@colt.net and your Latvian passport.
+  // your approved work address and your passport.
   name:    "Jevgenijs Vainsteins",
   street:  "Herman J Bach Weg 16",
   zipCity: "61169 Friedberg",
@@ -160,7 +160,7 @@ export const CONTACT = {
     tg: "Telegram", tgD: "Direktnachricht — dieselbe Plattform, auf der auch die Assessment-Bots laufen.",
     gh: "GitHub", ghD: "Technischer Hintergrund und Projekte.",
     access: "Zugang anfragen",
-    accessD: "cybergod.ai ist zugangsbeschränkt: eine freigegebene Colt- oder Partner-E-Mail-Adresse ist erforderlich. Nennen Sie in Ihrer Nachricht Ihre Firma und die gewünschte Adresse.",
+    accessD: "cybergod.ai ist zugangsbeschränkt: eine freigegebene Partner-E-Mail-Adresse ist erforderlich. Nennen Sie in Ihrer Nachricht Ihre Firma und die gewünschte Adresse.",
     legal: "Rechtliches: ", soon: "Kanal folgt",
   },
   en: {
@@ -171,7 +171,7 @@ export const CONTACT = {
     tg: "Telegram", tgD: "Direct message — the same platform the assessment bots run on.",
     gh: "GitHub", ghD: "Technical background and projects.",
     access: "Request access",
-    accessD: "cybergod.ai is access-restricted: an approved Colt or partner email address is required. Include your company and the address you want enabled.",
+    accessD: "cybergod.ai is access-restricted: an approved partner email address is required. Include your company and the address you want enabled.",
     legal: "Legal: ", soon: "channel coming soon",
   },
 };
@@ -252,7 +252,7 @@ export const PRIVACY = {
     s6p: (<>Verantwortlicher im Sinne der DSGVO ist <strong>{OPERATOR.name}</strong>,{" "}
           {OPERATOR.street}, {OPERATOR.zipCity}, {OPERATOR.country} —{" "}
           <a href={"mailto:" + OPERATOR.email}>{OPERATOR.email}</a>. Vollständige Angaben im{" "}
-          <a href="/impressum">Impressum</a>. Interne Nutzung für Colt-Pre-Sales; die erzeugten
+          <a href="/impressum">Impressum</a>. Interne Nutzung für den Vertrieb; die erzeugten
           Dokumente sind internes Vertriebsmaterial. Sie haben das Recht, sich bei einer
           Datenschutz-Aufsichtsbehörde zu beschweren (Art. 77 DSGVO); zuständig ist{" "}
           <strong>{OPERATOR.authority}</strong>.</>),
@@ -330,7 +330,7 @@ export const PRIVACY = {
     s6p: (<>The controller under the GDPR is <strong>{OPERATOR.name}</strong>, {OPERATOR.street},{" "}
           {OPERATOR.zipCity}, {OPERATOR.country} —{" "}
           <a href={"mailto:" + OPERATOR.email}>{OPERATOR.email}</a>. Full details in the{" "}
-          <a href="/impressum">legal notice</a>. Internal use for Colt pre-sales; the generated
+          <a href="/impressum">legal notice</a>. Internal use for pre-sales; the generated
           documents are internal sales material. You have the right to lodge a complaint with a data
           protection supervisory authority (Art. 77 GDPR); the competent authority is{" "}
           <strong>{OPERATOR.authority}</strong>.</>),

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Colt-branded DELTAS deck generator — "WHAT THE AI ADDED" (model-agnostic branding).
+/* Cybergod-branded DELTAS deck generator — "WHAT THE AI ADDED" (model-agnostic branding).
    Shows, in ONE deck, what the enrichment model improved across ALL three reports:
    Findings (before/after prose), C-BIQ (named precedent + loss scenario per finding),
    and GEOPOL (tailored sector threat context). Facts never change.
@@ -63,7 +63,7 @@ const geoAfter = (geopol && geopol.sectorContext) ? String(geopol.sectorContext)
 const I18N = require("./i18n/deck_i18n");   // EN by default; DECK_LANG=de -> Hoch-Deutsch
 const pres = I18N.install(new pptxgen());   // translates every string at the pptxgenjs boundary
 pres.layout = "LAYOUT_16x9";
-pres.author = "Colt Sales Engineering";
+pres.author = "Cybergod LLC · S4Biz Group";
 pres.title = company + " " + EMDASH + " What " + BRAND + " Added (raw vs pursuit-grade)";
 
 const C = {
@@ -79,7 +79,7 @@ let pageNum = 0;
 let TOTAL = 1 + 1 + pairs.length + (cbiqRows.length ? 1 : 0) + (geoAfter ? 1 : 0) + 1;
 
 function corner(slide, color = C.black, size = 18) {
-  slide.addText("colt", { x: 9.05, y: 0.18, w: 0.85, h: 0.32, fontSize: size, fontFace: FA, color, bold: true, align: "right", margin: 0 });
+  slide.addText("cybergod.ai", { x: 7.85, y: 0.18, w: 2.05, h: 0.32, fontSize: 13, fontFace: FA, color, bold: true, align: "right", margin: 0 });
 }
 function bigChevrons(slide, opts = {}) {
   const x = opts.x ?? 0.5, w = opts.w ?? 9.0, yStart = opts.yStart ?? 0.20;
@@ -94,7 +94,7 @@ function tracer(slide, color = C.tealDark) {
     fontSize: 9, fontFace: FB, color, bold: true, align: "right", valign: "middle", margin: 0 });
 }
 function footer(slide) {
-  slide.addText("INTERNAL " + EMDASH + " COLT CONFIDENTIAL " + MIDDOT + " NOT FOR EXTERNAL DISTRIBUTION", {
+  slide.addText("INTERNAL " + EMDASH + " CONFIDENTIAL " + MIDDOT + " NOT FOR EXTERNAL DISTRIBUTION", {
     x: 0.4, y: 5.32, w: 6.4, h: 0.22, fontSize: 7.5, fontFace: FB, color: C.inkMuted, charSpacing: 2, valign: "middle", margin: 0 });
 }
 function pageHeader(slide, eyebrow, title) {
@@ -137,7 +137,7 @@ const tierCol = t => ({ CRIT: C.crit, CRITICAL: C.crit, HIGH: C.high, MEDIUM: C.
   CREED.draw(pres, s, { y: 4.00, color: C.black, accent: C.white, fontFace: FB });
   s.addShape(pres.shapes.RECTANGLE, { x: 0, y: 4.75, w: 10, h: 0.875, fill: { color: C.black }, line: { type: "none" } });
   const meta = [
-    ["PREPARED", "Colt Sales Engineering"], ["MODEL", qModel],
+    ["PREPARED", "Cybergod LLC · S4Biz Group"], ["MODEL", qModel],
     ["ENGINE", BRAND + " prose + audit (facts unchanged)"], ["STATUS", "INTERNAL " + EMDASH + " CONFIDENTIAL"],
   ];
   let mx = 0.5;
@@ -179,7 +179,7 @@ const tierCol = t => ({ CRIT: C.crit, CRITICAL: C.crit, HIGH: C.high, MEDIUM: C.
   s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.72, w: 9.3, h: 0.48, fill: { color: C.light }, line: { type: "none" } });
   s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.72, w: 0.07, h: 0.48, fill: { color: C.teal }, line: { type: "none" } });
   s.addText([{ text: "Facts unchanged.  ", options: { bold: true, color: C.tealDark } },
-    { text: BRAND + " reframes prose and adds business/architecture context, named precedents, strengths and Colt mapping " + EMDASH + " it never alters the observed evidence.", options: { color: C.ink } }],
+    { text: BRAND + " reframes prose and adds business/architecture context, named precedents, strengths and service mapping " + EMDASH + " it never alters the observed evidence.", options: { color: C.ink } }],
     { x: 0.58, y: 4.75, w: 9.0, h: 0.42, fontSize: 8.6, fontFace: FB, valign: "middle", margin: 0 });
   footer(s); tracer(s);
 })();
@@ -191,7 +191,7 @@ function column(s, x, w, kind, f, accent, headBg, headFg, labelTop, labelBot) {
   s.addText(labelBot, { x: x + 0.10, y: 1.72, w: w - 0.20, h: 0.34, fontSize: 7.5, fontFace: FB, color: headFg, align: "right", valign: "middle", margin: 0 });
   const inkCol = kind === "raw" ? C.raw : C.ink;
   const secCol = kind === "raw" ? C.dark : C.tealDark;
-  const sections = [["WHAT WE OBSERVED", asLines(f.what)], ["WHY IT MATTERS", asLines(f.why)], ["REMEDIATION & COLT FIT", asLines(f.rem)]];
+  const sections = [["WHAT WE OBSERVED", asLines(f.what)], ["WHY IT MATTERS", asLines(f.why)], ["REMEDIATION & SERVICE FIT", asLines(f.rem)]];
   const heights = [1.32, 0.86, 1.02];
   let y = 2.18;
   sections.forEach(([lbl, lines], si) => {
@@ -266,10 +266,10 @@ if (geoAfter) geopolDeltaSlide();
 (function closing() {
   const s = content("PROOF OF VALUE", "Net-new artifacts " + BRAND + " produced " + EMDASH + " the raw scan had none");
   const items = [
-    ["EXECUTIVE SUMMARY", execSummary ? "A pursuit-ready narrative " + EMDASH + " posture vs peers, headline risks and the Colt hook." : "(not produced)", C.med],
+    ["EXECUTIVE SUMMARY", execSummary ? "A pursuit-ready narrative " + EMDASH + " posture vs peers, headline risks and the commercial hook." : "(not produced)", C.med],
     ["C-BIQ NAMED PRECEDENTS", cbiqRows.length ? cbiqRows.length + " priced finding" + (cbiqRows.length === 1 ? "" : "s") + " matched to a real, dated, costed breach." : "(none)", C.crit],
     ["GEOPOL TAILORED CONTEXT", geoAfter ? "Sector threat narrative rewritten for this customer's exposure + geography." : "(none)", C.high],
-    ["STRENGTHS + MITIGATION MAP", (strengths.length + mitigation.length) ? strengths.length + " strength" + (strengths.length === 1 ? "" : "s") + " and " + mitigation.length + " Colt mapping row" + (mitigation.length === 1 ? "" : "s") + "." : "(none)", C.green],
+    ["STRENGTHS + MITIGATION MAP", (strengths.length + mitigation.length) ? strengths.length + " strength" + (strengths.length === 1 ? "" : "s") + " and " + mitigation.length + " service mapping row" + (mitigation.length === 1 ? "" : "s") + "." : "(none)", C.green],
   ];
   const cardH = 0.78, gap = 0.12, startY = 1.34;
   items.forEach(([lbl, body, col], i) => {

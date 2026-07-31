@@ -29,12 +29,12 @@ export default function Sidebar({ email }) {
     <>
       {/* phone-only: brand + logout, so the bottom bar can be pure navigation */}
       <header className="topbar">
-        <div className="brand"><span className="chev">❯</span> colt</div>
+        <div className="brand"><span className="chev">❯</span> cybergod<span class="g">.ai</span></div>
         <button className="btn ghost sm" onClick={logout} aria-label="Log out">Log out</button>
       </header>
 
       <aside className="side">
-        <div className="brand"><span className="chev">❯</span> colt</div>
+        <div className="brand"><span className="chev">❯</span> cybergod<span class="g">.ai</span></div>
         <nav className="nav">
           {items.map(([to, label, end, icon]) => (
             <NavLink key={to} to={to} end={!!end}>

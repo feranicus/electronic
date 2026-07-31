@@ -13,10 +13,10 @@
  *   "company": "Bibel TV",
  *   "title":   "Bibel TV GEOPOL — Threat, Defence & Secure by Design",
  *   "scene1": { "eyebrow": "Scene 01 · The exposed estate",
- *               "h1": "A VPN edge on {hl}Colt's own backbone{/hl}.",
+ *               "h1": "A VPN edge on {hl}the carrier backbone{/hl}.",
  *               "sub": "…rich prose with {ink}…{/ink} {red}…{/red} spans…",
  *               "stats": [ {"n":"8","l":"Verified exposed hosts"}, {"n":"1","l":"Exposed VPN edge","bad":true} ],
- *               "legend":[ {"c":"teal","t":"Colt backbone · AS8220"} ],
+ *               "legend":[ {"c":"teal","t":"carrier backbone"} ],
  *               "caption":"Findings: …" },
  *   "scene2": { same shape, canvas id c2, no statbar by default }
  * }
@@ -91,7 +91,7 @@ function scene(sc, canvasId, fallbackEyebrow) {
 }
 
 const company = C.company || "Target";
-const title = C.title || (company + " GEOPOL — Threat, Defence & Secure by Design · Colt / S4Biz");
+const title = C.title || (company + " GEOPOL — Threat, Defence & Secure by Design · Cybergod / S4Biz");
 
 // ---- scene-3 vectors/exposures/impacts + scene-2 actors are DATA, not frozen text ----
 // The canvas wires index into these by fixed position, so lengths are pinned: 6 vectors, 6 exposures,

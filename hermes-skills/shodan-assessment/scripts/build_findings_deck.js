@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Colt-branded Shodan Findings deck generator (data-driven).
+/* Cybergod-branded Shodan Findings deck generator (data-driven).
    Layout ported verbatim from the hand-authored VIP builder (build_ubs_findings.js):
    palette C{}, fonts FH/FB/FM/FD/FA, corner()/bigChevrons()/tracer()/footer()/pageHeader(),
    sevBadge()/pill()/evidenceBlock()/content()/drawTable(), the title slide,
@@ -45,6 +45,12 @@ const asText = v => Array.isArray(v) ? v.filter(x => x != null).map(String).join
   : (v == null ? "" : String(v));
 const num = v => (v == null || v === "" || Number.isNaN(Number(v))) ? 0 : Number(v);
 // tag map for VENDOR/COLT/PSF/OSS remediation rows (mirrors build_geopol_deck.js)
+// DISPLAY LABEL for the remediation tag. The KEY stays "COLT" everywhere (tagMap, TAGWORDS,
+// enrich's tag validation) because it is an ENUM and renaming an enum makes rows silently vanish —
+// the project's own hard rule. Only the chip TEXT is rebranded. COLT semantically means "a managed
+// service closes this", as against VENDOR (patch it), PSF (professional services) and OSS (free
+// tooling), so "MANAGED" carries the same meaning and names no vendor.
+const tagLabel = { COLT: "MANAGED", VENDOR: "VENDOR", PSF: "PSF", OSS: "OSS" };
 const tagMap = { VENDOR: ["FF7900", "FFFFFF"], COLT: ["00D7BD", "121212"], PSF: ["0C544E", "FFFFFF"], OSS: ["474946", "FFFFFF"] };
 // dedup repeated IP:port evidence lines (keeps first occurrence, preserves order)
 const IPPORT = /\b\d{1,3}(?:\.\d{1,3}){3}:\d{1,5}\b/;
@@ -97,7 +103,7 @@ function remRows(f) {
 const I18N = require("./i18n/deck_i18n");   // EN by default; DECK_LANG=de -> Hoch-Deutsch
 const pres = I18N.install(new pptxgen());   // translates every string at the pptxgenjs boundary
 pres.layout = "LAYOUT_16x9"; // 10 x 5.625"
-pres.author = "Colt Sales Engineering";
+pres.author = "Cybergod LLC · S4Biz Group";
 pres.title = (t.company || "Target") + " " + EMDASH + " External Attack Surface Assessment";
 
 // ---- Palette (COLT_DESIGN_SYSTEM.md 1.4) -- copied verbatim from VIP builder ----
@@ -133,8 +139,8 @@ TOTAL += 2; // caveats & confidence + next seven days
 
 // ---------- helpers (copied from VIP builder) ----------
 function corner(slide, color = C.black, size = 18) {
-  slide.addText("colt", { x: 9.05, y: 0.18, w: 0.85, h: 0.32,
-    fontSize: size, fontFace: FA, color, bold: true, align: "right", margin: 0 });
+  slide.addText("cybergod.ai", { x: 7.85, y: 0.18, w: 2.05, h: 0.32,
+    fontSize: 13, fontFace: FA, color, bold: true, align: "right", margin: 0 });
 }
 function bigChevrons(slide, opts = {}) {
   const x = opts.x ?? 0.5, w = opts.w ?? 9.0, yStart = opts.yStart ?? 0.20;
@@ -171,7 +177,7 @@ function fitText(t, wIn, hIn, pt) {
 }
 
 function footer(slide) {
-  slide.addText("INTERNAL " + EMDASH + " COLT CONFIDENTIAL " + MIDDOT + " NOT FOR EXTERNAL DISTRIBUTION", {
+  slide.addText("INTERNAL " + EMDASH + " CONFIDENTIAL " + MIDDOT + " NOT FOR EXTERNAL DISTRIBUTION", {
     x: 0.4, y: 5.32, w: 6.4, h: 0.22, fontSize: 7.5, fontFace: FB, color: C.inkMuted,
     charSpacing: 2, valign: "middle", margin: 0 });
 }
@@ -254,8 +260,8 @@ function drawTable(slide, rows, opts) {
   const clamp = (v, n) => { const s = String(v == null ? "" : v);
                             return s.length > n ? s.slice(0, n - 1).trimEnd() + "\u2026" : s; };
   const meta = [
-    ["PREPARED", "Colt Sales Engineering"],
-    ["FOR", clamp(t.audience || "Internal " + EMDASH + " Colt Sales Engineering", 110)],
+    ["PREPARED", "Cybergod LLC · S4Biz Group"],
+    ["FOR", clamp(t.audience || "Internal " + EMDASH + " Cybergod LLC · S4Biz Group", 110)],
     ["DATA SOURCE", clamp(t.scope || "Shodan host-record export", 190)],
     ["STATUS", "INTERNAL " + EMDASH + " CONFIDENTIAL"],
   ];
@@ -286,7 +292,7 @@ function drawTable(slide, rows, opts) {
     ? String(t.exec_summary).trim()
     : "Passive external reconnaissance of " + (t.company || "the target") + " surfaced "
       + totalFindings + " finding" + (totalFindings === 1 ? "" : "s")
-      + " across the internet-facing estate. All items are observed via Shodan (no active scanning); each is mapped to remediation and the relevant Colt service.";
+      + " across the internet-facing estate. All items are observed via Shodan (no active scanning); each is mapped to remediation and the relevant managed service.";
   s.addText(para, { x: 0.4, y: 1.32, w: 9.3, h: 1.05, fontSize: 10, fontFace: FB,
     color: C.ink, valign: "top", margin: 0 });
 
@@ -319,7 +325,7 @@ function drawTable(slide, rows, opts) {
   s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.66, w: 9.3, h: 0.52, fill: { color: C.light }, line: { type: "none" } });
   s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.66, w: 0.07, h: 0.52, fill: { color: C.teal }, line: { type: "none" } });
   s.addText([{ text: "Passive only.  ", options: { bold: true, color: C.tealDark } },
-    { text: "Every finding is observed from public data via Shodan " + EMDASH + " visible is not vulnerable. Each maps to a remediation and the relevant Colt service.", options: { color: C.ink } }],
+    { text: "Every finding is observed from public data via Shodan " + EMDASH + " visible is not vulnerable. Each maps to a remediation and the relevant managed service.", options: { color: C.ink } }],
     { x: 0.58, y: 4.70, w: 9.0, h: 0.44, fontSize: 8.6, fontFace: FB, valign: "middle", margin: 0 });
   footer(s); tracer(s);
 })();
@@ -524,7 +530,7 @@ function findingCard(f) {
     fontSize: 7.6, fontFace: FB, color: C.ink, valign: "top", margin: 0 });
 
   s.addShape(pres.shapes.RECTANGLE, { x: 5.05, y: 1.70, w: 0.08, h: 0.24, fill: { color: C.teal }, line: { type: "none" } });
-  s.addText("REMEDIATION  &  COLT FIT", { x: 5.21, y: 1.70, w: 4.5, h: 0.24, fontSize: 10, fontFace: FB,
+  s.addText("REMEDIATION  &  SERVICE FIT", { x: 5.21, y: 1.70, w: 4.5, h: 0.24, fontSize: 10, fontFace: FB,
     color: C.ink, bold: true, charSpacing: 2, valign: "middle", margin: 0 });
 
   const rem = remRows(f);
@@ -539,7 +545,7 @@ function findingCard(f) {
     const y = startY + i * rowH;
     const [bg, fg] = tagMap[r.tag] || tagMap.VENDOR;
     s.addShape(pres.shapes.RECTANGLE, { x: 5.05, y: y + 0.03, w: 0.72, h: 0.24, fill: { color: bg }, line: { type: "none" } });
-    s.addText(r.tag, { x: 5.05, y: y + 0.03, w: 0.72, h: 0.24, fontSize: 8, fontFace: FB,
+    s.addText(tagLabel[r.tag] || r.tag, { x: 5.05, y: y + 0.03, w: 0.72, h: 0.24, fontSize: 8, fontFace: FB,
       bold: true, color: fg, align: "center", valign: "middle", charSpacing: 1, margin: 0 });
     s.addText(fitText(r.title, 3.85, r.body ? 0.24 : rowH - 0.06, 8.6),
       { x: 5.85, y: r.body ? y - 0.01 : y, w: 3.85, h: r.body ? 0.24 : rowH - 0.06,
@@ -614,15 +620,15 @@ function strengthsSlide() {
 }
 
 // ===================================================================
-// MITIGATION MAPPING  (findings x Colt portfolio coverage table)
+// MITIGATION MAPPING  (findings x service portfolio coverage table)
 // ===================================================================
 function mitigationSlide() {
-  const s = content("MITIGATION MAPPING", "Findings " + MIDDOT + " Colt portfolio coverage");
+  const s = content("MITIGATION MAPPING", "Findings " + MIDDOT + " service portfolio coverage");
 
   const rows = [[
     { text: "ID", options: { fill: C.tealDark, color: C.white, bold: true } },
     { text: "FINDING", options: { fill: C.tealDark, color: C.white, bold: true } },
-    { text: "COLT PRODUCT / SERVICE", options: { fill: C.tealDark, color: C.white, bold: true } },
+    { text: "RECOMMENDED SERVICE", options: { fill: C.tealDark, color: C.white, bold: true } },
     { text: "PSF", options: { fill: C.tealDark, color: C.white, bold: true } },
     { text: "OPEN SOURCE", options: { fill: C.tealDark, color: C.white, bold: true } },
   ]];
@@ -664,7 +670,7 @@ function caveatsSlide() {
     ["Severity is triage", "CRITICAL/HIGH/MED/LOW reflect exposure + exploitability signals (KEV/EPSS), not a penetration test."],
     ["No credentials used", "Findings are external-perspective only; internal/enterprise risk is out of scope here."],
     ["Confidence graded", "KEV-listed + banner-confirmed findings are high-confidence; version-only inferences are lower."],
-    ["Internal pursuit material", "Colt / S4Biz confidential " + EMDASH + " not an audit finding; do not forward to the customer as fact."],
+    ["Internal pursuit material", "Cybergod / S4Biz confidential " + EMDASH + " not an audit finding; do not forward to the customer as fact."],
   ];
   items.forEach(([tt, b], i) => {
     const zebra = i % 2 === 1 ? C.light : C.white;
@@ -683,7 +689,7 @@ function nextSevenDaysSlide() {
   const s = content("NEXT SEVEN DAYS", "The immediate moves " + EMDASH + " highest-leverage first");
   const nCrit = num(sum.critical), nHigh = num(sum.high);
   const acts = [
-    ["DAY 1", "Triage CRITICAL exposures (" + nCrit + ")", "Remove KEV-listed / data-tier hosts from the internet or place behind a Colt control today."],
+    ["DAY 1", "Triage CRITICAL exposures (" + nCrit + ")", "Remove KEV-listed / data-tier hosts from the internet or place behind a control today."],
     ["DAY 2\u20133", "Close HIGH exposures (" + nHigh + ")", "Enforce MFA on remote access, retire exposed panels/VPN, rotate certificates."],
     ["DAY 4\u20135", "Confirm & validate", "Re-scan the estate to confirm exposures are gone; verify no shadow assets remain."],
     ["DAY 6\u20137", "Stand up continuous watch", "Enable ongoing Shodan/Censys re-scan so the surface stays measured, not point-in-time."],

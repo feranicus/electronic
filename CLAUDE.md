@@ -1455,3 +1455,25 @@ attempts across two runs (deepseek 175s, kimi 112s, maverick 60s, gemma 60s — 
 endpoint and burns ~407s of every run before the shards rescue it. The fix is to make sharding the
 PRIMARY path and leave the serial chain only the short estate-level prose (exec_summary/strengths).
 Decide it from the new tok/s telemetry rather than from theory.
+
+## Rebrand: Cybergod LLC / S4Biz Group — customer-facing only (2026-07)
+The product is no longer presented as Colt. NOTHING a customer sees says Colt; infrastructure names
+(`colt-web`, `colt-assessbot`, `colt-stack`, `colt_events`, `colt_auth.py`) are DELIBERATELY
+unchanged — they are cosmetic internally and renaming them would touch compose, the deploy scripts,
+the Caddy block and every Grafana query for zero customer benefit.
+- **The `COLT` remediation tag is an ENUM and was NOT renamed.** It is a lookup key in `tagMap`,
+  `TAGWORDS` and enrich's tag validation; renaming an enum makes rows silently vanish (the standing
+  hard rule). Instead `tagLabel = {COLT: "MANAGED", ...}` rebrands the CHIP TEXT at render time.
+  Same doctrine as the i18n rule about severity enums. `coltControl` is likewise a JSON key shared by
+  the engine and the builders — only its VALUE is rendered, so the key stays.
+- **Remediation is now VENDOR-NEUTRAL** ("Managed Firewall", "SASE / ZTNA", "Managed DDoS
+  protection") instead of naming Colt products. That is not a compromise: the audience is resellers
+  who sell their OWN stack, and a VAR selling Fortinet will not hand a customer a competitor's
+  product name.
+- Per-slide wordmark "colt" -> "cybergod.ai" in all five deck builders. The box was 0.85in wide and
+  the new string is ~3x longer, so each was widened to 2.05in and the font dropped — a wordmark that
+  clips is worse than one that is stale.
+- ship.py has a BRAND GATE that greps the RENDERED artifact (6 decks, EN+DE) plus the five customer
+  pages with code comments stripped. Grepping the SOURCE would false-positive on the enum forever.
+- Marketing (`marketing/*.md`, the release GIF) carries Cybergod LLC · S4Biz Group and
+  WhatsApp +351 939 994 642. The access gate no longer mentions employees of anyone.

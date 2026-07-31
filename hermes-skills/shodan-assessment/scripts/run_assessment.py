@@ -626,7 +626,7 @@ def main():
                "- " + _bgp["nis2"]["finding"],
                "- Fine band: essential up to EUR 10M / 2%% turnover; important up to EUR 7M / 1.4%% (group turnover).",
                "",
-               "## Colt remediation",
+               "## remediation",
                ] + ["- " + r for r in _bgp.get("colt_remediation", [])]
         open(os.path.join(a.outdir, "bgp_resilience.md"), "w", encoding="utf-8").write("\n".join(_md) + "\n")
         _ev(evt="bgp", company=_tag, homing=_bgp.get("homing_status"), rag=_bgp.get("rag"),
@@ -728,7 +728,7 @@ def main():
     d1=os.path.join(a.outdir,f"{safe}_Shodan_Findings{_L}.pptx")
     d2=os.path.join(a.outdir,f"{safe}_C-BIQ{_L}.pptx")
     d3=os.path.join(a.outdir,f"{safe}_GEOPOL{_L}.pptx")
-    # DE: translate the engine's own deterministic English (finding titles, Colt controls, bucket
+    # DE: translate the engine's own deterministic English (finding titles, controls, bucket
     # names) BEFORE the decks render. LLM prose is already German (enrich.py); deck chrome is done
     # by deck_i18n.js. All three streams read the SAME committed dictionary, so terms never diverge.
     if str(a.lang).lower().startswith("de"):

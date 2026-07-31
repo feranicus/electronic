@@ -19,11 +19,11 @@ export default function Login() {
       const { ok, status, data } = await authBegin(email.trim(), password);
       if (ok && data.state === "otp_sent") {
         setStage("otp");
-        setMsg(data.message || "A 6-digit code was sent to your Colt inbox.");
+        setMsg(data.message || "A 6-digit code was sent to your inbox.");
       } else if (status === 423 || data.state === "locked") {
         setErr(data.message || "Account locked — too many attempts. Try again later.");
       } else {
-        setErr(data.message || "Access denied. Use your @colt.net email and the shared access password.");
+        setErr(data.message || "Access denied. Use an approved partner email and the shared access password.");
       }
     } catch {
       setErr("Could not reach the identity service. Try again.");
@@ -44,23 +44,23 @@ export default function Login() {
 
   return (
     <div className="iam">
-      {/* LEFT — Colt brand / IAM panel */}
+      {/* LEFT — brand / IAM panel */}
       <aside className="iam-brand">
         <div className="iam-brand-top">
-          <div className="brand"><span className="chev">&#10095;</span> colt</div>
+          <div className="brand"><span className="chev">&#10095;</span> cybergod.ai</div>
           <span className="iam-tag">Identity &amp; Access</span>
         </div>
         <div className="iam-brand-mid">
           <h1>Cyber pre-sales,<br/>self-serve.</h1>
           <p>One name in, a full attack-surface assessment out. The same engine behind
-             the Colt Telegram bots — now on the web, for every AE.</p>
+             the Telegram bots — now on the web, for every seller.</p>
           <ul className="iam-steps">
-            <li><span>1</span><div><b>Your Colt identity</b>name.surname@colt.net + the shared access password</div></li>
-            <li><span>2</span><div><b>One-time code</b>A 6-digit code lands in your Colt inbox</div></li>
+            <li><span>1</span><div><b>Your identity</b>your approved email + the shared access password</div></li>
+            <li><span>2</span><div><b>One-time code</b>A 6-digit code lands in your inbox</div></li>
             <li><span>3</span><div><b>You&#39;re in</b>Your personal cabinet: assessments, assistant, history</div></li>
           </ul>
         </div>
-        <div className="iam-brand-foot">Zero-trust · @colt.net only · &#187; &#187; &#187;</div>
+        <div className="iam-brand-foot">Zero-trust · approved partners only · &#187; &#187; &#187;</div>
       </aside>
 
       {/* RIGHT — sign-in card */}
@@ -75,9 +75,9 @@ export default function Login() {
           {stage === "creds" ? (
             <form onSubmit={submitCreds}>
               <h2>Sign in to the portal</h2>
-              <p className="iam-sub">Zero-trust access for Colt account executives.</p>
-              <div className="label">Colt email</div>
-              <input className="input" type="email" autoComplete="username" placeholder="name.surname@colt.net"
+              <p className="iam-sub">Zero-trust access for cyber security sales teams.</p>
+              <div className="label">Work email</div>
+              <input className="input" type="email" autoComplete="username" placeholder="name.surname@yourcompany.com"
                 value={email} onChange={(e)=>setEmail(e.target.value)} required autoFocus />
               <div className="label">Access password</div>
               <input className="input" type="password" autoComplete="current-password" placeholder="Shared access password"
@@ -106,7 +106,7 @@ export default function Login() {
           {err && <div className="err">{err}</div>}
           <Link className="iam-back" to="/">&#8592; Back to the overview</Link>
         </div>
-        <div className="iam-legal">Colt Technology Services · authorised use only<br />
+        <div className="iam-legal">Cybergod LLC · S4Biz Group · authorised use only<br />
           <a href="/impressum">Impressum</a> · <a href="/privacy">Datenschutz / Privacy</a> · <a href="/contact">Kontakt</a></div>
       </main>
     </div>

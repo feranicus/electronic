@@ -21,7 +21,7 @@ except ImportError:
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# ---- Colt palette (identical to the site and the decks) -----------------------------------------
+# ---- Palette (identical to the site and the decks) ---------------------------------------------
 INK      = (10, 21, 38)        # near-black background
 TEAL     = (0, 178, 169)
 TEAL_DIM = (18, 114, 107)
@@ -52,11 +52,39 @@ def diamond(d, cx, cy, r, col):
 
 
 def brand(d, W, H):
-    """The ❯ colt wordmark, drawn."""
+    """The wordmark: a drawn chevron plus cybergod.ai."""
     pad = int(W * 0.055)
     s = int(H * 0.040)
     chevron(d, pad, int(H * 0.052), s, TEAL)
-    d.text((pad + int(W * 0.026), int(H * 0.046)), "colt", font=font(F_BOLD, int(H * 0.048)), fill=WHITE)
+    d.text((pad + int(W * 0.026), int(H * 0.046)), "cybergod",
+           font=font(F_BOLD, int(H * 0.048)), fill=WHITE)
+    d.text((pad + int(W * 0.026) + int(W * 0.135), int(H * 0.052)), ".ai",
+           font=font(F_BOLD, int(H * 0.040)), fill=TEAL)
+
+
+def fit_center(d, text, cx, y, path, size, maxw, fill):
+    """Draw centred text, shrinking the font until it fits maxw.
+
+    The creed was sized from HEIGHT (H * 0.036). That is fine at 16:9 and overflows both edges at
+    1:1, because the square canvas is 10% shorter but 44% narrower relative to the line length.
+    Never size horizontal text from the vertical dimension — measure and fit.
+    """
+    f = font(path, size)
+    while size > 10 and d.textlength(text, font=f) > maxw:
+        size -= 1
+        f = font(path, size)
+    d.text((cx, y), text, font=f, fill=fill, anchor="ma")
+    return size
+
+
+def fit_left(d, text, x, y, path, size, maxw, fill):
+    """Left-anchored twin of fit_center — the milestone headlines are long ("Attribution done
+    properly") and overran the right margin on the square canvas."""
+    f = font(path, size)
+    while size > 10 and d.textlength(text, font=f) > maxw:
+        size -= 1
+        f = font(path, size)
+    d.text((x, y), text, font=f, fill=fill)
 
 
 def font(path, size):
@@ -142,8 +170,8 @@ def chrome(img, W, H, step, total):
     d = ImageDraw.Draw(img)
     pad = int(W * 0.055)
     brand(d, W, H)
-    d.text((W - pad, int(H * 0.062)), "cybergod.ai", font=font(F_MONO, int(H * 0.026)),
-           fill=TEAL, anchor="ra")
+    d.text((W - pad, int(H * 0.062)), "S4Biz Group", font=font(F_MONO, int(H * 0.026)),
+           fill=MUTED, anchor="ra")
 
     # progress rail: how far through the story this frame is
     y = int(H * 0.905)
@@ -179,15 +207,14 @@ def title_frame(W, H):
     pad = int(W * 0.055)
     brand(d, W, H)
 
-    d.text((W // 2, int(H * 0.245)), "cybergod.ai", font=font(F_BOLD, int(H * 0.135)),
-           fill=WHITE, anchor="ma")
-    d.text((W // 2, int(H * 0.40)), "22 DAYS · 109 RELEASES · ONE IDEA",
-           font=font(F_MONO, int(H * 0.036)), fill=GOLD, anchor="ma")
+    fit_center(d, "cybergod.ai", W // 2, int(H * 0.245), F_BOLD, int(H * 0.135), int(W * 0.86), WHITE)
+    fit_center(d, "22 DAYS · 109 RELEASES · ONE IDEA", W // 2, int(H * 0.40), F_MONO,
+               int(H * 0.036), int(W * 0.86), GOLD)
 
-    f = font(F_REG, int(H * 0.036))
+    maxw = int(W * 0.88)
     for i, ln in enumerate((CREED_1, CREED_2, CREED_3)):
-        d.text((W // 2, int(H * 0.52) + i * int(H * 0.062)), ln, font=f,
-               fill=(MUTED if i == 0 else WHITE), anchor="ma")
+        fit_center(d, ln, W // 2, int(H * 0.52) + i * int(H * 0.062), F_REG,
+                   int(H * 0.036), maxw, MUTED if i == 0 else WHITE)
 
     diamond(d, W // 2, int(H * 0.815), int(H * 0.016), TEAL)
     d.text((W // 2, int(H * 0.875)), "Here is everything we built.",
@@ -203,7 +230,7 @@ def milestone_frame(W, H, idx, total):
 
     d.text((pad, int(H * 0.215)), date, font=font(F_MONO, int(H * 0.048)), fill=GOLD)
     d.line([pad, int(H * 0.285), pad + int(W * 0.20), int(H * 0.285)], fill=TEAL, width=3)
-    d.text((pad, int(H * 0.315)), headline, font=font(F_BOLD, int(H * 0.082)), fill=WHITE)
+    fit_left(d, headline, pad, int(H * 0.315), F_BOLD, int(H * 0.082), W - 2 * pad, WHITE)
 
     fb = font(F_REG, int(H * 0.038))
     y = int(H * 0.475)
@@ -223,13 +250,13 @@ def closing_frame(W, H):
     pad = int(W * 0.055)
     brand(d, W, H)
 
-    d.text((W // 2, int(H * 0.17)), "ONE INPUT: A COMPANY NAME",
-           font=font(F_MONO, int(H * 0.034)), fill=GOLD, anchor="ma")
+    fit_center(d, "ONE INPUT: A COMPANY NAME", W // 2, int(H * 0.17), F_MONO,
+               int(H * 0.034), int(W * 0.86), GOLD)
     for i, ln in enumerate(("Your whole internet-facing estate.",
                             "Priced in euros. Mapped to NIS2, CRA and the AI Act.",
                             "Minutes, not weeks. Nothing ever touches your systems.")):
-        d.text((W // 2, int(H * 0.27) + i * int(H * 0.075)), ln,
-               font=font(F_BOLD, int(H * 0.052)), fill=WHITE, anchor="ma")
+        fit_center(d, ln, W // 2, int(H * 0.27) + i * int(H * 0.075), F_BOLD,
+                   int(H * 0.052), int(W * 0.90), WHITE)
 
     stats = [("109", "releases"), ("22", "days"), ("5", "deliverables"), ("$0.53", "AI cost, lifetime")]
     n = len(stats)
@@ -239,18 +266,17 @@ def closing_frame(W, H):
         d.text((cx, int(H * 0.685)), small, font=font(F_REG, int(H * 0.028)), fill=MUTED, anchor="ma")
 
     d.line([int(W * 0.30), int(H * 0.775), int(W * 0.70), int(H * 0.775)], fill=LINE, width=2)
-    d.text((W // 2, int(H * 0.805)), "See it work — cybergod.ai/demo",
-           font=font(F_BOLD, int(H * 0.046)), fill=TEAL, anchor="ma")
-    d.text((W // 2, int(H * 0.888)),
-           "Colt employees & Colt Partners · jevgenijs.vainsteins@colt.net",
-           font=font(F_REG, int(H * 0.028)), fill=MUTED, anchor="ma")
+    fit_center(d, "See it work — cybergod.ai/demo", W // 2, int(H * 0.805), F_BOLD,
+               int(H * 0.046), int(W * 0.86), TEAL)
+    fit_center(d, "Cybergod LLC  ·  S4Biz Group  ·  WhatsApp +351 939 994 642", W // 2,
+               int(H * 0.888), F_REG, int(H * 0.028), int(W * 0.88), MUTED)
     return img
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--square", action="store_true", help="1080x1080 instead of 1200x675")
-    ap.add_argument("--seconds", type=float, default=3.6, help="seconds per frame (default 3.6)")
+    ap.add_argument("--seconds", type=float, default=7.2, help="seconds per frame (default 7.2)")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 

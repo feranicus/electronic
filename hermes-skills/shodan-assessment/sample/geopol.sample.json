@@ -46,7 +46,7 @@
       "rem": [
         { "tag": "VENDOR", "title": "OT segmentation review", "body": "Enforce IEC 62443 zones; isolate ICS from IT VPN reach." },
         { "tag": "COLT", "title": "Managed NDR for OT", "body": "24/7 detection tuned to ICS protocols and wiper precursors." },
-        { "tag": "PSF", "title": "OT incident retainer", "body": "Colt PSF wiper-recovery & forensic readiness playbook." }
+        { "tag": "PSF", "title": "OT incident retainer", "body": "PSF wiper-recovery & forensic readiness playbook." }
       ]
     },
     {
@@ -75,7 +75,7 @@
       "likelihood12mo": "Routine",
       "rem": [
         { "tag": "VENDOR", "title": "Patch edge devices", "body": "Prioritise VPN, webmail and router firmware (KEV catalog)." },
-        { "tag": "COLT", "title": "SASE + MFA", "body": "Colt SASE terminates exposed VPN; enforce phishing-resistant MFA." },
+        { "tag": "COLT", "title": "SASE + MFA", "body": "SASE terminates exposed VPN; enforce phishing-resistant MFA." },
         { "tag": "OSS", "title": "NTLM hardening", "body": "Block outbound SMB; deploy free NTLM-relay mitigations." }
       ]
     },
@@ -100,7 +100,7 @@
         "Ransom demands €1M–€5M typical"
       ],
       "why": "This is the near-term worst case. Rosneft's exposed VPN gateway (CVE-2026-50751, finding C-01) is exactly Qilin's preferred entry. A successful intrusion would combine trading-floor downtime with data-leak extortion — the highest expected-loss scenario in the C-BIQ model.",
-      "refs": "Colt Shodan finding C-01; Qilin leak-site telemetry",
+      "refs": "Shodan finding C-01; Qilin leak-site telemetry",
       "admiraltyGrade": "B1",
       "score": { "intent": 9, "capability": 8, "exposureFit": 10 },
       "likelihood12mo": "Likely",
@@ -108,7 +108,7 @@
       "rem": [
         { "tag": "VENDOR", "title": "Emergency VPN patch", "body": "Remediate CVE-2026-50751 immediately; rotate all VPN creds." },
         { "tag": "COLT", "title": "Managed NDR + DDoS", "body": "Detect lateral movement & encryption staging in real time." },
-        { "tag": "PSF", "title": "Ransomware retainer", "body": "Colt PSF containment, negotiation-support and recovery." }
+        { "tag": "PSF", "title": "Ransomware retainer", "body": "PSF containment, negotiation-support and recovery." }
       ]
     },
     {
@@ -135,7 +135,7 @@
       "score": { "intent": 3, "capability": 4, "exposureFit": 5 },
       "likelihood12mo": "Routine",
       "rem": [
-        { "tag": "COLT", "title": "Managed DDoS", "body": "Always-on Colt DDoS scrubbing for public-facing assets." },
+        { "tag": "COLT", "title": "Managed DDoS", "body": "Always-on DDoS scrubbing for public-facing assets." },
         { "tag": "VENDOR", "title": "CDN / WAF", "body": "Absorb L7 floods; rate-limit and geo-fence portals." },
         { "tag": "OSS", "title": "Portal hardening", "body": "Cache static content; free WAF rules for volumetric L7." }
       ]

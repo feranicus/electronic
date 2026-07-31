@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * build_compliance_deck.js — ONE parametrized Colt-branded deck builder for the Compliance module.
+ * build_compliance_deck.js — ONE parametrized Cybergod-branded deck builder for the Compliance module.
  *
  *   node build_compliance_deck.js compliance.json out.pptx <nis2|cra|aiact|roadmap>
  *
@@ -46,7 +46,7 @@ const LABELS = {
   gaps: { en: "Priority gaps", de: "Prioritäre Lücken" },
   deadlines: { en: "Key deadlines", de: "Wichtige Fristen" },
   penalty: { en: "Penalty exposure", de: "Bußgeld-Exposition" },
-  colt: { en: "How Colt helps", de: "Wie Colt unterstützt" },
+  colt: { en: "How we help", de: "Wie wir unterstützen" },
   applies: { en: "Applies", de: "Betroffen" },
   notApplies: { en: "Out of scope", de: "Nicht betroffen" },
   unclear: { en: "Requires confirmation", de: "Zu bestätigen" },
@@ -70,8 +70,8 @@ const LABELS = {
   nearest: { en: "NEAREST DEADLINE", de: "NÄCHSTE FRIST" },
   none: { en: "None recorded", de: "Keine erfasst" },
   gapNone: { en: "No priority gaps recorded for this regime at the assumed scope. Confirm scope to finalise.", de: "Keine prioritären Lücken bei angenommenem Anwendungsbereich. Anwendungsbereich bestätigen." },
-  status: { en: "INTERNAL " + EMDASH + " COLT CONFIDENTIAL", de: "INTERN " + EMDASH + " VERTRAULICH (COLT)" },
-  prepared: { en: "Colt Sales Engineering", de: "Colt Sales Engineering" },
+  status: { en: "INTERNAL " + EMDASH + " CONFIDENTIAL", de: "INTERN " + EMDASH + " VERTRAULICH" },
+  prepared: { en: "Cybergod LLC · S4Biz Group", de: "Cybergod LLC · S4Biz Group" },
 };
 const L = (k) => (LABELS[k] || {})[LANG] || (LABELS[k] || {}).en || k;
 
@@ -84,14 +84,14 @@ const REGIME_TITLE = {
 
 const pres = new pptxgen();
 pres.layout = "LAYOUT_16x9";
-pres.author = "Colt Sales Engineering";
+pres.author = "Cybergod LLC · S4Biz Group";
 pres.title = company + " " + EMDASH + " EU Compliance " + (REGIME_TITLE[regimeArg] || {}).en;
 
 let pageNum = 0, TOTAL = 1;
 
 // ---------- helpers ----------
 function corner(s, color = C.black, size = 18) {
-  s.addText("colt", { x: 9.05, y: 0.18, w: 0.85, h: 0.32, fontSize: size, fontFace: FA, color, bold: true, align: "right", margin: 0 });
+  s.addText("cybergod.ai", { x: 7.85, y: 0.18, w: 2.05, h: 0.32, fontSize: 13, fontFace: FA, color, bold: true, align: "right", margin: 0 });
 }
 function tracer(s, color = C.tealDark) {
   s.addText(RAQUO + RAQUO + " " + pageNum + "/" + TOTAL, { x: 8.62, y: 5.28, w: 1.23, h: 0.28, fontSize: 9, fontFace: FB, color, bold: true, align: "right", valign: "middle", margin: 0 });

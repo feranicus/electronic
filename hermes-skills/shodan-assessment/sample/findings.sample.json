@@ -1,5 +1,5 @@
 {
-  "target": { "company": "Example AG", "audience": "Internal — Colt Sales Engineering", "date": "2026-07-06", "scope": "org:\"Example AG\", asn:AS12345, net:203.0.113.0/24" },
+  "target": { "company": "Example AG", "audience": "Internal — Sales Engineering", "date": "2026-07-06", "scope": "org:\"Example AG\", asn:AS12345, net:203.0.113.0/24" },
   "summary": { "records": 42, "unique_ips": 31, "asns": 3, "countries": 4, "critical": 2, "high": 3, "medium": 2, "low": 2 },
   "findings": [
     { "sev":"CRITICAL","id":"C1","title":"Exposed database with known-exploited CVE","what":["MongoDB reachable from the internet","Host flagged with CVE-2021-XXXX (known-exploited)"],"evidence":["203.0.113.10:27017  MongoDB 3.6","vulns: CVE-2021-XXXX"],"why":["Direct data-exfiltration path","Actively exploited in the wild"],"rem":["Firewall the DB port","Patch to supported version","Enable auth + TLS"],"refs":["CVE-2021-XXXX","CISA KEV"] },

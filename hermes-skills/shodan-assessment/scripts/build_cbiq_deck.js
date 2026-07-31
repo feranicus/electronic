@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Colt-branded C-BIQ (Cyber Business-Impact Quantification) deck generator.
+/* Cybergod-branded C-BIQ (Cyber Business-Impact Quantification) deck generator.
    Layout ported VERBATIM from the hand-authored VIP builders
    (build_rosneft_de_cbiq.js / build_ubs_cbiq.js): palette C{}, fonts
    FH/FB/FM/FD/FA, corner()/bigChevrons()/tracer()/footer()/pageHeader(),
@@ -57,7 +57,7 @@ const C = {
 const FH = "Georgia", FB = "Calibri", FM = "Consolas", FD = "Arial Black", FA = "Arial";
 const TIER = { CRIT: [C.crit, C.white], HIGH: [C.high, C.white], MED: [C.med, C.black], LOW: [C.low, C.white] };
 
-const CLASS = String(d.classification || "INTERNAL " + EMDASH + " COLT CONFIDENTIAL " + MIDDOT + " NOT FOR EXTERNAL DISTRIBUTION").toUpperCase();
+const CLASS = String(d.classification || "INTERNAL " + EMDASH + " CONFIDENTIAL " + MIDDOT + " NOT FOR EXTERNAL DISTRIBUTION").toUpperCase();
 const CAVEAT = "ILLUSTRATIVE MODEL OUTPUT " + EMDASH + " not a guarantee of loss";
 const FOOT = CLASS + " " + MIDDOT + " ILLUSTRATIVE MODEL OUTPUT (" + (cur.code || "EUR") + ")";
 
@@ -65,7 +65,7 @@ const FOOT = CLASS + " " + MIDDOT + " ILLUSTRATIVE MODEL OUTPUT (" + (cur.code |
 const I18N = require("./i18n/deck_i18n");   // EN by default; DECK_LANG=de -> Hoch-Deutsch
 const pres = I18N.install(new pptxgen());   // translates every string at the pptxgenjs boundary
 pres.layout = "LAYOUT_16x9"; // 10 x 5.625"
-pres.author = "Colt Sales Engineering";
+pres.author = "Cybergod LLC · S4Biz Group";
 pres.title = cust + " " + EMDASH + " C-BIQ Business Impact Quantification";
 
 let pageNum = 0;
@@ -115,7 +115,7 @@ findings.forEach(f => {
 // chrome / helpers (copied from the VIP builder + findings deck)
 // ==================================================================
 function corner(s, color = C.tealDark, size = 16) {
-  s.addText("colt", { x: 9.05, y: 0.18, w: 0.85, h: 0.32, fontSize: size, fontFace: FA,
+  s.addText("cybergod.ai", { x: 7.85, y: 0.18, w: 2.05, h: 0.32, fontSize: 13, fontFace: FA,
     color, bold: true, align: "right", margin: 0 });
 }
 function bigChevrons(s, o = {}) {
@@ -219,7 +219,7 @@ function titleSlide() {
   s.addText("CYBER RISK,", { x: 0.46, y: 1.48, w: 8.8, h: 0.95, fontSize: 46, fontFace: FD, color: C.black, bold: true, margin: 0 });
   s.addText("PRICED IN " + String(WORD).toUpperCase() + ".", { x: 0.46, y: 2.40, w: 8.8, h: 0.95, fontSize: 46, fontFace: FD, color: C.black, bold: true, margin: 0 });
   s.addShape(R(), { x: 0.54, y: 3.34, w: 0.22, h: 0.22, fill: { color: C.med }, line: { type: "none" } });
-  s.addText(String(cust) + " " + EMDASH + " turning the external-surface findings into " + WORD + ", and pricing each Colt remediation.",
+  s.addText(String(cust) + " " + EMDASH + " turning the external-surface findings into " + WORD + ", and pricing each remediation.",
     { x: 0.9, y: 3.30, w: 8.4, h: 0.42, fontSize: 12.5, fontFace: FA, color: C.black, italic: true, margin: 0 });
   CREED.draw(pres, s, { y: 3.74, color: C.black, accent: C.white, fontFace: FB });
   s.addShape(R(), { x: 0, y: 4.5, w: 10, h: 1.12, fill: { color: C.tealDark }, line: { type: "none" } });
@@ -227,14 +227,14 @@ function titleSlide() {
     ["FRAMEWORK", (d.frameworks && d.frameworks.join(" " + MIDDOT + " ")) || ("FAIR " + MIDDOT + " NIST IR 8286D")],
     ["METHOD", d.method || ("Monte-Carlo CRQ (" + runsStr() + " runs)")],
     ["OUTPUT", "ALE " + MIDDOT + " PML " + MIDDOT + " CoD " + MIDDOT + " ROSI"],
-    ["REMEDIATION", d.remediationSuite || "Colt PSF + managed services"],
+    ["REMEDIATION", d.remediationSuite || "PSF + managed services"],
   ];
   meta.forEach((m, i) => {
     const x = 0.5 + i * 2.32;
     s.addText(m[0], { x, y: 4.66, w: 2.25, h: 0.22, fontSize: 8, fontFace: FB, color: C.teal, bold: true, charSpacing: 1, margin: 0 });
     s.addText(m[1], { x, y: 4.90, w: 2.30, h: 0.55, fontSize: 8.6, fontFace: FB, color: C.white, valign: "top", margin: 0 });
   });
-  s.addText("All " + WORD + " figures are ILLUSTRATIVE model output, not measured loss " + EMDASH + " calibrated to public benchmarks plus stated assumptions. Internal Colt pursuit material.",
+  s.addText("All " + WORD + " figures are ILLUSTRATIVE model output, not measured loss " + EMDASH + " calibrated to public benchmarks plus stated assumptions. Internal pursuit material.",
     { x: 0.5, y: 5.42, w: 9.0, h: 0.2, fontSize: 6.6, fontFace: FB, color: C.black, margin: 0 });
 }
 
@@ -248,7 +248,7 @@ function dividerSlide() {
   bigChevrons(s, { x: 0.5, w: 9.0, yStart: 0.10, triH: 1.55, gap: 0.30, color: C.white, opacity: 0.14 });
   s.addText("BUSINESS IMPACT.", { x: 0, y: 1.9, w: 10, h: 1.6, fontSize: 58, fontFace: FD,
     color: C.white, bold: true, align: "center", valign: "middle", margin: 0 });
-  s.addText("What the exposure costs in " + WORD + " " + EMDASH + " and how much risk each Colt control buys back.",
+  s.addText("What the exposure costs in " + WORD + " " + EMDASH + " and how much risk each control buys back.",
     { x: 0.5, y: 3.5, w: 9, h: 0.4, fontSize: 13, fontFace: FB, color: C.teal, align: "center", italic: true, margin: 0 });
   corner(s, C.white, 16);
   tracer(s, C.white);
@@ -319,7 +319,7 @@ function engineSlide() {
     ["4", "Magnitude (LM)", "What one event costs, summed across seven cash buckets (Deloitte)"],
     ["5", "Simulate", runsStr() + " Monte-Carlo runs " + RARR + " ALE, PML and the loss-exceedance curve"],
     ["6", "Register & compare", "Write to the risk register; test against risk appetite (NIST 8286D)"],
-    ["7", "Treat & re-measure", "Apply the Colt fix, recompute, report ROSI (Gartner)"],
+    ["7", "Treat & re-measure", "Apply the fix, recompute, report ROSI (Gartner)"],
   ];
   let y = 1.34;
   steps.forEach((st, i) => {
@@ -330,7 +330,7 @@ function engineSlide() {
     s.addText(st[2], { x: 4.1, y, w: 5.6, h: h - 0.06, fontSize: 9, fontFace: FB, color: C.ink, valign: "middle", margin: 0 });
     y += h;
   });
-  s.addText("Steps 1" + EMDASH + "6 any CRQ vendor can do. Step 7 " + EMDASH + " apply the fix and prove the ROSI " + EMDASH + " is the part only a delivery partner closes. That is Colt.",
+  s.addText("Steps 1" + EMDASH + "6 any CRQ vendor can do. Step 7 " + EMDASH + " apply the fix and prove the ROSI " + EMDASH + " is the part only a delivery partner closes. That is you.",
     { x: 0.4, y: 4.92, w: 9.3, h: 0.3, fontSize: 8.6, fontFace: FB, color: C.green, bold: true, italic: true, margin: 0 });
 }
 
@@ -379,7 +379,7 @@ function fairMathSlide() {
 // ==================================================================
 function lecSlide() {
   const s = content("The board picture", "Loss-exceedance curve " + EMDASH + " the whole curve shifts down after remediation");
-  s.addText("Read it as: a P% chance " + cust + " loses at least " + SYM + "X to an external-surface cyber event in a year. The Colt remediation shifts the entire curve toward the origin " + EMDASH + " the drawn version of the ROSI.",
+  s.addText("Read it as: a P% chance " + cust + " loses at least " + SYM + "X to an external-surface cyber event in a year. The remediation shifts the entire curve toward the origin " + EMDASH + " the drawn version of the ROSI.",
     { x: 0.4, y: 1.28, w: 9.3, h: 0.44, fontSize: 9, fontFace: FB, color: C.ink, valign: "top", margin: 0, lineSpacingMultiple: 1.03 });
   const lec = d.lossExceedance || {};
   const th = Array.isArray(lec.thresholds) ? lec.thresholds : [];
@@ -387,7 +387,7 @@ function lecSlide() {
   if (th.length && (lec.before || lec.after)) {
     const data = [];
     if (lec.before) data.push({ name: "Before remediation", labels: th.map(money), values: pct(lec.before) });
-    if (lec.after) data.push({ name: "After Colt controls", labels: th.map(money), values: pct(lec.after) });
+    if (lec.after) data.push({ name: "After controls", labels: th.map(money), values: pct(lec.after) });
     s.addChart(pres.charts.LINE, data, {
       x: 0.5, y: 1.80, w: 9.0, h: 3.05, chartColors: [C.crit, C.green], lineSize: 3, lineSmooth: true,
       showLegend: true, legendPos: "t", legendColor: C.ink, legendFontFace: FB, legendFontSize: 9, showTitle: false,
@@ -402,7 +402,7 @@ function lecSlide() {
   const p = d.portfolio || {};
   const aleTxt = p.aleRange ? moneyRange(p.aleRange) : money(p.aleLikely);
   const pmlTxt = (p.largestPmls && p.largestPmls[0]) ? money(p.largestPmls[0].pml) : EMDASH;
-  s.addText("Before: ALE " + APPROX + " " + aleTxt + ", PML " + APPROX + " " + pmlTxt + ".  After Colt remediation the curve collapses toward the origin " + EMDASH + " illustrative.",
+  s.addText("Before: ALE " + APPROX + " " + aleTxt + ", PML " + APPROX + " " + pmlTxt + ".  After remediation the curve collapses toward the origin " + EMDASH + " illustrative.",
     { x: 0.5, y: 4.94, w: 9, h: 0.24, fontSize: 8, fontFace: FB, color: C.inkMuted, italic: true, align: "center", margin: 0 });
 }
 
@@ -520,10 +520,10 @@ function rosiSlide() {
 // SLIDE 11 -- EVERY FINDING PRICED (table with coloured tier badges)
 // ==================================================================
 function pricedTableSlide() {
-  const s = content("Every finding " + EMDASH + " priced & assigned", "Findings " + RARR + " " + WORD + " " + RARR + " the Colt control that retires each");
+  const s = content("Every finding " + EMDASH + " priced & assigned", "Findings " + RARR + " " + WORD + " " + RARR + " the control that retires each");
   const cols = [0.62, 0.7, 3.16, 0.72, 1.4, 1.4, 1.3];
   const X = 0.4;
-  const hd = ["SEV", "ID", "FINDING / LOSS DRIVER", "LEF", "ALE " + SYM + "/yr", "PML " + SYM, "COLT CONTROL"];
+  const hd = ["SEV", "ID", "FINDING / LOSS DRIVER", "LEF", "ALE " + SYM + "/yr", "PML " + SYM, "RECOMMENDED CONTROL"];
   const y = 1.34, hH = 0.28;
   const rows = findings.slice(0, 11).map(f => [
     { text: f.tier || "LOW", fill: (TIER[f.tier] || TIER.LOW)[0], color: (TIER[f.tier] || TIER.LOW)[1], bold: true, align: "center" },
@@ -584,7 +584,7 @@ function workedExampleSlide() {
     ["ALE range / yr", moneyRange(crit.aleRange), C.crit],
     ["PML (worst case)", moneyRange(crit.pmlRange), C.high],
     ["Cost of Delay / mo", moneyRange(crit.codRange), C.gold],
-    ["Colt control", crit.coltControl || EMDASH, C.teal],
+    ["control", crit.coltControl || EMDASH, C.teal],
     ["Residual ALE / ROSI", (crit.aleAfter != null ? money(crit.aleAfter) : EMDASH) + "  /  " + (crit.rosiPct != null ? crit.rosiPct + "%" : EMDASH), C.green],
   ];
   outs.forEach((r, i) => {
@@ -623,7 +623,7 @@ function closerSlide() {
   const acts = [
     ["FRAME", "Agree the board questions and a " + WORD + " risk-appetite line with " + cust + "'s CISO/CFO (one workshop)."],
     ["CALIBRATE", "Replace the illustrative inputs with revenue-per-hour, incident history and the insurance tower " + EMDASH + " recompute ALE/PML."],
-    ["SEQUENCE", "Fund the controls in staged order, leading with the largest buy-back (" + (d.remediationSuite || "Colt PSF + managed services") + ")."],
+    ["SEQUENCE", "Fund the controls in staged order, leading with the largest buy-back (" + (d.remediationSuite || "PSF + managed services") + ")."],
     ["WATCH", "Stand up continuous external re-scan so the number stays live, not a point-in-time snapshot."],
   ];
   let ay = 1.55; const ah = 0.84;
@@ -637,7 +637,7 @@ function closerSlide() {
     ay += ah;
   });
   s.addText(CAVEAT, { x: 0.4, y: 5.30, w: 7.4, h: 0.22, fontSize: 8, fontFace: FB, color: C.teal, italic: true, charSpacing: 1, valign: "middle", margin: 0 });
-  s.addText("colt", { x: 8.9, y: 5.28, w: 1.0, h: 0.28, fontSize: 12, fontFace: FA, color: C.white, bold: true, align: "right", margin: 0 });
+  s.addText("cybergod.ai", { x: 7.9, y: 5.28, w: 2.0, h: 0.28, fontSize: 10, fontFace: FA, color: C.white, bold: true, align: "right", margin: 0 });
 }
 
 // ---------- build ----------
@@ -666,10 +666,10 @@ function lossScenariosSlide() {
 }
 
 // ==================================================================
-// SLIDE (NEW) -- WHY COLT MEASURES IT  (Scanner/ASM vs Big-Four vs Colt C-BIQ)
+// SLIDE (NEW) -- WHY WE MEASURE IT  (Scanner/ASM vs Big-Four vs C-BIQ)
 // ==================================================================
 function whyColtSlide() {
-  const s = content("Why Colt measures it", "Three ways to look at cyber risk " + EMDASH + " only one closes the loop");
+  const s = content("Why we measure it", "Three ways to look at cyber risk " + EMDASH + " only one closes the loop");
   const cols = [
     ["SCANNER / ASM", C.dark,
       ["Lists what is exposed", "Severity labels (CVSS)", "No " + WORD + " figure", "No board narrative", "Cannot remediate"],
@@ -677,7 +677,7 @@ function whyColtSlide() {
     ["BIG-FOUR CRQ", C.gold,
       ["Prices risk in " + WORD, "FAIR / Monte-Carlo", "Board-ready report", "Advisory only", "Hands back a slide, not a fix"],
       "Tells you what the open door costs."],
-    ["COLT C-BIQ", C.tealDark,
+    ["C-BIQ", C.tealDark,
       ["Prices risk in " + WORD, "FAIR / Monte-Carlo", "Board-ready + ROSI", "Retires the finding", "Then keeps watching (live)"],
       "Closes the door, prices it while doing so, keeps watching."],
   ];
@@ -699,7 +699,7 @@ function whyColtSlide() {
       color: lead ? C.white : C.inkMuted, valign: "middle", margin: 0 });
     cx += cw + cg;
   });
-  s.addText("A scanner tells you the door is open; a consultant tells you what an open door costs; Colt closes the door, prices the risk while doing it, and keeps watching " + EMDASH + " one accountable contract.",
+  s.addText("A scanner tells you the door is open; a consultant tells you what an open door costs; a delivery partner closes the door, prices the risk while doing it, and keeps watching " + EMDASH + " one accountable contract.",
     { x: 0.4, y: 4.86, w: 9.3, h: 0.34, fontSize: 8.4, fontFace: FB, color: C.tealDark, bold: true, italic: true, margin: 0 });
 }
 
@@ -707,7 +707,7 @@ function whyColtSlide() {
 // SLIDE (NEW) -- STAGED WATERFALL TO ZERO  (renders portfolio.waterfall)
 // ==================================================================
 function waterfallSlide() {
-  const s = content("Staged waterfall to " + APPROX + " 0", "Each Colt control removes a slice of the portfolio ALE");
+  const s = content("Staged waterfall to " + APPROX + " 0", "Each control removes a slice of the portfolio ALE");
   const p = d.portfolio || {};
   const wf = Array.isArray(p.waterfall) ? p.waterfall : [];
   const startAle = (p.aleRange && p.aleRange[1]) || p.aleLikely || 0;
@@ -736,7 +736,7 @@ function waterfallSlide() {
     y += barH + gap + (i > 0 ? 0.06 : 0);
   });
   s.addText([{ text: "Residual " + APPROX + " " + money(remaining) + ".  ", options: { bold: true, color: C.green } },
-    { text: "\u201cZero\u201d means the modelled internet-facing surface after every asset is removed or placed behind a Colt control " + EMDASH + " internal risk is out of scope.", options: { color: C.inkMuted, italic: true } }],
+    { text: "\u201cZero\u201d means the modelled internet-facing surface after every asset is removed or placed behind a control " + EMDASH + " internal risk is out of scope.", options: { color: C.inkMuted, italic: true } }],
     { x: 0.4, y: 5.0, w: 9.3, h: 0.3, fontSize: 8, fontFace: FB, margin: 0 });
 }
 
@@ -773,7 +773,7 @@ function glossarySlide() {
 
 titleSlide();          // 1
 dividerSlide();        // 2
-whyColtSlide();        // 3  (NEW: Scanner/ASM vs Big-Four vs Colt C-BIQ)
+whyColtSlide();        // 3  (NEW: Scanner/ASM vs Big-Four vs C-BIQ)
 threeNumbersSlide();   // 4
 standardsSlide();      // 5
 engineSlide();         // 6

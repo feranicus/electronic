@@ -27,7 +27,7 @@ const T = {
   confirmNote: { en: "Inferred from the company name — confirm via the clarification questions to finalise scope.", de: "Aus dem Firmennamen abgeleitet — bitte über die Rückfragen bestätigen." },
   obligations: { en: "Core obligations", de: "Kernpflichten" }, gaps: { en: "Priority gaps", de: "Prioritäre Lücken" },
   noGaps: { en: "No priority gaps recorded at the assumed scope.", de: "Keine prioritären Lücken bei angenommenem Anwendungsbereich." },
-  penalty: { en: "Penalty exposure", de: "Bußgeld-Exposition" }, colt: { en: "How Colt helps", de: "Wie Colt unterstützt" },
+  penalty: { en: "Penalty exposure", de: "Bußgeld-Exposition" }, colt: { en: "How we help", de: "Wie wir unterstützen" },
   timeline: { en: "Deadline calendar", de: "Fristenkalender" }, roadmap: { en: "Remediation roadmap", de: "Umsetzungs-Fahrplan" },
   sector: { en: "Sector", de: "Sektor" }, size: { en: "Size", de: "Größe" },
   digital: { en: "Sells digital products", de: "Digitale Produkte" }, ai: { en: "Builds / deploys AI", de: "Baut / nutzt KI" },
@@ -183,7 +183,7 @@ footer{padding:34px 0;color:var(--mut);font-size:12.5px}
   </section>
 </div>
 
-<footer><div class="wrap"><span class="wm">» colt</span> &nbsp; ${esc(L("sources"))}</div></footer>
+<footer><div class="wrap"><span class="wm">» cybergod.ai</span> &nbsp; ${esc(L("sources"))}</div></footer>
 <script>
 (function(){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target);}});},{threshold:.12});
 document.querySelectorAll(".reveal").forEach(function(el){io.observe(el);});})();

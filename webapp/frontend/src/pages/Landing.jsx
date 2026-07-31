@@ -86,17 +86,17 @@ export default function Landing() {
     }
 
     const CONV = [
-      { s: "me", t: "/auth jevgenijs.vainsteins@colt.net ********", cmd: "/auth" },
+      { s: "me", t: "/auth WhatsApp +351 939 994 642 ********", cmd: "/auth" },
       { s: "them", typ: 900, t: "Code emailed. Reply /verify <code> (valid 10 min)." },
       { s: "me", t: "/verify 483920", cmd: "/verify" },
       { s: "them", typ: 700, t: "Verified. You're in." },
       { s: "me", t: "/assess Volkswagen AG", cmd: "/assess" },
       { s: "them", typ: 1000, t: "Assessing Volkswagen AG ..." },
       { s: "them", typ: 1600, t: "[auto] 9 ASNs / 41 domains / internal-CA VW-CA-PROC-09 / sweeping Shodan..." },
-      { s: "file", fn: "VW_Shodan_Findings.pptx", fs: "2 CRIT / 4 HIGH / evidence + Colt fixes", typ: 900 },
+      { s: "file", fn: "VW_Shodan_Findings.pptx", fs: "2 CRIT / 4 HIGH / evidence + fixes", typ: 900 },
       { s: "file", fn: "VW_C-BIQ.pptx", fs: "portfolio ALE EUR 11M-29M" },
       { s: "file", fn: "VW_GEOPOL.pptx", fs: "APT41/Winnti +4 adversaries" },
-      { s: "file", fn: "VW_DELTAS.pptx", fs: "value Colt buys back" },
+      { s: "file", fn: "VW_DELTAS.pptx", fs: "value the fix buys back" },
       { s: "them", typ: 600, t: "Done in 2m 10s. 4 decks ready." },
     ];
     const tb = root.querySelector("#tgbody");
@@ -167,7 +167,7 @@ export default function Landing() {
       { id: "web",    x: 105,  y: 262, ico: "screen", t: "WEB APP",      s: "cybergod.ai cabinet",   c: C.green,  n: "1",  dd: "d1" },
       { id: "gh",     x: 105,  y: 462, ico: "octo",   t: "GITHUB CI/CD", s: "build/scan/ship",       c: C.teal,   n: "11", dd: "d11" },
       { id: "patch",  x: 105,  y: 602, ico: "patch",  t: "PATCHWATCH",   s: "self-patch /3d",        c: C.purple, n: "10", dd: "d10" },
-      { id: "bot",    x: 355,  y: 110, ico: "shield", t: "colttechbot",  s: "the assessor",          c: C.teal,   n: "1",  dd: "d1", big: true },
+      { id: "bot",    x: 355,  y: 110, ico: "shield", t: "assessment bot", s: "the assessor",          c: C.teal,   n: "1",  dd: "d1", big: true },
       { id: "cass",   x: 355,  y: 262, ico: "compass",t: "cassandra",    s: "research assistant",          c: C.teal,   n: "1",  dd: "d1" },
       { id: "auth",   x: 355,  y: 412, ico: "lock",   t: "ZERO-TRUST",   s: "email+pw+code",         c: C.purple, n: "2",  dd: "d2" },
       { id: "eng",    x: 600,  y: 252, ico: "gear",   t: "ENGINE",       s: "recon to decks",        c: C.teal,   n: "3",  dd: "d3", big: true },
@@ -275,8 +275,8 @@ export default function Landing() {
     }
 
     const DD = [
-      { id: "d1", n: "1", ic: "\ud83d\udcf1", c: C.green, h: "Two front doors, one input", plain: "Type a company name - in <b>Telegram</b>, or in the <b>cybergod.ai web app</b>. Same engine, same decks. Two bots live on the server: <b>colttechbot</b> assesses, <b>cassandra</b> answers questions about the findings.", hood: ["<code>python-telegram-bot</code>, one per bot, in Docker", "React cabinet: Assess / Compliance / Assistant / History", "The run is owned by the SERVER - lock your phone, it keeps going"] },
-      { id: "d2", n: "2", ic: "\ud83d\udd10", c: C.purple, h: "Zero-trust login (2FA)", plain: "You need an approved <b>@colt.net</b> or partner email, the shared password, <b>and</b> a one-time code emailed to that inbox. Knowing the password isn't enough - you must own the mailbox.", hood: ["<code>colt_auth.py</code>: constant-time compare, lockout, 10-min codes", "OTP delivered via <b>Gmail API over HTTPS</b> (droplet blocks SMTP ports)", "One gate shared by the bots AND the web app - they can never disagree"] },
+      { id: "d1", n: "1", ic: "\ud83d\udcf1", c: C.green, h: "Two front doors, one input", plain: "Type a company name - in <b>Telegram</b>, or in the <b>cybergod.ai web app</b>. Same engine, same decks. Two bots live on the server: the <b>assessment bot</b> runs the scan, <b>cassandra</b> answers questions about the findings.", hood: ["<code>python-telegram-bot</code>, one per bot, in Docker", "React cabinet: Assess / Compliance / Assistant / History", "The run is owned by the SERVER - lock your phone, it keeps going"] },
+      { id: "d2", n: "2", ic: "\ud83d\udd10", c: C.purple, h: "Zero-trust login (2FA)", plain: "You need an approved <b>company or partner email</b>, the shared password, <b>and</b> a one-time code emailed to that inbox. Knowing the password isn't enough - you must own the mailbox.", hood: ["Shared auth module: constant-time compare, lockout, 10-min codes", "OTP delivered via <b>Gmail API over HTTPS</b> (droplet blocks SMTP ports)", "One gate shared by the bots AND the web app - they can never disagree"] },
       { id: "d3", n: "3", ic: "\ud83e\udde9", c: C.teal, h: "The engine + auto-discovery", plain: "From just the name the engine finds the company's <b>networks, domains and certificates</b> - then hunts, scores and writes. You never hand it an IP.", hood: ["ASNs+prefixes from RIPE + CAIDA + PeeringDB + bgpview", "Brand domains/subdomains: <code>crt.sh</code> + CertSpotter CT logs + DNS probe", "Ownership gate: a discovered domain is a CANDIDATE, never proof", "Scope blow-out guard - it refuses to build decks from an unverified estate"] },
       { id: "d4", n: "4", ic: "\ud83d\udd2d", c: C.gold, h: "Shodan - what's exposed", plain: "It queries Shodan for exposed remote-access, databases, VPNs, mail, industrial gear and known-vulnerable systems - plus the killer pivot: the company's own private CA and whois-org, which reveal the hidden estate.", hood: ["30+ super-filters; edge appliances (firewalls, VPN concentrators) = CRITICAL", "Paid facets: <code>has_vuln</code>, <code>vuln:CVE</code>, <code>tag:ics</code>, <code>ssl.jarm</code>", "CDN/honeypot false-positives dropped automatically"] },
       { id: "d5", n: "5", ic: "\ud83e\udd16", c: C.gold, h: "The AI writes it - you get five artifacts", plain: "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen - in English or Hochdeutsch.", hood: ["Multi-VENDOR chain with failover - a 429 is provider-wide, so the backup must be another vendor", "<code>pptxgenjs</code> templates lock layout; numbers stay deterministic", "Hallucination guard: any CVE not in the scan evidence is stripped, and logged"] },
@@ -312,7 +312,7 @@ export default function Landing() {
   return (
     <div ref={rootRef}>
       <header id="hd"><div className="wrap">
-        <span className="brand"><span className="chev">❯</span> colt</span>
+        <span className="brand"><span className="chev">❯</span> cybergod<span class="g">.ai</span></span>
         <nav>
           <a href="#edge">Why it matters</a><a href="#demo">See it live</a><a href="#map">The machine</a>
           <a href="#deep">Deep dive</a><a href="#secure">Security</a><Link to="/contact">Contact</Link>
@@ -326,7 +326,7 @@ export default function Landing() {
       <section className="hero">
         <canvas id="dust"></canvas>
         <div className="wrap">
-          <div className="kick">Colt / S4Biz - external cyber-risk assessment</div>
+          <div className="kick">Cybergod LLC / S4Biz Group - external cyber-risk assessment</div>
           <h1>Type a company name.<br /><span className="g">Four boardroom decks.</span> Two minutes.</h1>
           <p className="sub">Every organisation has an internet-facing footprint it cannot fully see. From one
             company name, this maps yours using public sources alone, prices the risk in euros, names the
@@ -448,7 +448,7 @@ export default function Landing() {
         <div className="demo">
           <div className="phone"><div className="notch"></div><div className="screen">
             <div className="tgh"><span className="bk">‹</span><div className="av">C</div>
-              <div><div className="nm">colttechbot</div><div className="st">bot / online</div></div>
+              <div><div className="nm">assessment bot</div><div className="st">bot / online</div></div>
               <div className="dots">⋮</div></div>
             <div className="tgbody" id="tgbody"></div>
           </div></div>
@@ -502,16 +502,16 @@ export default function Landing() {
         <h2>Locked <span className="g">down</span></h2>
         <p className="lede">Secure-by-design, in plain terms.</p>
         <div className="grid2">
-          <div className="hood"><div className="h">Nobody walks in</div><ul><li>Real <code>@colt.net</code> email + shared password <b style={{ color: "var(--teal)" }}>+ a one-time code emailed to that inbox</b>. Guessing the first two isn't enough.</li></ul></div>
+          <div className="hood"><div className="h">Nobody walks in</div><ul><li>Real <code>your approved address</code> email + shared password <b style={{ color: "var(--teal)" }}>+ a one-time code emailed to that inbox</b>. Guessing the first two isn't enough.</li></ul></div>
           <div className="hood"><div className="h">Secrets never in git</div><ul><li>Keys live only on the server or as encrypted GitHub secrets; <code>gitleaks</code> blocks accidental commits.</li></ul></div>
           <div className="hood"><div className="h">Scanned before ship</div><ul><li>Trivy (deps+image), CodeQL SAST, ruff, pytest - every change checked before it reaches the server.</li></ul></div>
-          <div className="hood"><div className="h">Never breaks the neighbours</div><ul><li>Isolated <code>colt-stack</code>; the existing VPN and services and the firewall are untouched.</li></ul></div>
+          <div className="hood"><div className="h">Never breaks the neighbours</div><ul><li>An isolated container stack; existing services and the firewall are untouched.</li></ul></div>
         </div>
       </div></section>
 
       <div className="foot"><div className="wrap">
-        <div style={{ fontSize: 20, fontWeight: 800 }}><span className="chev">❯</span> colt</div>
-        <p>Colt / S4Biz - external cyber-risk and EU compliance assessment / one company name in, four boardroom documents out.</p>
+        <div style={{ fontSize: 20, fontWeight: 800 }}><span className="chev">❯</span> cybergod<span class="g">.ai</span></div>
+        <p>Cybergod LLC / S4Biz Group - external cyber-risk and EU compliance assessment / one company name in, four boardroom documents out.</p>
         <Link className="btn" to="/login">Open the app</Link>
         <div className="footlinks">
           <Link to="/contact">Kontakt / Contact</Link><span>&middot;</span>

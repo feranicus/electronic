@@ -194,7 +194,7 @@ If confirmed facts are provided under CONFIRMED, they OVERRIDE your inference an
 STEP 2 — For EACH regime decide applicability from those assumptions and the reference's scope rules,
 then produce the analysis. NEVER invent an article number, deadline, penalty figure or fine that is not
 in the reference. The obligations/deadlines/penalty maxima are FIXED — reproduce them faithfully; your
-job is the company-specific applicability, rationale, GAPS and Colt remediation.
+job is the company-specific applicability, rationale, GAPS and remediation.
 
 Return this EXACT shape:
 {
@@ -204,7 +204,7 @@ Return this EXACT shape:
    "nis2": {"applies": true, "classification":"Essential|Important|Out of scope|Unclear",
             "rationale":"2-3 sentences tying sector+size to the essential/important test",
             "gaps":[{"sev":"HIGH|MEDIUM|LOW","title":"","detail":"attacker/impact + the article","article":"Art. 23"}],
-            "colt":[{"title":"Colt service","body":"what it delivers, mapped to the article"}]},
+            "colt":[{"title":"managed service","body":"what it delivers, mapped to the article"}]},
    "cra":   {"applies": true, "classification":"Default self-assessment|Important (Class I/II)|Critical|Out of scope|Unclear",
             "rationale":"tie product profile to the PDE test + MDR carve-out if relevant",
             "gaps":[...], "colt":[...]},
@@ -213,7 +213,7 @@ Return this EXACT shape:
             "gaps":[...], "colt":[...]}
  },
  "roadmap": {"exec_summary":"3-4 sentences for a board: combined exposure, the nearest hard deadline, the biggest gap",
-             "priorities":[{"regime":"AI Act","action":"","why":"deadline/penalty","colt":"the Colt service"}]}
+             "priorities":[{"regime":"AI Act","action":"","why":"deadline/penalty","colt":"the managed service"}]}
 }
 Give 3-5 gaps and 2-3 colt items per APPLICABLE regime; [] for an out-of-scope regime. Every gap
 sentence must carry an attacker action or a business/deadline consequence AND the article — no filler.

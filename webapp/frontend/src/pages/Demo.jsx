@@ -13,7 +13,7 @@ import { Link } from "react-router-dom";
  *  - the company does not exist, and no real organisation is named anywhere on the page.
  */
 
-const CONTACT = "jevgenijs.vainsteins@colt.net";
+const CONTACT = "WhatsApp +351 939 994 642";
 
 /* The hero: a short Cassandra film, not an illustration.
  *
@@ -161,7 +161,7 @@ export default function Demo() {
             <h3>It writes the boardroom papers</h3>
             <p>
               Four decks and an animated report, in English or Hoch&shy;deutsch: what is exposed, what
-              it would cost in euros, who would plausibly come for it, and which Colt service closes
+              it would cost in euros, who would plausibly come for it, and which service closes
               each gap. Roughly three minutes, start to finish.
             </p>
           </div>
@@ -228,18 +228,18 @@ export default function Demo() {
         <div className="demo-access">
           <h2>Running this against your own estate</h2>
           <p>
-            The demonstration above is open to everyone. <b>Live assessments are available to Colt
-            employees and Colt Partners only</b>, because each one consumes licensed scanning capacity
+            The demonstration above is open to everyone. <b>Live assessments are available to approved
+            partners only</b>, because each one consumes licensed scanning capacity
             and produces material about a real organisation.
           </p>
           <p>
-            If you are a Colt Partner or a Colt employee and would like access, get in touch:
+            If you sell cyber security and would like access, get in touch:
           </p>
           <a className="demo-mail" href={`mailto:${CONTACT}?subject=cybergod.ai%20access%20request`}>
             {CONTACT}
           </a>
           <p className="demo-warn-sub">
-            Please include your company and your Colt relationship so access can be confirmed.
+            Please include your company and your role so access can be confirmed.
           </p>
           <div className="demo-actions">
             <Link className="btn ghost" to="/">Back to the main page</Link>
