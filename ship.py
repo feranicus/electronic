@@ -590,22 +590,44 @@ def do_tests():
                 if _h:
                     brand_ok = False
                     print("    !! %s_%s.pptx renders 'Colt': %s" % (_b, _lang, _h[:3]))
-        # and the pages the customer actually loads
-        _fe = os.path.join(HERE, "webapp", "frontend", "src")
-        for _pg in ("pages/Landing.jsx", "pages/Login.jsx", "pages/Demo.jsx", "legal.jsx",
-                    "components/Sidebar.jsx"):
-            _p = os.path.join(_fe, _pg.replace("/", os.sep))
-            if os.path.exists(_p):
-                _src = open(_p, encoding="utf-8").read()
-                # strip // and /* */ comments before matching: a code comment is not customer-facing
-                _vis = re.sub(r"/\*.*?\*/", "", re.sub(r"//[^\n]*", "", _src), flags=re.S)
-                if re.search(r"(?i)colt", _vis):
-                    brand_ok = False
-                    print("    !! %s still shows 'Colt': %s"
-                          % (_pg, re.findall(r"(?i).{0,40}colt.{0,40}", _vis)[:2]))
+        # EVERY surface a user touches, not just the web pages. The first pass missed the PWA
+        # manifest (the name a phone puts on the HOME SCREEN), the browser tab title, the OTP email
+        # subject and BOTH Telegram bots — all of them customer-facing, none of them a React page.
+        _fe = os.path.join(HERE, "webapp", "frontend")
+        _SURFACES = [
+            (os.path.join(_fe, "src", "pages", "Landing.jsx"), "js"),
+            (os.path.join(_fe, "src", "pages", "Login.jsx"), "js"),
+            (os.path.join(_fe, "src", "pages", "Demo.jsx"), "js"),
+            (os.path.join(_fe, "src", "legal.jsx"), "js"),
+            (os.path.join(_fe, "src", "components", "Sidebar.jsx"), "js"),
+            (os.path.join(_fe, "index.html"), "html"),                    # browser tab
+            (os.path.join(_fe, "public", "manifest.webmanifest"), "html"),  # phone home screen
+            (os.path.join(HERE, "assess-bot", "bot.py"), "py"),           # Telegram
+            (os.path.join(HERE, "cassandra-bot", "cassandra_bot.py"), "py"),
+        ]
+        # Infrastructure identifiers legitimately keep the old name (log paths, the auth-store key,
+        # the shared auth module, container/volume names). They are never shown to a user.
+        _INFRA = re.compile(r"/var/log/colt|colt_auth|COLT_USER|colt_events|colt-|colttechbot")
+        for _p, _kind in _SURFACES:
+            if not os.path.exists(_p):
+                continue
+            _src = open(_p, encoding="utf-8").read()
+            _vis = (re.sub(r"#[^\n]*", "", _src) if _kind == "py"
+                    else re.sub(r"/\*.*?\*/", "", re.sub(r"//[^\n]*", "", _src), flags=re.S))
+            _bad = [h for h in re.findall(r"(?i).{0,40}colt.{0,40}", _vis) if not _INFRA.search(h)]
+            if _bad:
+                brand_ok = False
+                print("    !! %s still shows 'Colt': %s"
+                      % (os.path.basename(_p), [b.strip()[:60] for b in _bad[:2]]))
+        # the one-time-code email a user receives
+        _ca = open(os.path.join(HERE, "colt_auth.py"), encoding="utf-8").read()
+        if re.search(r'msg\["Subject"\] = "[^"]*(?i:colt)', _ca):
+            brand_ok = False
+            print("    !! the OTP email subject still says Colt")
     except Exception as _e:
         brand_ok = False; print("    brand gate error: %r" % _e)
-    print("  brand: nothing customer-facing says 'Colt' (6 decks EN+DE, 5 pages): %s"
+    print("  brand: nothing customer-facing says 'Colt' "
+          "(6 decks EN+DE · web · PWA shell · 2 Telegram bots · OTP email): %s"
           % ("OK" if brand_ok else "BROKEN"))
     if not brand_ok:
         sys.exit("[X] brand gate failed - a customer-facing surface still says Colt")

@@ -145,7 +145,7 @@ class Auth:
 
     def _build_msg(self, email, code):
         msg = EmailMessage()
-        msg["Subject"] = "Your Colt bot access code"
+        msg["Subject"] = "Your cybergod.ai access code"
         msg["From"] = SMTP_FROM or GMAIL_SENDER; msg["To"] = email
         msg.set_content("Your one-time access code is: %s\n\nIt expires in %d minutes.\n"
                         "If you did not request this, ignore this email.\n\n- Colt pre-sales bot" % (code, OTP_TTL // 60))

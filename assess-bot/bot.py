@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Colt assessment Telegram bot (colttechbot) — deterministic engine + ONE controlled
-DeepSeek enrichment call. Zero-trust gate: every user must authenticate with a Colt-branded
-email (name.familyname@colt.net) + a shared 99-char access password BEFORE using /assess.
+"""cybergod.ai assessment Telegram bot — deterministic engine + ONE controlled
+DeepSeek enrichment call. Zero-trust gate: every user must authenticate with an approved
+email (name.familyname@yourcompany.com) + a shared 99-char access password BEFORE using /assess.
 Streams live phase progress, shows when the AI takes over (tokens + est cost), and re-emits
 structured JSON events (incl. auth audit) for the Loki/Grafana observability stack."""
 import os, json, time, asyncio, colt_auth
@@ -40,22 +40,22 @@ AUTH = colt_auth.Auth(BOT_NAME, AUTHFILE, log=_log)   # email + password + email
 
 async def start(update, ctx):
     await update.message.reply_text(
-        "\U0001f512 Colt Cyber Assessment bot (colttechbot) — zero-trust access.\n\n"
-        "To use this bot you must authenticate with your Colt identity:\n"
-        "  /auth name.familyname@colt.net <access-password>\n\n"
-        "Example:\n  /auth jevgenijs.vainsteins@colt.net <password>\n\n"
+        "\U0001f512 cybergod.ai Cyber Assessment bot — zero-trust access.\n\n"
+        "To use this bot you must authenticate with your approved identity:\n"
+        "  /auth name.familyname@yourcompany.com <access-password>\n\n"
+        "Example:\n  /auth name.familyname@yourcompany.com <password>\n\n"
         "After authentication:\n"
         "  /assess <company / domain / ASN>\n"
         "  e.g.  /assess keb.de\n"
         "  Behind a CDN?  /assess <company> --asn AS1234 --net 1.2.3.0/24\n"
         "  I will ask English or Deutsch; skip with  /assess <company> --lang de\n\n"
-        "2-step: after /auth I email a 6-digit code to your Colt address; reply /verify <code>.\n"
+        "2-step: after /auth I email a 6-digit code to that address; reply /verify <code>.\n"
         "⚠ Your /auth message contains a secret — delete it from this chat afterwards.")
 
 async def auth(update, ctx):
     uid = update.effective_user.id
     if len(ctx.args) < 2:
-        await update.message.reply_text("Usage: /auth name.familyname@colt.net <access-password>")
+        await update.message.reply_text("Usage: /auth name.familyname@yourcompany.com <access-password>")
         return
     email = ctx.args[0].strip(); pw = " ".join(ctx.args[1:]).strip()
     _, msg = AUTH.begin(uid, email, pw)               # validates, then emails a 6-digit code
@@ -64,7 +64,7 @@ async def auth(update, ctx):
 async def verify(update, ctx):
     uid = update.effective_user.id
     if not ctx.args:
-        await update.message.reply_text("Usage: /verify <6-digit code from your Colt email>"); return
+        await update.message.reply_text("Usage: /verify <6-digit code from your email>"); return
     _, msg = AUTH.verify(uid, ctx.args[0].strip())
     await update.message.reply_text(msg)
 
@@ -75,7 +75,7 @@ async def assess(update, ctx):
     if not AUTH.is_authed(uid, ALLOWED):
         await update.message.reply_text(
             "\U0001f512 Not authenticated. Run:\n"
-            "  /auth name.familyname@colt.net <access-password>\n"
+            "  /auth name.familyname@yourcompany.com <access-password>\n"
             "then /verify <code> from the email I send you.")
         _log(evt="assess_denied", user=str(uid), ts=int(time.time())); return
     if not ctx.args:
@@ -190,7 +190,7 @@ def main():
     app.add_handler(CommandHandler("verify", verify))
     app.add_handler(CommandHandler("assess", assess))
     app.add_handler(CallbackQueryHandler(on_lang, pattern=r"^lang:(en|de)$"))
-    print("colttechbot polling (zero-trust auth enabled)...", flush=True)
+    print("assessment bot polling (zero-trust auth enabled)...", flush=True)
     app.run_polling()
 
 if __name__ == "__main__":

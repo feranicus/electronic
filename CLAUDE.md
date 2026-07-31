@@ -1473,7 +1473,13 @@ the Caddy block and every Grafana query for zero customer benefit.
 - Per-slide wordmark "colt" -> "cybergod.ai" in all five deck builders. The box was 0.85in wide and
   the new string is ~3x longer, so each was widened to 2.05in and the font dropped — a wordmark that
   clips is worse than one that is stale.
-- ship.py has a BRAND GATE that greps the RENDERED artifact (6 decks, EN+DE) plus the five customer
-  pages with code comments stripped. Grepping the SOURCE would false-positive on the enum forever.
+- ship.py has a BRAND GATE over EVERY surface a user touches, not just the web pages: 6 rendered
+  decks (EN+DE), 5 React pages, `index.html` (browser tab), `manifest.webmanifest` (the name a PHONE
+  puts on the home screen), BOTH Telegram bots, and the OTP email subject. It greps the RENDERED
+  artifact and strips code comments — grepping raw source would false-positive on the enum forever.
+  THE FIRST PASS MISSED FOUR OF THOSE (PWA manifest, tab title, both bots, OTP subject) because I
+  only looked at React pages and deck builders. A rebrand is not "the website"; it is every string
+  that reaches a human. The Cassandra SYSTEM PROMPT was the sharpest one: it is not a comment, it is
+  the instruction that made the assistant describe itself as Colt in every reply.
 - Marketing (`marketing/*.md`, the release GIF) carries Cybergod LLC · S4Biz Group and
   WhatsApp +351 939 994 642. The access gate no longer mentions employees of anyone.
