@@ -74,8 +74,12 @@ export function useLegalLang() {
 export function LangToggle({ lang, setLang }) {
   return (
     <div className="lang-toggle" role="group" aria-label="Language / Sprache">
-      <button type="button" className={lang === "de" ? "on" : ""} onClick={() => setLang("de")}>Deutsch</button>
-      <button type="button" className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>English</button>
+      {/* Two labels per button; CSS shows the long one on desktop and the 2-letter one on a phone.
+          Doing it in CSS rather than JS keeps ONE source of truth and avoids a resize listener. */}
+      <button type="button" className={lang === "de" ? "on" : ""} onClick={() => setLang("de")}
+              aria-label="Deutsch"><span className="lg">Deutsch</span><span className="sm">DE</span></button>
+      <button type="button" className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}
+              aria-label="English"><span className="lg">English</span><span className="sm">EN</span></button>
     </div>
   );
 }

@@ -13,12 +13,12 @@ export default function Landing() {
   // (the jev.best pattern) with a scroll-spy that keeps the active tab in sync with the page.
   const nav = useNavigate();
   const TABS = [
-    { id: "edge", label: t("nav.why"), href: "#edge" },
-    { id: "demo", label: "Live", href: "#demo" },
-    { id: "map", label: t("nav.machine"), href: "#map" },
-    { id: "deep", label: "Deep", href: "#deep" },
-    { id: "secure", label: t("nav.secure"), href: "#secure" },
-    { id: "app", label: "Open", to: "/login" },
+    { id: "edge", label: t("tab.why"), href: "#edge" },
+    { id: "demo", label: t("tab.live"), href: "#demo" },
+    { id: "map", label: t("tab.machine"), href: "#map" },
+    { id: "deep", label: t("tab.deep"), href: "#deep" },
+    { id: "secure", label: t("tab.secure"), href: "#secure" },
+    { id: "app", label: t("tab.open"), to: "/login" },
   ];
   const [tab, setTab] = useState("edge");
 

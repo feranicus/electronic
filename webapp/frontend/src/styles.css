@@ -681,3 +681,41 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .wa-fab svg{width:23px;height:23px}
 }
 @media (prefers-reduced-motion:reduce){ .wa-fab{transition:none} .wa-fab:hover{transform:none} }
+
+/* ---------- header + language toggle on a phone ----------------------------------------------
+   The header is a single flex row holding brand + Demo + language + CTA. At 360px the long
+   "Deutsch / English" labels alone were ~110px, so the row wrapped onto three lines and the
+   buttons overlapped the brand. Fix: a 2-letter toggle, a non-wrapping brand, and tighter chrome. */
+.lang-toggle .sm{display:none}
+.lang-toggle .lg{display:inline}
+.brand{white-space:nowrap}
+
+@media (max-width:720px){
+  #hd .wrap{flex-wrap:nowrap;gap:8px;min-height:52px;
+    padding-top:calc(4px + env(safe-area-inset-top));padding-bottom:4px}
+  .brand{font-size:17px;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
+  #hd nav{gap:6px;flex-wrap:nowrap;margin-left:auto;align-items:center}
+  /* two-letter language switch */
+  .lang-toggle .lg{display:none}
+  .lang-toggle .sm{display:inline}
+  .lang-toggle button{padding:7px 10px;min-height:34px;font-size:12.5px;font-weight:700}
+  #hd nav .btn.sm{min-height:34px;padding:7px 11px;font-size:12.5px;white-space:nowrap}
+  /* the Demo pill is the one anonymous entry point; keep it but let it shrink first */
+  #hd nav .btn.sm.ghost{padding:7px 10px}
+}
+/* MEASURED, not guessed: brand 158 + toggle 70 + Demo 50 + CTA 112 + gaps = 422px, which does not
+   fit even a 412px phone. The bottom tab bar's last item is already "Open" -> /login, so the header
+   CTA is a DUPLICATE. Drop it on every phone and the row becomes 310px at 360px wide. */
+@media (max-width:720px){
+  #hd nav .btn.sm:not(.ghost){display:none}
+}
+@media (max-width:360px){
+  .brand{font-size:15.5px}
+  .lang-toggle button{padding:7px 9px}
+}
+
+/* Bottom tab bar: labels must stay on ONE line. Six items share the row, so the label is the
+   short `tab.*` string and the box never grows to two lines. */
+@media (max-width:720px){
+  .tabbar .tb{font-size:10.5px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}

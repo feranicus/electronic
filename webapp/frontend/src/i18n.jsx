@@ -31,6 +31,11 @@ const EN = {
   "nav.home": "Home",
   "nav.back": "Back to the main page",
 
+  // Bottom tab bar. SHORT by contract — six of these share a 360px row, so anything longer than
+  // ~8 characters wraps and the bar doubles in height. Never reuse the nav labels here.
+  "tab.why": "Why", "tab.live": "Live", "tab.machine": "Machine",
+  "tab.deep": "Deep", "tab.secure": "Secure", "tab.open": "Open",
+
   // ---- landing hero ----------------------------------------------------------------------------
   "hero.kick": "Cybergod LLC / S4Biz Group - external cyber-risk and EU compliance assessment",
   "hero.h1a": "Type a company name.",
@@ -101,6 +106,9 @@ const DE = {
   "nav.login": "Anmelden",
   "nav.home": "Startseite",
   "nav.back": "Zurück zur Startseite",
+
+  "tab.why": "Warum", "tab.live": "Live", "tab.machine": "Technik",
+  "tab.deep": "Detail", "tab.secure": "Sicher", "tab.open": "App",
 
   "hero.kick": "Cybergod LLC / S4Biz Group - externe Cyber-Risiko- und EU-Compliance-Bewertung",
   "hero.h1a": "Einen Firmennamen eingeben.",

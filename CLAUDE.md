@@ -1561,3 +1561,21 @@ RULE: a value that more than one component renders is APPLICATION state, not com
 `useState` inside a shared hook silently gives every caller a private copy — it compiles, it renders,
 and it is wrong only when two components disagree.
 Guarded by an SSR test that flips the store between two renders and asserts BOTH pages changed.
+
+## Mobile header + tab bar: measure the row, do not eyeball it (2026-07)
+The phone header wrapped onto three lines and the buttons overlapped the brand. Two regressions,
+both introduced by me in the same change:
+1. **The tab bar got the NAV labels.** It used to read Why / Live / Machine; I swapped in
+   `nav.why` = "Why it matters", so six labels sharing a 360px row each wrapped to two lines.
+   FIX: separate `tab.*` keys, SHORT by contract (<=8 chars, asserted in both languages). A tab
+   label and a nav link label are different strings for a reason.
+2. **"Deutsch / English" is ~110px of text** — a third of a 360px header on its own. FIX: each
+   toggle button renders BOTH labels (`<span class="lg">Deutsch</span><span class="sm">DE</span>`)
+   and CSS picks by width. No JS, no resize listener, no second source of truth; `aria-label` keeps
+   the full word for screen readers.
+3. **The header CTA was a duplicate.** Measured: brand 158 + toggle 70 + Demo 50 + "Open the app"
+   112 + gaps = 422px, which does not fit even a 412px phone. The bottom tab bar's last item is
+   already Open -> /login, so the header CTA is hidden on every phone: the row becomes 326px.
+RULE: a fixed-height horizontal bar is an arithmetic problem. Add up brand + every control + gaps
+against 360px BEFORE shipping — the guard here is a test that computes the row width in both
+languages, because German is systematically longer and will overflow first.
