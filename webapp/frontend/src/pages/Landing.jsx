@@ -2,19 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import TabBar from "../components/TabBar.jsx";
 import WhatsAppFab from "../components/WhatsAppFab.jsx";
+import SiteHeader from "../components/SiteHeader.jsx";
+import { useT } from "../i18n";
 
 export default function Landing() {
+  const [, , t] = useT();
   const rootRef = useRef(null);
   // Mobile navigation. The section anchors were previously display:none under 720px, which removed
   // the whole site map from every phone. They now drive a native-app style bottom tab bar
   // (the jev.best pattern) with a scroll-spy that keeps the active tab in sync with the page.
   const nav = useNavigate();
   const TABS = [
-    { id: "edge", label: "Why", href: "#edge" },
+    { id: "edge", label: t("nav.why"), href: "#edge" },
     { id: "demo", label: "Live", href: "#demo" },
-    { id: "map", label: "Machine", href: "#map" },
+    { id: "map", label: t("nav.machine"), href: "#map" },
     { id: "deep", label: "Deep", href: "#deep" },
-    { id: "secure", label: "Secure", href: "#secure" },
+    { id: "secure", label: t("nav.secure"), href: "#secure" },
     { id: "app", label: "Open", to: "/login" },
   ];
   const [tab, setTab] = useState("edge");
@@ -313,40 +316,26 @@ export default function Landing() {
   return (
     <div ref={rootRef}>
       <WhatsAppFab />
-      <header id="hd"><div className="wrap">
-        <span className="brand"><span className="chev">❯</span> cybergod<span class="g">.ai</span></span>
-        <nav>
-          <a href="#edge">Why it matters</a><a href="#demo">See it live</a><a href="#map">The machine</a>
-          <a href="#deep">Deep dive</a><a href="#secure">Security</a><Link to="/contact">Contact</Link>
-          {/* Demo is a .btn so the phone rule (#hd nav a:not(.btn){display:none}) keeps it visible —
-              it is the one entry point an anonymous visitor can actually use. */}
-          <Link className="btn sm ghost" to="/demo">Demo</Link>
-          <Link className="btn sm" to="/login">Open the app</Link>
-        </nav>
-      </div></header>
+      <SiteHeader onLanding />
 
       <section className="hero">
         <canvas id="dust"></canvas>
         <div className="wrap">
-          <div className="kick">Cybergod LLC / S4Biz Group - external cyber-risk assessment</div>
-          <h1>Type a company name.<br /><span className="g">Four boardroom decks.</span> Two minutes.</h1>
-          <p className="sub">Every organisation has an internet-facing footprint it cannot fully see. From one
-            company name, this maps yours using public sources alone, prices the risk in euros, names the
-            groups most likely to target you, and shows which EU deadlines already apply - without touching
-            a single one of your systems.</p>
+          <div className="kick">{t("hero.kick")}</div>
+          <h1>{t("hero.h1a")}<br /><span className="g">{t("hero.h1b")}</span> {t("hero.h1c")}</h1>
+          <p className="sub">{t("hero.sub")}</p>
           <div className="cta-row">
-            <Link className="btn" to="/login">Open the app / Log in</Link>
-            <Link className="btn ghost" to="/demo">See a full demo report</Link>
+            <Link className="btn" to="/login">{t("hero.cta1")}</Link>
+            <Link className="btn ghost" to="/demo">{t("hero.cta2")}</Link>
           </div>
         </div>
       </section>
 
       <section className="creed"><div className="wrap reveal">
-        <div className="creed-kick">The name is not an accident</div>
+        <div className="creed-kick">{t("creed.kick")}</div>
         <blockquote className="creed-q">
-          <span className="l1">Cassandra foretold the fall of Troy &mdash; and no one believed her.</span>
-          <span className="l2">We predict the <b>critical cyber risks</b>, stop them
-            <b> before they materialise</b>, and keep every <b>Trojan horse</b> out of your IT landscape.</span>
+          <span className="l1">{t("creed.l1")}</span>
+          <span className="l2">{t("creed.l2a")}<b>{t("creed.l2b")}</b>{t("creed.l2c")}<b>{t("creed.l2d")}</b>{t("creed.l2e")}<b>{t("creed.l2f")}</b>{t("creed.l2g")}</span>
         </blockquote>
         <div className="creed-rule" aria-hidden="true"><i></i><span>&#9670;</span><i></i></div>
       </div></section>

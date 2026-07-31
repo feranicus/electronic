@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import WhatsAppFab from "../components/WhatsAppFab.jsx";
+import SiteHeader from "../components/SiteHeader.jsx";
+import { useT } from "../i18n";
 
 /* Public DEMO — "Trojan Empire".
  *
@@ -82,6 +84,7 @@ function CassandraFilm() {
 }
 
 export default function Demo() {
+  const [, , t] = useT();
   const [meta, setMeta] = useState(null);
   const [err, setErr] = useState("");
 
@@ -89,13 +92,14 @@ export default function Demo() {
     fetch("/api/demo")
       .then((r) => r.json())
       .then(setMeta)
-      .catch(() => setErr("The demo artifacts are being prepared. Please refresh in a moment."));
+      .catch(() => setErr(t("demo.deckErr")));
   }, []);
 
   const decks = (meta && meta.decks) || [];
 
   return (
     <div className="demo-page">
+      <SiteHeader />
       <WhatsAppFab />
       {/* ---------- hero: the horse, then the creed ---------- */}
       <section className="demo-hero">
@@ -114,27 +118,23 @@ export default function Demo() {
       {/* ---------- the honesty notice: first thing after the hero, impossible to miss ---------- */}
       <section className="wrap">
         <div className="demo-warn" role="note">
-          <div className="demo-warn-h">THIS IS A DEMONSTRATION &mdash; EVERY RESULT IS FABRICATED</div>
+          <div className="demo-warn-h">{t("demo.warnH")}</div>
           <p>
-            <b>Trojan Empire is a fictional company.</b> Every host, certificate, CVE, threat actor and
-            euro figure below is <b>invented</b> to show you the shape of the deliverable. Nothing was
-            scanned. No real organisation is described. The IP addresses use IETF documentation ranges
-            (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) that cannot route to a real machine.
+            <b>{t("demo.warn1a")}</b>{t("demo.warn1b")}<b>{t("demo.warn1c")}</b>{t("demo.warn1d")}
           </p>
           <p className="demo-warn-sub">
-            What is <i>not</i> fabricated is the machinery: these files come from the same engine and
-            the same deck builders a paying engagement uses.
+            {t("demo.warn2")}
           </p>
         </div>
       </section>
 
       {/* ---------- what this is, in plain language ---------- */}
       <section className="wrap demo-sec">
-        <h2>What this actually does</h2>
+        <h2>{t("demo.whatH")}</h2>
         <div className="demo-grid">
           <div className="demo-card">
             <div className="demo-num">1</div>
-            <h3>You type one company name</h3>
+            <h3>{t("demo.s1h")}</h3>
             <p>
               That is the entire input. No IP ranges, no ASNs, no certificates to paste. The engine
               works out the rest &mdash; including the subsidiaries that trade under completely
@@ -143,7 +143,7 @@ export default function Demo() {
           </div>
           <div className="demo-card">
             <div className="demo-num">2</div>
-            <h3>It finds what is already public</h3>
+            <h3>{t("demo.s2h")}</h3>
             <p>
               Entirely passive. It reads what internet-wide scanners, certificate transparency logs
               and public DNS already publish about the estate. No packet is ever sent to the target,
@@ -152,7 +152,7 @@ export default function Demo() {
           </div>
           <div className="demo-card">
             <div className="demo-num">3</div>
-            <h3>It proves what belongs to whom</h3>
+            <h3>{t("demo.s3h")}</h3>
             <p>
               The hard part is not finding hosts &mdash; it is knowing which are <i>theirs</i>. Every
               asset is scored on independent evidence (published group structure, certificates,
@@ -162,7 +162,7 @@ export default function Demo() {
           </div>
           <div className="demo-card">
             <div className="demo-num">4</div>
-            <h3>It writes the boardroom papers</h3>
+            <h3>{t("demo.s4h")}</h3>
             <p>
               Four decks and an animated report, in English or Hoch&shy;deutsch: what is exposed, what
               it would cost in euros, who would plausibly come for it, and which service closes
@@ -174,21 +174,21 @@ export default function Demo() {
 
       {/* ---------- the artifacts ---------- */}
       <section className="wrap demo-sec">
-        <h2>The deliverables &mdash; download them</h2>
+        <h2>{t("demo.deckH")}</h2>
         <p className="demo-lead">
           These are the real files, generated for the fictional Trojan Empire. Open them; this is
           exactly what lands in your inbox for a real target.
         </p>
         {err && <div className="demo-warn"><p>{err}</p></div>}
-        {!meta && !err && <p className="demo-lead">Preparing the demonstration artifacts&hellip;</p>}
+        {!meta && !err && <p className="demo-lead">{t("demo.deckWait")}</p>}
         <div className="demo-decks">
           {decks.map((d) => {
             const html = d.name.toLowerCase().endsWith(".html");
             const label =
-              d.name.includes("Shodan") ? "Attack-surface findings"
-              : d.name.includes("C-BIQ") ? "Business impact, priced in euros"
-              : d.name.includes("GEOPOL_Animated") ? "Animated threat report"
-              : d.name.includes("GEOPOL") ? "Who would target you, and why"
+              d.name.includes("Shodan") ? t("demo.d1")
+              : d.name.includes("C-BIQ") ? t("demo.d2")
+              : d.name.includes("GEOPOL_Animated") ? t("demo.d4")
+              : d.name.includes("GEOPOL") ? t("demo.d3")
               : "Deliverable";
             return (
               <a key={d.name} className="demo-deck" href={d.url}
@@ -205,7 +205,7 @@ export default function Demo() {
 
       {/* ---------- how it works, for the technical reader ---------- */}
       <section className="wrap demo-sec">
-        <h2>How it works, technically</h2>
+        <h2>{t("demo.techH")}</h2>
         <div className="demo-tech">
           <div><b>Attribution before analysis.</b> Ownership is graded on a 0&ndash;100 confidence
             score built from independent signals &mdash; the customer's own published group structure,
@@ -230,25 +230,23 @@ export default function Demo() {
       {/* ---------- access ---------- */}
       <section className="wrap demo-sec">
         <div className="demo-access">
-          <h2>Running this against your own estate</h2>
+          <h2>{t("demo.accessH")}</h2>
           <p>
-            The demonstration above is open to everyone. <b>Live assessments are available to approved
-            partners only</b>, because each one consumes licensed scanning capacity
-            and produces material about a real organisation.
+            {t("demo.access1")}
           </p>
           <p>
-            If you sell cyber security and would like access, get in touch:
+            {t("demo.access2")}
           </p>
           <a className="demo-mail" href={`${WHATSAPP}?text=${encodeURIComponent(WHATSAPP_TEXT)}`}
              target="_blank" rel="noreferrer">
             {CONTACT}
           </a>
           <p className="demo-warn-sub">
-            Please include your company and your role so access can be confirmed.
+            {t("demo.access3")}
           </p>
           <div className="demo-actions">
-            <Link className="btn ghost" to="/">Back to the main page</Link>
-            <Link className="btn" to="/login">I already have access</Link>
+            <Link className="btn ghost" to="/">{t("nav.back")}</Link>
+            <Link className="btn" to="/login">{t("demo.haveAccess")}</Link>
           </div>
         </div>
       </section>

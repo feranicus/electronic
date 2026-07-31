@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { authBegin, authVerify } from "../api.js";
+import SiteHeader from "../components/SiteHeader.jsx";
 
 export default function Login() {
   const nav = useNavigate();
@@ -44,6 +45,7 @@ export default function Login() {
 
   return (
     <div className="iam">
+      <SiteHeader />
       {/* LEFT — brand / IAM panel */}
       <aside className="iam-brand">
         <div className="iam-brand-top">

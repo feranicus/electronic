@@ -1,6 +1,7 @@
 // /privacy — bilingual (DE reference text, EN translation). All copy lives in ../legal.jsx so the
 // page and the Art.13 notice on the Assess screen can never drift apart.
 import { PRIVACY, useLegalLang, LangToggle } from "../legal";
+import SiteHeader from "../components/SiteHeader.jsx";
 
 export default function Privacy() {
   const [lang, setLang] = useLegalLang();
@@ -8,6 +9,7 @@ export default function Privacy() {
 
   return (
     <div className="legal">
+      <SiteHeader />
       <div className="legal-head">
         <div>
           <h1 className="page-h">{t.h1}</h1>

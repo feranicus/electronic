@@ -26,7 +26,13 @@ function fmtTime(sec) {
 
 export default function NewAssessment() {
   const [company, setCompany] = useState("");
-  const [lang, setLang] = useState("en");   // language of the 4 generated documents
+  // Default the DOCUMENT language from the SITE language — a German interface producing
+  // English decks by default made every German user re-pick it on every run. Still
+  // overridable below: the reader's language and the customer's are not always the same.
+  const [lang, setLang] = useState(() => {
+    try { return localStorage.getItem("cg_legal_lang") === "de" ? "de" : "en"; }
+    catch { return "en"; }
+  });
   const [pct, setPct] = useState(0);        // last REAL milestone reported by the engine
   const [phase, setPhase] = useState("");   // human label for the current phase
   const [notice, setNotice] = useState(""); // e.g. "model X timed out — switching to Y"

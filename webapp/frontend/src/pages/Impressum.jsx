@@ -1,6 +1,7 @@
 // /impressum — legally required in Germany (§ 5 DDG). All identity data comes from OPERATOR in
 // ../legal.jsx so the Impressum, the privacy controller section and the contact page cannot drift.
 import { IMPRESSUM, OPERATOR, operatorReady, useLegalLang, LangToggle } from "../legal";
+import SiteHeader from "../components/SiteHeader.jsx";
 
 export default function Impressum() {
   const [lang, setLang] = useLegalLang();
@@ -9,6 +10,7 @@ export default function Impressum() {
 
   return (
     <div className="legal">
+      <SiteHeader />
       <div className="legal-head">
         <div>
           <h1 className="page-h">{t.h1}</h1>

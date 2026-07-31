@@ -1513,3 +1513,31 @@ tab bar with `bottom: calc(76px + env(safe-area-inset-bottom))`.
 `href={`mailto:${CONTACT}...`}` with the string "WhatsApp +351 939 994 642", producing
 `mailto:WhatsApp +351...` — a dead link — and mangled the Telegram demo's `/auth` line the same way.
 Search-and-replace across code must be verified on the RENDERED output, which is how both were found.
+
+## Site-wide German + real navigation (2026-07)
+**NAVIGATION.** Only the landing page had a header. /demo, /contact, /privacy, /impressum and /login
+were DEAD ENDS — the only way out was the browser back button, which an installed PWA does not even
+show. A visitor arriving on /demo from LinkedIn had no route to anything else. `components/
+SiteHeader.jsx` is now on every public page. On pages other than the landing page the section
+anchors render as `/#edge` links rather than in-page jumps that would silently do nothing.
+
+**ONE LANGUAGE SWITCH FOR THE WHOLE SITE.** `legal.jsx::useLegalLang()` already existed, already
+defaulted from the browser (de* -> German) and already persisted to `localStorage.cg_legal_lang`.
+`i18n.jsx` REUSES that exact hook and key rather than introducing a second store — two language
+states is precisely the drift legal.jsx was created to prevent. The toggle lives in SiteHeader, so
+switching it moves the marketing copy AND the privacy text together.
+- `tr(lang,key)` falls back EN -> key, never throws. An incomplete translation degrades to readable
+  English, exactly like `deck_i18n.js`. `I18N_STATS()` reports coverage so a gap is a number.
+- The Assess screen's DOCUMENT language now defaults from the site language (it was hardcoded "en",
+  so every German user re-picked it on every run) but stays overridable — the reader's language and
+  the customer's are not always the same.
+
+**TELEGRAM CANNOT SHARE localStorage**, so "switch them together" cannot mean one control. The
+honest equivalent: every surface defaults from the SAME signal — the user's own client language —
+and remembers a per-user override.
+- Both bots gained `/lang de|en`, persisted (assess-bot writes `lang.json` next to the auth store).
+- Default is Telegram's `language_code`, so a German user gets German without asking.
+- assess-bot: a user who has run `/lang` is NOT asked the language question again on every /assess.
+- cassandra: language is enforced in the SYSTEM PROMPT (`LANG_INSTRUCTION`), not by translating a
+  few canned strings — for an LLM assistant, translating the wrapper while every generated answer
+  stays English is worse than not translating at all.

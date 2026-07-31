@@ -1,6 +1,7 @@
 // /contact — a direct line. Channels come from OPERATOR in ../legal.jsx; a channel with no handle
 // set is rendered as "coming soon" rather than a dead link.
 import { CONTACT, OPERATOR, useLegalLang, LangToggle } from "../legal";
+import SiteHeader from "../components/SiteHeader.jsx";
 
 const ICONS = {
   email: (<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5" /><path d="M3 6l9 7 9-7" /></svg>),
@@ -27,6 +28,7 @@ export default function Contact() {
 
   return (
     <div className="legal">
+      <SiteHeader />
       <div className="legal-head">
         <div>
           <h1 className="page-h">{t.h1}</h1>

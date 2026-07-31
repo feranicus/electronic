@@ -37,6 +37,36 @@ def _log(**k):
 AUTH = colt_auth.Auth("cassandra", AUTHFILE, log=_log)   # email + password + email OTP 2FA
 def is_authed(uid): return AUTH.is_authed(uid, ALLOWED)
 
+# ---------------------------------------------------------------- language (EN / DE) -------------
+# Same default signal as the website and the assessment bot: the user's own client language, with a
+# per-user override. For an LLM assistant the language is enforced in the SYSTEM PROMPT — translating
+# the few canned strings while every generated answer stayed English would be worse than not trying.
+_LANG = {}
+
+
+def lang_of(update):
+    u = update.effective_user
+    if u and u.id in _LANG:
+        return _LANG[u.id]
+    return "de" if str(getattr(u, "language_code", "") or "").lower().startswith("de") else "en"
+
+
+LANG_INSTRUCTION = {
+    "en": "",
+    "de": ("\n\nSPRACHE: Antworte AUSSCHLIESSLICH auf Hochdeutsch, in der Sie-Form. Fachbegriffe "
+           "(NIS2, CRA, MITRE ATT&CK, SASE, ZTNA, CVE-IDs, Produktnamen) bleiben unübersetzt."),
+}
+
+
+async def lang_cmd(update, ctx):
+    arg = (ctx.args[0].lower() if ctx.args else "")
+    if arg not in ("en", "de"):
+        await update.message.reply_text("Usage: /lang de   or   /lang en"); return
+    _LANG[update.effective_user.id] = arg
+    await update.message.reply_text("Sprache auf Deutsch gesetzt." if arg == "de"
+                                    else "Language set to English.")
+
+
 SYSTEM_PROMPT = """You are Cassandra, a senior cybergod.ai (Cybergod LLC / S4Biz Group) pre-sales
 assistant for Account Executives. You are warm, concise, and practical. You help AEs with:
 
@@ -226,10 +256,11 @@ def _post_model(model, msgs):
     usage = d.get("usage", {}) or {}; usage["_model"] = model
     return (m.get("content") or m.get("reasoning_content") or "").strip(), usage
 
-def _call_llm(history):
+def _call_llm(history, lang="en"):
     """Resilient: primary model with 2 tries (429-aware), then a fast fallback model.
     DO serverless is variable, so we never let one hiccup surface as a dead chat."""
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+    msgs = [{"role": "system",
+             "content": SYSTEM_PROMPT + LANG_INSTRUCTION.get(lang, "")}] + history
     models = [MODEL] + ([FALLBACK] if FALLBACK and FALLBACK != MODEL else [])
     last = "unknown error"
     for model in models:
@@ -312,7 +343,7 @@ async def _do_research(update, ctx, target):
         "questions; (5) 2 short outreach hooks. Keep it tight for Telegram.\n\nSOURCED MATERIAL:\n\n%s"
         % (target, corpus)}]
     try:
-        reply, usage = await asyncio.to_thread(_call_llm, prompt)
+        reply, usage = await asyncio.to_thread(_call_llm, prompt, lang_of(update))
     except Exception as e:
         _log(evt="research", bot="cassandra", result="error", target=target[:80], err=repr(e)[:120], user=str(uid), ts=int(time.time()))
         await update.message.reply_text("⚠ Fetched sources but the model was unreachable. Try again shortly."); return
@@ -338,7 +369,7 @@ async def chat(update, ctx):
     hist.append({"role": "user", "content": text}); CONVO[str(uid)] = hist[-12:]   # keep last ~6 turns
     await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     try:
-        reply, usage = await asyncio.to_thread(_call_llm, CONVO[str(uid)])
+        reply, usage = await asyncio.to_thread(_call_llm, CONVO[str(uid)], lang_of(update))
     except Exception as e:
         _log(evt="chat", bot="cassandra", result="error", user=str(uid), err=repr(e)[:160], ts=int(time.time()))
         await update.message.reply_text("⚠ The inference service is busy right now (I tried the primary and the fallback). Give it a few seconds and resend."); return
@@ -357,6 +388,7 @@ def main():
     app.add_handler(CommandHandler("auth", auth))
     app.add_handler(CommandHandler("verify", verify))
     app.add_handler(CommandHandler("research", research))
+    app.add_handler(CommandHandler("lang", lang_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     print("cassandra AE-assistant polling (zero-trust auth enabled)...", flush=True)
     app.run_polling()
