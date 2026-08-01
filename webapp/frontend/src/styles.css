@@ -719,3 +719,14 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 @media (max-width:720px){
   .tabbar .tb{font-size:10.5px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
+
+/* ---------- /login: the header must sit ABOVE the split, not inside it ------------------------
+   `.iam` is `display:grid; grid-template-columns:1.05fr 1fr`. A header placed as its first child
+   becomes a GRID ITEM and takes the left cell, pushing the brand panel into column 2 and the
+   sign-in card down to row 2 — layers appearing to sit on top of each other. The page is now a
+   flex column: header, then the split fills whatever height is left.
+   NOTE `.iam` keeps min-height:100vh in the base rule; overriding it here is required or the grid
+   demands a second full viewport BELOW the header and the page scrolls for no reason. Same class
+   of bug as the mobile bottom bar that inherited height:100vh from the desktop sidebar. */
+.iam-page{min-height:100dvh;display:flex;flex-direction:column;background:var(--navy)}
+.iam-page > .iam{flex:1 1 auto;min-height:0}

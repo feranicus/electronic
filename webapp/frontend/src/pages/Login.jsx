@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { authBegin, authVerify } from "../api.js";
 import SiteHeader from "../components/SiteHeader.jsx";
+import { useT } from "../i18n";
 
 export default function Login() {
+  const [, , t] = useT();
   const nav = useNavigate();
   const [stage, setStage] = useState("creds"); // creds | otp
   const [email, setEmail] = useState("");
@@ -44,25 +46,26 @@ export default function Login() {
   }
 
   return (
-    <div className="iam">
+    <div className="iam-page">
       <SiteHeader />
+      <div className="iam">
       {/* LEFT — brand / IAM panel */}
       <aside className="iam-brand">
         <div className="iam-brand-top">
           <div className="brand"><span className="chev">&#10095;</span> cybergod.ai</div>
-          <span className="iam-tag">Identity &amp; Access</span>
+          <span className="iam-tag">{t("login.iam")}</span>
         </div>
         <div className="iam-brand-mid">
           <h1>Cyber pre-sales,<br/>self-serve.</h1>
           <p>One name in, a full attack-surface assessment out. The same engine behind
              the Telegram bots — now on the web, for every seller.</p>
           <ul className="iam-steps">
-            <li><span>1</span><div><b>Your identity</b>your approved email + the shared access password</div></li>
-            <li><span>2</span><div><b>One-time code</b>A 6-digit code lands in your inbox</div></li>
-            <li><span>3</span><div><b>You&#39;re in</b>Your personal cabinet: assessments, assistant, history</div></li>
+            <li><span>1</span><div><b>{t("login.step1")}</b>{t("login.step1b")}</div></li>
+            <li><span>2</span><div><b>{t("login.step2")}</b>{t("login.step2b")}</div></li>
+            <li><span>3</span><div><b>{t("login.step3")}</b>{t("login.step3b")}</div></li>
           </ul>
         </div>
-        <div className="iam-brand-foot">Zero-trust · approved partners only · &#187; &#187; &#187;</div>
+        <div className="iam-brand-foot">{t("login.foot")} · &#187; &#187; &#187;</div>
       </aside>
 
       {/* RIGHT — sign-in card */}
@@ -76,22 +79,22 @@ export default function Login() {
 
           {stage === "creds" ? (
             <form onSubmit={submitCreds}>
-              <h2>Sign in to the portal</h2>
-              <p className="iam-sub">Zero-trust access for cyber security sales teams.</p>
-              <div className="label">Work email</div>
+              <h2>{t("login.portal")}</h2>
+              <p className="iam-sub">{t("login.zero")}</p>
+              <div className="label">{t("login.email")}</div>
               <input className="input" type="email" autoComplete="username" placeholder="name.surname@yourcompany.com"
                 value={email} onChange={(e)=>setEmail(e.target.value)} required autoFocus />
-              <div className="label">Access password</div>
-              <input className="input" type="password" autoComplete="current-password" placeholder="Shared access password"
+              <div className="label">{t("login.pw")}</div>
+              <input className="input" type="password" autoComplete="current-password" placeholder={t("login.pwPh")}
                 value={password} onChange={(e)=>setPassword(e.target.value)} required />
               <button className="btn" type="submit" disabled={busy}>
-                {busy ? <span className="spinner"/> : "Continue →"}
+                {busy ? <span className="spinner"/> : t("login.continue")}
               </button>
             </form>
           ) : (
             <form onSubmit={submitOtp}>
-              <h2>Enter your code</h2>
-              <p className="iam-sub">We emailed a 6-digit code to <b>{email}</b>. It expires in 10 minutes.</p>
+              <h2>{t("login.codeH")}</h2>
+              <p className="iam-sub">{t("login.codeSub")}<b>{email}</b>. It expires in 10 minutes.</p>
               <div className="label">6-digit code</div>
               <input className="input otp" inputMode="numeric" maxLength={6} placeholder="000000"
                 value={code} onChange={(e)=>setCode(e.target.value.replace(/\D/g,""))} autoFocus required />
@@ -106,11 +109,12 @@ export default function Login() {
 
           {msg && <div className="ok">{msg}</div>}
           {err && <div className="err">{err}</div>}
-          <Link className="iam-back" to="/">&#8592; Back to the overview</Link>
+          <Link className="iam-back" to="/">{t("login.back")}</Link>
         </div>
         <div className="iam-legal">Cybergod LLC · S4Biz Group · authorised use only<br />
           <a href="/impressum">Impressum</a> · <a href="/privacy">Datenschutz / Privacy</a> · <a href="/contact">Kontakt</a></div>
       </main>
+      </div>
     </div>
   );
 }

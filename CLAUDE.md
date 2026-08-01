@@ -1605,3 +1605,18 @@ coverage at 55 tok/s). The defects were everywhere else, and three of them were 
    domains resolved)": no domains is a legitimate ASN-seeded outcome, not missing data.
 Guarded by test_deck_quality.py §6, which rebuilds the exact COLT shape and asserts the two slides
 agree. LESSON: the findings text being good is not the deck being good — read every slide.
+
+## /login layers overlapping — injecting a header into a GRID makes it a GRID ITEM (2026-07)
+`.iam` is `display:grid; grid-template-columns:1.05fr 1fr`. I added `<SiteHeader/>` as its FIRST
+CHILD, so the header became grid item #1 and took the LEFT CELL; the brand panel slid into column 2
+and the sign-in card dropped to row 2 — which on screen looks exactly like "one layer traversing
+over the other". Nothing was z-index or positioning; it was the grid re-flowing.
+FIX: `.iam-page` flex column wraps header + `.iam`, so the header is a SIBLING of the grid, and
+`.iam-page > .iam{flex:1;min-height:0}` overrides the base `min-height:100vh` — otherwise the grid
+demands a SECOND full viewport below the header and the page scrolls for nothing. Exactly the class
+of bug already recorded for the mobile bottom bar that inherited `height:100vh` from the sidebar.
+RULE: before adding a child to an existing container, check its `display`. In a grid or flex parent
+a new child is a LAYOUT PARTICIPANT, not an overlay. Guarded by an SSR test that asserts, on every
+public page, that `id="hd"` appears BEFORE any grid/flex layout box.
+Also wired the whole login page (13 strings) to the dictionary — it was still hardcoded English,
+which the German assertion caught.

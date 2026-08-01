@@ -92,6 +92,17 @@ const EN = {
   "login.code": "6-digit code",
   "login.verify": "Verify",
   "login.sent": "A 6-digit code was sent to your inbox.",
+  "login.portal": "Sign in to the portal",
+  "login.pwPh": "Shared access password",
+  "login.continue": "Continue \u2192",
+  "login.codeH": "Enter your code",
+  "login.codeSub": "We emailed a 6-digit code to ",
+  "login.back": "\u2190 Back to the overview",
+  "login.iam": "Identity & Access",
+  "login.step1": "Your identity", "login.step1b": "your approved email + the shared access password",
+  "login.step2": "One-time code", "login.step2b": "A 6-digit code lands in your inbox",
+  "login.step3": "You\u2019re in", "login.step3b": "Your personal cabinet: assessments, assistant, history",
+  "login.foot": "Zero-trust \u00b7 approved partners only",
 };
 
 const DE = {
@@ -162,6 +173,17 @@ const DE = {
   "login.code": "6-stelliger Code",
   "login.verify": "Bestätigen",
   "login.sent": "Ein 6-stelliger Code wurde an Ihr Postfach gesendet.",
+  "login.portal": "Am Portal anmelden",
+  "login.pwPh": "Gemeinsames Zugangspasswort",
+  "login.continue": "Weiter \u2192",
+  "login.codeH": "Code eingeben",
+  "login.codeSub": "Wir haben einen 6-stelligen Code gesendet an ",
+  "login.back": "\u2190 Zur\u00fcck zur \u00dcbersicht",
+  "login.iam": "Identit\u00e4t & Zugang",
+  "login.step1": "Ihre Identit\u00e4t", "login.step1b": "Ihre freigegebene E-Mail + das gemeinsame Zugangspasswort",
+  "login.step2": "Einmalcode", "login.step2b": "Ein 6-stelliger Code kommt in Ihr Postfach",
+  "login.step3": "Sie sind drin", "login.step3b": "Ihr pers\u00f6nliches Cockpit: Analysen, Assistent, Verlauf",
+  "login.foot": "Zero-Trust \u00b7 nur freigegebene Partner",
 };
 
 const DICT = { en: EN, de: DE };
