@@ -1655,3 +1655,116 @@ RULE: if a translation layer has more than one key space, every new string needs
 it belongs to, and a test must assert that no key ever reaches the DOM.
 Coverage after the fix (measured on the rendered page): Landing 2% English function-words, Demo 0%,
 Contact/Privacy/Impressum 0%, Login 3% — residue is proper nouns and code identifiers.
+
+## Six languages — and the three bugs that produced "mixed English/German" (2026-08)
+Reported: *"текст в перемешку английский с немецким и есть куски которые повторяются"*. Three
+independent defects, none visible to `vite build`:
+1. **A trailing-space mismatch.** The page renders `tx("What you cannot see is ")` (trailing space —
+   the next word sits in a coloured `<span>`) while the dictionary key was written trimmed. Exact
+   lookup missed, the sentence fell back to English, and a German headline ended in English. It hit
+   five strings. FIX: `padded()` in i18n.jsx trims for the lookup and re-attaches the caller's own
+   whitespace, which makes the whole class impossible.
+2. **The duplicated chunks were a HOOK IDENTITY bug.** `useTx()` returned a fresh arrow every render;
+   Landing.jsx lists `tx` in a `useEffect` dependency array, so the effect re-ran on EVERY render and
+   appended the architecture map again each time. FIX: `useCallback([lang])` + clear `#edges`/`#nodes`
+   before rebuilding. RULE: any function handed to a dependency array must be memoised, and any
+   `innerHTML` container rebuilt in an effect must be cleared first.
+3. **Most of the site was never in the dictionary at all.** 123 of 203 by-English strings and the
+   ENTIRE cabinet (NewAssessment/Compliance/Assistant/History/Sidebar — 0 `t()` calls) were hardcoded
+   English, so a German user logged in and the product switched language.
+CATALOGUE = the UNION of a source scan and an SSR recording (`tools/i18n_catalogue.mjs`): a regex
+misses strings that reach `tx()` from a variable (the DD/NODES/STEPS/CONV arrays), an SSR render
+misses effect-only callers. 201 keyed + 203 by-English = **404 strings x 6 locales, all at 100%**.
+STRUCTURE: `locales/{en,de,it,fr,es,pl}.js` (`keyed` + `byEn`), `legal-locales/*.jsx` for the legal
+pages (German stays NORMATIVE; the others say so in their first sentence). `legal.jsx::localised()`
+resolves reader-language -> English -> German through a Proxy, so a missing translation degrades
+instead of white-screening on `t.h1`.
+GATE (`ship.py`, before the brand gate): catalogue `--check` must be 100% in every locale, then
+`tools/i18n_audit.jsx` renders **11 pages x 6 languages** and FAILS on a raw dotted key in the DOM, a
+leaked `undefined`, a `tab.*` label over 8 chars in ANY language, or >6% English function-words.
+It also renders Landing en -> de -> en and asserts the markup is byte-identical (defect 2's guard).
+
+## Interface language != DOCUMENT language (the honest scoping, 2026-08)
+The site speaks six languages; the DECK ENGINE speaks two. A deck language needs
+`scripts/i18n/<lang>.json` AND the `i18n.py` post-pass AND a `LANG_*` block in `enrich.py` — the
+per-company prose is written by a model, so a dictionary can never cover it.
+`scripts/deck_langs.py` is the single source of truth and DERIVES the list from the dictionaries on
+disk (never a constant): `doc_langs()`, `supported(lang)` (coerces anything else to `en`),
+`catalogue()`. Served at **`GET /api/langs`** (public capability list) and consumed by
+`docLangs.js::useDocLangs()`; the Assess/Compliance selectors are built from it and show a one-line
+notice, in the reader's language, when their language is not a document language.
+BEFORE THIS: the Assess screen defaulted the document language from `localStorage.cg_legal_lang`, so
+an Italian reader silently sent `--lang it`, the engine fell back to English, and nothing said so.
+Same split in the bots: `/lang` sets the INTERFACE (6 codes, defaulted from Telegram's
+`language_code`); the document keyboard is built from `doc_langs()`; every `--lang` path — including
+the `--lang xx` power-user shortcut — goes through `doc_supported()` first.
+ADDING A LANGUAGE IS NOW: drop the json + the enrich block, and the UI and the bot pick it up with no
+frontend change. Market rationale for it/fr/es/pl (and why pt/ja/ar lost) is in **LANGUAGES.md**.
+
+## The LangToggle is a MENU because a row of six is 330px (2026-08)
+Two buttons ("Deutsch | English") already cost ~110px of a 360px header. Six flat buttons would wrap
+the header onto three lines — the arithmetic defect already recorded twice for the mobile nav. The
+trigger is a fixed measurable object: short code + full name on desktop (~92px), short code alone on
+a phone (~46px), chosen in CSS so there is no resize listener and no second source of truth.
+NOT a native `<select>`: the closed box renders the SELECTED option's full text, which cannot be
+shortened per breakpoint, so the width would swing between "EN" and "Français".
+
+## A CHECK MUST RUN WHERE THE TOOLCHAIN IS CORRECT BY CONSTRUCTION (2026-08, three wasted ships)
+THE REAL ROOT CAUSE of three consecutive failed `python ship.py` runs, which I misdiagnosed twice as
+three separate small bugs: **I validated every fix in a Linux sandbox mounted on the SAME shared
+folder, then handed the operator a Windows command.** `webapp/frontend/node_modules` in that folder
+is Linux-native, and npm ships PER-PLATFORM binaries as optional dependencies — so esbuild died with
+`The package "@esbuild/win32-x64" could not be found`. Every "fix" I shipped was green on my side and
+impossible on his. Rerunning the whole test suite to discover that is expensive and it is HIS time.
+FIX, structural, not another patch:
+- The render audit now runs in **`webapp/Dockerfile`'s fe stage** (`RUN node tools/i18n_catalogue.mjs
+  --check && node tools/run_i18n_audit.mjs`), which does a fresh `npm install` on linux/amd64. The
+  toolchain is correct by construction, there is no operator setup to drift, a failure fails the
+  image and therefore the deploy, and it is still ONE command.
+- `run_i18n_audit.mjs` distinguishes **exit 1 (a real defect) from exit 2 (toolchain unusable here)**.
+  ship.py fails on 1 and only NOTES 2. Conflating them would either block the operator over a
+  toolchain he never installed, or silently swallow a genuine translation defect.
+- `.dockerignore` now re-excludes `webapp/frontend/{node_modules,dist,ssrtmp}`. It whitelisted the
+  whole `webapp` tree, and `COPY webapp/frontend/ ./` runs AFTER `npm install` — so the host's
+  node_modules was being copied straight OVER the image's fresh install. The image had been built
+  with whatever platform the operator's folder happened to hold. Same disease, one layer down.
+- `esbuild` is now a DECLARED devDependency (it was only hoisted from vite); relying on hoisting for
+  a load-bearing import is a silent dependency on npm's layout.
+VERIFICATION THAT ACTUALLY PROVES IT: rehearse the Dockerfile stage in a temp dir — copy only
+package.json + lock, `npm install` fresh, copy the source WITHOUT node_modules, then run the gate and
+`npm run build`. That reproduces the image's environment instead of the dev's. All three exit codes
+(0 / 1 / 2) were also exercised deliberately.
+RULE: before telling the operator to run anything, ask *"on which machine, with which toolchain?"*.
+A check that cannot run on the invoking platform is not a check — and a green run in the dev sandbox
+is not evidence about the operator's box. Prefer putting a gate inside the container/CI that already
+installs its own dependencies over asking a human to repair a local toolchain.
+
+## The i18n gate failed three times on ITS OWN PLUMBING before it ever checked a translation (2026-08)
+Three consecutive `python ship.py` runs died in the new gate, and not one of them was a real defect
+in the thing being checked. Every failure was a path or contract I ASSUMED instead of reading:
+1. **`npx --no-install node`** — npx treats `node` as a PACKAGE to fetch and aborts
+   non-interactively ("npx canceled due to missing packages: node@26.5.1"). Call `node` directly;
+   npx is for package binaries, never for the runtime itself.
+2. **`run()` in ship.py returns an `int`, not a CompletedProcess.** I called `.returncode` on it ->
+   `AttributeError: 'int' object has no attribute 'returncode'`. It also STREAMS rather than
+   captures. Read the helper before using it — this is the same rule as "never anchor an edit on a
+   line you did not just read".
+3. **Two Windows-only assumptions that pass on Linux by accident:**
+   - `import(path.join(SRC, "locales", "de.js"))` -> on Windows the absolute path starts `C:`, which
+     Node's ESM loader reads as a URL SCHEME: `ERR_UNSUPPORTED_ESM_URL_SCHEME ... protocol 'c:'`.
+     **Any dynamic `import()` of a filesystem path must go through `pathToFileURL(p).href`.**
+   - `node_modules/.bin/esbuild` is a PLATFORM SHIM (symlink on Linux, `esbuild.cmd` on Windows,
+     absent entirely in this install). Probing for it printed "esbuild missing - run npm install" on
+     a machine where esbuild was installed and working. **Import the package's JS API instead** —
+     `tools/run_i18n_audit.mjs` does the bundle+run in one cross-platform command, which is also why
+     ship.py now invokes ONE node script rather than an esbuild path plus a node path.
+RULE: a gate that fails on its own launcher is worse than no gate — it trains you to ignore it. Any
+new check must be exercised on the OPERATOR's platform path, not only in the dev sandbox.
+ALSO: React logs the `useLayoutEffect does nothing on the server` warning once per component per
+render — 66 renders produced ~2,700 lines of stack traces that buried the gate's own output. The
+audit filters exactly that string and `Invalid DOM property`; everything else still prints, so a
+real error cannot hide behind the filter.
+NEGATIVE TEST, because a gate that only ever goes green is unproven: breaking `tab.machine` to 15
+chars and deleting `q3.h` from it.js was verified to exit 1 from BOTH the catalogue and the audit,
+and to go back to 0 on restore. Note the bundle inlines the locale files, so the audit MUST rebuild
+every run (run_i18n_audit.mjs always does) or it audits yesterday's dictionaries.

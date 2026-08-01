@@ -48,3 +48,8 @@ export const assist = (message) => postJSON("/api/assist", { message });
 
 // ---- History ----
 export const getHistory = () => getJSON("/api/history");
+
+// Which languages the UI ships in vs which the DECK ENGINE can actually render. See the /api/langs
+// docstring: these are different sets, and defaulting the document language from the SITE language
+// was silently sending `--lang it` to an engine that only has an English and a German dictionary.
+export const getLangs = () => getJSON("/api/langs");

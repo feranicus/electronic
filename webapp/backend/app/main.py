@@ -294,6 +294,33 @@ def demo_deck(name: str):
                         content_disposition_type=("inline" if low.endswith(".html") else "attachment"))
 
 
+@app.get("/api/langs")
+def langs():
+    """Which languages the UI ships in, and which the DECK ENGINE can actually produce.
+
+    These are DIFFERENT SETS and conflating them ships a lie. The interface now speaks six languages;
+    a deck language additionally needs a `scripts/i18n/<lang>.json`, an i18n.py post-pass and a LANG_*
+    prompt block in enrich.py — so today the decks are English and German only. Before this endpoint
+    the Assess screen defaulted the document language from the SITE language, which meant an Italian
+    reader silently sent `--lang it`, the engine fell back to English, and nothing said so.
+
+    Derived from the dictionaries on disk (deck_langs.doc_langs()), never from a constant in the
+    frontend: a hardcoded list in the UI is a second source of truth and would drift the moment a
+    dictionary is added or removed. Public — it is a capability list, not configuration.
+    """
+    ui = ["en", "de", "it", "fr", "es", "pl"]
+    try:
+        import importlib.util as _ilu
+        _p = os.path.join(os.path.dirname(ENGINE), "deck_langs.py")
+        _s = _ilu.spec_from_file_location("deck_langs", _p)
+        _m = _ilu.module_from_spec(_s)
+        _s.loader.exec_module(_m)
+        return {"ui": ui, "doc": _m.catalogue()}
+    except Exception:
+        # Never fail the Assess screen over a capability probe: English always works.
+        return {"ui": ui, "doc": [{"code": "en", "name": "English"}]}
+
+
 @app.get("/api/diag")
 def diag(request: Request):
     """What is ACTUALLY in force in this container — chain, detectors, budgets, engine hashes.

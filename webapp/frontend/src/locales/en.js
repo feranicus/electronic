@@ -1,0 +1,243 @@
+// locales/en.js — the ENGLISH SOURCE OF TRUTH for every keyed UI string.
+//
+// Two key spaces exist on this site and mixing them is what once printed `q3.h` on the live page:
+//   * KEYED   — dotted keys ("nav.why"), read with t("nav.why"). Defined HERE.
+//   * BY-ENGLISH — the English sentence IS the key, read with tx("Fair questions"). Defined in
+//     each locale's `byEn` map; English needs no entry because it IS the fallback.
+// A new string must state which space it belongs to. A key that reaches the DOM is a build failure
+// (see the SSR guard in ship.py) — a fallback that silently prints the key looks like content.
+export const keyed = {
+  "assess.docLangNote": "The documents are available in English and German. Your interface language is not one of them, so the documents will be written in English.",
+  "login.h1a": "Cyber pre-sales,",
+  "login.h1b": "self-serve.",
+  "login.lede": "One name in, a full attack-surface assessment out. The same engine behind the Telegram bots \u2014 now on the web, for every seller.",
+  "login.prog1": "Sign in",
+  "login.prog2": "Verify",
+  // ---- navigation ------------------------------------------------------------------------------
+  "nav.why": "Why it matters",
+  "nav.live": "See it live",
+  "nav.machine": "The machine",
+  "nav.deep": "Deep dive",
+  "nav.secure": "Security",
+  "nav.demo": "Demo",
+  "nav.contact": "Contact",
+  "nav.open": "Open the app",
+  "nav.login": "Log in",
+  "nav.home": "Home",
+  "nav.back": "Back to the main page",
+
+  // Bottom tab bar. SHORT by contract — six of these share a 360px row, so anything longer than
+  // ~8 characters wraps and the bar doubles in height. Never reuse the nav labels here.
+  "tab.why": "Why", "tab.live": "Live", "tab.machine": "Machine",
+  "tab.deep": "Deep", "tab.secure": "Secure", "tab.open": "Open",
+
+  // ---- landing hero ----------------------------------------------------------------------------
+  "hero.kick": "Cybergod LLC / S4Biz Group - external cyber-risk and EU compliance assessment",
+  "hero.h1a": "Type a company name.",
+  "hero.h1b": "Four boardroom decks.",
+  "hero.h1c": "Two minutes.",
+  "hero.sub": "Every organisation has an internet-facing footprint it cannot fully see. From one company name, this maps yours using public sources alone, prices the risk in euros, names the groups most likely to target you, and shows which EU deadlines already apply - without touching a single one of your systems.",
+  "hero.cta1": "Open the app / Log in",
+  "hero.cta2": "See a full demo report",
+
+  // ---- the creed -------------------------------------------------------------------------------
+  "creed.kick": "The name is not an accident",
+  "creed.l1": "Cassandra foretold the fall of Troy — and no one believed her.",
+  "creed.l2a": "We predict the ", "creed.l2b": "critical cyber risks", "creed.l2c": ", stop them ",
+  "creed.l2d": "before they materialise", "creed.l2e": ", and keep every ",
+  "creed.l2f": "Trojan horse", "creed.l2g": " out of your IT landscape.",
+
+  // ---- demo page -------------------------------------------------------------------------------
+  "demo.warnH": "THIS IS A DEMONSTRATION — EVERY RESULT IS FABRICATED",
+  "demo.warn1a": "Trojan Empire is a fictional company.",
+  "demo.warn1b": " Every host, certificate, CVE, threat actor and euro figure below is ",
+  "demo.warn1c": "invented",
+  "demo.warn1d": " to show you the shape of the deliverable. Nothing was scanned. No real organisation is described. The IP addresses use IETF documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) that cannot route to a real machine.",
+  "demo.warn2": "What is not fabricated is the machinery: these files come from the same engine and the same deck builders a paying engagement uses.",
+  "demo.whatH": "What this actually does",
+  "demo.s1h": "You type one company name",
+  "demo.s1b": "That is the entire input. No IP ranges, no ASNs, no certificates to paste. The engine works out the rest — including the subsidiaries that trade under completely different names, which is where most of the real exposure hides.",
+  "demo.s2h": "It finds what is already public",
+  "demo.s2b": "Entirely passive. It reads what internet-wide scanners, certificate transparency logs and public DNS already publish about the estate. No packet is ever sent to the target, so nothing needs permission and nothing sets off an alarm.",
+  "demo.s3h": "It proves what belongs to whom",
+  "demo.s3b": "The hard part is not finding hosts — it is knowing which are theirs. Every asset is scored on independent evidence (published group structure, certificates, per-IP registry ownership) and the reasons are recorded, so a disputed host can be explained rather than argued about.",
+  "demo.s4h": "It writes the boardroom papers",
+  "demo.s4b": "Four decks and an animated report, in English or Hochdeutsch: what is exposed, what it would cost in euros, who would plausibly come for it, and which service closes each gap. Roughly three minutes, start to finish.",
+  "demo.deckH": "The deliverables — download them",
+  "demo.deckLead": "These are the real files, generated for the fictional Trojan Empire. Open them; this is exactly what lands in your inbox for a real target.",
+  "demo.deckWait": "Preparing the demonstration artifacts…",
+  "demo.deckErr": "The demo artifacts are being prepared. Please refresh in a moment.",
+  "demo.d1": "Attack-surface findings",
+  "demo.d2": "Business impact, priced in euros",
+  "demo.d3": "Who would target you, and why",
+  "demo.d4": "Animated threat report",
+  "demo.techH": "How it works, technically",
+  "demo.accessH": "Running this against your own estate",
+  "demo.access1": "The demonstration above is open to everyone. Live assessments are available to approved partners only, because each one consumes licensed scanning capacity and produces material about a real organisation.",
+  "demo.access2": "If you sell cyber security and would like access, get in touch:",
+  "demo.access3": "Please include your company and your role so access can be confirmed.",
+  "demo.haveAccess": "I already have access",
+
+  // ---- landing: sections below the fold ---------------------------------------------------------
+  "lede.edge": "Your internet-facing footprint grows every quarter - a forgotten host, a supplier portal, a VPN nobody decommissioned, a certificate that quietly names an internal system. An attacker enumerates all of it in minutes, from public sources, without ever touching you. Most organisations have never looked at themselves the same way.",
+  "q3.h": "Three questions decide a security budget. You should be able to answer all three today.",
+  "clocks.lede": "Three EU laws now reach most mid-size organisations: NIS2, the Cyber Resilience Act and the EU AI Act. These dates are written in law, not on a vendor\u2019s slide - and the penalties are set against global turnover.",
+  "touch.body": "This is not a penetration test and it is not a scan of your systems. No ports are probed, no logins attempted, no agent installed, no credentials required. It reads only what is already public - the internet equivalent of noting which doors are visible from the street.",
+  "touch.bold": "That is precisely why it can show you what an attacker already sees, with no change request, no maintenance window, and not one packet sent to your infrastructure.",
+  "earn.01h": "Before the board", "earn.01b": "Walk in with the exposure and the euro number instead of adjectives.",
+  "earn.02h": "Before an audit", "earn.02b": "NIS2, CRA and AI-Act applicability, duties and deadlines on a single page.",
+  "earn.03h": "After an acquisition", "earn.03b": "See the estate you have just inherited, mapped from the outside in.",
+  "earn.04h": "Third-party risk", "earn.04b": "Assess a supplier the same way - no access, no questionnaire, no waiting.",
+  "earn.05h": "Quarter on quarter", "earn.05b": "Re-run it and see exactly what changed on your perimeter.",
+  "earn.06h": "Your own first look", "earn.06b": "Most organisations find something public they did not know was there.",
+  // ---- demo: the technical section ---------------------------------------------------------------
+  "demo.t1h": "Attribution before analysis.",
+  "demo.t1b": " Ownership is graded on a 0\u2013100 confidence score built from independent signals \u2014 the customer\u2019s own published group structure, certificate subject names, per-IP registry organisation, vendor-tenant labels, DNS the customer controls. Two weak signals that agree beat one strong signal that does not, and every score carries the rules that produced it.",
+  "demo.t2h": "Co-tenant safety.",
+  "demo.t2b": " A shared netblock is not a customer. Where several companies share a provider range, per-IP registry ownership decides, so a neighbour\u2019s exposed management interface never appears in your report.",
+  "demo.t3h": "The AI writes prose, never facts.",
+  "demo.t3b": " Severity, evidence and CVE identifiers come from the scan data only. The language model rewrites explanation and remediation, and a second model from a different vendor independently reviews the result. Any CVE the model cites that is not in the evidence is stripped before the deck is built.",
+  "demo.t4h": "Deterministic rendering.",
+  "demo.t4b": " The decks are generated by code, not by a model, so the same input always produces the same document \u2014 and layout is machine-checked for overflow before anything ships.",
+  "demo.t5h": "EU-resident.",
+  "demo.t5b": " Application, data and logs run in Frankfurt. Assessments are passive: no packet is sent to the target.",
+  "faq.1q": "\u201cIs this legal?\u201d",
+  "faq.1a": "Yes. It uses public sources any researcher could look up, and never interacts with your systems. Nothing is exploited, nothing is logged into.",
+  "faq.2q": "\u201cHow accurate is it?\u201d",
+  "faq.2a": "Every finding carries the evidence behind it. Where a source cannot be reached it says \u201cunknown\u201d rather than inventing a weakness - and it asks you to confirm anything it could not resolve.",
+  "faq.3q": "\u201cWhat do we have to provide?\u201d",
+  "faq.3a": "Your company name. No access, no questionnaire, no NDA to start, and nothing to install. The euro figures are modelled ranges with the assumptions shown.",
+  // ---- login -----------------------------------------------------------------------------------
+  "login.h": "Sign in",
+  "login.zero": "Zero-trust access for cyber security sales teams.",
+  "login.email": "Work email",
+  "login.pw": "Access password",
+  "login.send": "Send me a code",
+  "login.code": "6-digit code",
+  "login.verify": "Verify",
+  "login.sent": "A 6-digit code was sent to your inbox.",
+  "login.portal": "Sign in to the portal",
+  "login.pwPh": "Shared access password",
+  "login.continue": "Continue \u2192",
+  "login.codeH": "Enter your code",
+  "login.codeSub": "We emailed a 6-digit code to ",
+  "login.back": "\u2190 Back to the overview",
+  "login.iam": "Identity & Access",
+  "login.step1": "Your identity", "login.step1b": "your approved email + the shared access password",
+  "login.step2": "One-time code", "login.step2b": "A 6-digit code lands in your inbox",
+  "login.step3": "You\u2019re in", "login.step3b": "Your personal cabinet: assessments, assistant, history",
+  "login.foot": "Zero-trust \u00b7 approved partners only",
+
+  // ================================================================================================
+  // THE CABINET (everything behind the login). All KEYED \u2014 these are short labels, buttons and
+  // status lines, not marketing prose, so they belong in the dotted space where the whole product
+  // vocabulary is reviewable in one place.
+  //
+  // WHAT IS DELIBERATELY ABSENT: anything the SERVER authors. The engine's phase labels
+  // ("PROGRESS: [56%] BGP/ASN resilience\u2026"), deck filenames, clarification question titles/bodies
+  // /options, job ids, company names and API error messages all arrive as data and must never be
+  // looked up here \u2014 a dictionary miss would turn live server output into a raw key.
+  // ================================================================================================
+
+  // ---- sidebar / phone tab bar ------------------------------------------------------------------
+  // SHORT by contract, exactly like tab.* above: these four sit in a narrow desktop rail AND in the
+  // phone bottom bar. Keep every translation under ~11 characters or the label wraps and the bar
+  // doubles in height.
+  "side.assess": "Assess",
+  "side.compliance": "Compliance",
+  "side.assistant": "Assistant",
+  "side.history": "History",
+  "side.logout": "Log out",
+  "side.signedIn": "signed in as",
+  // The three legal links are the GERMAN page names even in English \u2014 the pages are German legal
+  // documents (\u00a75 TMG / DSGVO) and are referred to by their statutory names. Not a missing
+  // translation; do not "fix" them to Imprint / Privacy / Contact.
+  "side.impressum": "Impressum",
+  "side.privacy": "Datenschutz",
+  "side.contact": "Kontakt",
+
+  // ---- Assess (New assessment) ------------------------------------------------------------------
+  "assess.h1": "New assessment",
+  "assess.sub": "One input: a company name or domain. The engine resolves the entire footprint, sweeps Shodan, and writes the four boardroom decks \u2014 in English or Hoch-Deutsch. No IPs, ASNs or certs to type.",
+  "assess.company": "Company name",
+  "assess.companyPh": "e.g. Volkswagen AG",
+  "assess.docLang": "Document language",
+  "assess.go": "Assess",
+  "assess.running": "Assessing\u2026",
+  "assess.phaseIdle": "Working\u2026",
+  "assess.phaseStart": "Starting the engine\u2026",
+  "assess.phaseRescope": "Re-scoping with your answers\u2026",
+  "assess.noteLong": "Still working. Long runs usually mean Shodan recon found a large estate, or an AI model is slow and we are failing over to the next one \u2014 the log above says which.",
+  "assess.noteShort": "Typically 3\u20137 minutes: Shodan recon is the long part (~2\u20133 min), then the AI writes the prose (~1 min).",
+  "assess.noteKeepOpen": "Keep this tab open; refreshing cancels the run.",
+  "assess.logStarting": "Starting\u2026",
+  "assess.statusWorking": "Working \u2014 this usually takes about two minutes.",
+  "assess.done": "Done. Your four decks are ready.",
+  "assess.download": "Download",
+  // Streamed-connection banners. assess.dropped is also compared against in es.onopen to clear the
+  // banner, so it must stay ONE key (do not split it).
+  "assess.reconnected": "Reconnected to an assessment already running on the server.",
+  "assess.dropped": "Connection dropped \u2014 reconnecting\u2026 (the assessment keeps running on the server)",
+  // Fallbacks used only when the server sends no message of its own.
+  "assess.errFailed": "The assessment failed.",
+  "assess.errStart": "Could not start the assessment.",
+  "assess.errRefine": "Could not refine the assessment.",
+  // post-run clarification / refine panel
+  "assess.refineH": "Refine this assessment",
+  "assess.refineSub": "The decks above are ready. To sharpen the scope, answer anything relevant below \u2014 confirm what is yours, add IP ranges / systems the auto-recon could not see, or flag anything that is not yours. I will re-scope and rebuild the four decks and the animated report.",
+  "assess.yes": "Yes",
+  "assess.refineGo": "Refine & rebuild",
+  "assess.refineBusy": "Refining\u2026",
+  "assess.refineHint": "Answer at least one question to refine.",
+
+  // ---- Compliance (NIS2 / CRA / EU AI Act) ------------------------------------------------------
+  "comp.h1": "Compliance assessment",
+  // The lede is split around three regulation names that must render in BOLD and must NEVER be
+  // translated (NIS2 / Cyber Resilience Act / EU AI Act are the statutory titles). Hence the four
+  // connective fragments below rather than one key containing markup. Translators: reorder freely
+  // WITHIN each fragment; the three bold names are fixed and appear between b/c/d.
+  "comp.sub.a": "One input: a company name. The engine assesses exposure to ",
+  "comp.sub.b": ", the ",
+  "comp.sub.c": " and the ",
+  "comp.sub.d": " \u2014 applicability, obligations, gaps, deadlines and penalty exposure \u2014 and writes three regime decks, a roadmap deck and an animated report, in English or Hoch-Deutsch. It infers the scope from the name; you confirm it afterwards.",
+  "comp.company": "Company name",
+  "comp.companyPh": "e.g. Siemens Healthineers AG",
+  "comp.docLang": "Document language",
+  "comp.go": "Assess compliance",
+  "comp.running": "Assessing\u2026",
+  "comp.phaseIdle": "Working\u2026",
+  "comp.phaseStart": "Starting the engine\u2026",
+  "comp.phaseRescope": "Re-scoping with your answers\u2026",
+  "comp.note": "Typically about a minute. Keep this tab open; refreshing cancels the run.",
+  "comp.logStarting": "Starting\u2026",
+  "comp.done": "Done. Your NIS2, CRA, AI-Act and roadmap decks are ready.",
+  "comp.download": "Download",
+  "comp.openReport": "Open report",
+  "comp.reconnected": "Reconnected to a compliance run already in progress.",
+  "comp.dropped": "Connection dropped \u2014 reconnecting\u2026 (the assessment keeps running on the server)",
+  "comp.errFailed": "The assessment failed.",
+  "comp.errStart": "Could not start the assessment.",
+  "comp.errRefine": "Could not refine the assessment.",
+  "comp.confirmH": "Confirm the scope",
+  "comp.confirmSub": "The decks above use assumptions I inferred from the company name. Compliance depends on facts I can only guess \u2014 confirm the ones below and I will re-scope and rebuild.",
+  "comp.yes": "Yes",
+  "comp.refineGo": "Refine & rebuild",
+  "comp.refineBusy": "Refining\u2026",
+  "comp.refineHint": "Answer at least one question to refine.",
+
+  // ---- Assistant (Cassandra) ---------------------------------------------------------------------
+  "assist.h1": "Assistant",
+  "assist.sub": "Cassandra - research, MEDDPICC qualification, and outreach drafting for your accounts.",
+  "assist.greeting": "Hi, I'm Cassandra - your pre-sales sidekick. Ask me for company research, a MEDDPICC breakdown, or outreach copy.",
+  "assist.ph": "Ask Cassandra\u2026",
+  "assist.send": "Send",
+  "assist.errServer": "Something went wrong. Try again.",
+  "assist.errNet": "Could not reach the server. Try again.",
+
+  // ---- History -----------------------------------------------------------------------------------
+  "hist.h1": "History",
+  "hist.sub": "Every assessment you've run, with the decks ready to re-download.",
+  "hist.loading": "Loading\u2026",
+  "hist.err": "Could not load history.",
+  "hist.empty": "No assessments yet. Run one from \u201cNew Assessment\u201d.",
+};

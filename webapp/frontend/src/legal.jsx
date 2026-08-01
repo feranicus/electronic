@@ -5,7 +5,8 @@
 //
 // Language: follows the browser (de* -> German), overridable by the reader, remembered per browser.
 // German is the reference text (German customers, German regulator); English is the translation.
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { LEGAL_EXTRA } from "./legal-locales/index.js";
 
 const KEY = "cg_legal_lang";
 
@@ -24,11 +25,32 @@ const KEY = "cg_legal_lang";
 // them re-renders on change — no provider to wrap the tree in, and every existing caller of
 // useLegalLang() gets the fix for free.
 // ---------------------------------------------------------------------------------------------
+// The six shipped locales, in the order the toggle renders them. Chosen from a market study of
+// where the buyer personas (MSP / VAR / GSI / cyber consultancy / regulator) concentrate AND where
+// NIS2 is actually being enforced — see LANGUAGES.md. `en` and `de` came first; it/fr/es/pl follow.
+export const LANGS = [
+  { code: "en", label: "English",  short: "EN" },
+  { code: "de", label: "Deutsch",  short: "DE" },
+  { code: "it", label: "Italiano", short: "IT" },
+  { code: "fr", label: "Français", short: "FR" },
+  { code: "es", label: "Español",  short: "ES" },
+  { code: "pl", label: "Polski",   short: "PL" },
+];
+const CODES = LANGS.map((l) => l.code);
+
 function readInitial() {
   try {
     const saved = localStorage.getItem(KEY);
-    if (saved === "de" || saved === "en") return saved;
-    return (navigator.language || "en").toLowerCase().startsWith("de") ? "de" : "en";
+    if (CODES.includes(saved)) return saved;
+    // Walk the browser's ordered preference list, not just navigator.language: a reader whose first
+    // choice we do not ship should still get their second rather than falling straight to English.
+    const prefs = (navigator.languages && navigator.languages.length
+      ? navigator.languages : [navigator.language || "en"]).map((s) => String(s).toLowerCase());
+    for (const p of prefs) {
+      const hit = CODES.find((c) => p.startsWith(c));
+      if (hit) return hit;
+    }
+    return "en";
   } catch {
     return "en";                                   // private mode / SSR
   }
@@ -40,7 +62,7 @@ const _subs = new Set();
 function notify() { _subs.forEach((fn) => fn()); }
 
 export function setLang(next) {
-  const v = next === "de" ? "de" : "en";
+  const v = CODES.includes(next) ? next : "en";
   if (v === _lang) return;
   _lang = v;
   try { localStorage.setItem(KEY, v); } catch { /* private mode: still works for this session */ }
@@ -54,7 +76,7 @@ function subscribe(fn) {
   _subs.add(fn);
   // Keep two open tabs in step: localStorage fires `storage` in the OTHER tabs on write.
   const onStorage = (e) => {
-    if (e.key === KEY && (e.newValue === "de" || e.newValue === "en") && e.newValue !== _lang) {
+    if (e.key === KEY && CODES.includes(e.newValue) && e.newValue !== _lang) {
       _lang = e.newValue;
       notify();
     }
@@ -71,21 +93,57 @@ export function useLegalLang() {
   return [lang, setLang];
 }
 
+/**
+ * WHY A MENU AND NOT A ROW OF BUTTONS: two buttons ("Deutsch | English") already cost ~110px of a
+ * 360px phone header. Six would cost ~330px and the header would wrap onto three lines — the exact
+ * defect already recorded for the mobile nav. A fixed-height horizontal bar is an arithmetic problem:
+ * this trigger is ~76px on desktop (short code + full name) and ~46px on a phone (short code only,
+ * chosen in CSS so there is no resize listener and no second source of truth).
+ *
+ * Not a native <select>: the closed box renders the SELECTED option's full text, which cannot be
+ * shortened per-breakpoint in CSS, so the width would swing between "EN" and "Français".
+ */
 export function LangToggle({ lang, setLang }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const cur = LANGS.find((l) => l.code === lang) || LANGS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+
   return (
-    <div className="lang-toggle" role="group" aria-label="Language / Sprache">
-      {/* Two labels per button; CSS shows the long one on desktop and the 2-letter one on a phone.
-          Doing it in CSS rather than JS keeps ONE source of truth and avoids a resize listener. */}
-      <button type="button" className={lang === "de" ? "on" : ""} onClick={() => setLang("de")}
-              aria-label="Deutsch"><span className="lg">Deutsch</span><span className="sm">DE</span></button>
-      <button type="button" className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}
-              aria-label="English"><span className="lg">English</span><span className="sm">EN</span></button>
+    <div className="lang-menu" ref={ref}>
+      <button type="button" className="lang-trigger" aria-haspopup="listbox" aria-expanded={open}
+              aria-label={"Language / Sprache: " + cur.label} onClick={() => setOpen((o) => !o)}>
+        <span className="code">{cur.short}</span>
+        <span className="lg">{cur.label}</span>
+        <span className="car" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <ul className="lang-list" role="listbox" aria-label="Language / Sprache">
+          {LANGS.map((l) => (
+            <li key={l.code}>
+              <button type="button" role="option" aria-selected={l.code === lang}
+                      className={l.code === lang ? "on" : ""}
+                      onClick={() => { setLang(l.code); setOpen(false); }}>
+                <span className="code">{l.short}</span>{l.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- the Art.13 notice (Assess screen)
-export const NOTICE = {
+const NOTICE_SRC = {
   de: {
     title: "🇪🇺 Datenverarbeitung",
     p1: (<>Mit <strong>Assess</strong> starten Sie eine Analyse auf einem Server im Rechenzentrum{" "}
@@ -156,7 +214,7 @@ export const operatorReady = () =>
     .some((v) => String(v).startsWith("TODO"));
 
 // ---------------------------------------------------------------- the /impressum page
-export const IMPRESSUM = {
+const IMPRESSUM_SRC = {
   de: {
     h1: "Impressum", sub: "Angaben gemäß § 5 DDG",
     s1: "Diensteanbieter",
@@ -207,7 +265,7 @@ export const IMPRESSUM = {
 };
 
 // ---------------------------------------------------------------- the /contact page
-export const CONTACT = {
+const CONTACT_SRC = {
   de: {
     h1: "Kontakt", sub: "Direkter Draht — kein Formular, keine Warteschleife",
     lead: "Fragen zum Zugang, zu einer Analyse, zum Datenschutz oder zur Partnerschaft? Schreiben Sie direkt.",
@@ -235,7 +293,7 @@ export const CONTACT = {
 };
 
 // ---------------------------------------------------------------- the /privacy page
-export const PRIVACY = {
+const PRIVACY_SRC = {
   de: {
     h1: "Datenschutz & Datenverarbeitung", sub: "Privacy & data processing — cybergod.ai",
     lead: "cybergod.ai ist ein internes Werkzeug für die Cyber-Pre-Sales-Analyse. Diese Seite beschreibt, welche Daten wir verarbeiten, auf welcher Rechtsgrundlage, wo sie liegen und wie lange wir sie aufbewahren — gemäß DSGVO Art. 13/14.",
@@ -396,3 +454,34 @@ export const PRIVACY = {
     disclaimer: "This text describes the actual technical processing. It is not legal advice and should be reviewed by a data protection officer before external publication.",
   },
 };
+
+// ---------------------------------------------------------------------------------------------
+// LOCALE FALLBACK FOR THE LEGAL PAGES — a missing translation must degrade, never crash.
+//
+// The site ships six languages; the legal copy is authored in German (the NORMATIVE text, for German
+// customers and the German regulator) with an English translation, plus reading translations for the
+// other four in ./legal-locales/. `PRIVACY[lang]` returning undefined would throw on `t.h1` and
+// white-screen the page — the same class of failure as the `useLegalLang is not defined` crash: a
+// build that compiles perfectly and dies the moment it renders.
+//
+// Resolution order: the reader's language -> English -> German. English before German because a
+// reader who asked for Italian is far likelier to read English than German.
+// ---------------------------------------------------------------------------------------------
+function localised(name, src) {
+  const table = { ...src };
+  for (const { code } of LANGS) {
+    if (table[code]) continue;
+    const extra = LEGAL_EXTRA[code];
+    if (extra && extra[name]) table[code] = extra[name];
+  }
+  // A Proxy rather than a plain object so an unknown code (a stale localStorage value, a future
+  // locale added to LANGS before its copy exists) also resolves instead of returning undefined.
+  return new Proxy(table, {
+    get: (t, k) => (typeof k === "string" ? t[k] || t.en || t.de : t[k]),
+  });
+}
+
+export const NOTICE = localised("NOTICE", NOTICE_SRC);
+export const IMPRESSUM = localised("IMPRESSUM", IMPRESSUM_SRC);
+export const CONTACT = localised("CONTACT", CONTACT_SRC);
+export const PRIVACY = localised("PRIVACY", PRIVACY_SRC);

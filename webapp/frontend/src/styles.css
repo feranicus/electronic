@@ -690,6 +690,29 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .lang-toggle .lg{display:inline}
 .brand{white-space:nowrap}
 
+/* ---- language MENU (six locales) ------------------------------------------------------------
+   Six flat buttons would be ~330px of a 360px header — the row-width arithmetic that already bit
+   us twice. The trigger is a fixed, measurable object instead: short code + full name on desktop
+   (~92px), short code alone on a phone (~46px). CSS picks; no resize listener, no second source
+   of truth for what the label is. */
+.lang-menu{position:relative;flex:0 0 auto}
+.lang-trigger{display:inline-flex;align-items:center;gap:6px;background:transparent;
+  border:1px solid rgba(255,255,255,.18);border-radius:999px;color:inherit;font:inherit;
+  font-size:12px;font-weight:600;padding:6px 10px;min-height:32px;cursor:pointer;white-space:nowrap}
+.lang-trigger:hover{border-color:rgba(0,178,169,.55)}
+.lang-trigger .code{color:var(--teal,#00B2A9);font-weight:800;letter-spacing:.03em}
+.lang-trigger .car{opacity:.6;font-size:10px}
+.lang-list{position:absolute;top:calc(100% + 6px);right:0;z-index:60;margin:0;padding:5px;
+  list-style:none;min-width:158px;background:#0d1a30;border:1px solid rgba(255,255,255,.14);
+  border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+.lang-list li{margin:0}
+.lang-list button{display:flex;align-items:center;gap:9px;width:100%;background:transparent;
+  border:0;color:#e8eefb;font:inherit;font-size:13px;text-align:left;padding:8px 10px;
+  border-radius:8px;cursor:pointer;min-height:38px}
+.lang-list button:hover{background:rgba(255,255,255,.07)}
+.lang-list button.on{background:rgba(0,178,169,.16);color:#fff;font-weight:600}
+.lang-list .code{color:var(--teal,#00B2A9);font-weight:800;font-size:11px;min-width:20px}
+
 @media (max-width:720px){
   #hd .wrap{flex-wrap:nowrap;gap:8px;min-height:52px;
     padding-top:calc(4px + env(safe-area-inset-top));padding-bottom:4px}
@@ -699,6 +722,12 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .lang-toggle .lg{display:none}
   .lang-toggle .sm{display:inline}
   .lang-toggle button{padding:7px 10px;min-height:34px;font-size:12.5px;font-weight:700}
+  /* phone: the trigger collapses to the 2-letter code, so the header row stays ~46px lighter.
+     The menu itself opens full-width-ish so six targets stay comfortably tappable. */
+  .lang-trigger .lg{display:none}
+  .lang-trigger{padding:7px 9px;min-height:34px;font-size:12.5px;font-weight:700;gap:4px}
+  .lang-list{min-width:150px;right:0}
+  .lang-list button{min-height:42px;font-size:14px}
   #hd nav .btn.sm{min-height:34px;padding:7px 11px;font-size:12.5px;white-space:nowrap}
   /* the Demo pill is the one anonymous entry point; keep it but let it shrink first */
   #hd nav .btn.sm.ghost{padding:7px 10px}

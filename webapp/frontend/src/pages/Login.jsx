@@ -56,9 +56,8 @@ export default function Login() {
           <span className="iam-tag">{t("login.iam")}</span>
         </div>
         <div className="iam-brand-mid">
-          <h1>Cyber pre-sales,<br/>self-serve.</h1>
-          <p>One name in, a full attack-surface assessment out. The same engine behind
-             the Telegram bots — now on the web, for every seller.</p>
+          <h1>{t("login.h1a")}<br/>{t("login.h1b")}</h1>
+          <p>{t("login.lede")}</p>
           <ul className="iam-steps">
             <li><span>1</span><div><b>{t("login.step1")}</b>{t("login.step1b")}</div></li>
             <li><span>2</span><div><b>{t("login.step2")}</b>{t("login.step2b")}</div></li>
@@ -72,9 +71,9 @@ export default function Login() {
       <main className="iam-form">
         <div className="iam-card">
           <div className="iam-prog">
-            <span className={stage==="creds"||stage==="otp"?"on":""}>Sign in</span>
+            <span className={stage==="creds"||stage==="otp"?"on":""}>{t("login.prog1")}</span>
             <i/>
-            <span className={stage==="otp"?"on":""}>Verify</span>
+            <span className={stage==="otp"?"on":""}>{t("login.prog2")}</span>
           </div>
 
           {stage === "creds" ? (

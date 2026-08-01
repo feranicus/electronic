@@ -92,17 +92,17 @@ export default function Landing() {
 
     const CONV = [
       { s: "me", t: "/auth anna.schmidt@yourcompany.com ********", cmd: "/auth" },
-      { s: "them", typ: 900, t: "Code emailed. Reply /verify <code> (valid 10 min)." },
+      { s: "them", typ: 900, t: tx("Code emailed. Reply /verify <code> (valid 10 min).") },
       { s: "me", t: "/verify 483920", cmd: "/verify" },
-      { s: "them", typ: 700, t: "Verified. You're in." },
+      { s: "them", typ: 700, t: tx("Verified. You're in.") },
       { s: "me", t: "/assess Volkswagen AG", cmd: "/assess" },
-      { s: "them", typ: 1000, t: "Assessing Volkswagen AG ..." },
-      { s: "them", typ: 1600, t: "[auto] 9 ASNs / 41 domains / internal-CA VW-CA-PROC-09 / sweeping Shodan..." },
-      { s: "file", fn: "VW_Shodan_Findings.pptx", fs: "2 CRIT / 4 HIGH / evidence + fixes", typ: 900 },
-      { s: "file", fn: "VW_C-BIQ.pptx", fs: "portfolio ALE EUR 11M-29M" },
-      { s: "file", fn: "VW_GEOPOL.pptx", fs: "APT41/Winnti +4 adversaries" },
-      { s: "file", fn: "VW_DELTAS.pptx", fs: "value the fix buys back" },
-      { s: "them", typ: 600, t: "Done in 2m 10s. 4 decks ready." },
+      { s: "them", typ: 1000, t: tx("Assessing Volkswagen AG ...") },
+      { s: "them", typ: 1600, t: tx("[auto] 9 ASNs / 41 domains / internal-CA VW-CA-PROC-09 / sweeping Shodan...") },
+      { s: "file", fn: "VW_Shodan_Findings.pptx", fs: tx("2 CRIT / 4 HIGH / evidence + fixes"), typ: 900 },
+      { s: "file", fn: "VW_C-BIQ.pptx", fs: tx("portfolio ALE EUR 11M-29M") },
+      { s: "file", fn: "VW_GEOPOL.pptx", fs: tx("APT41/Winnti +4 adversaries") },
+      { s: "file", fn: "VW_DELTAS.pptx", fs: tx("value the fix buys back") },
+      { s: "them", typ: 600, t: tx("Done in 2m 10s. 4 decks ready.") },
     ];
     const tb = root.querySelector("#tgbody");
     const esc = (x) => (x || "").replace(/</g, "&lt;");
@@ -156,7 +156,7 @@ export default function Landing() {
       DEADLINES.forEach((d) => {
         const n = root.querySelector("#" + d.el); if (!n) return;
         const ms = new Date(d.date + "T00:00:00Z") - now;
-        if (ms <= 0) { n.textContent = "LIVE NOW"; n.classList.add("past"); return; }
+        if (ms <= 0) { n.textContent = tx("LIVE NOW"); n.classList.add("past"); return; }
         const dd = Math.floor(ms / 86400000), h = Math.floor(ms / 3600000) % 24,
               m = Math.floor(ms / 60000) % 60, sec = Math.floor(ms / 1000) % 60;
         n.innerHTML = dd + "<i>d</i>" + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
@@ -168,24 +168,24 @@ export default function Landing() {
 
     const C = { green: "#10B981", teal: "#00B2A9", gold: "#F7C844", purple: "#8b6cff", cyan: "#38e1ff" };
     const NODES = [
-      { id: "you",    x: 105,  y: 110, ico: "phone",  t: "SALES",        s: "Telegram / one name",   c: C.green,  n: "1",  dd: "d1" },
-      { id: "web",    x: 105,  y: 262, ico: "screen", t: "WEB APP",      s: "cybergod.ai cabinet",   c: C.green,  n: "1",  dd: "d1" },
-      { id: "gh",     x: 105,  y: 462, ico: "octo",   t: "GITHUB CI/CD", s: "build/scan/ship",       c: C.teal,   n: "11", dd: "d11" },
-      { id: "patch",  x: 105,  y: 602, ico: "patch",  t: "PATCHWATCH",   s: "self-patch /3d",        c: C.purple, n: "10", dd: "d10" },
-      { id: "bot",    x: 355,  y: 110, ico: "shield", t: "assessment bot", s: "the assessor",          c: C.teal,   n: "1",  dd: "d1", big: true },
-      { id: "cass",   x: 355,  y: 262, ico: "compass",t: "cassandra",    s: "research assistant",          c: C.teal,   n: "1",  dd: "d1" },
-      { id: "auth",   x: 355,  y: 412, ico: "lock",   t: "ZERO-TRUST",   s: "email+pw+code",         c: C.purple, n: "2",  dd: "d2" },
-      { id: "eng",    x: 600,  y: 252, ico: "gear",   t: "ENGINE",       s: "recon to decks",        c: C.teal,   n: "3",  dd: "d3", big: true },
-      { id: "comp",   x: 600,  y: 422, ico: "scroll", t: "COMPLIANCE",   s: "NIS2 / CRA / AI Act",   c: C.teal,   n: "8",  dd: "d8", big: true },
-      { id: "clar",   x: 600,  y: 582, ico: "chat",   t: "CLARIFY",      s: "deliver, then refine",  c: C.teal,   n: "7",  dd: "d7" },
-      { id: "foot",   x: 850,  y: 95,  ico: "globe",  t: "FOOTPRINT",    s: "bgpview/RIPE/crt.sh",   c: C.gold,   n: "3",  dd: "d3" },
-      { id: "shodan", x: 850,  y: 235, ico: "scope",  t: "SHODAN",       s: "paid / 30+ filters",    c: C.gold,   n: "4",  dd: "d4" },
-      { id: "deep",   x: 850,  y: 375, ico: "bot",    t: "AI MODELS",    s: "multi-vendor chain",    c: C.gold,   n: "5",  dd: "d5" },
-      { id: "audit",  x: 850,  y: 515, ico: "scale",  t: "AI AUDIT",     s: "2nd model checks it",   c: C.gold,   n: "6",  dd: "d6" },
-      { id: "gmail",  x: 1095, y: 95,  ico: "mail",   t: "GMAIL API",    s: "2FA code / HTTPS",      c: C.gold,   n: "2",  dd: "d2" },
-      { id: "decks",  x: 1095, y: 252, ico: "decks",  t: "DELIVERABLES", s: "4 decks + live report", c: C.green,  n: "5",  dd: "d5", big: true },
-      { id: "graf",   x: 1095, y: 420, ico: "chart",  t: "GRAFANA",      s: "godeyes.ai/observe",    c: C.cyan,   n: "9",  dd: "d9" },
-      { id: "spaces", x: 1095, y: 580, ico: "disk",   t: "SPACES",       s: "backups",               c: C.gold,   n: "10", dd: "d10" },
+      { id: "you",    x: 105,  y: 110, ico: "phone",  t: tx("SALES"),        s: tx("Telegram / one name"),   c: C.green,  n: "1",  dd: "d1" },
+      { id: "web",    x: 105,  y: 262, ico: "screen", t: tx("WEB APP"),      s: tx("cybergod.ai cabinet"),   c: C.green,  n: "1",  dd: "d1" },
+      { id: "gh",     x: 105,  y: 462, ico: "octo",   t: tx("GITHUB CI/CD"), s: tx("build/scan/ship"),       c: C.teal,   n: "11", dd: "d11" },
+      { id: "patch",  x: 105,  y: 602, ico: "patch",  t: tx("PATCHWATCH"),   s: tx("self-patch /3d"),        c: C.purple, n: "10", dd: "d10" },
+      { id: "bot",    x: 355,  y: 110, ico: "shield", t: tx("assessment bot"), s: tx("the assessor"),        c: C.teal,   n: "1",  dd: "d1", big: true },
+      { id: "cass",   x: 355,  y: 262, ico: "compass",t: tx("cassandra"),    s: tx("research assistant"),    c: C.teal,   n: "1",  dd: "d1" },
+      { id: "auth",   x: 355,  y: 412, ico: "lock",   t: tx("ZERO-TRUST"),   s: tx("email+pw+code"),         c: C.purple, n: "2",  dd: "d2" },
+      { id: "eng",    x: 600,  y: 252, ico: "gear",   t: tx("ENGINE"),       s: tx("recon to decks"),        c: C.teal,   n: "3",  dd: "d3", big: true },
+      { id: "comp",   x: 600,  y: 422, ico: "scroll", t: tx("COMPLIANCE"),   s: tx("NIS2 / CRA / AI Act"),   c: C.teal,   n: "8",  dd: "d8", big: true },
+      { id: "clar",   x: 600,  y: 582, ico: "chat",   t: tx("CLARIFY"),      s: tx("deliver, then refine"),  c: C.teal,   n: "7",  dd: "d7" },
+      { id: "foot",   x: 850,  y: 95,  ico: "globe",  t: tx("FOOTPRINT"),    s: tx("bgpview/RIPE/crt.sh"),   c: C.gold,   n: "3",  dd: "d3" },
+      { id: "shodan", x: 850,  y: 235, ico: "scope",  t: tx("SHODAN"),       s: tx("paid / 30+ filters"),    c: C.gold,   n: "4",  dd: "d4" },
+      { id: "deep",   x: 850,  y: 375, ico: "bot",    t: tx("AI MODELS"),    s: tx("multi-vendor chain"),    c: C.gold,   n: "5",  dd: "d5" },
+      { id: "audit",  x: 850,  y: 515, ico: "scale",  t: tx("AI AUDIT"),     s: tx("2nd model checks it"),   c: C.gold,   n: "6",  dd: "d6" },
+      { id: "gmail",  x: 1095, y: 95,  ico: "mail",   t: tx("GMAIL API"),    s: tx("2FA code / HTTPS"),      c: C.gold,   n: "2",  dd: "d2" },
+      { id: "decks",  x: 1095, y: 252, ico: "decks",  t: tx("DELIVERABLES"), s: tx("4 decks + live report"), c: C.green,  n: "5",  dd: "d5", big: true },
+      { id: "graf",   x: 1095, y: 420, ico: "chart",  t: tx("GRAFANA"),      s: tx("godeyes.ai/observe"),    c: C.cyan,   n: "9",  dd: "d9" },
+      { id: "spaces", x: 1095, y: 580, ico: "disk",   t: tx("SPACES"),       s: tx("backups"),               c: C.gold,   n: "10", dd: "d10" },
     ];
     const ICO = { phone: "\ud83d\udcf1", screen: "\ud83d\udda5\ufe0f", shield: "\ud83d\udee1\ufe0f", compass: "\ud83e\udded", lock: "\ud83d\udd10", gear: "\u2699\ufe0f", scroll: "\ud83d\udcdc", chat: "\ud83d\udcac", mail: "\u2709\ufe0f", globe: "\ud83c\udf10", scope: "\ud83d\udd2d", bot: "\ud83e\udd16", scale: "\u2696\ufe0f", decks: "\ud83d\udcd1", disk: "\ud83d\udcbe", chart: "\ud83d\udcc8", octo: "\ud83d\udc19", patch: "\ud83e\ude79" };
     const EDGES = [
@@ -208,6 +208,10 @@ export default function Landing() {
     const el = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
     const pathD = (a, b, bow) => { const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 - (bow || 0); return "M " + a.x + " " + a.y + " Q " + mx + " " + my + " " + b.x + " " + b.y; };
     const eg = root.querySelector("#edges"), ng = root.querySelector("#nodes");
+    // The effect re-runs when the language changes; without clearing, every node and
+    // edge is appended a second time and the map renders on top of itself.
+    if (eg) eg.innerHTML = "";
+    if (ng) ng.innerHTML = "";
     const E = [], Ngr = {};
     if (eg && ng) {
       EDGES.forEach((e, i) => {
@@ -249,17 +253,17 @@ export default function Landing() {
     }
 
     const STEPS = [
-      { ids: ["you", "web", "bot"], t: "1 - One input: a company name. From Telegram, or from the cybergod.ai web app." },
-      { ids: ["bot", "auth", "gmail"], t: "2 - Zero-trust: approved email + password + a one-time code emailed to that inbox." },
-      { ids: ["auth", "eng", "foot"], t: "3 - The engine auto-resolves the company's entire footprint. You type no IPs." },
-      { ids: ["eng", "shodan"], t: "4 - It sweeps Shodan for every exposed door - and pivots on their own private CA." },
-      { ids: ["eng", "deep", "decks"], t: "5 - A multi-vendor AI chain writes the prose; templates lock the numbers into the decks." },
-      { ids: ["eng", "audit"], t: "6 - A SECOND AI, from a different vendor, audits the findings for false positives before you ever see them." },
-      { ids: ["decks", "clar", "eng"], t: "7 - Decks land first - then it asks what it could not resolve. You answer, it re-scopes and rebuilds." },
-      { ids: ["web", "comp", "decks"], t: "8 - Compliance: NIS2, the Cyber Resilience Act and the EU AI Act - from the same one input." },
-      { ids: ["bot", "eng", "graf"], t: "9 - Every login, assessment, audit and patch is logged live to Grafana." },
-      { ids: ["patch", "spaces", "eng"], t: "10 - patchwatch backs up to Spaces, then patches the server itself every 3 days." },
-      { ids: ["gh", "eng"], t: "11 - One command builds, scans and ships it - and proves the container really holds the new code." },
+      { ids: ["you", "web", "bot"], t: tx("1 - One input: a company name. From Telegram, or from the cybergod.ai web app.") },
+      { ids: ["bot", "auth", "gmail"], t: tx("2 - Zero-trust: approved email + password + a one-time code emailed to that inbox.") },
+      { ids: ["auth", "eng", "foot"], t: tx("3 - The engine auto-resolves the company's entire footprint. You type no IPs.") },
+      { ids: ["eng", "shodan"], t: tx("4 - It sweeps Shodan for every exposed door - and pivots on their own private CA.") },
+      { ids: ["eng", "deep", "decks"], t: tx("5 - A multi-vendor AI chain writes the prose; templates lock the numbers into the decks.") },
+      { ids: ["eng", "audit"], t: tx("6 - A SECOND AI, from a different vendor, audits the findings for false positives before you ever see them.") },
+      { ids: ["decks", "clar", "eng"], t: tx("7 - Decks land first - then it asks what it could not resolve. You answer, it re-scopes and rebuilds.") },
+      { ids: ["web", "comp", "decks"], t: tx("8 - Compliance: NIS2, the Cyber Resilience Act and the EU AI Act - from the same one input.") },
+      { ids: ["bot", "eng", "graf"], t: tx("9 - Every login, assessment, audit and patch is logged live to Grafana.") },
+      { ids: ["patch", "spaces", "eng"], t: tx("10 - patchwatch backs up to Spaces, then patches the server itself every 3 days.") },
+      { ids: ["gh", "eng"], t: tx("11 - One command builds, scans and ships it - and proves the container really holds the new code.") },
     ];
     let touring = false, ti = 0, timer = null;
     const cap = root.querySelector("#cap"), tbtn = root.querySelector("#tour");
@@ -271,9 +275,9 @@ export default function Landing() {
       tbtn.onclick = () => {
         if (touring) {
           touring = false; clearTimeout(timer); hl(null);
-          if (cap) cap.classList.remove("show"); tbtn.textContent = "▶ Guided tour"; tbtn.classList.remove("off");
+          if (cap) cap.classList.remove("show"); tbtn.textContent = "▶ " + tx("Guided tour"); tbtn.classList.remove("off");
         } else {
-          touring = true; ti = 0; step(); tbtn.textContent = "⏸ Stop tour"; tbtn.classList.add("off");
+          touring = true; ti = 0; step(); tbtn.textContent = "⏸ " + tx("Stop tour"); tbtn.classList.add("off");
           const map = root.querySelector("#map"); if (map) map.scrollIntoView({ behavior: "smooth", block: "start" });
         }
       };
@@ -298,7 +302,7 @@ export default function Landing() {
       DD.forEach((d) => {
         const s = document.createElement("div");
         s.className = "dd reveal"; s.id = d.id;
-        s.innerHTML = '<div class="num" style="background:' + d.c + '">' + d.n + '</div><div><h3><span class="ic">' + d.ic + "</span>" + tx(d.h) + '</h3><p class="plain">' + tx(d.plain) + '</p><div class="flowstrip" style="--c:' + d.c + '"><i></i></div><div class="hood"><div class="h">' + tx("Under the hood - for the engineer") + '</div><ul>' + d.hood.map((x) => "<li>" + x + "</li>").join("") + "</ul></div></div>";
+        s.innerHTML = '<div class="num" style="background:' + d.c + '">' + d.n + '</div><div><h3><span class="ic">' + d.ic + "</span>" + tx(d.h) + '</h3><p class="plain">' + tx(d.plain) + '</p><div class="flowstrip" style="--c:' + d.c + '"><i></i></div><div class="hood"><div class="h">' + tx("Under the hood - for the engineer") + '</div><ul>' + d.hood.map((x) => "<li>" + tx(x) + "</li>").join("") + "</ul></div></div>";
         dw.appendChild(s); io.observe(s);
       });
     }
@@ -313,7 +317,7 @@ export default function Landing() {
       raf.forEach((id) => cancelAnimationFrame(id));
       timers.forEach((id) => clearTimeout(id));
     };
-  }, [lang, tx]);
+  }, [lang]);
 
   return (
     <div ref={rootRef}>
@@ -344,7 +348,7 @@ export default function Landing() {
 
       <section id="edge" className="lp edge"><div className="wrap reveal">
         <div className="kick2">{tx("For boards, CISOs and risk owners")}</div>
-        <h2>{tx("What you cannot see is ")}<span className="g">already public</span></h2>
+        <h2>{tx("What you cannot see is ")}<span className="g">{tx("already public")}</span></h2>
         <p className="lede">{t("lede.edge")}</p>
 
         <div className="vs">
@@ -372,18 +376,18 @@ export default function Landing() {
           ))}
         </div>
 
-        <h3 className="eh">{tx("The clocks are ")}<span className="r">already running</span></h3>
+        <h3 className="eh">{tx("The clocks are ")}<span className="r">{tx("already running")}</span></h3>
         <p className="lede small">{t("clocks.lede")}</p>
         <div className="clocks">
-          <div className="clock"><div className="reg">{tx("NIS2 &mdash; Germany")}</div><div className="fine">&euro;10m / 2% of turnover</div>
+          <div className="clock"><div className="reg">{tx("NIS2 — Germany")}</div><div className="fine">{tx("€10m / 2% of turnover")}</div>
             <div className="num" id="cd1">&mdash;</div>
-            <div className="cap2">until the BSI registration grace period ends &middot; 31 Jul 2026</div></div>
-          <div className="clock"><div className="reg">{tx("EU AI Act")}</div><div className="fine">&euro;35m / 7% of turnover</div>
+            <div className="cap2">{tx("until the BSI registration grace period ends · 31 Jul 2026")}</div></div>
+          <div className="clock"><div className="reg">{tx("EU AI Act")}</div><div className="fine">{tx("€35m / 7% of turnover")}</div>
             <div className="num" id="cd2">&mdash;</div>
-            <div className="cap2">until high-risk obligations apply &middot; 2 Aug 2026</div></div>
-          <div className="clock"><div className="reg">{tx("Cyber Resilience Act")}</div><div className="fine">&euro;15m / 2.5% of turnover</div>
+            <div className="cap2">{tx("until high-risk obligations apply · 2 Aug 2026")}</div></div>
+          <div className="clock"><div className="reg">{tx("Cyber Resilience Act")}</div><div className="fine">{tx("€15m / 2.5% of turnover")}</div>
             <div className="num" id="cd3">&mdash;</div>
-            <div className="cap2">until incident &amp; vulnerability reporting &middot; 11 Sep 2026</div></div>
+            <div className="cap2">{tx("until incident & vulnerability reporting · 11 Sep 2026")}</div></div>
         </div>
 
         <div className="unlock">
@@ -400,19 +404,15 @@ export default function Landing() {
 
         <h3 className="eh">{tx("Fair questions")}</h3>
         <div className="tri">
-          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>&ldquo;Is this legal?&rdquo;</div>
-            <p>Yes. It uses public sources any researcher could look up, and never interacts with your
-              systems. Nothing is exploited, nothing is logged into.</p></div>
-          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>&ldquo;How accurate is it?&rdquo;</div>
-            <p>Every finding carries the evidence behind it. Where a source cannot be reached it says
-              &ldquo;unknown&rdquo; rather than inventing a weakness - and it asks you to confirm anything
-              it could not resolve.</p></div>
-          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>&ldquo;What do we have to provide?&rdquo;</div>
-            <p>Your company name. No access, no questionnaire, no NDA to start, and nothing to install.
-              The euro figures are modelled ranges with the assumptions shown.</p></div>
+          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>{tx("“Is this legal?”")}</div>
+            <p>{tx("Yes. It uses public sources any researcher could look up, and never interacts with your systems. Nothing is exploited, nothing is logged into.")}</p></div>
+          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>{tx("“How accurate is it?”")}</div>
+            <p>{tx("Every finding carries the evidence behind it. Where a source cannot be reached it says “unknown” rather than inventing a weakness - and it asks you to confirm anything it could not resolve.")}</p></div>
+          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>{tx("“What do we have to provide?”")}</div>
+            <p>{tx("Your company name. No access, no questionnaire, no NDA to start, and nothing to install. The euro figures are modelled ranges with the assumptions shown.")}</p></div>
         </div>
 
-        <div className="pullq">The question is not whether something of yours is exposed.{" "}
+        <div className="pullq">{tx("The question is not whether something of yours is exposed.")}{" "}
           <span className="g">{tx("It is whether you know what.")}</span></div>
         <div className="cta-row" style={{ justifyContent: "center" }}>
           <Link className="btn" to="/contact">{tx("Request an assessment")}</Link>
@@ -420,23 +420,22 @@ export default function Landing() {
       </div></section>
 
       <section id="demo" className="lp"><div className="wrap reveal">
-        <h2>{tx("See it ")}<span className="g">live</span></h2>
+        <h2>{tx("See it ")}<span className="g">{tx("live")}</span></h2>
         <p className="lede">{tx("This is the entire product - texting a bot. The chat below plays the real flow: log in, ask, get four decks.")}</p>
         <div className="demo">
           <div className="phone"><div className="notch"></div><div className="screen">
             <div className="tgh"><span className="bk">‹</span><div className="av">C</div>
-              <div><div className="nm">assessment bot</div><div className="st">bot / online</div></div>
+              <div><div className="nm">{tx("assessment bot")}</div><div className="st">{tx("bot / online")}</div></div>
               <div className="dots">⋮</div></div>
             <div className="tgbody" id="tgbody"></div>
           </div></div>
           <div className="demoside">
             <h3>{tx("One input. Zero flags.")}</h3>
-            <p>{tx("You never type an IP, a network or a certificate. The robot resolves the target's ")}<b>entire</b> internet
-              footprint itself, then hunts every exposure, prices it, and writes the decks.</p>
+            <p>{tx("You never type an IP, a network or a certificate. The robot resolves the target's ")}<b>{tx("entire")}</b>{tx(" internet footprint itself, then hunts every exposure, prices it, and writes the decks.")}</p>
             <div className="chips">
-              <span className="chip">zero-trust login</span><span className="chip">auto-discovery</span>
+              <span className="chip">{tx("zero-trust login")}</span><span className="chip">{tx("auto-discovery")}</span>
               <span className="chip">{tx("Shodan (paid)")}</span><span className="chip">{tx("DeepSeek prose")}</span>
-              <span className="chip">4 decks</span>
+              <span className="chip">{tx("4 decks")}</span>
             </div>
             <p style={{ marginTop: 14, color: "var(--gold)" }}>{tx("The chat loops - watch the four .pptx files land.")}</p>
             <Link className="btn gold" style={{ marginTop: 6 }} to="/login">{tx("Do this in the web app")}</Link>
@@ -446,7 +445,7 @@ export default function Landing() {
 
       <section id="map" className="lp"><div className="wrap reveal">
         <div className="maphead">
-          <div><h2>{tx("The whole ")}<span className="g">machine</span></h2>
+          <div><h2>{tx("The whole ")}<span className="g">{tx("machine")}</span></h2>
             <p className="lede" style={{ margin: 0 }}>{tx("Hover a box to see its wires. Click it to jump to the details. Or hit play for a guided tour.")}</p></div>
           <button className="tour" id="tour">{tx("Guided tour")}</button>
         </div>
@@ -470,24 +469,24 @@ export default function Landing() {
       </div></section>
 
       <section id="deep" className="lp"><div className="wrap reveal">
-        <h2>Deep <span className="g">dive</span></h2>
+        <h2>{tx("Deep ")}<span className="g">{tx("dive")}</span></h2>
         <p className="lede">{tx("Plain English for everyone; under the hood for the engineer. Click a box in the map above to jump here.")}</p>
         <div id="ddwrap"></div>
       </div></section>
 
       <section id="secure" className="lp"><div className="wrap reveal">
-        <h2>{tx("Locked ")}<span className="g">down</span></h2>
+        <h2>{tx("Locked ")}<span className="g">{tx("down")}</span></h2>
         <p className="lede">{tx("Secure-by-design, in plain terms.")}</p>
         <div className="grid2">
-          <div className="hood"><div className="h">{tx("Nobody walks in")}</div><ul><li>Real <code>your approved address</code> email + shared password <b style={{ color: "var(--teal)" }}>+ a one-time code emailed to that inbox</b>. Guessing the first two isn't enough.</li></ul></div>
-          <div className="hood"><div className="h">{tx("Secrets never in git")}</div><ul><li>{tx("Keys live only on the server or as encrypted GitHub secrets; ")}<code>gitleaks</code> blocks accidental commits.</li></ul></div>
+          <div className="hood"><div className="h">{tx("Nobody walks in")}</div><ul><li>{tx("A real approved email address + the shared password ")}<b style={{ color: "var(--teal)" }}>{tx("+ a one-time code emailed to that inbox")}</b>{tx(". Guessing the first two isn't enough.")}</li></ul></div>
+          <div className="hood"><div className="h">{tx("Secrets never in git")}</div><ul><li>{tx("Keys live only on the server or as encrypted GitHub secrets; ")}<code>gitleaks</code>{tx(" blocks accidental commits.")}</li></ul></div>
           <div className="hood"><div className="h">{tx("Scanned before ship")}</div><ul><li>{tx("Trivy (deps+image), CodeQL SAST, ruff, pytest - every change checked before it reaches the server.")}</li></ul></div>
           <div className="hood"><div className="h">{tx("Never breaks the neighbours")}</div><ul><li>{tx("An isolated container stack; existing services and the firewall are untouched.")}</li></ul></div>
         </div>
       </div></section>
 
       <div className="foot"><div className="wrap">
-        <div style={{ fontSize: 20, fontWeight: 800 }}><span className="chev">❯</span> cybergod<span class="g">.ai</span></div>
+        <div style={{ fontSize: 20, fontWeight: 800 }}><span className="chev">❯</span> cybergod<span className="g">.ai</span></div>
         <p>{tx("Cybergod LLC / S4Biz Group - external cyber-risk and EU compliance assessment / one company name in, four boardroom documents out.")}</p>
         <Link className="btn" to="/login">{tx("Open the app")}</Link>
         <div className="footlinks">

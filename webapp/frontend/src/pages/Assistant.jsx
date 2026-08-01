@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { assist } from "../api.js";
+import { useT } from "../i18n";
 
 export default function Assistant() {
-  const [msgs, setMsgs] = useState([
-    { role: "bot", content: "Hi, I'm Cassandra - your pre-sales sidekick. Ask me for company research, a MEDDPICC breakdown, or outreach copy." },
+  const [, , t] = useT();
+  // Lazy initialiser: the opening line is written ONCE, in the language the cabinet was opened in.
+  // Re-translating it later would rewrite a message already sitting in the transcript.
+  const [msgs, setMsgs] = useState(() => [
+    { role: "bot", content: t("assist.greeting") },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -20,10 +24,10 @@ export default function Assistant() {
     setInput(""); setBusy(true);
     try {
       const { ok, data } = await assist(text);
-      const reply = ok ? (data.reply || "…") : (data.message || "Something went wrong. Try again.");
+      const reply = ok ? (data.reply || "…") : (data.message || t("assist.errServer"));
       setMsgs((m) => [...m, { role: "bot", content: reply }]);
     } catch {
-      setMsgs((m) => [...m, { role: "bot", content: "Could not reach the server. Try again." }]);
+      setMsgs((m) => [...m, { role: "bot", content: t("assist.errNet") }]);
     } finally {
       setBusy(false);
     }
@@ -31,8 +35,8 @@ export default function Assistant() {
 
   return (
     <>
-      <h1 className="page-h">Assistant</h1>
-      <p className="page-sub">Cassandra - research, MEDDPICC qualification, and outreach drafting for your accounts.</p>
+      <h1 className="page-h">{t("assist.h1")}</h1>
+      <p className="page-sub">{t("assist.sub")}</p>
       <div className="chat">
         <div className="chat-body" ref={bodyRef}>
           {msgs.map((m, i) => (
@@ -41,11 +45,11 @@ export default function Assistant() {
           {busy && <div className="cmsg bot"><span className="spinner" /></div>}
         </div>
         <div className="chat-input">
-          <input className="input" placeholder="Ask Cassandra…" value={input}
+          <input className="input" placeholder={t("assist.ph")} value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()} disabled={busy} />
           <button className="btn" onClick={send} disabled={busy || !input.trim()}>
-            {busy ? <span className="spinner" /> : "Send"}
+            {busy ? <span className="spinner" /> : t("assist.send")}
           </button>
         </div>
       </div>

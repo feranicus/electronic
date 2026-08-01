@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { startAssess, assessEventsUrl, ackPrivacy, assessStatus,
   assessClarify, assessRefine } from "../api.js";
 import { NOTICE, useLegalLang, LangToggle } from "../legal";
+import { useT } from "../i18n";
+import { useDocLangs } from "../docLangs.js";
 
 function asText(v) {
   if (v == null) return "";
@@ -25,14 +27,16 @@ function fmtTime(sec) {
 }
 
 export default function NewAssessment() {
+  // `lang` below is the DOCUMENT language (what the decks are written in). The INTERFACE language
+  // comes from the shared site store, so only the translator is pulled off useT() here.
+  const [, , t] = useT();
   const [company, setCompany] = useState("");
-  // Default the DOCUMENT language from the SITE language — a German interface producing
-  // English decks by default made every German user re-pick it on every run. Still
-  // overridable below: the reader's language and the customer's are not always the same.
-  const [lang, setLang] = useState(() => {
-    try { return localStorage.getItem("cg_legal_lang") === "de" ? "de" : "en"; }
-    catch { return "en"; }
-  });
+  // Document language: defaults to the SITE language when the engine can actually render it, English
+  // otherwise, and the option list comes from the engine's own dictionaries. Reading
+  // `localStorage.cg_legal_lang` directly here was correct while the site and the engine shipped the
+  // same two languages; the site now ships six and the engine still ships two, so that shortcut
+  // would have sent `--lang it` to an engine that silently answers in English. See docLangs.js.
+  const { docs: docLangs, lang, setLang, unavailable: docLangUnavailable } = useDocLangs();
   const [pct, setPct] = useState(0);        // last REAL milestone reported by the engine
   const [phase, setPhase] = useState("");   // human label for the current phase
   const [notice, setNotice] = useState(""); // e.g. "model X timed out — switching to Y"
@@ -118,7 +122,7 @@ export default function NewAssessment() {
         setLines([]);
         setStatus("running");
         startedRef.current = Date.now();
-        setNotice("Reconnected to an assessment already running on the server.");
+        setNotice(t("assess.reconnected"));
         attach(jid);
       } else if (data.status === "done" && (data.decks || []).length) {
         setCompany(data.company || "");
@@ -170,7 +174,7 @@ export default function NewAssessment() {
         es.close();
       } else if (payload.evt === "error") {
         try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
-        setErrMsg(payload.message || "The assessment failed.");
+        setErrMsg(payload.message || t("assess.errFailed"));
         setStatus("error");
         es.close();
       }
@@ -180,11 +184,14 @@ export default function NewAssessment() {
       // exactly where we left off. The run lives on the server now — a locked phone, a tunnel or a
       // flaky radio is a pause, not a cancellation.
       setStatus((cur) => {
-        if (cur === "running") setNotice("Connection dropped — reconnecting… (the assessment keeps running on the server)");
+        if (cur === "running") setNotice(t("assess.dropped"));
         return cur;
       });
     };
-    es.onopen = () => setNotice((n) => (n.startsWith("Connection dropped") ? "" : n));
+    // Clearing the banner used to test startsWith("Connection dropped"), which only worked while the
+    // string was hardcoded English. The banner is set to exactly t("assess.dropped"), so compare
+    // against that same value — identical behaviour, in any language.
+    es.onopen = () => setNotice((n) => (n === t("assess.dropped") ? "" : n));
   }
 
   async function run(e) {
@@ -194,13 +201,13 @@ export default function NewAssessment() {
     if (!ackd) { acknowledge(); }                   // first Assess click = notice was shown + accepted
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
     setClarify(null); setAnswers({});                // fresh run — drop the previous clarification
-    setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…"); setNotice("");
+    setPct(0); setShown(0); setElapsed(0); setPhase(t("assess.phaseStart")); setNotice("");
     startedRef.current = Date.now();
 
     const { ok, data } = await startAssess(name, lang);
     if (!ok || !data.job_id) {
       setStatus("error");
-      setErrMsg(data.message || "Could not start the assessment.");
+      setErrMsg(data.message || t("assess.errStart"));
       return;
     }
     try { localStorage.setItem("cg_job", data.job_id); } catch { /* ignore */ }
@@ -214,13 +221,13 @@ export default function NewAssessment() {
     const { ok, data } = await assessRefine(jobId, answers, lang);
     setRefining(false);
     if (!ok || !data.job_id) {
-      setErrMsg(data.message || "Could not refine the assessment.");
+      setErrMsg(data.message || t("assess.errRefine"));
       return;
     }
     // reset the run view and stream the child exactly like a fresh assessment
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
     setClarify(null);
-    setPct(0); setShown(0); setElapsed(0); setPhase("Re-scoping with your answers…"); setNotice("");
+    setPct(0); setShown(0); setElapsed(0); setPhase(t("assess.phaseRescope")); setNotice("");
     startedRef.current = Date.now();
     try { localStorage.setItem("cg_job", data.job_id); } catch { /* ignore */ }
     attach(data.job_id);
@@ -228,9 +235,8 @@ export default function NewAssessment() {
 
   return (
     <>
-      <h1 className="page-h">New assessment</h1>
-      <p className="page-sub">One input: a company name or domain. The engine resolves the entire footprint,
-        sweeps Shodan, and writes the four boardroom decks — in English or Hoch-Deutsch. No IPs, ASNs or certs to type.</p>
+      <h1 className="page-h">{t("assess.h1")}</h1>
+      <p className="page-sub">{t("assess.sub")}</p>
 
       {!ackd && (
         <div className="panel gdpr-notice">
@@ -250,21 +256,23 @@ export default function NewAssessment() {
       <div className="panel">
         <form className="assess-row" onSubmit={run}>
           <div className="fld">
-            <div className="label">Company name</div>
-            <input className="input" placeholder="e.g. Volkswagen AG"
+            <div className="label">{t("assess.company")}</div>
+            <input className="input" placeholder={t("assess.companyPh")}
               value={company} onChange={(e) => setCompany(e.target.value)}
               disabled={status === "running"} />
           </div>
           <div className="fld fld-lang">
-            <div className="label">Document language</div>
+            {/* The <option>s are language ENDONYMS and are never translated. The LIST comes from
+                /api/langs, i.e. the dictionaries the engine actually has on disk. */}
+            <div className="label">{t("assess.docLang")}</div>
             <select className="input" value={lang} onChange={(e) => setLang(e.target.value)}
               disabled={status === "running"}>
-              <option value="en">English</option>
-              <option value="de">Deutsch (Hochdeutsch)</option>
+              {docLangs.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
             </select>
+            {docLangUnavailable && <div className="hint">{t("assess.docLangNote")}</div>}
           </div>
           <button className="btn" type="submit" disabled={status === "running" || !company.trim()}>
-            {status === "running" ? <><span className="spinner" /> Assessing…</> : "Assess"}
+            {status === "running" ? <><span className="spinner" /> {t("assess.running")}</> : t("assess.go")}
           </button>
         </form>
 
@@ -276,16 +284,16 @@ export default function NewAssessment() {
         {status === "running" && (
           <div className="prog">
             <div className="prog-top">
-              <span className="prog-phase">{phase || "Working…"}</span>
+              {/* `phase` is ENGINE output (server data) — never translated. Only the idle
+                  placeholder below is ours. */}
+              <span className="prog-phase">{phase || t("assess.phaseIdle")}</span>
               <span className="prog-meta">{Math.floor(shown)}% · {fmtTime(elapsed)}</span>
             </div>
             <div className="prog-track"><div className="prog-fill" style={{ width: Math.max(2, shown) + "%" }} /></div>
             {notice && <div className="prog-notice">⚠ {notice}</div>}
             <div className="prog-note">
-              {elapsed > 300
-                ? "Still working. Long runs usually mean Shodan recon found a large estate, or an AI model is slow and we are failing over to the next one — the log above says which."
-                : "Typically 3–7 minutes: Shodan recon is the long part (~2–3 min), then the AI writes the prose (~1 min)."}
-              {" "}Keep this tab open; refreshing cancels the run.
+              {elapsed > 300 ? t("assess.noteLong") : t("assess.noteShort")}
+              {" "}{t("assess.noteKeepOpen")}
             </div>
           </div>
         )}
@@ -293,25 +301,25 @@ export default function NewAssessment() {
         {(status === "running" || lines.length > 0) && (
           <div className="loglist" ref={logRef}>
             {lines.length === 0 && status === "running"
-              ? <div className="ln muted">Starting…</div>
+              ? <div className="ln muted">{t("assess.logStarting")}</div>
               : lines.map((l, i) => <div key={i} className="ln">{l}</div>)}
           </div>
         )}
 
         {status === "running" && (
-          <div className="status-row"><span className="spinner" /> Working — this usually takes about two minutes.</div>
+          <div className="status-row"><span className="spinner" /> {t("assess.statusWorking")}</div>
         )}
 
         {status === "error" && <div className="err">{asText(errMsg)}</div>}
 
         {status === "done" && (
           <>
-            <div className="ok">Done. Your four decks are ready.</div>
+            <div className="ok">{t("assess.done")}</div>
             <div className="decks">
               {decks.map((d) => (
                 <a key={d.name} className="deck" href={d.url} download>
                   <div className="doc">PPTX</div>
-                  <div><div className="fn">{d.name}</div><div className="muted" style={{ fontSize: 12 }}>Download</div></div>
+                  <div><div className="fn">{d.name}</div><div className="muted" style={{ fontSize: 12 }}>{t("assess.download")}</div></div>
                 </a>
               ))}
             </div>
@@ -322,12 +330,8 @@ export default function NewAssessment() {
 
       {status === "done" && clarify && (clarify.questions || []).length > 0 && (
         <div className="panel clarify">
-          <h2 className="page-h" style={{ fontSize: 20, marginTop: 0 }}>Refine this assessment</h2>
-          <p className="page-sub" style={{ marginTop: 4 }}>
-            The decks above are ready. To sharpen the scope, answer anything relevant below — confirm
-            what is yours, add IP ranges / systems the auto-recon could not see, or flag anything that
-            is not yours. I will re-scope and rebuild the four decks and the animated report.
-          </p>
+          <h2 className="page-h" style={{ fontSize: 20, marginTop: 0 }}>{t("assess.refineH")}</h2>
+          <p className="page-sub" style={{ marginTop: 4 }}>{t("assess.refineSub")}</p>
 
           {clarify.questions.map((q) => (
             <div key={q.id} className="clarify-q">
@@ -358,7 +362,7 @@ export default function NewAssessment() {
                 <label className={"chip" + (answers[q.maps_to] ? " chip-on" : "")}>
                   <input type="checkbox" checked={!!answers[q.maps_to]}
                     onChange={(e) => ansText(q.maps_to, e.target.checked)} />
-                  Yes
+                  {t("assess.yes")}
                 </label>
               )}
             </div>
@@ -366,9 +370,9 @@ export default function NewAssessment() {
 
           <button className="btn" type="button" onClick={submitRefine}
             disabled={!hasAnswers || refining}>
-            {refining ? <><span className="spinner" /> Refining…</> : "Refine & rebuild"}
+            {refining ? <><span className="spinner" /> {t("assess.refineBusy")}</> : t("assess.refineGo")}
           </button>
-          {!hasAnswers && <div className="gdpr-mini">Answer at least one question to refine.</div>}
+          {!hasAnswers && <div className="gdpr-mini">{t("assess.refineHint")}</div>}
         </div>
       )}
     </>

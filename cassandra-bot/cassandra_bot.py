@@ -37,34 +37,84 @@ def _log(**k):
 AUTH = colt_auth.Auth("cassandra", AUTHFILE, log=_log)   # email + password + email OTP 2FA
 def is_authed(uid): return AUTH.is_authed(uid, ALLOWED)
 
-# ---------------------------------------------------------------- language (EN / DE) -------------
+# ------------------------------------------------- language (en / de / it / fr / es / pl) --------
 # Same default signal as the website and the assessment bot: the user's own client language, with a
 # per-user override. For an LLM assistant the language is enforced in the SYSTEM PROMPT — translating
-# the few canned strings while every generated answer stayed English would be worse than not trying.
+# the few canned strings while every generated answer stayed English would be worse than not trying,
+# which is why LANG_INSTRUCTION carries the register AND the do-not-translate list, not just "reply
+# in X". Cassandra has no deck engine behind it, so unlike the assessment bot there is no separate
+# DOCUMENT language here: all six are real, end to end.
+LANGS = ("en", "de", "it", "fr", "es", "pl")
 _LANG = {}
 
 
 def lang_of(update):
     u = update.effective_user
-    if u and u.id in _LANG:
+    if u and u.id in _LANG and _LANG[u.id] in LANGS:
         return _LANG[u.id]
-    return "de" if str(getattr(u, "language_code", "") or "").lower().startswith("de") else "en"
+    code = str(getattr(u, "language_code", "") or "").lower()
+    for c in LANGS:                      # "de-AT" -> de, "pt-BR" -> en; no prefix collisions in LANGS
+        if code.startswith(c):
+            return c
+    return "en"
 
 
+# Registers are researched, not guessed: it -> Lei · fr -> vous · es -> usted (es-ES peninsular) ·
+# pl -> IMPERSONAL, because Polish past-tense verbs are gendered and a bot cannot know the user's
+# gender. Instrument and technique names are never translated in any of them.
 LANG_INSTRUCTION = {
     "en": "",
     "de": ("\n\nSPRACHE: Antworte AUSSCHLIESSLICH auf Hochdeutsch, in der Sie-Form. Fachbegriffe "
            "(NIS2, CRA, MITRE ATT&CK, SASE, ZTNA, CVE-IDs, Produktnamen) bleiben unübersetzt."),
+    "it": ("\n\nLINGUA: Rispondi ESCLUSIVAMENTE in italiano, dando del Lei. I termini tecnici "
+           "(NIS2, CRA, MITRE ATT&CK, SASE, ZTNA, ID CVE, nomi di prodotto) restano non tradotti. "
+           "Usa «conformità» (mai «compliance»), «rilievi» per i findings, «superficie di attacco» "
+           "e «soggetti essenziali/importanti» per le classi NIS2 — mai «entità»."),
+    "fr": ("\n\nLANGUE : Réponds EXCLUSIVEMENT en français, en vouvoyant systématiquement "
+           "l'interlocuteur. Les termes techniques (NIS2, CRA, MITRE ATT&CK, SASE, ZTNA, "
+           "identifiants CVE, noms de produits) restent non traduits. Emploie « conformité » "
+           "(jamais « compliance »), « constats » pour les findings, « surface d'attaque » et "
+           "« entités essentielles/importantes » pour les classes NIS2. Espace insécable avant "
+           "les deux-points, points-virgules, points d'exclamation et d'interrogation."),
+    "es": ("\n\nIDIOMA: Responde EXCLUSIVAMENTE en español de España, tratando al interlocutor de "
+           "usted. Los términos técnicos (NIS2, CRA, MITRE ATT&CK, SASE, ZTNA, identificadores CVE, "
+           "nombres de producto) no se traducen. Usa «cumplimiento» (nunca «compliance»), "
+           "«hallazgos» para los findings, «superficie de ataque» y «entidades esenciales/"
+           "importantes» para las clases NIS2. Signos de apertura ¿ y ¡ obligatorios."),
+    "pl": ("\n\nJĘZYK: Odpowiadaj WYŁĄCZNIE po polsku, w formie bezosobowej lub w trybie "
+           "rozkazującym — bez zwrotów «Pan/Pani» i BEZ czasowników w czasie przeszłym w rodzaju "
+           "męskim lub żeńskim (bot nie zna płci rozmówcy). Terminy techniczne (NIS2, CRA, "
+           "MITRE ATT&CK, SASE, ZTNA, identyfikatory CVE, nazwy produktów) pozostają "
+           "nieprzetłumaczone. Używaj słów «zgodność», «ustalenia» zamiast findings, «powierzchnia "
+           "ataku» oraz «podmiot kluczowy/ważny» dla klas NIS2."),
+}
+
+_LANG_USAGE = {
+    "en": "Usage: /lang en | de | it | fr | es | pl",
+    "de": "Verwendung: /lang en | de | it | fr | es | pl",
+    "it": "Uso: /lang en | de | it | fr | es | pl",
+    "fr": "Utilisation : /lang en | de | it | fr | es | pl",
+    "es": "Uso: /lang en | de | it | fr | es | pl",
+    "pl": "Użycie: /lang en | de | it | fr | es | pl",
+}
+_LANG_SET = {
+    "en": "✅ Language set to English. I will answer in it from now on.",
+    "de": "✅ Sprache auf Deutsch gesetzt. Ab jetzt antworte ich Ihnen auf Deutsch.",
+    "it": "✅ Lingua impostata su italiano. D'ora in poi Le risponderò in questa lingua.",
+    "fr": "✅ Langue définie sur le français. Je vous répondrai désormais dans cette langue.",
+    "es": "✅ Idioma configurado en español. A partir de ahora le responderé en este idioma.",
+    "pl": "✅ Ustawiono język polski. Od teraz odpowiadam w tym języku.",
 }
 
 
 async def lang_cmd(update, ctx):
+    """/lang <code> — remembered per user. Enforced in the SYSTEM PROMPT, not by string swapping."""
     arg = (ctx.args[0].lower() if ctx.args else "")
-    if arg not in ("en", "de"):
-        await update.message.reply_text("Usage: /lang de   or   /lang en"); return
+    if arg not in LANGS:
+        cur = lang_of(update)
+        await update.message.reply_text(_LANG_USAGE.get(cur, _LANG_USAGE["en"])); return
     _LANG[update.effective_user.id] = arg
-    await update.message.reply_text("Sprache auf Deutsch gesetzt." if arg == "de"
-                                    else "Language set to English.")
+    await update.message.reply_text(_LANG_SET.get(arg, _LANG_SET["en"]))
 
 
 SYSTEM_PROMPT = """You are Cassandra, a senior cybergod.ai (Cybergod LLC / S4Biz Group) pre-sales

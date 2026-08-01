@@ -7,3 +7,12 @@
 !cassandra-bot
 !colt_auth.py
 !webapp
+# ...but NOT the operator's node_modules. `COPY webapp/frontend/ ./` runs AFTER `npm install` in the
+# fe stage, so a host node_modules would be copied straight OVER the fresh install — and npm
+# packages carry PER-PLATFORM binaries (esbuild ships @esbuild/<os>-<arch> as an optional dep).
+# The image would then be built with whatever platform the operator's folder happens to hold, which
+# is exactly the class of failure that broke the i18n gate. Let the image install its own.
+# dist/ and ssrtmp/ are build output; shipping them into the context only makes it bigger.
+webapp/frontend/node_modules
+webapp/frontend/dist
+webapp/frontend/ssrtmp

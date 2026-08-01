@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { startCompliance, complianceRefine, assessEventsUrl, assessStatus, assessClarify } from "../api.js";
+import { useT } from "../i18n";
+import { useDocLangs } from "../docLangs.js";
 
 // Compliance module (NIS2 / CRA / EU AI Act). Same UX as Assess: one company-name input -> live
 // stream -> decks -> post-run clarification/refine. Shares the assess streaming/status/clarify
@@ -11,8 +13,13 @@ function fmtTime(sec) {
 }
 
 export default function Compliance() {
+  // `lang` here is the DOCUMENT language of the decks, not the interface language — the latter
+  // comes from the shared site store, so only the translator is taken off useT().
+  const [, , t] = useT();
   const [company, setCompany] = useState("");
-  const [lang, setLang] = useState("en");
+  // Document language, offered from what the ENGINE can actually render — not from the six the
+  // interface speaks. See docLangs.js.
+  const { docs: docLangs, lang, setLang, unavailable: docLangUnavailable } = useDocLangs();
   const [pct, setPct] = useState(0);
   const [phase, setPhase] = useState("");
   const [notice, setNotice] = useState("");
@@ -82,14 +89,15 @@ export default function Compliance() {
         loadClarify(id); es.close();
       } else if (p.evt === "error") {
         try { localStorage.removeItem("cg_cjob"); } catch { /* ignore */ }
-        setErrMsg(p.message || "The assessment failed."); setStatus("error"); es.close();
+        setErrMsg(p.message || t("comp.errFailed")); setStatus("error"); es.close();
       }
     };
     es.onerror = () => setStatus((cur) => {
-      if (cur === "running") setNotice("Connection dropped — reconnecting… (the assessment keeps running on the server)");
+      if (cur === "running") setNotice(t("comp.dropped"));
       return cur;
     });
-    es.onopen = () => setNotice((n) => (n.startsWith("Connection dropped") ? "" : n));
+    // Compare against the value we set, not an English prefix — same behaviour, in any language.
+    es.onopen = () => setNotice((n) => (n === t("comp.dropped") ? "" : n));
   }
 
   // resume an in-flight compliance job on return
@@ -102,7 +110,7 @@ export default function Compliance() {
       if (!data || stale) return;
       if (data.status === "running") {
         setCompany(data.company || ""); setLines([]); setStatus("running");
-        startedRef.current = Date.now(); setNotice("Reconnected to a compliance run already in progress.");
+        startedRef.current = Date.now(); setNotice(t("comp.reconnected"));
         attach(jid);
       } else if (data.status === "done" && (data.decks || []).length) {
         setCompany(data.company || ""); setLines(data.lines || []); setDecks(data.decks || []);
@@ -118,10 +126,10 @@ export default function Compliance() {
     const name = company.trim();
     if (!name || status === "running") return;
     setStatus("running"); setLines([]); setDecks([]); setErrMsg(""); setClarify(null); setAnswers({});
-    setPct(0); setShown(0); setElapsed(0); setPhase("Starting the engine…"); setNotice("");
+    setPct(0); setShown(0); setElapsed(0); setPhase(t("comp.phaseStart")); setNotice("");
     startedRef.current = Date.now();
     const { ok, data } = await startCompliance(name, lang);
-    if (!ok || !data.job_id) { setStatus("error"); setErrMsg(data.message || "Could not start the assessment."); return; }
+    if (!ok || !data.job_id) { setStatus("error"); setErrMsg(data.message || t("comp.errStart")); return; }
     try { localStorage.setItem("cg_cjob", data.job_id); } catch { /* ignore */ }
     attach(data.job_id);
   }
@@ -131,9 +139,9 @@ export default function Compliance() {
     setRefining(true);
     const { ok, data } = await complianceRefine(jobId, answers, lang);
     setRefining(false);
-    if (!ok || !data.job_id) { setErrMsg(data.message || "Could not refine the assessment."); return; }
+    if (!ok || !data.job_id) { setErrMsg(data.message || t("comp.errRefine")); return; }
     setStatus("running"); setLines([]); setDecks([]); setErrMsg(""); setClarify(null);
-    setPct(0); setShown(0); setElapsed(0); setPhase("Re-scoping with your answers…"); setNotice("");
+    setPct(0); setShown(0); setElapsed(0); setPhase(t("comp.phaseRescope")); setNotice("");
     startedRef.current = Date.now();
     try { localStorage.setItem("cg_cjob", data.job_id); } catch { /* ignore */ }
     attach(data.job_id);
@@ -141,49 +149,51 @@ export default function Compliance() {
 
   return (
     <>
-      <h1 className="page-h">Compliance assessment</h1>
-      <p className="page-sub">One input: a company name. The engine assesses exposure to <b>NIS2</b>, the{" "}
-        <b>Cyber Resilience Act</b> and the <b>EU AI Act</b> — applicability, obligations, gaps, deadlines
-        and penalty exposure — and writes three regime decks, a roadmap deck and an animated report, in
-        English or Hoch-Deutsch. It infers the scope from the name; you confirm it afterwards.</p>
+      <h1 className="page-h">{t("comp.h1")}</h1>
+      {/* Four connective fragments around three BOLD statutory names. The names are legal titles and
+          are never translated (see rule in locales/en.js), so they cannot live inside a key. */}
+      <p className="page-sub">{t("comp.sub.a")}<b>NIS2</b>{t("comp.sub.b")}
+        <b>Cyber Resilience Act</b>{t("comp.sub.c")}<b>EU AI Act</b>{t("comp.sub.d")}</p>
 
       <div className="panel">
         <form className="assess-row" onSubmit={run}>
           <div className="fld">
-            <div className="label">Company name</div>
-            <input className="input" placeholder="e.g. Siemens Healthineers AG"
+            <div className="label">{t("comp.company")}</div>
+            <input className="input" placeholder={t("comp.companyPh")}
               value={company} onChange={(e) => setCompany(e.target.value)}
               disabled={status === "running"} />
           </div>
           <div className="fld fld-lang">
-            <div className="label">Document language</div>
+            {/* The options come from /api/langs — the dictionaries the engine actually has. */}
+            <div className="label">{t("comp.docLang")}</div>
             <select className="input" value={lang} onChange={(e) => setLang(e.target.value)}
               disabled={status === "running"}>
-              <option value="en">English</option>
-              <option value="de">Deutsch (Hochdeutsch)</option>
+              {docLangs.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
             </select>
+            {docLangUnavailable && <div className="hint">{t("assess.docLangNote")}</div>}
           </div>
           <button className="btn" type="submit" disabled={status === "running" || !company.trim()}>
-            {status === "running" ? <><span className="spinner" /> Assessing…</> : "Assess compliance"}
+            {status === "running" ? <><span className="spinner" /> {t("comp.running")}</> : t("comp.go")}
           </button>
         </form>
 
         {status === "running" && (
           <div className="prog">
             <div className="prog-top">
-              <span className="prog-phase">{phase || "Working…"}</span>
+              {/* `phase` is ENGINE output (server data) — never translated. */}
+              <span className="prog-phase">{phase || t("comp.phaseIdle")}</span>
               <span className="prog-meta">{Math.floor(shown)}% · {fmtTime(elapsed)}</span>
             </div>
             <div className="prog-track"><div className="prog-fill" style={{ width: Math.max(2, shown) + "%" }} /></div>
             {notice && <div className="prog-notice">⚠ {notice}</div>}
-            <div className="prog-note">Typically about a minute. Keep this tab open; refreshing cancels the run.</div>
+            <div className="prog-note">{t("comp.note")}</div>
           </div>
         )}
 
         {(status === "running" || lines.length > 0) && (
           <div className="loglist" ref={logRef}>
             {lines.length === 0 && status === "running"
-              ? <div className="ln muted">Starting…</div>
+              ? <div className="ln muted">{t("comp.logStarting")}</div>
               : lines.map((l, i) => <div key={i} className="ln">{l}</div>)}
           </div>
         )}
@@ -192,7 +202,7 @@ export default function Compliance() {
 
         {status === "done" && (
           <>
-            <div className="ok">Done. Your NIS2, CRA, AI-Act and roadmap decks are ready.</div>
+            <div className="ok">{t("comp.done")}</div>
             <div className="decks">
               {decks.map((d) => {
                 const html = /\.html$/i.test(d.name);
@@ -201,7 +211,7 @@ export default function Compliance() {
                     rel={html ? "noreferrer" : undefined} download={html ? undefined : true}>
                     <div className="doc">{html ? "HTML" : "PPTX"}</div>
                     <div><div className="fn">{d.name}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>{html ? "Open report" : "Download"}</div></div>
+                      <div className="muted" style={{ fontSize: 12 }}>{html ? t("comp.openReport") : t("comp.download")}</div></div>
                   </a>
                 );
               })}
@@ -212,11 +222,8 @@ export default function Compliance() {
 
       {status === "done" && clarify && (clarify.questions || []).length > 0 && (
         <div className="panel clarify">
-          <h2 className="page-h" style={{ fontSize: 20, marginTop: 0 }}>Confirm the scope</h2>
-          <p className="page-sub" style={{ marginTop: 4 }}>
-            The decks above use assumptions I inferred from the company name. Compliance depends on facts
-            I can only guess — confirm the ones below and I will re-scope and rebuild.
-          </p>
+          <h2 className="page-h" style={{ fontSize: 20, marginTop: 0 }}>{t("comp.confirmH")}</h2>
+          <p className="page-sub" style={{ marginTop: 4 }}>{t("comp.confirmSub")}</p>
 
           {clarify.questions.map((q) => (
             <div key={q.id} className="clarify-q">
@@ -258,16 +265,16 @@ export default function Compliance() {
               {q.kind === "yesno" && (
                 <label className={"chip" + (answers[q.maps_to] ? " chip-on" : "")}>
                   <input type="checkbox" checked={!!answers[q.maps_to]}
-                    onChange={(e) => ansText(q.maps_to, e.target.checked)} />Yes
+                    onChange={(e) => ansText(q.maps_to, e.target.checked)} />{t("comp.yes")}
                 </label>
               )}
             </div>
           ))}
 
           <button className="btn" type="button" onClick={submitRefine} disabled={!hasAnswers || refining}>
-            {refining ? <><span className="spinner" /> Refining…</> : "Refine & rebuild"}
+            {refining ? <><span className="spinner" /> {t("comp.refineBusy")}</> : t("comp.refineGo")}
           </button>
-          {!hasAnswers && <div className="gdpr-mini">Answer at least one question to refine.</div>}
+          {!hasAnswers && <div className="gdpr-mini">{t("comp.refineHint")}</div>}
         </div>
       )}
     </>

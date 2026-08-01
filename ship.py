@@ -564,6 +564,64 @@ def do_tests():
     if not media_ok:
         sys.exit("[X] /demo hero media missing, truncated, or not faststart")
 
+    # c''''''0) i18n GATE — six languages, and every one of them proved by RENDERING.
+    #
+    # Three separate production defects live behind this gate, all of them invisible to `vite build`:
+    #   * a fallback that prints the KEY looks like content — `q3.h` and `earn.01b` shipped live, in
+    #     BOTH languages, because the key was written into one dictionary and read from the other;
+    #   * a trailing-space mismatch between `tx("... is ")` and a trimmed dictionary key made five
+    #     German strings fall back to English mid-headline — the "mixed language" report;
+    #   * `tx` was a fresh arrow per render, so a useEffect dep changed every render and the
+    #     architecture map was appended again and again — the "repeated chunks" report.
+    # So: the catalogue must be 100% in every locale, and the SSR audit must render all six public
+    # pages in all six languages and MEASURE the English residue instead of anyone eyeballing it.
+    i18n_ok = True
+    try:
+        _fe = os.path.join(HERE, "webapp", "frontend")
+        # Call `node` DIRECTLY, never through npx: `npx --no-install node` asks npm to install a
+        # `node` PACKAGE and aborts non-interactively ("npx canceled due to missing packages"),
+        # which is a gate failing on its own launcher rather than on the thing it checks.
+        if not have("node"):
+            sys.exit("[X] node is not on PATH - the i18n gate cannot run. Install Node 18+ "
+                     "(the frontend build needs it too), then re-run: python ship.py")
+
+        # `run()` here STREAMS and returns an int returncode; it does not capture. The audit prints
+        # its own per-language table, so streaming is what we want.
+        if run(["node", "tools/i18n_catalogue.mjs", "--check"], check=False, cwd=_fe) != 0:
+            i18n_ok = False
+            print("    !! a locale is incomplete - see webapp/frontend/tools/gap.*.json")
+
+        # THE RENDER AUDIT RUNS IN THE DOCKER BUILD, not here — see webapp/Dockerfile.
+        #
+        # esbuild's binary is a PER-PLATFORM optional dependency and this repo's node_modules is
+        # Linux-native (it is a shared folder), so on Windows the bundle dies with
+        # "@esbuild/win32-x64 could not be found". Three ship.py runs in a row failed on that
+        # plumbing instead of on a translation. Rather than make the operator repair a toolchain,
+        # the audit moved into the frontend image build, which does a fresh npm install on
+        # linux/amd64 — correct by construction, nothing to drift, still one command.
+        #
+        # This is NOT a silent skip: it runs on every web deploy and fails the image (and therefore
+        # the deploy) if a page falls back to English or a raw key reaches the DOM. Try it locally
+        # anyway when the toolchain happens to be usable, because failing here is faster feedback.
+        # Exit codes are the contract: 1 = a REAL defect (fail the ship), 2 = toolchain unusable on
+        # this platform (note it and move on — the image build enforces it). Conflating them would
+        # either block the operator over a toolchain they never installed, or swallow a real defect.
+        _audit = run(["node", "tools/run_i18n_audit.mjs"], check=False, cwd=_fe)
+        if _audit == 2:
+            print("    render audit skipped locally (no esbuild binary for this platform) - it is "
+                  "ENFORCED in the frontend image build, see webapp/Dockerfile")
+        elif _audit != 0:
+            i18n_ok = False
+    except SystemExit:
+        raise
+    except Exception as _e:
+        i18n_ok = False; print("    i18n gate error: %r" % _e)
+    print("  i18n: 6 locales complete + every page renders in each: %s"
+          % ("OK" if i18n_ok else "BROKEN"))
+    if not i18n_ok:
+        sys.exit("[X] i18n gate failed - a locale is incomplete, a raw key reached the DOM, "
+                 "or a page falls back to English")
+
     # c'''''') BRAND GATE. The product is Cybergod LLC / S4Biz Group; nothing a customer sees may say
     #          Colt. Grep the RENDERED ARTIFACT, never the source: the enum key "COLT" legitimately
     #          survives in tagMap / TAGWORDS / enrich's tag validation (renaming an enum makes
