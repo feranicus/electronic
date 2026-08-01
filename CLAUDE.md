@@ -1637,3 +1637,21 @@ Only the hero and creed were translated; everything below stayed English. Three 
 VERIFIED BY MEASUREMENT, not by eye: an SSR render in German counts English function-words per page
 (the|your|and|with|from|what|...). Landing 4%, Demo 0%, Login 3%, Contact/Privacy/Impressum 0% — the
 residue is proper nouns and code identifiers. Switching back to English is asserted in the same test.
+
+## Raw i18n KEYS shipped to the screen — two dictionaries, one mistake (2026-07)
+The live site rendered `q3.h`, `earn.01h`, `earn.01b`, `demo.t1h`, `touch.body` as literal text, in
+BOTH languages, destroying the "Where it earns its place" and "How it works, technically" sections.
+CAUSE: i18n.jsx has TWO dictionaries with different key spaces —
+  * `EN`/`DE`      keyed by a DOTTED KEY, read by `t(key)`
+  * `DE_BY_EN`     keyed by the ENGLISH SOURCE STRING, read by `tx(englishText)`
+I added the new copy to `DE_BY_EN` but wired the components with `t()`. `tr()` falls back
+EN -> key, so with the key absent from EN it printed the key itself — and the English site broke
+exactly as badly as the German one, which is the tell that it was never a translation gap.
+FIX: those keys now live in `EN` and `DE` (English text AND German text), removed from `DE_BY_EN`.
+GUARD (this is the part that matters): an SSR test renders all 6 public pages in BOTH languages and
+FAILS if the rendered text matches `/(nav|tab|hero|creed|demo|login|lede|q3|clocks|touch|earn|faq)\.[a-z0-9]+/`.
+A fallback that silently prints the key is worse than a crash — it looks like content.
+RULE: if a translation layer has more than one key space, every new string needs to state WHICH one
+it belongs to, and a test must assert that no key ever reaches the DOM.
+Coverage after the fix (measured on the rendered page): Landing 2% English function-words, Demo 0%,
+Contact/Privacy/Impressum 0%, Login 3% — residue is proper nouns and code identifiers.

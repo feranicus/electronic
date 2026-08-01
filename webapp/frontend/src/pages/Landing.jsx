@@ -364,18 +364,12 @@ export default function Landing() {
 
         <h3 className="eh">{t("q3.h")}</h3>
         <div className="tri">
-          <div className="tric"><div className="tt" style={{ color: "var(--teal)" }}>WHO</div>
-            <p>The threat groups realistically interested in your sector and geography - and the route
-              they would most likely take into you.</p>
-            <span className="src">{tx("GEOPOL deck")}</span></div>
-          <div className="tric"><div className="tt" style={{ color: "var(--gold)" }}>{tx("HOW MUCH")}</div>
-            <p>Your exposure modelled in euros - expected annual loss, worst realistic case, and the
-              return on fixing it first.</p>
-            <span className="src">{tx("C-BIQ deck")}</span></div>
-          <div className="tric"><div className="tt" style={{ color: "#ff5c74" }}>WHEN</div>
-            <p>The regulatory dates that already apply to you - and the maximum fine attached to each
-              of them.</p>
-            <span className="src">{tx("Compliance decks")}</span></div>
+          {[["faq.1q","faq.1a"],["faq.2q","faq.2a"],["faq.3q","faq.3a"]].map(([q, a]) => (
+            <div className="tric" key={q}>
+              <div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>{t(q)}</div>
+              <p>{t(a)}</p>
+            </div>
+          ))}
         </div>
 
         <h3 className="eh">{tx("The clocks are ")}<span className="r">already running</span></h3>
