@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""enrich.py — ONE DO-Qwen call driven by the DELTAS BIBLE. Turns raw findings into a Colt
+"""enrich.py — ONE DO-Qwen call driven by the DELTAS BIBLE. Turns raw findings into a customer
 pursuit-grade report: reframes prose, derives architecture/business context, adds STRENGTHS
-and a Colt mitigation-mapping, writes exec_summary + a QA audit verdict. No Hermes. Facts
+and a service mitigation-mapping, writes exec_summary + a QA audit verdict. No Hermes. Facts
 never changed. Safe fallback. Emits token/cost telemetry as a JSON event for Grafana/Loki."""
 import os, re, sys, json, time, urllib.request, urllib.error
 HERE  = os.path.dirname(os.path.abspath(__file__))
@@ -189,7 +189,8 @@ def _bible():
     for name in ("LLM_DELTAS_BIBLE.md", "COLT_SHODAN_DECK_METHODOLOGY.md"):
         p = os.path.join(HERE, "..", "reference", name)
         if os.path.exists(p): return open(p, encoding="utf-8", errors="ignore").read()[:14000]
-    return "Add Colt pursuit deltas: architecture, business context, strengths, Colt-product remediation."
+    return ("Add pursuit deltas: architecture, business context, strengths, and remediation named "
+            "as a VENDOR-NEUTRAL managed service category.")
 
 PROMPT = """%s
 %s
@@ -224,7 +225,7 @@ Uebersetze auch die Fachbegriffe ins Deutsche:
   Loss Magnitude -> Schadenshoehe (SH) · Cost of Delay -> Kosten der Verzoegerung (KdV)
   ROSI -> Rendite der Sicherheitsinvestition (RSI) · Kill Chain -> Angriffskette
   finding -> Befund · exposure -> Exposition · remediation -> Behebung
-NICHT uebersetzen (Eigennamen/IDs): Colt-Produktnamen (Colt SASE, ZTNA, WAF, Managed Firewall,
+NICHT uebersetzen (Eigennamen/IDs): Service-Kategorien (SASE, ZTNA, WAF, Managed Firewall,
 IP Guardian, DPI/NDR, SD-WAN), Rahmenwerksnamen (FAIR, MITRE ATT&CK, NIST, BSI, ISO, TISAX, NIS2,
 DORA, Admiralty, Monte-Carlo, Shodan, CISA KEV, EPSS, CVSS), CVE-Kennungen, Hostnamen, IPs, Ports,
 Protokollnamen (RDP, Telnet, TLS, VPN) und Firmennamen.

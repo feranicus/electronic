@@ -70,6 +70,55 @@ def build(builder, args, out):
     return os.path.exists(out), (r.stderr or "")[-300:]
 
 
+
+def colt_regressions():
+    """The COLT AS8220 run: numbers that disagreed between two slides of the SAME deck."""
+    import json as _j
+    print("\n== 6. the COLT run: cross-slide consistency + readable cells ==")
+    tmp = tempfile.mkdtemp()
+    fj = json.load(open(os.path.join(SAMPLE, "findings.sample.json"), encoding="utf-8"))
+    # exactly the shape that broke: ONE inventory row holding 21 comma-joined country codes
+    fj["summary"]["countries"] = 21
+    fj["summary"]["inventory"] = [{"asn": "AS8220", "holder": "COLT Technology Services Group Limited",
+                                   "country": "AT,AU,BE,CH,DE,DK,ES,FI,FR,GB,HK,IE,IT,JP,NL,PT,"
+                                              "RO,SE,SG,SK,US", "hosts": 738}]
+    p = os.path.join(tmp, "colt.json")
+    _j.dump(fj, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    out = os.path.join(tmp, "colt.pptx")
+    good, err = build("build_findings_deck.js", [p], out)
+    check(good, "deck builds from an ASN-seeded, no-domain estate%s" % ("" if good else " " + err))
+    if not good:
+        return
+    z = zipfile.ZipFile(out)
+    s5 = z.read("ppt/slides/slide5.xml").decode("utf8")
+    tiles = []
+    for sp in re.findall(r"<p:sp>.*?</p:sp>", s5, re.S):
+        m = re.search(r'<a:off x="(-?\d+)" y="(-?\d+)"/>', sp)
+        t = "".join(re.findall(r"<a:t>(.*?)</a:t>", sp, re.S)).strip()
+        if m and t and 1.2 * EMU < int(m.group(2)) < 2.3 * EMU:
+            tiles.append((int(m.group(1)), int(m.group(2)), t))
+    col = {}
+    for x, y, t in tiles:
+        col.setdefault(round(x / EMU, 1), []).append((y, t))
+    got = {}
+    for k, v in col.items():
+        vals = [t for _, t in sorted(v)]
+        if len(vals) >= 2:
+            got[vals[1]] = vals[0]
+    check(got.get("COUNTRIES") == "21",
+          "ASSET INVENTORY says %s countries, matching the exec summary's 21 (was 1: it counted "
+          "distinct comma-joined STRINGS)" % got.get("COUNTRIES"))
+    # the country CELL must stay readable in a ~1.1in column
+    frame = re.findall(r"<p:graphicFrame>.*?</p:graphicFrame>", s5, re.S)
+    if frame:
+        row = re.findall(r"<a:tr .*?</a:tr>", frame[0], re.S)[1]
+        cells = ["".join(re.findall(r"<a:t>(.*?)</a:t>", c, re.S))
+                 for c in re.findall(r"<a:tc.*?</a:tc>", row, re.S)]
+        cc = cells[2] if len(cells) > 2 else ""
+        check(len(cc) <= 18 and "+" in cc,
+              "country cell is summarised (%r), not 21 codes truncated mid-word" % cc)
+
+
 def main():
     tmp = tempfile.mkdtemp()
     fj = json.load(open(os.path.join(SAMPLE, "findings.sample.json"), encoding="utf-8"))
@@ -168,6 +217,8 @@ def main():
         check(cov >= 0.8, "sample findings are >=80%% LLM-written (got %.0f%%)" % (cov * 100))
     else:
         print("  skip  sample has no _enriched flags (fixture predates the coverage contract)")
+
+    colt_regressions()
 
     print("\n" + "=" * 78)
     print("  test_deck_quality: %s" % ("ALL PASSED" if not FAILS else "%d FAILURE(S)" % len(FAILS)))

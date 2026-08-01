@@ -437,13 +437,28 @@ function drawTable(slide, rows, opts) {
 // ===================================================================
 // ASSET INVENTORY  (stat tiles + operator / ASN / country / role / host-count table)
 // ===================================================================
+// A country cell must stay readable in a ~1.1in column: 21 joined codes truncate mid-word
+// ("AT,AU,BE,CH,DE,DK,ES,FI,FR,GB,HK,I"). Show three and count the rest.
+function ccCell(v) {
+  const cc = String(v || "").split(/[,\s]+/).filter(Boolean);
+  if (!cc.length) return EMDASH;
+  if (cc.length <= 3) return cc.join(", ");
+  return cc.slice(0, 3).join(", ") + " +" + (cc.length - 3);
+}
+
 (function inventory() {
   if (!Array.isArray(sum.inventory) || !sum.inventory.length) return;
   const inv = sum.inventory;
   const s = content("ASSET INVENTORY", "The internet-facing estate " + EMDASH + " by operator, ASN, country and role");
   const totalHosts = inv.reduce((a, r) => a + num(r.hosts), 0);
   const nAsn = new Set(inv.map(r => r.asn).filter(Boolean)).size;
-  const nCountry = new Set(inv.map(r => r.country).filter(Boolean)).size;
+  // COUNTRY COUNT. Each inventory row stores its countries as a COMMA-JOINED STRING
+  // ("AT,AU,BE,CH,..."), so counting distinct strings gave 1 for a 21-country estate while the
+  // executive summary — computed from the real set — said 21. Prefer the authoritative number the
+  // engine already published (sum.countries) and only derive it when that is missing; when we do
+  // derive it, split the cell first.
+  const nCountry = num(sum.countries) ||
+    new Set(inv.flatMap(r => String(r.country || "").split(/[,\s]+/)).filter(c => c && c !== EMDASH)).size;
   const tiles = [[String(totalHosts), "HOSTS"], [String(inv.length), "OPERATORS"], [String(nAsn), "ASNs"], [String(nCountry), "COUNTRIES"]];
   let tx = 0.4; const tw = 2.24, tg = 0.18;
   tiles.forEach(([n, l]) => {
@@ -462,7 +477,7 @@ function drawTable(slide, rows, opts) {
     rows.push([
       { text: String(r.holder || r.operator || EMDASH), options: { fill: zebra, fontSize: 7.6, color: C.tealDark, bold: true } },
       { text: String(r.asn || EMDASH), options: { fill: zebra, fontSize: 7.4, fontFace: FM } },
-      { text: String(r.country || EMDASH), options: { fill: zebra, fontSize: 7.4, align: "center" } },
+      { text: ccCell(r.country), options: { fill: zebra, fontSize: 7.4, align: "center" } },
       { text: String(r.role || "hosting / edge"), options: { fill: zebra, fontSize: 7.4, color: C.inkMuted } },
       { text: String(r.hosts == null ? EMDASH : r.hosts), options: { fill: zebra, fontSize: 7.6, fontFace: FM, bold: true, align: "center" } },
     ]);

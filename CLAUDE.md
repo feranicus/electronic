@@ -1579,3 +1579,29 @@ both introduced by me in the same change:
 RULE: a fixed-height horizontal bar is an arithmetic problem. Add up brand + every control + gaps
 against 360px BEFORE shipping — the guard here is a test that computes the row width in both
 languages, because German is systematically longer and will overflow first.
+
+## The COLT AS8220 deck — four defects found by READING the delivered file (2026-07)
+The findings slides were finally RICH (1.7-2.4k chars each: the shard-prompt fix worked, 12/12
+coverage at 55 tok/s). The defects were everywhere else, and three of them were mine.
+1. **TWO SLIDES OF THE SAME DECK DISAGREED.** Executive summary: 21 COUNTRIES. Asset inventory:
+   1 COUNTRY. Cause: each inventory row stores its countries as a COMMA-JOINED STRING
+   ("AT,AU,BE,CH,..."), and the builder counted DISTINCT STRINGS — one row, one string, "1".
+   FIX: use `sum.countries`, the number the engine already publishes; only derive it (splitting on
+   commas) when that is absent. This is the D8 "counts come from more than one metrics object"
+   item, now closed for the country tile.
+2. **The COUNTRY CELL was unreadable** — 21 codes in a 1.1in column, truncated mid-word
+   ("...,HK,I"). Now "AT, AU, BE +18".
+3. **The AI wrote "Colt" because WE TOLD IT TO.** The rebrand fixed the deterministic TEMPLATES but
+   not the model's INSTRUCTIONS: `reference/LLM_DELTAS_BIBLE.md` said "named Colt product", listed a
+   Colt product catalogue, and labelled the remediation body "WHY COLT" — which the model copied
+   verbatim onto the slide ("WHY COLT: ... Colt structurally removes ... our Tier-1 backbone").
+   RULE: **a prompt is a string that reaches a human, via the model.** The bible is now
+   vendor-neutral, the label is "WHY THIS SERVICE", and a VOICE section forbids "our backbone" /
+   first-person ownership — the reader is a reseller delivering with their own stack.
+   The `COLT` tag enum and the `colt_mitigation` JSON key are UNCHANGED (lookup keys).
+4. **"COLT COLT Technology Services Group Limited"** — registries store an ASN handle ("COLT") and
+   an org name ("Colt Technology Services..."); joined, the leading token repeats. `_dedupe_lead()`
+   collapses an exact repeated first word. Also "0 domains: —" now reads "scope: routed estate (no
+   domains resolved)": no domains is a legitimate ASN-seeded outcome, not missing data.
+Guarded by test_deck_quality.py §6, which rebuilds the exact COLT shape and asserts the two slides
+agree. LESSON: the findings text being good is not the deck being good — read every slide.

@@ -144,8 +144,23 @@ def resolve_identity(seed):
         ident["org"] = s; ident["brand"] = s
     return ident
 
+def _dedupe_lead(name):
+    """'COLT COLT Technology Services Group Limited' -> 'COLT Technology Services Group Limited'.
+
+    Registries store an ASN HANDLE ("COLT") and an org NAME ("Colt Technology Services Group
+    Limited"); joined, the leading token repeats. It is the first line of the title slide, so a
+    duplicated word reads as a defect. Case-insensitive, and only ever removes an EXACT repeat of
+    the first word — "Colt Colt" collapses, "New New York" would too, and nothing else is touched.
+    """
+    parts = str(name or "").split()
+    while len(parts) > 1 and parts[0].lower() == parts[1].lower():
+        parts.pop(0)
+    return " ".join(parts)
+
+
 def company_name(ident):
-    return ident.get("brand") or ident.get("org") or ident.get("asn_holder") or ident["seed"]
+    return _dedupe_lead(ident.get("brand") or ident.get("org")
+                        or ident.get("asn_holder") or ident["seed"])
 
 def merge_variants(ident, orgs=None, brands=None, domains=None, favicons=None,
                    issuers=None, cert_orgs=None, jarms=None, cpes=None):
@@ -1243,6 +1258,11 @@ def _scope_line(ident):
         dom_txt = ", ".join(apexes)
     else:
         dom_txt = "%s +%d more (%d hostnames)" % (", ".join(apexes[:2]), len(apexes) - 2, len(doms))
+    if not apexes:
+        # No domains is a legitimate outcome for an ASN/prefix-seeded run — do not render an empty
+        # field with a dangling em-dash ("0 domains: —"), which reads as missing data rather than
+        # as the accurate statement that scope is the routed estate.
+        return "ASN %s \u00b7 %d prefixes \u00b7 scope: routed estate (no domains resolved)" % (asns, nets)
     return "ASN %s \u00b7 %d prefixes \u00b7 %d domain%s: %s" % (
         asns, nets, len(apexes), "" if len(apexes) == 1 else "s", dom_txt)
 
