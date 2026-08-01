@@ -105,11 +105,10 @@ export default function Demo() {
       <section className="demo-hero">
         <div className="wrap">
           <CassandraFilm />
-          <div className="creed-kick">The name is not an accident</div>
+          <div className="creed-kick">{t("creed.kick")}</div>
           <blockquote className="creed-q">
-            <span className="l1">Cassandra foretold the fall of Troy &mdash; and no one believed her.</span>
-            <span className="l2">We predict the <b>critical cyber risks</b>, stop them
-              <b> before they materialise</b>, and keep every <b>Trojan horse</b> out of your IT landscape.</span>
+            <span className="l1">{t("creed.l1")}</span>
+            <span className="l2">{t("creed.l2a")}<b>{t("creed.l2b")}</b>{t("creed.l2c")}<b>{t("creed.l2d")}</b>{t("creed.l2e")}<b>{t("creed.l2f")}</b>{t("creed.l2g")}</span>
           </blockquote>
           <div className="creed-rule" aria-hidden="true"><i></i><span>&#9670;</span><i></i></div>
         </div>
@@ -135,39 +134,22 @@ export default function Demo() {
           <div className="demo-card">
             <div className="demo-num">1</div>
             <h3>{t("demo.s1h")}</h3>
-            <p>
-              That is the entire input. No IP ranges, no ASNs, no certificates to paste. The engine
-              works out the rest &mdash; including the subsidiaries that trade under completely
-              different names, which is where most of the real exposure hides.
-            </p>
+            <p>{t("demo.s1b")}</p>
           </div>
           <div className="demo-card">
             <div className="demo-num">2</div>
             <h3>{t("demo.s2h")}</h3>
-            <p>
-              Entirely passive. It reads what internet-wide scanners, certificate transparency logs
-              and public DNS already publish about the estate. No packet is ever sent to the target,
-              so nothing needs permission and nothing sets off an alarm.
-            </p>
+            <p>{t("demo.s2b")}</p>
           </div>
           <div className="demo-card">
             <div className="demo-num">3</div>
             <h3>{t("demo.s3h")}</h3>
-            <p>
-              The hard part is not finding hosts &mdash; it is knowing which are <i>theirs</i>. Every
-              asset is scored on independent evidence (published group structure, certificates,
-              per-IP registry ownership) and the reasons are recorded, so a disputed host can be
-              explained rather than argued about.
-            </p>
+            <p>{t("demo.s3b")}</p>
           </div>
           <div className="demo-card">
             <div className="demo-num">4</div>
             <h3>{t("demo.s4h")}</h3>
-            <p>
-              Four decks and an animated report, in English or Hoch&shy;deutsch: what is exposed, what
-              it would cost in euros, who would plausibly come for it, and which service closes
-              each gap. Roughly three minutes, start to finish.
-            </p>
+            <p>{t("demo.s4b")}</p>
           </div>
         </div>
       </section>
@@ -175,10 +157,7 @@ export default function Demo() {
       {/* ---------- the artifacts ---------- */}
       <section className="wrap demo-sec">
         <h2>{t("demo.deckH")}</h2>
-        <p className="demo-lead">
-          These are the real files, generated for the fictional Trojan Empire. Open them; this is
-          exactly what lands in your inbox for a real target.
-        </p>
+        <p className="demo-lead">{t("demo.deckLead")}</p>
         {err && <div className="demo-warn"><p>{err}</p></div>}
         {!meta && !err && <p className="demo-lead">{t("demo.deckWait")}</p>}
         <div className="demo-decks">
@@ -207,23 +186,11 @@ export default function Demo() {
       <section className="wrap demo-sec">
         <h2>{t("demo.techH")}</h2>
         <div className="demo-tech">
-          <div><b>Attribution before analysis.</b> Ownership is graded on a 0&ndash;100 confidence
-            score built from independent signals &mdash; the customer's own published group structure,
-            certificate subject names, per-IP registry organisation, vendor-tenant labels, DNS the
-            customer controls. Two weak signals that agree beat one strong signal that does not, and
-            every score carries the rules that produced it.</div>
-          <div><b>Co-tenant safety.</b> A shared netblock is not a customer. Where several companies
-            share a provider range, per-IP registry ownership decides, so a neighbour's exposed
-            management interface never appears in your report.</div>
-          <div><b>The AI writes prose, never facts.</b> Severity, evidence and CVE identifiers come
-            from the scan data only. The language model rewrites explanation and remediation, and a
-            second model from a different vendor independently reviews the result. Any CVE the model
-            cites that is not in the evidence is stripped before the deck is built.</div>
-          <div><b>Deterministic rendering.</b> The decks are generated by code, not by a model, so the
-            same input always produces the same document &mdash; and layout is machine-checked for
-            overflow before anything ships.</div>
-          <div><b>EU-resident.</b> Application, data and logs run in Frankfurt. Assessments are
-            passive: no packet is sent to the target.</div>
+          <div><b>{t("demo.t1h")}</b>{t("demo.t1b")}</div>
+          <div><b>{t("demo.t2h")}</b>{t("demo.t2b")}</div>
+          <div><b>{t("demo.t3h")}</b>{t("demo.t3b")}</div>
+          <div><b>{t("demo.t4h")}</b>{t("demo.t4b")}</div>
+          <div><b>{t("demo.t5h")}</b>{t("demo.t5b")}</div>
         </div>
       </section>
 

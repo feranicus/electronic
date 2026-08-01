@@ -186,6 +186,173 @@ const DE = {
   "login.foot": "Zero-Trust \u00b7 nur freigegebene Partner",
 };
 
+// ---------------------------------------------------------------------------------------------
+// LANDING-PAGE COPY, keyed by the ENGLISH SOURCE STRING (gettext style).
+//
+// WHY NOT INVENTED KEYS: this page holds ~120 strings, many of them long sentences embedded in JS
+// data arrays that are rendered with innerHTML. Inventing "landing.deep.d7.body" for each would be
+// 120 chances to mistype a key and silently ship a blank. The English text IS the key, so a missing
+// translation degrades to the original sentence — never to an empty box.
+// ---------------------------------------------------------------------------------------------
+const DE_BY_EN = {
+  // -- section chrome
+  "For boards, CISOs and risk owners": "Für Vorstände, CISOs und Risikoverantwortliche",
+  "What you cannot see is": "Was Sie nicht sehen, ist",
+  "already public": "bereits öffentlich",
+  "How it usually goes": "Wie es üblicherweise läuft",
+  "What you get here": "Was Sie hier bekommen",
+  "An annual test, scoped to what you remembered to list":
+    "Ein jährlicher Test, begrenzt auf das, woran Sie sich erinnert haben",
+  "A findings spreadsheet with no price attached to anything":
+    "Eine Befundtabelle, in der nichts einen Preis hat",
+  "Weeks between the question and the answer": "Wochen zwischen Frage und Antwort",
+  "The board asks what it would actually cost. Nobody knows.":
+    "Der Vorstand fragt, was es tatsächlich kosten würde. Niemand weiß es.",
+  "Compliance deadlines live in somebody&rsquo;s inbox.":
+    "Compliance-Fristen liegen in irgendeinem Postfach.",
+  "Your whole internet-facing estate, discovered from public data":
+    "Ihre gesamte internetseitige Infrastruktur, ermittelt aus öffentlichen Quellen",
+  "Every exposure modelled in euros, with the method shown":
+    "Jede Exposition in Euro modelliert, mit offengelegter Methode",
+  "Minutes, not weeks - and repeatable whenever you want":
+    "Minuten statt Wochen — und jederzeit wiederholbar",
+  "A number the board can actually make a decision on":
+    "Eine Zahl, auf deren Basis der Vorstand wirklich entscheiden kann",
+  "The regulatory clock, on one slide.": "Die Regulierungsuhr, auf einer Folie.",
+  "GEOPOL deck": "GEOPOL-Präsentation", "C-BIQ deck": "C-BIQ-Präsentation",
+  "Compliance decks": "Compliance-Präsentationen",
+  "The clocks are": "Die Uhren laufen", "already running": "bereits",
+  "NIS2 &mdash; Germany": "NIS2 &mdash; Deutschland",
+  "EU AI Act": "EU-KI-Verordnung", "Cyber Resilience Act": "Cyber Resilience Act",
+  "Nothing of yours is touched": "Nichts von Ihnen wird berührt",
+  "Where it earns its place": "Wo es sich bezahlt macht",
+  "Fair questions": "Berechtigte Fragen",
+  "It is whether you know what.": "Sondern ob Sie wissen, was.",
+  "Request an assessment": "Analyse anfragen",
+  "Open the app": "Zur Anwendung",
+  "Guided tour": "Geführte Tour",
+  "You and bots": "Sie und die Bots", "Outside services": "Externe Dienste",
+  "Safety nets": "Schutzmechanismen", "Observability": "Observability",
+  "Swipe the map sideways to explore &rarr;": "Karte seitlich wischen zum Erkunden &rarr;",
+  "Under the hood - for the engineer": "Unter der Haube — für Technikerinnen und Techniker",
+  "Secure-by-design, in plain terms.": "Secure by Design, verständlich erklärt.",
+  "Nobody walks in": "Niemand kommt einfach herein",
+  "Secrets never in git": "Geheimnisse niemals in Git",
+  "Scanned before ship": "Geprüft vor dem Ausliefern",
+  "Never breaks the neighbours": "Stört niemals die Nachbarsysteme",
+  "Do this in the web app": "Im Web-Portal ausführen",
+  "One input. Zero flags.": "Eine Eingabe. Keine Parameter.",
+  "The chat loops - watch the four .pptx files land.":
+    "Der Chat läuft in Schleife — sehen Sie zu, wie die vier .pptx-Dateien ankommen.",
+  "This is the entire product - texting a bot. The chat below plays the real flow: log in, ask, get four decks.":
+    "Das ist das gesamte Produkt — eine Nachricht an einen Bot. Der Chat unten zeigt den echten Ablauf: anmelden, fragen, vier Präsentationen erhalten.",
+  "Hover a box to see its wires. Click it to jump to the details. Or hit play for a guided tour.":
+    "Fahren Sie über ein Feld, um seine Verbindungen zu sehen. Klicken Sie es an für Details. Oder starten Sie die geführte Tour.",
+  "Plain English for everyone; under the hood for the engineer. Click a box in the map above to jump here.":
+    "Klartext für alle, Technik für Fachleute. Klicken Sie oben in der Karte auf ein Feld, um hierher zu springen.",
+  "Trivy (deps+image), CodeQL SAST, ruff, pytest - every change checked before it reaches the server.":
+    "Trivy (Abhängigkeiten + Image), CodeQL SAST, ruff, pytest — jede Änderung wird geprüft, bevor sie den Server erreicht.",
+  "An isolated container stack; existing services and the firewall are untouched.":
+    "Ein isolierter Container-Stack; bestehende Dienste und die Firewall bleiben unberührt.",
+  "Keys live only on the server or as encrypted GitHub secrets;":
+    "Schlüssel liegen ausschließlich auf dem Server oder als verschlüsselte GitHub-Secrets;",
+  // -- the three questions
+  "WHO": "WER", "HOW MUCH": "WIE VIEL", "WHEN": "WANN",
+  "The threat groups realistically interested in your sector and geography - and the route they would most likely take into you.":
+    "Die Angreifergruppen, die sich realistisch für Ihre Branche und Region interessieren — und der Weg, den sie am ehesten zu Ihnen nehmen würden.",
+  "Your exposure modelled in euros - expected annual loss, worst realistic case, and the return on fixing it first.":
+    "Ihre Exposition in Euro modelliert — erwarteter Jahresschaden, realistischer Worst Case und die Rendite einer vorgezogenen Behebung.",
+  "The regulatory dates that already apply to you - and the maximum fine attached to each of them.":
+    "Die Regulierungstermine, die bereits für Sie gelten — und das jeweils angedrohte Bußgeld.",
+  // -- deep dive (rendered with innerHTML from the DD array)
+  "Two front doors, one input": "Zwei Eingänge, eine Eingabe",
+  "Zero-trust login (2FA)": "Zero-Trust-Anmeldung (2FA)",
+  "The engine + auto-discovery": "Die Engine + automatische Erkennung",
+  "Shodan - what's exposed": "Shodan — was exponiert ist",
+  "The AI writes it - you get five artifacts": "Die KI schreibt es — Sie erhalten fünf Artefakte",
+  "A second AI audits the first": "Eine zweite KI prüft die erste",
+  "It asks you what it couldn't work out": "Sie fragt Sie, was sie nicht klären konnte",
+  "Compliance: NIS2, CRA, EU AI Act": "Compliance: NIS2, CRA, EU-KI-Verordnung",
+  "Always watching": "Durchgehende Überwachung",
+  "It patches itself": "Sie patcht sich selbst",
+  "Shipping is one command": "Ausliefern ist ein einziger Befehl",
+  "Type a company name - in <b>Telegram</b>, or in the <b>cybergod.ai web app</b>. Same engine, same decks. Two bots live on the server: the <b>assessment bot</b> runs the scan, <b>cassandra</b> answers questions about the findings.":
+    "Geben Sie einen Firmennamen ein — in <b>Telegram</b> oder im <b>cybergod.ai-Portal</b>. Gleiche Engine, gleiche Ergebnisse. Zwei Bots laufen auf dem Server: der <b>Analyse-Bot</b> führt die Untersuchung durch, <b>Cassandra</b> beantwortet Fragen zu den Befunden.",
+  "You need an approved <b>company or partner email</b>, the shared password, <b>and</b> a one-time code emailed to that inbox. Knowing the password isn't enough - you must own the mailbox.":
+    "Sie benötigen eine freigegebene <b>Firmen- oder Partner-E-Mail</b>, das gemeinsame Passwort <b>und</b> einen Einmalcode, der an dieses Postfach gesendet wird. Das Passwort allein genügt nicht — Sie müssen das Postfach besitzen.",
+  "From just the name the engine finds the company's <b>networks, domains and certificates</b> - then hunts, scores and writes. You never hand it an IP.":
+    "Allein aus dem Namen ermittelt die Engine <b>Netze, Domains und Zertifikate</b> des Unternehmens — dann sucht, bewertet und schreibt sie. Sie übergeben nie eine IP-Adresse.",
+  "It queries Shodan for exposed remote-access, databases, VPNs, mail, industrial gear and known-vulnerable systems - plus the killer pivot: the company's own private CA and whois-org, which reveal the hidden estate.":
+    "Sie durchsucht Shodan nach exponierten Fernzugängen, Datenbanken, VPNs, Mailservern, Industriesteuerungen und bekannt verwundbaren Systemen — und nutzt den entscheidenden Hebel: die eigene private CA und die Whois-Organisation, die den verborgenen Teil der Infrastruktur offenlegen.",
+  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen - in English or Hochdeutsch.":
+    "Eine Kette von KI-Modellen formuliert den Text; feste Vorlagen sichern Struktur und Berechnung. Sie erhalten <b>Befunde / C-BIQ (EUR) / GEOPOL / DELTAS</b> sowie einen <b>animierten Live-Bericht</b> für die Präsentation — auf Englisch oder in Hochdeutsch.",
+  "Before you ever see the decks, a <b>different model from a different vendor</b> re-reads every finding and challenges anything that looks like it isn't really theirs. A model is never allowed to mark its own homework.":
+    "Bevor Sie die Unterlagen überhaupt sehen, liest ein <b>anderes Modell eines anderen Anbieters</b> jeden Befund erneut und hinterfragt alles, was nicht wirklich zum Unternehmen gehört. Kein Modell darf seine eigene Arbeit benoten.",
+  "The decks land <b>first</b>. Then the engine tells you what it could not resolve - which related domains are yours, your netblocks if you sit behind a CDN, anything in the report that isn't yours - you answer, and it re-scopes and rebuilds.":
+    "Die Unterlagen kommen <b>zuerst</b>. Danach nennt Ihnen die Engine, was sie nicht klären konnte — welche verwandten Domains Ihnen gehören, Ihre Netzblöcke hinter einem CDN, alles im Bericht, was nicht Ihres ist. Sie antworten, und sie definiert den Umfang neu und erstellt alles neu.",
+  "The same one input, pointed at regulation. It grades the company against the three horizontal EU digital laws and writes <b>three regime decks, a roadmap deck and an animated report</b> - applicability, duties, gaps, deadlines and the maximum fine.":
+    "Dieselbe eine Eingabe, auf die Regulierung gerichtet. Sie bewertet das Unternehmen anhand der drei horizontalen EU-Digitalgesetze und erstellt <b>drei Regime-Präsentationen, eine Roadmap und einen animierten Bericht</b> — Anwendbarkeit, Pflichten, Lücken, Fristen und das jeweilige Höchstbußgeld.",
+  "Every login, assessment, audit, cost and patch prints a structured line that flows into <b>your existing Grafana</b> - no second monitoring stack.":
+    "Jede Anmeldung, Analyse, Prüfung, Kostenbuchung und jeder Patch schreibt eine strukturierte Zeile, die in <b>Ihr bestehendes Grafana</b> fließt — kein zweiter Monitoring-Stack.",
+  "A server nobody patches gets hacked. Every 3 days it <b>backs itself up</b> to Spaces, upgrades the OS/Docker, and an AI writes a risk digest. Reboots happen at 4am.":
+    "Ein Server, den niemand patcht, wird kompromittiert. Alle 3 Tage <b>sichert er sich selbst</b> nach Spaces, aktualisiert Betriebssystem und Docker, und eine KI schreibt eine Risikozusammenfassung. Neustarts erfolgen um 4 Uhr morgens.",
+  "Change the code, run one thing, it's live - and it <b>proves</b> the running container actually holds the new code before it reports success.":
+    "Code ändern, einen Befehl ausführen, fertig — und es wird <b>nachgewiesen</b>, dass der laufende Container den neuen Code wirklich enthält, bevor Erfolg gemeldet wird.",
+  // -- "Nothing of yours is touched" + closing
+  "The question is not whether something of yours is exposed.":
+    "Die Frage ist nicht, ob etwas von Ihnen exponiert ist.",
+  // -- variants that carry a trailing space (the text node ends before an inline <span>)
+  "What you cannot see is ": "Was Sie nicht sehen, ist ",
+  "The clocks are ": "Die Uhren laufen ",
+  "See it ": "Sehen Sie es ",
+  "The whole ": "Die gesamte ",
+  "Locked ": "Abgesichert ",
+  "Brains": "Intelligenz",
+  "You never type an IP, a network or a certificate. The robot resolves the target's ":
+    "Sie geben nie eine IP, ein Netz oder ein Zertifikat ein. Der Bot ermittelt selbst ",
+  "Shodan (paid)": "Shodan (kostenpflichtig)",
+  "DeepSeek prose": "DeepSeek-Texte",
+  "Keys live only on the server or as encrypted GitHub secrets; ":
+    "Schlüssel liegen ausschließlich auf dem Server oder als verschlüsselte GitHub-Secrets; ",
+  "Cybergod LLC / S4Biz Group - external cyber-risk and EU compliance assessment / one company name in, four boardroom documents out.":
+    "Cybergod LLC / S4Biz Group — externe Cyber-Risiko- und EU-Compliance-Bewertung / ein Firmenname hinein, vier Vorstandsdokumente heraus.",
+  "Findings / C-BIQ (EUR) / GEOPOL / DELTAS": "Befunde / C-BIQ (EUR) / GEOPOL / DELTAS",
+  "One input. Zero flags.": "Eine Eingabe. Keine Parameter.",
+  // -- long body paragraphs (multi-line JSX text nodes)
+  "lede.edge": "Ihre internetseitige Angriffsfläche wächst jedes Quartal — ein vergessener Host, ein Lieferantenportal, ein VPN, das niemand abgeschaltet hat, ein Zertifikat, das still und leise ein internes System benennt. Ein Angreifer erfasst das alles in Minuten, aus öffentlichen Quellen, ohne Sie je zu berühren. Die meisten Unternehmen haben sich noch nie so betrachtet.",
+  "q3.h": "Drei Fragen entscheiden über ein Sicherheitsbudget. Sie sollten alle drei heute beantworten können.",
+  "clocks.lede": "Drei EU-Gesetze erfassen inzwischen die meisten mittelgroßen Unternehmen: NIS2, der Cyber Resilience Act und die EU-KI-Verordnung. Diese Termine stehen im Gesetz, nicht auf einer Anbieterfolie — und die Sanktionen bemessen sich am weltweiten Umsatz.",
+  "touch.body": "Dies ist kein Penetrationstest und kein Scan Ihrer Systeme. Es werden keine Ports geprüft, keine Anmeldungen versucht, kein Agent installiert, keine Zugangsdaten benötigt. Gelesen wird ausschließlich, was bereits öffentlich ist — das Internet-Äquivalent dazu, zu notieren, welche Türen von der Straße aus sichtbar sind.",
+  "touch.bold": "Genau deshalb kann es Ihnen zeigen, was ein Angreifer bereits sieht — ohne Change Request, ohne Wartungsfenster und ohne ein einziges Paket an Ihre Infrastruktur.",
+  "earn.01h": "Vor dem Vorstand", "earn.01b": "Gehen Sie mit der Exposition und der Euro-Zahl hinein statt mit Adjektiven.",
+  "earn.02h": "Vor einem Audit", "earn.02b": "NIS2-, CRA- und KI-Verordnungs-Anwendbarkeit, Pflichten und Fristen auf einer Seite.",
+  "earn.03h": "Nach einer Übernahme", "earn.03b": "Sehen Sie die gerade übernommene Infrastruktur, von außen kartiert.",
+  "earn.04h": "Lieferantenrisiko", "earn.04b": "Bewerten Sie einen Lieferanten genauso — ohne Zugang, ohne Fragebogen, ohne Wartezeit.",
+  "earn.05h": "Quartal für Quartal", "earn.05b": "Erneut ausführen und genau sehen, was sich an Ihrem Perimeter geändert hat.",
+  "earn.06h": "Ihr eigener erster Blick", "earn.06b": "Die meisten Unternehmen finden etwas Öffentliches, von dem sie nicht wussten, dass es existiert.",
+  "demo.t1h": "Attribution vor Analyse.",
+  "demo.t1b": " Eigentum wird auf einer Skala von 0 bis 100 bewertet, gestützt auf unabhängige Signale — die vom Unternehmen selbst veröffentlichte Konzernstruktur, Zertifikatsnamen, die Registry-Organisation je IP, Vendor-Tenant-Kennungen, vom Unternehmen kontrolliertes DNS. Zwei schwache Signale, die übereinstimmen, wiegen schwerer als ein starkes, das es nicht tut, und jede Bewertung führt die Regeln mit, die sie erzeugt haben.",
+  "demo.t2h": "Schutz vor Mitmietern.",
+  "demo.t2b": " Ein gemeinsam genutzter Netzblock ist kein Kunde. Teilen sich mehrere Unternehmen einen Providerbereich, entscheidet die Registry-Eigentümerschaft je IP — die exponierte Management-Oberfläche eines Nachbarn taucht so nie in Ihrem Bericht auf.",
+  "demo.t3h": "Die KI schreibt Prosa, niemals Fakten.",
+  "demo.t3b": " Schweregrad, Nachweise und CVE-Kennungen stammen ausschließlich aus den Scan-Daten. Das Sprachmodell formuliert Erläuterung und Behebung, und ein zweites Modell eines anderen Anbieters prüft das Ergebnis unabhängig. Jede vom Modell genannte CVE, die nicht in den Nachweisen steht, wird vor dem Erstellen der Unterlagen entfernt.",
+  "demo.t4h": "Deterministische Erzeugung.",
+  "demo.t4b": " Die Unterlagen werden von Code erzeugt, nicht von einem Modell: Dieselbe Eingabe ergibt immer dasselbe Dokument — und das Layout wird maschinell auf Überlauf geprüft, bevor irgendetwas ausgeliefert wird.",
+  "demo.t5h": "In der EU betrieben.",
+  "demo.t5b": " Anwendung, Daten und Protokolle laufen in Frankfurt. Analysen sind passiv: Es wird kein Paket an das Ziel gesendet.",
+  // -- fair questions
+  "“Is this legal?”": "„Ist das legal?“",
+  "“How accurate is it?”": "„Wie genau ist es?“",
+  "“What do we have to provide?”": "„Was müssen wir bereitstellen?“",
+};
+
+/** tx("English source") -> German when the site is German, otherwise the original sentence. */
+export function useTx() {
+  const [lang] = useLang();
+  return (en) => (lang === "de" && DE_BY_EN[en]) || en;
+}
+
+
 const DICT = { en: EN, de: DE };
 
 /** t("nav.demo") in the current language. Missing German falls back to English, then to the key. */

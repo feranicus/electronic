@@ -1620,3 +1620,20 @@ a new child is a LAYOUT PARTICIPANT, not an overlay. Guarded by an SSR test that
 public page, that `id="hd"` appears BEFORE any grid/flex layout box.
 Also wired the whole login page (13 strings) to the dictionary — it was still hardcoded English,
 which the German assertion caught.
+
+## Landing/Demo German — the rest of the page (2026-07)
+Only the hero and creed were translated; everything below stayed English. Three things were needed.
+1. **A gettext-style dictionary.** `DE_BY_EN` in i18n.jsx is keyed by the ENGLISH SOURCE STRING, and
+   `useTx()` returns `tx(en)`. ~120 strings, many long sentences embedded in JS data arrays: inventing
+   a key per string would be 120 chances to mistype one and silently ship a blank. The English text
+   IS the key, so a missing translation degrades to the original sentence.
+2. **The map + deep-dive are built with `innerHTML` inside `useEffect(..., [])`.** Translating them
+   changed nothing until a reload, because the effect never re-ran. FIX: `[lang, tx]` deps AND
+   `dw.innerHTML = ""` before rebuilding — without the clear, the second run APPENDS a duplicate
+   copy of every card.
+3. **Never regex-wrap JSX text across a whole file.** A blanket `>Text<` replacement also matched
+   inside the DD/NODES arrays, which hold HTML as JS STRINGS, and corrupted them into a parse error.
+   The pass is now scoped to the component's `return (...)` block only (`s.rindex("\n  return (")`).
+VERIFIED BY MEASUREMENT, not by eye: an SSR render in German counts English function-words per page
+(the|your|and|with|from|what|...). Landing 4%, Demo 0%, Login 3%, Contact/Privacy/Impressum 0% — the
+residue is proper nouns and code identifiers. Switching back to English is asserted in the same test.

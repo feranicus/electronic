@@ -3,10 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import TabBar from "../components/TabBar.jsx";
 import WhatsAppFab from "../components/WhatsAppFab.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
-import { useT } from "../i18n";
+import { useT, useTx } from "../i18n";
 
 export default function Landing() {
-  const [, , t] = useT();
+  const [lang, , t] = useT();
+  const tx = useTx();
   const rootRef = useRef(null);
   // Mobile navigation. The section anchors were previously display:none under 720px, which removed
   // the whole site map from every phone. They now drive a native-app style bottom tab bar
@@ -293,10 +294,11 @@ export default function Landing() {
     ];
     const dw = root.querySelector("#ddwrap");
     if (dw) {
+      dw.innerHTML = "";      // rebuilt whenever the language changes; never append twice
       DD.forEach((d) => {
         const s = document.createElement("div");
         s.className = "dd reveal"; s.id = d.id;
-        s.innerHTML = '<div class="num" style="background:' + d.c + '">' + d.n + '</div><div><h3><span class="ic">' + d.ic + "</span>" + d.h + '</h3><p class="plain">' + d.plain + '</p><div class="flowstrip" style="--c:' + d.c + '"><i></i></div><div class="hood"><div class="h">Under the hood - for the engineer</div><ul>' + d.hood.map((x) => "<li>" + x + "</li>").join("") + "</ul></div></div>";
+        s.innerHTML = '<div class="num" style="background:' + d.c + '">' + d.n + '</div><div><h3><span class="ic">' + d.ic + "</span>" + tx(d.h) + '</h3><p class="plain">' + tx(d.plain) + '</p><div class="flowstrip" style="--c:' + d.c + '"><i></i></div><div class="hood"><div class="h">' + tx("Under the hood - for the engineer") + '</div><ul>' + d.hood.map((x) => "<li>" + x + "</li>").join("") + "</ul></div></div>";
         dw.appendChild(s); io.observe(s);
       });
     }
@@ -311,7 +313,7 @@ export default function Landing() {
       raf.forEach((id) => cancelAnimationFrame(id));
       timers.forEach((id) => clearTimeout(id));
     };
-  }, []);
+  }, [lang, tx]);
 
   return (
     <div ref={rootRef}>
@@ -341,78 +343,68 @@ export default function Landing() {
       </div></section>
 
       <section id="edge" className="lp edge"><div className="wrap reveal">
-        <div className="kick2">For boards, CISOs and risk owners</div>
-        <h2>What you cannot see is <span className="g">already public</span></h2>
-        <p className="lede">Your internet-facing footprint grows every quarter - a forgotten host, a
-          supplier portal, a VPN nobody decommissioned, a certificate that quietly names an internal
-          system. An attacker enumerates all of it in minutes, from public sources, without ever
-          touching you. Most organisations have never looked at themselves the same way.</p>
+        <div className="kick2">{tx("For boards, CISOs and risk owners")}</div>
+        <h2>{tx("What you cannot see is ")}<span className="g">already public</span></h2>
+        <p className="lede">{t("lede.edge")}</p>
 
         <div className="vs">
-          <div className="vsc bad"><h4>How it usually goes</h4><ul>
-            <li>An annual test, scoped to what you remembered to list</li>
-            <li>A findings spreadsheet with no price attached to anything</li>
-            <li>Weeks between the question and the answer</li>
-            <li>The board asks what it would actually cost. Nobody knows.</li>
-            <li className="last">Compliance deadlines live in somebody&rsquo;s inbox.</li></ul></div>
-          <div className="vsc good"><h4>What you get here</h4><ul>
-            <li>Your whole internet-facing estate, discovered from public data</li>
-            <li>Every exposure modelled in euros, with the method shown</li>
-            <li>Minutes, not weeks - and repeatable whenever you want</li>
-            <li>A number the board can actually make a decision on</li>
-            <li className="last">The regulatory clock, on one slide.</li></ul></div>
+          <div className="vsc bad"><h4>{tx("How it usually goes")}</h4><ul>
+            <li>{tx("An annual test, scoped to what you remembered to list")}</li>
+            <li>{tx("A findings spreadsheet with no price attached to anything")}</li>
+            <li>{tx("Weeks between the question and the answer")}</li>
+            <li>{tx("The board asks what it would actually cost. Nobody knows.")}</li>
+            <li className="last">{tx("Compliance deadlines live in somebody&rsquo;s inbox.")}</li></ul></div>
+          <div className="vsc good"><h4>{tx("What you get here")}</h4><ul>
+            <li>{tx("Your whole internet-facing estate, discovered from public data")}</li>
+            <li>{tx("Every exposure modelled in euros, with the method shown")}</li>
+            <li>{tx("Minutes, not weeks - and repeatable whenever you want")}</li>
+            <li>{tx("A number the board can actually make a decision on")}</li>
+            <li className="last">{tx("The regulatory clock, on one slide.")}</li></ul></div>
         </div>
 
-        <h3 className="eh">Three questions decide a security budget. You should be able to answer all
-          three <span className="g">today</span>.</h3>
+        <h3 className="eh">{t("q3.h")}</h3>
         <div className="tri">
           <div className="tric"><div className="tt" style={{ color: "var(--teal)" }}>WHO</div>
             <p>The threat groups realistically interested in your sector and geography - and the route
               they would most likely take into you.</p>
-            <span className="src">GEOPOL deck</span></div>
-          <div className="tric"><div className="tt" style={{ color: "var(--gold)" }}>HOW MUCH</div>
+            <span className="src">{tx("GEOPOL deck")}</span></div>
+          <div className="tric"><div className="tt" style={{ color: "var(--gold)" }}>{tx("HOW MUCH")}</div>
             <p>Your exposure modelled in euros - expected annual loss, worst realistic case, and the
               return on fixing it first.</p>
-            <span className="src">C-BIQ deck</span></div>
+            <span className="src">{tx("C-BIQ deck")}</span></div>
           <div className="tric"><div className="tt" style={{ color: "#ff5c74" }}>WHEN</div>
             <p>The regulatory dates that already apply to you - and the maximum fine attached to each
               of them.</p>
-            <span className="src">Compliance decks</span></div>
+            <span className="src">{tx("Compliance decks")}</span></div>
         </div>
 
-        <h3 className="eh">The clocks are <span className="r">already running</span></h3>
-        <p className="lede small">Three EU laws now reach most mid-size organisations: NIS2, the Cyber
-          Resilience Act and the EU AI Act. These dates are written in law, not on a vendor&rsquo;s slide -
-          and the penalties are set against global turnover.</p>
+        <h3 className="eh">{tx("The clocks are ")}<span className="r">already running</span></h3>
+        <p className="lede small">{t("clocks.lede")}</p>
         <div className="clocks">
-          <div className="clock"><div className="reg">NIS2 &mdash; Germany</div><div className="fine">&euro;10m / 2% of turnover</div>
+          <div className="clock"><div className="reg">{tx("NIS2 &mdash; Germany")}</div><div className="fine">&euro;10m / 2% of turnover</div>
             <div className="num" id="cd1">&mdash;</div>
             <div className="cap2">until the BSI registration grace period ends &middot; 31 Jul 2026</div></div>
-          <div className="clock"><div className="reg">EU AI Act</div><div className="fine">&euro;35m / 7% of turnover</div>
+          <div className="clock"><div className="reg">{tx("EU AI Act")}</div><div className="fine">&euro;35m / 7% of turnover</div>
             <div className="num" id="cd2">&mdash;</div>
             <div className="cap2">until high-risk obligations apply &middot; 2 Aug 2026</div></div>
-          <div className="clock"><div className="reg">Cyber Resilience Act</div><div className="fine">&euro;15m / 2.5% of turnover</div>
+          <div className="clock"><div className="reg">{tx("Cyber Resilience Act")}</div><div className="fine">&euro;15m / 2.5% of turnover</div>
             <div className="num" id="cd3">&mdash;</div>
             <div className="cap2">until incident &amp; vulnerability reporting &middot; 11 Sep 2026</div></div>
         </div>
 
         <div className="unlock">
-          <h3>Nothing of yours is touched</h3>
-          <p>This is not a penetration test and it is not a scan of your systems. No ports are probed,
-            no logins attempted, no agent installed, no credentials required. It reads only what is
-            already public - the internet equivalent of noting which doors are visible from the street.
-            <b> That is precisely why it can show you what an attacker already sees, with no change
-            request, no maintenance window, and not one packet sent to your infrastructure.</b></p>
+          <h3>{tx("Nothing of yours is touched")}</h3>
+          <p>{t("touch.body")} <b>{t("touch.bold")}</b></p>
         </div>
 
-        <h3 className="eh">Where it earns its place</h3>
+        <h3 className="eh">{tx("Where it earns its place")}</h3>
         <div className="plays">
-          {[["01","Before the board","Walk in with the exposure and the euro number instead of adjectives."],["02","Before an audit","NIS2, CRA and AI-Act applicability, duties and deadlines on a single page."],["03","After an acquisition","See the estate you have just inherited, mapped from the outside in."],["04","Third-party risk","Assess a supplier the same way - no access, no questionnaire, no waiting."],["05","Quarter on quarter","Re-run it and see exactly what changed on your perimeter."],["+","Your own first look","Most organisations find something public they did not know was there."]].map(([n, t, b]) => (
+          {[["01",t("earn.01h"),t("earn.01b")],["02",t("earn.02h"),t("earn.02b")],["03",t("earn.03h"),t("earn.03b")],["04",t("earn.04h"),t("earn.04b")],["05",t("earn.05h"),t("earn.05b")],["+",t("earn.06h"),t("earn.06b")]].map(([n, t, b]) => (
             <div className="play" key={n}><span className="pn">{n}</span><b>{t}</b><p>{b}</p></div>
           ))}
         </div>
 
-        <h3 className="eh">Fair questions</h3>
+        <h3 className="eh">{tx("Fair questions")}</h3>
         <div className="tri">
           <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>&ldquo;Is this legal?&rdquo;</div>
             <p>Yes. It uses public sources any researcher could look up, and never interacts with your
@@ -427,15 +419,15 @@ export default function Landing() {
         </div>
 
         <div className="pullq">The question is not whether something of yours is exposed.{" "}
-          <span className="g">It is whether you know what.</span></div>
+          <span className="g">{tx("It is whether you know what.")}</span></div>
         <div className="cta-row" style={{ justifyContent: "center" }}>
-          <Link className="btn" to="/contact">Request an assessment</Link>
+          <Link className="btn" to="/contact">{tx("Request an assessment")}</Link>
         </div>
       </div></section>
 
       <section id="demo" className="lp"><div className="wrap reveal">
-        <h2>See it <span className="g">live</span></h2>
-        <p className="lede">This is the entire product - texting a bot. The chat below plays the real flow: log in, ask, get four decks.</p>
+        <h2>{tx("See it ")}<span className="g">live</span></h2>
+        <p className="lede">{tx("This is the entire product - texting a bot. The chat below plays the real flow: log in, ask, get four decks.")}</p>
         <div className="demo">
           <div className="phone"><div className="notch"></div><div className="screen">
             <div className="tgh"><span className="bk">‹</span><div className="av">C</div>
@@ -444,32 +436,32 @@ export default function Landing() {
             <div className="tgbody" id="tgbody"></div>
           </div></div>
           <div className="demoside">
-            <h3>One input. Zero flags.</h3>
-            <p>You never type an IP, a network or a certificate. The robot resolves the target's <b>entire</b> internet
+            <h3>{tx("One input. Zero flags.")}</h3>
+            <p>{tx("You never type an IP, a network or a certificate. The robot resolves the target's ")}<b>entire</b> internet
               footprint itself, then hunts every exposure, prices it, and writes the decks.</p>
             <div className="chips">
               <span className="chip">zero-trust login</span><span className="chip">auto-discovery</span>
-              <span className="chip">Shodan (paid)</span><span className="chip">DeepSeek prose</span>
+              <span className="chip">{tx("Shodan (paid)")}</span><span className="chip">{tx("DeepSeek prose")}</span>
               <span className="chip">4 decks</span>
             </div>
-            <p style={{ marginTop: 14, color: "var(--gold)" }}>The chat loops - watch the four .pptx files land.</p>
-            <Link className="btn gold" style={{ marginTop: 6 }} to="/login">Do this in the web app</Link>
+            <p style={{ marginTop: 14, color: "var(--gold)" }}>{tx("The chat loops - watch the four .pptx files land.")}</p>
+            <Link className="btn gold" style={{ marginTop: 6 }} to="/login">{tx("Do this in the web app")}</Link>
           </div>
         </div>
       </div></section>
 
       <section id="map" className="lp"><div className="wrap reveal">
         <div className="maphead">
-          <div><h2>The whole <span className="g">machine</span></h2>
-            <p className="lede" style={{ margin: 0 }}>Hover a box to see its wires. Click it to jump to the details. Or hit play for a guided tour.</p></div>
-          <button className="tour" id="tour">Guided tour</button>
+          <div><h2>{tx("The whole ")}<span className="g">machine</span></h2>
+            <p className="lede" style={{ margin: 0 }}>{tx("Hover a box to see its wires. Click it to jump to the details. Or hit play for a guided tour.")}</p></div>
+          <button className="tour" id="tour">{tx("Guided tour")}</button>
         </div>
         <div className="legend" style={{ margin: "6px 0 12px" }}>
-          <span><b style={{ background: "#10B981" }}></b>You and bots</span>
-          <span><b style={{ background: "#00B2A9" }}></b>Brains</span>
-          <span><b style={{ background: "#F7C844" }}></b>Outside services</span>
-          <span><b style={{ background: "#8b6cff" }}></b>Safety nets</span>
-          <span><b style={{ background: "#38e1ff" }}></b>Observability</span>
+          <span><b style={{ background: "#10B981" }}></b>{tx("You and bots")}</span>
+          <span><b style={{ background: "#00B2A9" }}></b>{tx("Brains")}</span>
+          <span><b style={{ background: "#F7C844" }}></b>{tx("Outside services")}</span>
+          <span><b style={{ background: "#8b6cff" }}></b>{tx("Safety nets")}</span>
+          <span><b style={{ background: "#38e1ff" }}></b>{tx("Observability")}</span>
         </div>
         <div className="mapbox">
           <svg id="svg" viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
@@ -479,37 +471,37 @@ export default function Landing() {
             <g id="edges"></g><g id="nodes"></g>
           </svg>
         </div>
-        <p className="maphint">Swipe the map sideways to explore &rarr;</p>
+        <p className="maphint">{tx("Swipe the map sideways to explore &rarr;")}</p>
         <div className="cap" id="cap"></div>
       </div></section>
 
       <section id="deep" className="lp"><div className="wrap reveal">
         <h2>Deep <span className="g">dive</span></h2>
-        <p className="lede">Plain English for everyone; under the hood for the engineer. Click a box in the map above to jump here.</p>
+        <p className="lede">{tx("Plain English for everyone; under the hood for the engineer. Click a box in the map above to jump here.")}</p>
         <div id="ddwrap"></div>
       </div></section>
 
       <section id="secure" className="lp"><div className="wrap reveal">
-        <h2>Locked <span className="g">down</span></h2>
-        <p className="lede">Secure-by-design, in plain terms.</p>
+        <h2>{tx("Locked ")}<span className="g">down</span></h2>
+        <p className="lede">{tx("Secure-by-design, in plain terms.")}</p>
         <div className="grid2">
-          <div className="hood"><div className="h">Nobody walks in</div><ul><li>Real <code>your approved address</code> email + shared password <b style={{ color: "var(--teal)" }}>+ a one-time code emailed to that inbox</b>. Guessing the first two isn't enough.</li></ul></div>
-          <div className="hood"><div className="h">Secrets never in git</div><ul><li>Keys live only on the server or as encrypted GitHub secrets; <code>gitleaks</code> blocks accidental commits.</li></ul></div>
-          <div className="hood"><div className="h">Scanned before ship</div><ul><li>Trivy (deps+image), CodeQL SAST, ruff, pytest - every change checked before it reaches the server.</li></ul></div>
-          <div className="hood"><div className="h">Never breaks the neighbours</div><ul><li>An isolated container stack; existing services and the firewall are untouched.</li></ul></div>
+          <div className="hood"><div className="h">{tx("Nobody walks in")}</div><ul><li>Real <code>your approved address</code> email + shared password <b style={{ color: "var(--teal)" }}>+ a one-time code emailed to that inbox</b>. Guessing the first two isn't enough.</li></ul></div>
+          <div className="hood"><div className="h">{tx("Secrets never in git")}</div><ul><li>{tx("Keys live only on the server or as encrypted GitHub secrets; ")}<code>gitleaks</code> blocks accidental commits.</li></ul></div>
+          <div className="hood"><div className="h">{tx("Scanned before ship")}</div><ul><li>{tx("Trivy (deps+image), CodeQL SAST, ruff, pytest - every change checked before it reaches the server.")}</li></ul></div>
+          <div className="hood"><div className="h">{tx("Never breaks the neighbours")}</div><ul><li>{tx("An isolated container stack; existing services and the firewall are untouched.")}</li></ul></div>
         </div>
       </div></section>
 
       <div className="foot"><div className="wrap">
         <div style={{ fontSize: 20, fontWeight: 800 }}><span className="chev">❯</span> cybergod<span class="g">.ai</span></div>
-        <p>Cybergod LLC / S4Biz Group - external cyber-risk and EU compliance assessment / one company name in, four boardroom documents out.</p>
-        <Link className="btn" to="/login">Open the app</Link>
+        <p>{tx("Cybergod LLC / S4Biz Group - external cyber-risk and EU compliance assessment / one company name in, four boardroom documents out.")}</p>
+        <Link className="btn" to="/login">{tx("Open the app")}</Link>
         <div className="footlinks">
-          <Link to="/contact">Kontakt / Contact</Link><span>&middot;</span>
-          <Link to="/impressum">Impressum</Link><span>&middot;</span>
-          <Link to="/privacy">Datenschutz / Privacy</Link>
+          <Link to="/contact">{tx("Kontakt / Contact")}</Link><span>&middot;</span>
+          <Link to="/impressum">{tx("Impressum")}</Link><span>&middot;</span>
+          <Link to="/privacy">{tx("Datenschutz / Privacy")}</Link>
         </div>
-        <p className="foothost">Betrieben in Deutschland &middot; Server in Frankfurt am Main (FRA1) &middot; Ihre Daten bleiben in der EU.</p>
+        <p className="foothost">{tx("Betrieben in Deutschland &middot; Server in Frankfurt am Main (FRA1) &middot; Ihre Daten bleiben in der EU.")}</p>
         <div className="g" style={{ marginTop: 18 }}>» » » » »</div>
       </div></div>
 
