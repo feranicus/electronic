@@ -64,7 +64,10 @@ def run(args, check=True, cwd=None):
     return rc
 
 
-def ssh(cmd, check=False):
+def ssh(cmd, check=False, timeout=180):
+    # `timeout` was being PASSED by do_verify's model probe but the signature never accepted it, so
+    # that call raised TypeError inside a try/except and the probe silently never ran. A check that
+    # cannot execute is not a check — the same class as the ruff gate that skipped for weeks.
     print("  $ ssh %s@%s %r" % (USER, HOST, cmd[:70]), flush=True)
     if DRY:
         return ""
@@ -128,30 +131,50 @@ def _sha_local(rel):
     return hashlib.sha256(open(p, "rb").read()).hexdigest()
 
 
-def _sha_all_in_container(container):
+_SHA_CACHE = {}                       # container -> {relpath: sha}, for ONE ship.py run
+
+
+def _sha_all_in_container(container, fresh=False):
     """sha256 of EVERY ENGINE_FILE inside a running container, in ONE ssh + ONE docker exec.
+
+    MEMOISED PER RUN, and that is the fix for a real hang. `engine_is_current()` was called FIVE
+    times in one ship (colt-web twice, colt-assessbot three times) — deploy, self-heal check, bots
+    skip-check, and then AGAIN in 5/5 VERIFY. Each call is a fresh ssh + docker exec, and sshd
+    throttles rapid repeat connections (MaxStartups / PerSourcePenalties): the run froze for
+    minutes on the last redundant probe, after everything had already succeeded.
+    The hashes cannot change between two probes in the same run unless we redeployed that container
+    in between — and the deploy paths pass `fresh=True` to invalidate. Everything else reuses the
+    answer we already paid for. Same doctrine as "prefer the single-connection pattern".
 
     WHY one call: the old code opened one ssh PER FILE. sshd throttles rapid repeat connections, so
     growing ENGINE_FILES (e.g. adding the compliance engine) pushed the per-file loop past the throttle
     threshold and the whole ship HUNG mid-verify. Hashing all files in a single remote python keeps the
     connection count flat no matter how many files we verify. The remote code is a SINGLE line (no
     newlines, no double quotes) so it survives ssh's shell quoting; missing files report 'MISSING'."""
+    if not fresh and container in _SHA_CACHE:
+        return _SHA_CACHE[container]
     code = ("import hashlib,os;b=%r;fs=%r;"
             "print(chr(10).join(r+' '+(hashlib.sha256(open(os.path.join(b,r),'rb').read()).hexdigest() "
             "if os.path.exists(os.path.join(b,r)) else 'MISSING') for r in fs))"
             % (ENGINE_REMOTE, list(ENGINE_FILES)))
-    out = ssh("docker exec %s python3 -c \"%s\" 2>/dev/null || true" % (container, code))
+    # A READ-ONLY probe must fail fast: 180s of silence teaches the operator to distrust the tool.
+    out = ssh("docker exec %s python3 -c \"%s\" 2>/dev/null || true" % (container, code), timeout=60)
     got = {}
     for line in (out or "").splitlines():
         parts = line.strip().split(" ")
         if len(parts) == 2 and "/" in parts[0]:
             got[parts[0]] = parts[1]
+    if got:                          # never cache an empty answer (a throttled ssh returns nothing)
+        _SHA_CACHE[container] = got
     return got
 
 
-def engine_is_current(container):
-    """-> (ok, [list of stale files]). Proves the container runs THIS repo's engine. ONE ssh."""
-    got = _sha_all_in_container(container)
+def engine_is_current(container, fresh=False):
+    """-> (ok, [list of stale files]). Proves the container runs THIS repo's engine.
+
+    `fresh=True` after a (re)deploy of that container; otherwise the per-run cache answers, so a
+    single ship opens ONE session per container instead of five."""
+    got = _sha_all_in_container(container, fresh=fresh)
     stale = []
     for rel in ENGINE_FILES:
         want = _sha_local(rel)
@@ -916,7 +939,7 @@ def do_web(use_ci):
 
     # PROVE the running container has THIS repo's engine. A green log is not evidence.
     print("\n  verifying colt-web is running the current engine...")
-    ok, stale = engine_is_current("colt-web")
+    ok, stale = engine_is_current("colt-web", fresh=True)   # just deployed -> re-probe
     if ok:
         print("  OK  colt-web engine matches the repo")
         return
@@ -925,7 +948,7 @@ def do_web(use_ci):
         print("        " + s)
     print("  -> self-healing with a direct deploy (deploy_web_direct.py)")
     run([sys.executable, "deploy_web_direct.py"])
-    ok, stale = engine_is_current("colt-web")
+    ok, stale = engine_is_current("colt-web", fresh=True)   # just self-healed -> re-probe
     if not ok:
         for s in stale:
             print("        " + s)
@@ -950,7 +973,7 @@ def do_bots():
     # in the shared colt-stack project deletes the bots + promtail as "orphans".
     run([sys.executable, "deploy.py", "--reuse", "--yes"])
     print("\n  verifying colt-assessbot is running the current engine...")
-    ok, stale = engine_is_current("colt-assessbot")
+    ok, stale = engine_is_current("colt-assessbot", fresh=True)   # just rebuilt -> re-probe
     if ok:
         print("  OK  colt-assessbot engine matches the repo")
     else:
@@ -990,6 +1013,8 @@ def do_verify(web, bots):
     for cont, want in (("colt-web", web), ("colt-assessbot", bots)):
         if not want or DRY:
             continue
+        # Deliberately NOT fresh: do_web/do_bots already probed this container in THIS run, and a
+        # second ssh here is what froze the ship for minutes after everything had succeeded.
         good, stale = engine_is_current(cont)
         print("  %-16s engine: %s" % (cont, "CURRENT" if good else "STALE  <-- assessments are wrong"))
         if not good:

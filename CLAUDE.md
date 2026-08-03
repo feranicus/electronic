@@ -1846,3 +1846,21 @@ toolchain, so it runs on the operator's machine AND in the image build. Wired in
 exits 0.
 RULE: when a module exports more than one fetch helper, their return shapes MUST be asserted by a
 check, not by memory — the failure mode is a feature silently disappearing, not an error.
+
+## 5/5 VERIFY hung because it re-asked a question already answered (2026-08)
+The deploy SUCCEEDED — colt-web up, engine CURRENT, `public via caddy = 401`, the in-image i18n
+gates green — and then ship.py sat silent for minutes on the LAST probe. Two defects:
+1. **`engine_is_current()` ran FIVE times in one ship** (colt-web twice, colt-assessbot three times):
+   deploy, self-heal check, bots skip-check, then AGAIN in 5/5 VERIFY. Each is a fresh ssh +
+   docker exec, and sshd throttles rapid repeats (MaxStartups / PerSourcePenalties) — CLAUDE.md has
+   said "prefer the single-connection pattern" since deploy.py hit the same wall. FIX: `_SHA_CACHE`
+   memoises the hashes PER RUN; the three call sites that follow a (re)deploy pass `fresh=True`, the
+   rest reuse the answer already paid for. Measured: 4 call sites -> **2 ssh sessions**. Read-only
+   probes also drop from a 180s to a 60s timeout: three minutes of silence teaches the operator to
+   distrust the tool.
+2. **`ssh()` had no `timeout` parameter but do_verify was passing one** — `ssh(..., timeout=90)`
+   raised TypeError inside a `try/except`, so the model-existence probe silently never ran. Same
+   class as the ruff gate that skipped for weeks and the esbuild path that "was missing" on a machine
+   where esbuild worked: **a check that cannot execute is not a check.**
+RULE: before adding a probe, ask whether this run already knows the answer. A redundant remote call
+is not free — it is the one that gets throttled.
