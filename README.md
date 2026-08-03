@@ -287,3 +287,45 @@ shell history), never echoed, never written locally.
 
 Get a free AbuseIPDB key: https://www.abuseipdb.com/account/api — without it, hostile IPs are still
 detected and reported to you in the daily digest; nothing is submitted to third parties.
+
+## Adding a language — ONE command
+
+```
+python add_language.py pt --name "Português"
+```
+
+Translates and writes ALL FIVE surfaces using the same DigitalOcean model chain the product already
+pays for, then runs the existing gates:
+
+| # | Surface | File it writes |
+|---|---|---|
+| 1 | Deck chrome (620 labels + 66 sentence templates + units) | `hermes-skills/shodan-assessment/scripts/i18n/<code>.json` |
+| 2 | Deck PROSE instruction (what the model writes per customer) | `enrich.py::LANG_BLOCKS` |
+| 3 | Web UI + marketing site (201 keyed + 203 by-English) | `webapp/frontend/src/locales/<code>.js` (+ registered in `i18n.jsx` and the `legal.jsx` toggle) |
+| 4 | Animated GEOPOL report | `scripts/geopol_html/i18n/<code>.json` |
+| 5 | Compliance deck labels | `build_compliance_deck.js::LABELS` |
+
+Useful flags:
+
+- `--dry-run` — translate and report, write nothing.
+- `--only decks web` — limit to certain surfaces.
+- `--model <id>` — override the chain head.
+- `--verify-only` — just re-run the gates for a code.
+
+**It is RESUMABLE.** Every batch is cached in `.add_language_cache/<code>/`, so a timeout or a
+rate-limit costs minutes, not the language. Rerun the same command to fill only what is missing.
+
+**Guardrails built in**, because a translation model will otherwise quietly break things:
+
+- A list of ~60 protected terms (NIS2, CRA, MITRE ATT&CK, CVE ids, SASE/ZTNA, protocol names, …) is
+  stated in the prompt AND re-checked on the way back — a batch that lost one is rejected and retried.
+- Sentence templates keep their `$1`/`$2` captures; a mismatch keeps the English rather than shipping
+  a broken sentence. The regex itself matches ENGLISH and is never touched.
+- `tab.*` labels are hard-capped at 8 characters (six share a 360px phone row); an over-long one falls
+  back to English rather than wrapping the tab bar.
+
+**What it does NOT do, deliberately:** the legal pages (`legal-locales/`). Privacy and Impressum copy
+is a compliance claim, not marketing text — German is the normative version and a machine translation
+of it should be read by a human before it ships. Everything else degrades safely to English.
+
+After it finishes: `python ship.py`.
