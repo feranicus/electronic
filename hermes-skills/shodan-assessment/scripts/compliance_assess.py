@@ -59,7 +59,9 @@ def main():
     ap.add_argument("--notes", default="")
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
-    lang = "de" if str(a.lang).lower().startswith("de") else "en"
+    # deck_langs is the authority on what can actually be produced (chrome dict + prose prompt).
+    import deck_langs as _DL
+    lang = _DL.supported(a.lang)
     _L = "_DE" if lang == "de" else ""
     company = a.company.strip()
     safe = _safe(company)

@@ -1792,3 +1792,33 @@ how you disable a safeguard you did not know you had.
 NOT bugs, for the record — these lines in the ecolines log are the guards working as designed:
 Cloudflare AS13335 refused as an ownership anchor, crt.sh 404 covered by CertSpotter, ASN discovery
 reported UNKNOWN rather than "none", and the co-tenant guard dropping ALEKSANDRA UN KO, SIA.
+
+## Russian as the THIRD deck language — and what "add a language" actually costs (2026-08)
+The operator asked for the four decks and the animated HTML in Russian. The dictionary was the easy
+part; the plumbing was hardcoded to `de` in SIX places (`deck_i18n.js` LANG/PACK/LOCALE/money/dfmt,
+`i18n.py` t/translate_json/translate_file, `enrich.py`, `enrich_parallel.py`, `run_assessment.py`
+x5, `compliance_enrich.py`, `compliance_assess.py`, `build_compliance_deck.js`, `creed.js`).
+LANGUAGE IS NOW DATA, NOT A BRANCH: a 2-letter code selects `<code>.json`, and the PACK declares its
+own `locale`, `dateFormat` and `units`. `enrich.LANG_BLOCKS` + `lang_block(code)` is the one registry
+for prose instructions; `creed.js` uses a table, not a ternary chain.
+**A REGRESSION I ALMOST SHIPPED:** removing `if (LANG === "de")` from `dfmt()` silently switched
+German decks to ISO dates, because de.json had no `dateFormat`. The rule did not disappear — it had
+to MOVE INTO the dictionary. When you delete a branch, check what knowledge died with it.
+`deck_langs.doc_langs()` now requires BOTH halves (chrome dictionary AND a LANG_* prose block) and
+fails closed: half a language is not a language.
+GATE: ship.py renders every CLAIMED language from the sample fixture with `DECK_I18N_AUDIT=1` and
+fails if any string **the German pack covers** is still English — German is the reference locale, so
+that comparison is the definition of a gap. Proven by deleting `CRITICAL` from ru.json (gate -> 1 gap)
+and restoring it. `/api/langs` is a capability CLAIM; an untested claim is how `--lang it` once
+reached an engine that answered in English.
+TWO PRE-EXISTING DEFECTS THIS SURFACED, both invisible until a second locale existed:
+  * 48 customer-visible TEMPLATES strings (finding titles, the three `why` sentences, remediation
+    bodies) were in NEITHER pack — so a degraded run shipped English findings inside a German deck.
+    Now in both. They are the DETERMINISTIC FALLBACK, which is exactly the path nobody renders.
+  * `shodan_recon.py` TEMPLATES still said **"WHY COLT:"** 10 times and named Colt in 5 remediation
+    bodies. The brand gate never caught it because it builds its decks from a fixture that already
+    contains LLM prose — **the fallback path was never rendered by the gate**. Same class as the
+    Cyrillic gap: a check that cannot see the artifact it checks is not a check.
+Also fixed: the UI enumerated "in English or Hoch-Deutsch" in prose across six locales — a second
+source of truth that went stale the moment Russian shipped. Prose must never restate what the
+selector already lists.

@@ -14,6 +14,25 @@ Usage:
 """
 import os, sys, json, argparse, subprocess, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# THE DOCUMENT LANGUAGE, resolved in ONE place. `"de" if lang.startswith("de") else "en"` was
+# repeated five times in this file alone; a third language meant finding every one of them, and
+# missing a single line ships an English artifact inside a translated set. deck_langs.supported()
+# is the authority — it derives the answer from the dictionaries actually on disk, so a code we
+# cannot genuinely render can never reach a builder.
+import deck_langs as _DL
+
+
+def _doc_lang(lang):
+    """The 2-letter code the builders should use. Anything unrenderable becomes 'en'."""
+    return _DL.supported(lang)
+
+
+def _suffix(lang):
+    """Filename suffix per language. English keeps today's exact filenames (no suffix), so
+    existing links, tests and the web deck-collector are unaffected."""
+    c = _doc_lang(lang)
+    return "" if c == "en" else "_" + c.upper()
 sys.path.insert(0, HERE)
 import shodan_recon as R
 
@@ -452,7 +471,7 @@ def derive_geopol(fj, ident, cj=None):
 def _node_build(script, in_json, out_pptx, lang="en"):
     # DECK_LANG is read by scripts/i18n/deck_i18n.js, which is installed on the pptx object inside
     # every builder. en -> the builders behave exactly as before (zero-diff); de -> Hoch-Deutsch.
-    env = dict(os.environ, DECK_LANG=("de" if str(lang).lower().startswith("de") else "en"))
+    env = dict(os.environ, DECK_LANG=_doc_lang(lang))
     r = subprocess.run(["node", os.path.join(HERE, script), in_json, out_pptx],
                        capture_output=True, text=True, env=env)
     if r.returncode != 0:
@@ -724,20 +743,20 @@ def main():
     json.dump(gj, open(os.path.join(a.outdir,"geopol.json"),"w"), indent=2, ensure_ascii=False)
 
     # 3) build all 3 decks
-    _L = "_DE" if str(a.lang).lower().startswith("de") else ""   # EN keeps today's exact filenames
+    _L = _suffix(a.lang)
     d1=os.path.join(a.outdir,f"{safe}_Shodan_Findings{_L}.pptx")
     d2=os.path.join(a.outdir,f"{safe}_C-BIQ{_L}.pptx")
     d3=os.path.join(a.outdir,f"{safe}_GEOPOL{_L}.pptx")
     # DE: translate the engine's own deterministic English (finding titles, controls, bucket
     # names) BEFORE the decks render. LLM prose is already German (enrich.py); deck chrome is done
     # by deck_i18n.js. All three streams read the SAME committed dictionary, so terms never diverge.
-    if str(a.lang).lower().startswith("de"):
+    if _doc_lang(a.lang) != "en":
         try:
             sys.path.insert(0, os.path.join(HERE, "i18n"))
             import i18n as _I18N
             for _f in ("findings.json", "cbiq.json", "geopol.json"):
-                _I18N.translate_file(os.path.join(a.outdir, _f), "de")
-            _pg("Sprache: Hochdeutsch — Dokumente werden auf Deutsch erzeugt", 89)
+                _I18N.translate_file(os.path.join(a.outdir, _f), _doc_lang(a.lang))
+            _pg("Document language: %s — translating engine prose" % _doc_lang(a.lang).upper(), 89)
         except Exception as _e:
             print(f"[warn] i18n pass: {_e}", file=sys.stderr)
 
@@ -755,7 +774,7 @@ def main():
                           raw_fp, os.path.join(a.outdir,"findings.json"), d4,
                           os.path.join(a.outdir,"cbiq.json"), os.path.join(a.outdir,"geopol.json")],
                          capture_output=True, text=True,
-                         env=dict(os.environ, DECK_LANG=("de" if str(a.lang).lower().startswith("de") else "en")))
+                         env=dict(os.environ, DECK_LANG=_doc_lang(a.lang)))
         ok4=(r.returncode==0)
         if not ok4: print(f"[warn] build_deltas_deck.js: {r.stderr.strip()[:300]}", file=sys.stderr)
 
@@ -808,7 +827,7 @@ def main():
                           os.path.join(a.outdir,"geopol.json"), d5, "--company", co],
                          capture_output=True, text=True,
                          env=dict(os.environ, OUTDIR=a.outdir,
-                                  DECK_LANG=("de" if str(a.lang).lower().startswith("de") else "en")))
+                                  DECK_LANG=_doc_lang(a.lang)))
         ok5=(r.returncode==0 and os.path.exists(d5))
         if not ok5: print(f"[warn] author_geopol.py: {(r.stderr or '').strip()[:300]}", file=sys.stderr)
     except Exception as _e:

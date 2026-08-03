@@ -7,7 +7,7 @@
 // A new string must state which space it belongs to. A key that reaches the DOM is a build failure
 // (see the SSR guard in ship.py) — a fallback that silently prints the key looks like content.
 export const keyed = {
-  "assess.docLangNote": "The documents are available in English and German. Your interface language is not one of them, so the documents will be written in English.",
+  "assess.docLangNote": "The documents are written in the language selected above. Your interface language is not among them, so English is used by default.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "self-serve.",
   "login.lede": "One name in, a full attack-surface assessment out. The same engine behind the Telegram bots \u2014 now on the web, for every seller.",
@@ -62,7 +62,7 @@ export const keyed = {
   "demo.s3h": "It proves what belongs to whom",
   "demo.s3b": "The hard part is not finding hosts — it is knowing which are theirs. Every asset is scored on independent evidence (published group structure, certificates, per-IP registry ownership) and the reasons are recorded, so a disputed host can be explained rather than argued about.",
   "demo.s4h": "It writes the boardroom papers",
-  "demo.s4b": "Four decks and an animated report, in English or Hochdeutsch: what is exposed, what it would cost in euros, who would plausibly come for it, and which service closes each gap. Roughly three minutes, start to finish.",
+  "demo.s4b": "Four decks and an animated report: what is exposed, what it would cost in euros, who would plausibly come for it, and which service closes each gap. Roughly three minutes, start to finish.",
   "demo.deckH": "The deliverables — download them",
   "demo.deckLead": "These are the real files, generated for the fictional Trojan Empire. Open them; this is exactly what lands in your inbox for a real target.",
   "demo.deckWait": "Preparing the demonstration artifacts…",
@@ -158,7 +158,7 @@ export const keyed = {
 
   // ---- Assess (New assessment) ------------------------------------------------------------------
   "assess.h1": "New assessment",
-  "assess.sub": "One input: a company name or domain. The engine resolves the entire footprint, sweeps Shodan, and writes the four boardroom decks \u2014 in English or Hoch-Deutsch. No IPs, ASNs or certs to type.",
+  "assess.sub": "One input: a company name or domain. The engine resolves the entire footprint, sweeps Shodan, and writes the four boardroom decks. No IPs, ASNs or certs to type.",
   "assess.company": "Company name",
   "assess.companyPh": "e.g. Volkswagen AG",
   "assess.docLang": "Document language",
@@ -199,7 +199,7 @@ export const keyed = {
   "comp.sub.a": "One input: a company name. The engine assesses exposure to ",
   "comp.sub.b": ", the ",
   "comp.sub.c": " and the ",
-  "comp.sub.d": " \u2014 applicability, obligations, gaps, deadlines and penalty exposure \u2014 and writes three regime decks, a roadmap deck and an animated report, in English or Hoch-Deutsch. It infers the scope from the name; you confirm it afterwards.",
+  "comp.sub.d": " \u2014 applicability, obligations, gaps, deadlines and penalty exposure \u2014 and writes three regime decks, a roadmap deck and an animated report. It infers the scope from the name; you confirm it afterwards.",
   "comp.company": "Company name",
   "comp.companyPh": "e.g. Siemens Healthineers AG",
   "comp.docLang": "Document language",

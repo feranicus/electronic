@@ -98,7 +98,7 @@ def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None):
     # sentence and a single remediation row, and the deck rendered exactly that: lotto24.de finding
     # H1 came back with a 38-char `what`, a 259-char `why` and ONE `rem` where the slide has room
     # for five. Coverage said 100% because every id came back. Presence is not depth.
-    _lang = E.LANG_DE if str(lang).lower().startswith("de") else ""
+    _lang = E.lang_block(lang)      # one registry; a per-file `if de` is how a language gets missed
     prompt = E.PROMPT % (E._bible(), _lang, json.dumps(sub, ensure_ascii=False)[:14000])
     prompt += ("\n\nYou are enriching a SUBSET of the estate. You MUST return a rewritten object "
                "for EVERY one of these finding ids, with no omissions: %s\n"

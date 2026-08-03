@@ -12,7 +12,7 @@
 // tab.* labels are capped at 8 characters: six of them share one 360px phone row.
 
 export const keyed = {
-  "assess.docLangNote": "Les documents sont disponibles en anglais et en allemand. La langue de votre interface n'en fait pas partie : les documents seront donc rédigés en anglais.",
+  "assess.docLangNote": "Les documents sont rédigés dans la langue sélectionnée ci-dessus. La langue de votre interface n'en fait pas partie : l'anglais est utilisé par défaut.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "en autonomie.",
   "login.lede": "Un nom en entr\u00e9e, une analyse compl\u00e8te de la surface d'attaque en sortie. Le m\u00eame moteur que derri\u00e8re les bots Telegram \u2014 d\u00e9sormais sur le web, pour chaque commercial.",
@@ -65,7 +65,7 @@ export const keyed = {
   "demo.s3h": "Il prouve ce qui appartient à qui",
   "demo.s3b": "Le plus difficile n'est pas de trouver des hôtes, mais de savoir lesquels sont les leurs. Chaque actif est noté sur la base d'indices indépendants (structure de groupe publiée, certificats, propriétaire enregistré pour chaque IP) et les motifs sont consignés\u00a0: un hôte contesté peut ainsi être expliqué plutôt que débattu.",
   "demo.s4h": "Il rédige les documents du conseil",
-  "demo.s4b": "Quatre présentations et un rapport animé, en anglais ou en allemand\u00a0: ce qui est exposé, ce que cela coûterait en euros, qui viendrait plausiblement s'en prendre à vous et quel service comble chaque écart. Environ trois minutes, de bout en bout.",
+  "demo.s4b": "Quatre présentations et un rapport animé\u00a0: ce qui est exposé, ce que cela coûterait en euros, qui viendrait plausiblement s'en prendre à vous et quel service comble chaque écart. Environ trois minutes, de bout en bout.",
   "demo.deckH": "Les livrables — à télécharger",
   "demo.deckLead": "Ce sont les fichiers réels, générés pour l'entreprise fictive Trojan Empire. Ouvrez-les\u00a0: c'est exactement ce qui arrive dans votre boîte de réception pour une cible réelle.",
   "demo.deckWait": "Préparation des livrables de démonstration…",
@@ -162,7 +162,7 @@ export const keyed = {
 
   // ---- Analyse (nouvelle analyse) ---------------------------------------------------------------
   "assess.h1": "Nouvelle analyse",
-  "assess.sub": "Une seule saisie : un nom d'entreprise ou un domaine. Le moteur détermine toute la surface exposée, balaie Shodan et rédige les quatre présentations pour le conseil — en anglais ou en allemand. Aucune adresse IP, aucun ASN, aucun certificat à saisir.",
+  "assess.sub": "Une seule saisie : un nom d'entreprise ou un domaine. Le moteur détermine toute la surface exposée, balaie Shodan et rédige les quatre présentations pour le conseil. Aucune adresse IP, aucun ASN, aucun certificat à saisir.",
   "assess.company": "Nom de l'entreprise",
   "assess.companyPh": "ex. Volkswagen AG",
   "assess.docLang": "Langue du document",
@@ -203,7 +203,7 @@ export const keyed = {
   "comp.sub.a": "Une seule saisie : un nom d'entreprise. Le moteur évalue l'exposition à ",
   "comp.sub.b": ", au ",
   "comp.sub.c": " et à l'",
-  "comp.sub.d": " — applicabilité, obligations, écarts, échéances et exposition aux sanctions — et rédige trois présentations par régime, une feuille de route et un rapport animé, en anglais ou en allemand. Il déduit le périmètre à partir du nom ; vous le confirmez ensuite.",
+  "comp.sub.d": " — applicabilité, obligations, écarts, échéances et exposition aux sanctions — et rédige trois présentations par régime, une feuille de route et un rapport animé. Il déduit le périmètre à partir du nom ; vous le confirmez ensuite.",
   "comp.company": "Nom de l'entreprise",
   "comp.companyPh": "ex. Siemens Healthineers AG",
   "comp.docLang": "Langue du document",
@@ -302,8 +302,8 @@ export const byEn = {
     "<code>python ship.py</code>\u00a0: test puis commit puis push puis déploiement puis VÉRIFICATION",
   "<code>python-telegram-bot</code>, one per bot, in Docker":
     "<code>python-telegram-bot</code>, un par bot, dans Docker",
-  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen - in English or Hochdeutsch.":
-    "Une chaîne de modèles d'IA rédige le texte\u00a0; des gabarits figés garantissent la structure et les calculs. Vous obtenez <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> ainsi qu'un <b>rapport animé en direct</b> que vous présentez à l'écran - en anglais ou en allemand.",
+  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen.":
+    "Une chaîne de modèles d'IA rédige le texte\u00a0; des gabarits figés garantissent la structure et les calculs. Vous obtenez <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> ainsi qu'un <b>rapport animé en direct</b> que vous présentez à l'écran.",
   "A findings spreadsheet with no price attached to anything":
     "Un tableur de constats où rien n'est chiffré",
   "A number the board can actually make a decision on":

@@ -12,8 +12,9 @@
  * prose but never breaks the layout. Defensive by contract — every field is guarded and the deck
  * renders on the deterministic fallback (applicability "requires confirmation", no gaps) too.
  *
- * Language: DECK_LANG=de -> Hoch-Deutsch chrome via the local label map L(); the prose (rationale,
- * gaps, colt, exec_summary) is already written in the requested language by the model.
+ * Language: DECK_LANG=<2-letter code> -> localised chrome via the local label map L(); the prose
+ * (rationale, gaps, colt, exec_summary) is already written in the requested language by the model.
+ * The code SELECTS A COLUMN of LABELS (en/de/ru/...); it is never a branch. See the LANG note below.
  */
 const fs = require("fs");
 const CREED = require("./creed.js");
@@ -25,7 +26,9 @@ if (!jsonPath || !outPath || !regimeArg) {
   process.exit(2);
 }
 const D = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-const LANG = (process.env.DECK_LANG || D.lang || "en").toLowerCase().startsWith("de") ? "de" : "en";
+// The requested 2-letter code. Resolved to an actual LABELS column further down (LANG), once the
+// map exists — see the "LANGUAGE IS DATA, NOT A BRANCH" note there.
+const LANG_CODE = String(process.env.DECK_LANG || D.lang || "en").toLowerCase().slice(0, 2);
 const company = D.company || "Target";
 const EMDASH = "—", MIDDOT = "·", RAQUO = "»";
 
@@ -38,48 +41,76 @@ const C = {
 };
 const FH = "Georgia", FB = "Calibri", FD = "Arial Black", FA = "Arial";
 
-// ---- tiny EN/DE label map for chrome (prose comes from the model already localised) ----
+// ---- label map for the chrome (prose comes from the model already localised) ----
+// Regime names (NIS2 / Cyber Resilience Act / EU AI Act / DORA / GDPR) and article citations are
+// NEVER translated — they are the legal instruments' own names.
 const LABELS = {
-  eyebrow: { en: "EU DIGITAL & CYBER COMPLIANCE", de: "EU-DIGITAL- & CYBER-COMPLIANCE" },
-  scope: { en: "Scope & applicability", de: "Anwendungsbereich & Betroffenheit" },
-  obligations: { en: "Core obligations", de: "Kernpflichten" },
-  gaps: { en: "Priority gaps", de: "Prioritäre Lücken" },
-  deadlines: { en: "Key deadlines", de: "Wichtige Fristen" },
-  penalty: { en: "Penalty exposure", de: "Bußgeld-Exposition" },
-  colt: { en: "How we help", de: "Wie wir unterstützen" },
-  applies: { en: "Applies", de: "Betroffen" },
-  notApplies: { en: "Out of scope", de: "Nicht betroffen" },
-  unclear: { en: "Requires confirmation", de: "Zu bestätigen" },
-  classification: { en: "Classification", de: "Einstufung" },
-  instrument: { en: "Instrument", de: "Rechtsakt" },
-  regulates: { en: "Regulates", de: "Reguliert" },
-  ref: { en: "REF", de: "REF" },
-  obligation: { en: "OBLIGATION", de: "PFLICHT" },
-  requires: { en: "WHAT IT REQUIRES", de: "WAS ERFORDERLICH IST" },
-  date: { en: "DATE", de: "DATUM" },
-  milestone: { en: "MILESTONE", de: "MEILENSTEIN" },
-  essentialMax: { en: "Essential-tier maximum", de: "Obergrenze (essenziell)" },
-  importantMax: { en: "Important-tier maximum", de: "Obergrenze (wichtig)" },
-  overview: { en: "Three regimes at a glance", de: "Drei Regime im Überblick" },
-  roadmap: { en: "Remediation roadmap", de: "Umsetzungs-Fahrplan" },
-  priorities: { en: "Priorities", de: "Prioritäten" },
-  execSummary: { en: "Executive summary", de: "Management-Zusammenfassung" },
-  assumptions: { en: "Scoping assumptions (confirm via clarification)", de: "Annahmen zum Anwendungsbereich (bitte bestätigen)" },
-  regime: { en: "REGIME", de: "REGIME" },
-  maxFine: { en: "MAX FINE", de: "MAX. BUSSGELD" },
-  nearest: { en: "NEAREST DEADLINE", de: "NÄCHSTE FRIST" },
-  none: { en: "None recorded", de: "Keine erfasst" },
-  gapNone: { en: "No priority gaps recorded for this regime at the assumed scope. Confirm scope to finalise.", de: "Keine prioritären Lücken bei angenommenem Anwendungsbereich. Anwendungsbereich bestätigen." },
-  status: { en: "INTERNAL " + EMDASH + " CONFIDENTIAL", de: "INTERN " + EMDASH + " VERTRAULICH" },
-  prepared: { en: "Cybergod LLC · S4Biz Group", de: "Cybergod LLC · S4Biz Group" },
+  eyebrow: { en: "EU DIGITAL & CYBER COMPLIANCE", de: "EU-DIGITAL- & CYBER-COMPLIANCE", ru: "ЦИФРОВОЕ И КИБЕР-СООТВЕТСТВИЕ ЕС" },
+  scope: { en: "Scope & applicability", de: "Anwendungsbereich & Betroffenheit", ru: "Область и применимость" },
+  obligations: { en: "Core obligations", de: "Kernpflichten", ru: "Ключевые обязанности" },
+  gaps: { en: "Priority gaps", de: "Prioritäre Lücken", ru: "Приоритетные пробелы" },
+  deadlines: { en: "Key deadlines", de: "Wichtige Fristen", ru: "Ключевые сроки" },
+  penalty: { en: "Penalty exposure", de: "Bußgeld-Exposition", ru: "Риск штрафов" },
+  colt: { en: "How we help", de: "Wie wir unterstützen", ru: "Как мы помогаем" },
+  applies: { en: "Applies", de: "Betroffen", ru: "Применимо" },
+  notApplies: { en: "Out of scope", de: "Nicht betroffen", ru: "Вне области" },
+  unclear: { en: "Requires confirmation", de: "Zu bestätigen", ru: "Требует подтверждения" },
+  classification: { en: "Classification", de: "Einstufung", ru: "Классификация" },
+  instrument: { en: "Instrument", de: "Rechtsakt", ru: "Правовой акт" },
+  regulates: { en: "Regulates", de: "Reguliert", ru: "Регулирует" },
+  ref: { en: "REF", de: "REF", ru: "REF" },
+  obligation: { en: "OBLIGATION", de: "PFLICHT", ru: "ОБЯЗАННОСТЬ" },
+  requires: { en: "WHAT IT REQUIRES", de: "WAS ERFORDERLICH IST", ru: "ЧТО ТРЕБУЕТСЯ" },
+  date: { en: "DATE", de: "DATUM", ru: "ДАТА" },
+  milestone: { en: "MILESTONE", de: "MEILENSTEIN", ru: "ЭТАП" },
+  essentialMax: { en: "Essential-tier maximum", de: "Obergrenze (essenziell)", ru: "Максимум (существенные)" },
+  importantMax: { en: "Important-tier maximum", de: "Obergrenze (wichtig)", ru: "Максимум (важные)" },
+  overview: { en: "Three regimes at a glance", de: "Drei Regime im Überblick", ru: "Три режима: обзор" },
+  roadmap: { en: "Remediation roadmap", de: "Umsetzungs-Fahrplan", ru: "План устранения" },
+  priorities: { en: "Priorities", de: "Prioritäten", ru: "Приоритеты" },
+  execSummary: { en: "Executive summary", de: "Management-Zusammenfassung", ru: "Резюме для руководства" },
+  assumptions: { en: "Scoping assumptions (confirm via clarification)", de: "Annahmen zum Anwendungsbereich (bitte bestätigen)", ru: "Допущения по области (просьба подтвердить)" },
+  regime: { en: "REGIME", de: "REGIME", ru: "РЕЖИМ" },
+  maxFine: { en: "MAX FINE", de: "MAX. BUSSGELD", ru: "МАКС. ШТРАФ" },
+  nearest: { en: "NEAREST DEADLINE", de: "NÄCHSTE FRIST", ru: "БЛИЖАЙШИЙ СРОК" },
+  none: { en: "None recorded", de: "Keine erfasst", ru: "Не зафиксировано" },
+  gapNone: { en: "No priority gaps recorded for this regime at the assumed scope. Confirm scope to finalise.", de: "Keine prioritären Lücken bei angenommenem Anwendungsbereich. Anwendungsbereich bestätigen.", ru: "Приоритетных пробелов по этому режиму при принятой области не зафиксировано. Подтвердите область для финализации." },
+  status: { en: "INTERNAL " + EMDASH + " CONFIDENTIAL", de: "INTERN " + EMDASH + " VERTRAULICH", ru: "ВНУТРЕННИЙ " + EMDASH + " КОНФИДЕНЦИАЛЬНО" },
+  prepared: { en: "Cybergod LLC · S4Biz Group", de: "Cybergod LLC · S4Biz Group", ru: "Cybergod LLC · S4Biz Group" },
+  // -- assumptions table + priorities table. These used to be inline `LANG === "de" ? ... : ...`
+  // ternaries, which is the same "language as a branch" defect the LANG line had: a third language
+  // rendered German-or-English chrome no matter what the map said. Labels belong in the map.
+  assumption: { en: "ASSUMPTION", de: "ANNAHME", ru: "ДОПУЩЕНИЕ" },
+  value: { en: "VALUE", de: "WERT", ru: "ЗНАЧЕНИЕ" },
+  sector: { en: "Sector", de: "Sektor", ru: "Отрасль" },
+  sizeBand: { en: "Size band", de: "Größe", ru: "Размер" },
+  sellsDigital: { en: "Sells digital products?", de: "Digitale Produkte?", ru: "Цифровые продукты?" },
+  buildsAi: { en: "Builds/deploys AI?", de: "Baut/nutzt KI?", ru: "Разработка/применение ИИ?" },
+  countries: { en: "Countries", de: "Länder", ru: "Страны" },
+  yes: { en: "Yes", de: "Ja", ru: "Да" },
+  no: { en: "No", de: "Nein", ru: "Нет" },
+  unknown: { en: "unknown", de: "unklar", ru: "неизвестно" },
+  action: { en: "ACTION", de: "MASSNAHME", ru: "МЕРА" },
+  why: { en: "WHY", de: "WARUM", ru: "ПОЧЕМУ" },
 };
+
+// LANGUAGE IS DATA, NOT A BRANCH. This used to be `.startsWith("de") ? "de" : "en"`, so adding a
+// third deck language meant editing this line, the date locale and every `LANG === "de"` ternary
+// below — places that could silently disagree. Now the 2-letter code simply SELECTS A COLUMN of
+// LABELS, and a code the map does not carry falls back to English: a half-translated deck is worse
+// than an English one. Probing one required key is enough because L() already falls back per key,
+// so a partially-filled column degrades string by string instead of all at once.
+// Adding a language = adding a column (plus its DATE_LOCALE entry).
+const L_HAS = (code) => !!(LABELS.eyebrow || {})[code];
+const LANG = L_HAS(LANG_CODE) ? LANG_CODE : "en";
 const L = (k) => (LABELS[k] || {})[LANG] || (LABELS[k] || {}).en || k;
+const DATE_LOCALE = { en: "en-GB", de: "de-DE", ru: "ru-RU" };
 
 const REGIME_TITLE = {
-  nis2: { en: "NIS2", de: "NIS2" },
-  cra: { en: "Cyber Resilience Act", de: "Cyber Resilience Act" },
-  aiact: { en: "EU AI Act", de: "EU AI Act" },
-  roadmap: { en: "Compliance Roadmap", de: "Compliance-Fahrplan" },
+  nis2: { en: "NIS2", de: "NIS2", ru: "NIS2" },
+  cra: { en: "Cyber Resilience Act", de: "Cyber Resilience Act", ru: "Cyber Resilience Act" },
+  aiact: { en: "EU AI Act", de: "EU AI Act", ru: "EU AI Act" },
+  roadmap: { en: "Compliance Roadmap", de: "Compliance-Fahrplan", ru: "План соответствия" },
 };
 
 const pres = new pptxgen();
@@ -125,7 +156,7 @@ function appliesBadge(s, applies, x, y) {
 function sevColor(sev) { return { CRITICAL: C.crit, HIGH: C.high, MEDIUM: C.med, LOW: C.low }[(sev || "").toUpperCase()] || C.dark; }
 function fmtDate(d) {
   try { const dt = new Date(d + "T00:00:00Z"); if (isNaN(dt)) return d;
-    return dt.toLocaleDateString(LANG === "de" ? "de-DE" : "en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+    return dt.toLocaleDateString(DATE_LOCALE[LANG] || DATE_LOCALE.en, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
   } catch { return d; }
 }
 function titleSlide(bigTitle, subline, classText, applies) {
@@ -278,13 +309,13 @@ function roadmapDeck() {
     const s = content(L("eyebrow"), L("execSummary"));
     s.addText(String(rm.exec_summary || ""), { x: 0.4, y: 1.32, w: 9.2, h: 1.5, fontSize: 12, fontFace: FB, color: C.ink, valign: "top", margin: 0 });
     s.addText(L("assumptions").toUpperCase(), { x: 0.4, y: 3.0, w: 9.2, h: 0.26, fontSize: 9, fontFace: FB, color: C.teal, bold: true, charSpacing: 2, margin: 0 });
-    const yn = (v) => v === true ? (LANG === "de" ? "Ja" : "Yes") : v === false ? (LANG === "de" ? "Nein" : "No") : (LANG === "de" ? "unklar" : "unknown");
-    const rows = [[hdrCell(LANG === "de" ? "ANNAHME" : "ASSUMPTION"), hdrCell(LANG === "de" ? "WERT" : "VALUE")]];
-    rows.push([{ text: LANG === "de" ? "Sektor" : "Sector" }, { text: a.sector || EMDASH }]);
-    rows.push([{ text: LANG === "de" ? "Größe" : "Size band" }, { text: a.size_band || EMDASH }]);
-    rows.push([{ text: LANG === "de" ? "Digitale Produkte?" : "Sells digital products?" }, { text: yn(a.sells_digital_products) }]);
-    rows.push([{ text: LANG === "de" ? "Baut/nutzt KI?" : "Builds/deploys AI?" }, { text: yn(a.builds_or_deploys_ai) }]);
-    rows.push([{ text: LANG === "de" ? "Länder" : "Countries" }, { text: (a.countries || []).join(", ") || EMDASH }]);
+    const yn = (v) => v === true ? L("yes") : v === false ? L("no") : L("unknown");
+    const rows = [[hdrCell(L("assumption")), hdrCell(L("value"))]];
+    rows.push([{ text: L("sector") }, { text: a.sector || EMDASH }]);
+    rows.push([{ text: L("sizeBand") }, { text: a.size_band || EMDASH }]);
+    rows.push([{ text: L("sellsDigital") }, { text: yn(a.sells_digital_products) }]);
+    rows.push([{ text: L("buildsAi") }, { text: yn(a.builds_or_deploys_ai) }]);
+    rows.push([{ text: L("countries") }, { text: (a.countries || []).join(", ") || EMDASH }]);
     drawTable(s, rows, { x: 0.4, y: 3.3, w: 9.2, colW: [3.0, 6.2], rowH: 0.32, fontSize: 10 });
     footer(s); tracer(s);
   })();
@@ -362,7 +393,7 @@ function roadmapDeck() {
   // -- priorities
   if ((rm.priorities || []).length) {
     const s = content(L("eyebrow"), L("priorities"));
-    const rows = [[hdrCell(L("regime")), hdrCell(LANG === "de" ? "MASSNAHME" : "ACTION"), hdrCell(LANG === "de" ? "WARUM" : "WHY"), hdrCell("COLT")]];
+    const rows = [[hdrCell(L("regime")), hdrCell(L("action")), hdrCell(L("why")), hdrCell(L("colt").toUpperCase())]];
     (rm.priorities || []).slice(0, 6).forEach((p) => rows.push([
       { text: p.regime || "", options: { bold: true, color: C.tealDark, fontSize: 9 } },
       { text: p.action || "", options: { fontSize: 9 } },

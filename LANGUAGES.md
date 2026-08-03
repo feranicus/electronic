@@ -1,4 +1,4 @@
-# Languages — what we ship, why those four, and what is still English
+# Languages — what we ship, why those four, and what the decks can actually produce
 
 ## What ships today
 
@@ -8,26 +8,26 @@
 | Cabinet (Assess, Compliance, Assistant, History, Sidebar) | EN · DE · IT · FR · ES · PL | same |
 | Legal pages + the Art.13 notice | EN · DE · IT · FR · ES · PL | `webapp/frontend/src/legal.jsx` (DE/EN) + `src/legal-locales/*.jsx` |
 | Telegram bots — interface | EN · DE · IT · FR · ES · PL | `assess-bot/bot.py::T`, `cassandra-bot::LANG_INSTRUCTION` |
-| **Generated decks + the animated report** | **EN · DE only** | `hermes-skills/shodan-assessment/scripts/i18n/` |
+| **Generated decks + the animated report** | **EN · DE · RU** | `hermes-skills/shodan-assessment/scripts/i18n/` |
 
 **German is the NORMATIVE legal text.** The other five privacy translations are reading
 translations and say so in their first sentence. That is standard practice and it is what makes
 shipping a translated legal page safe.
 
-## Why the decks are still EN/DE, and why that is stated rather than hidden
+## Why the deck languages are a SHORTER list than the interface languages
 
 A deck language needs three things, and only two of them are a dictionary:
 
-1. `scripts/i18n/<lang>.json` — the ~530 deck-chrome literals,
+1. `scripts/i18n/<lang>.json` — the ~620 deck-chrome literals,
 2. `scripts/i18n/i18n.py` — the engine-deterministic prose post-pass (finding titles, controls),
 3. a `LANG_*` prompt block in `enrich.py` — the **per-company prose**, which no dictionary can ever
    cover because a model writes it fresh for every customer.
 
-So "the site speaks Polish" does not imply "the decks speak Polish". `scripts/deck_langs.py` is the
+So "the site speaks Polish" does not imply "the decks speak Polish". Russian is the third deck language: it was added on request and exists end-to-end (chrome dictionary, engine post-pass, `LANG_RU` prompt block, compliance labels, animated HTML). `scripts/deck_langs.py` is the
 single source of truth: it derives the list from the dictionaries actually present on disk, serves it
 at `GET /api/langs`, and `supported()` coerces any other request down to English. The Assess screen
 and the bot build their language choices from that list and say plainly, in the reader's own
-language, that the documents are available in English and German only.
+language, when their interface language is not one the decks can be written in.
 
 Before this, the Assess screen defaulted the document language from the SITE language. An Italian
 reader would have sent `--lang it`, the engine would have fallen back to English, and nothing would
@@ -132,3 +132,23 @@ Brazilian cyber act is sanctioned with a named authority holding sanctioning pow
 Everything above is gated by `python ship.py`: the catalogue must be 100% in all six locales, and the
 SSR audit renders 11 pages × 6 languages and fails on a raw key, a leaked `undefined`, an
 over-length tab label, or English function-word residue above 6%.
+
+
+## Adding a deck language — the whole checklist
+
+`deck_langs.py` offers a language only when **both halves** exist, and fails closed otherwise:
+
+1. `scripts/i18n/<code>.json` — the ~620 chrome strings, plus `locale`, `dateFormat` (`"dmy"` or ISO)
+   and `units` (`bn`/`M`/`k` suffixes). The dictionary declares its own formatting rules; there is no
+   `if (LANG === "xx")` anywhere in `deck_i18n.js` any more.
+2. A `LANG_<CODE>` block registered in `enrich.py::LANG_BLOCKS` — the per-company PROSE. Without it a
+   deck would render translated labels wrapped around English paragraphs, which is worse than an
+   honest English deck, so `doc_langs()` refuses to list the language at all.
+
+Optional but expected for parity: `compliance_enrich.py::LANG_BLOCKS`, the `ru:` column of
+`build_compliance_deck.js::LABELS`, `geopol_html/i18n/<code>.json` for the animated report, and the
+creed pair in `creed.js` (asserted byte-identical to the dictionary by `test_creed.js`).
+
+`python ship.py` then renders every claimed language from the sample fixture with the dictionary
+audit on and **fails if any string the German pack covers is still English** — German is the
+reference locale, so "German translates it, this one does not" is the definition of a gap.

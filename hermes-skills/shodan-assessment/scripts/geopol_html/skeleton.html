@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>{{COMPANY}} GEOPOL — Threat, Defence &amp; Secure by Design · Colt / S4Biz</title>
+<title>{{COMPANY}} GEOPOL — Threat, Defence &amp; Secure by Design · Cybergod / S4Biz</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -31,8 +31,13 @@
   .brand{font-family:"Unbounded";font-weight:800;letter-spacing:.06em;font-size:15px}
   .brand b{color:var(--teal)}
   .tag{font-family:"JetBrains Mono";font-size:10.5px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase}
-  .colt{font-family:Arial,sans-serif;font-weight:800;font-size:17px;color:var(--teal)}
-  .colt small{font-family:"JetBrains Mono";font-weight:600;font-size:9.5px;color:var(--dim);letter-spacing:.12em}
+  /* header wordmark. The CLASS was renamed as well as the text: this file is DELIVERED to the
+     customer, so a stale brand left in its source is still a stale brand, and a brand gate that
+     greps the artifact would trip on it forever. Safe here because the class is referenced exactly
+     once, in this file — unlike the deck builders' JSON keys, which are lookup keys and must stay.
+     14px, not 17: the new wordmark is ~3x longer and collided with the left-hand brand block. */
+  .wordmark{font-family:Arial,sans-serif;font-weight:800;font-size:14px;color:var(--teal)}
+  .wordmark small{font-family:"JetBrains Mono";font-weight:600;font-size:9.5px;color:var(--dim);letter-spacing:.12em}
   section{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:50px 26px 38px;position:relative}
   .eyebrow{font-family:"JetBrains Mono";font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--teal);margin-bottom:9px}
   h1{font-family:"Unbounded";font-weight:800;font-size:clamp(25px,4.1vw,48px);line-height:1.03;margin:0 0 8px}
@@ -67,7 +72,7 @@
 <div class="wrap">
   <header>
     <div><span class="brand">{{COMPANY_UPPER}} <b>GEOPOL</b></span> &nbsp;<span class="tag">Threat · Defence · Secure by Design</span></div>
-    <div class="colt">colt <small>/ s4biz</small></div>
+    <div class="wordmark">cybergod.ai <small>/ s4biz</small></div>
   </header>
 
   <section id="s1">
@@ -95,12 +100,12 @@ __SCENE2__
   </section>
 
   <section id="s4">
-    <div class="eyebrow">Scene 04 · Featured issue — SSL-VPN edge on Colt · SASE/ZTNA is the quick win</div>
+    <div class="eyebrow">Scene 04 · Featured issue — exposed SSL-VPN edge · SASE/ZTNA is the quick win</div>
     <h1>Six moves arrive. <span class="hl">Each layer stops its own.</span></h1>
-    <p class="sub">The headline finding in motion: {{COMPANY}}'s <b style="color:var(--ink)">remote-access edge</b> is public and sits on <b style="color:var(--ink)">Colt's own AS8220</b>. An <b style="color:var(--ink)">opportunistic ransomware affiliate</b> opens with a <b style="color:#37C8FF">volumetric DDoS</b> to flood the edge and mask the intrusion, bypasses or credential-stuffs the remote-access portal, pivots to core records and systems, deploys ransomware and exfiltrates data. <b style="color:#3AA0FF">Colt IP Guardian</b> scrubs the flood at the network edge and <b style="color:var(--teal)">SASE / ZTNA</b> retires the public gateway so there is nothing left to exploit — both on the backbone {{COMPANY}} already uses. Add each layer and watch which move it blocks.</p>
+    <p class="sub">The headline finding in motion: {{COMPANY}}'s <b style="color:var(--ink)">remote-access edge</b> is public and sits on <b style="color:var(--ink)">the customer's own ASN</b>. An <b style="color:var(--ink)">opportunistic ransomware affiliate</b> opens with a <b style="color:#37C8FF">volumetric DDoS</b> to flood the edge and mask the intrusion, bypasses or credential-stuffs the remote-access portal, pivots to core records and systems, deploys ransomware and exfiltrates data. <b style="color:#3AA0FF">Managed DDoS protection</b> scrubs the flood at the network edge and <b style="color:var(--teal)">SASE / ZTNA</b> retires the public gateway so there is nothing left to exploit — both delivered as managed services in front of the estate {{COMPANY}} already runs. Add each layer and watch which move it blocks.</p>
     <div class="controls" id="ddosCtl">
       <div class="btn active"><span class="n">1</span>Attack only</div>
-      <div class="btn"><span class="n">2</span>+ IP Guardian (DDoS)</div>
+      <div class="btn"><span class="n">2</span>+ Managed DDoS protection</div>
       <div class="btn"><span class="n">3</span>+ SASE/ZTNA &#9889; quick win</div>
       <div class="btn"><span class="n">4</span>+ NGFW segment</div>
       <div class="btn"><span class="n">5</span>+ Managed SOC</div>
@@ -123,13 +128,13 @@ __SCENE2__
       <span><i style="background:var(--violet);border-radius:2px"></i>Ransomware deploy</span>
       <span><i style="background:var(--mint);border-radius:2px"></i>Crown-jewel data exfiltration</span>
     </div>
-    <p class="caption">IP Guardian scrubs the volumetric DDoS at the network edge — always-on, no customer kit. SASE/ZTNA (quick win) retires the public VPN portal and enforces identity, so the exploit and credential paths disappear. NGFW segmentation contains lateral movement to core systems; Managed SOC detects and stops ransomware; SSE secure egress blocks C2 and exfiltration. Figures illustrative.</p>
+    <p class="caption">Managed DDoS protection scrubs the volumetric DDoS at the network edge — always-on, no customer kit. SASE/ZTNA (quick win) retires the public VPN portal and enforces identity, so the exploit and credential paths disappear. NGFW segmentation contains lateral movement to core systems; Managed SOC detects and stops ransomware; SSE secure egress blocks C2 and exfiltration. Figures illustrative.</p>
   </section>
 
   <section id="s5">
-    <div class="eyebrow">Scene 05 · Secure by Design — CISA + BSI, by Colt / S4Biz</div>
+    <div class="eyebrow">Scene 05 · Secure by Design — CISA + BSI, by Cybergod / S4Biz</div>
     <h1>From <span class="rd">exposed</span> to <span class="gr">secure by design</span>.</h1>
-    <p class="sub">The same estate, two architectures. <b style="color:var(--ink)">Before</b>: a public remote-access portal, an exposed dev/SCM host, a KEV-flagged web fleet and a look-alike domain — every path reaches the crown-jewel data and core operations. <b style="color:var(--ink)">After</b>: a Secure-by-Design architecture — the VPN portal retired behind identity-first ZTNA, core systems segmented, DDoS scrubbing and a managed edge, DMARC against brand-abuse, continuous SOC monitoring — built and operated by Colt &amp; S4Biz on the backbone they already run for {{COMPANY}}.</p>
+    <p class="sub">The same estate, two architectures. <b style="color:var(--ink)">Before</b>: a public remote-access portal, an exposed dev/SCM host, a KEV-flagged web fleet and a look-alike domain — every path reaches the crown-jewel data and core operations. <b style="color:var(--ink)">After</b>: a Secure-by-Design architecture — the VPN portal retired behind identity-first ZTNA, core systems segmented, DDoS scrubbing and a managed edge, DMARC against brand-abuse, continuous SOC monitoring — built and operated as managed services around the estate {{COMPANY}} already runs.</p>
     <div class="controls" id="sbdCtl">
       <div class="btn"><span class="n">A</span>Before</div>
       <div class="btn active"><span class="n">B</span>After — Secure by Design</div>
@@ -145,15 +150,15 @@ __SCENE2__
     </div>
     <div class="legend static">
       <span><i style="background:var(--red);border-radius:2px"></i>Reachable attack path</span>
-      <span><i style="background:var(--teal);border-radius:2px"></i>Colt SASE / ZTNA + managed edge</span>
+      <span><i style="background:var(--teal);border-radius:2px"></i>SASE / ZTNA + managed edge</span>
       <span><i style="background:var(--green);border-radius:2px"></i>Secure-by-Design control active</span>
     </div>
-    <p class="caption">Secure-by-Design (CISA &amp; BSI-aligned, delivered by Colt / S4Biz): own the security outcome, retire the public VPN portal behind ZTNA, gate the dev/SCM surface, segment core systems, DDoS-scrub on the Colt edge, enforce DMARC + patch KEV-listed CVEs, monitor continuously — designed in, not bolted on.</p>
+    <p class="caption">Secure-by-Design (CISA &amp; BSI-aligned, delivered as managed services): own the security outcome, retire the public VPN portal behind ZTNA, gate the dev/SCM surface, segment core systems, DDoS-scrub at the network edge, enforce DMARC + patch KEV-listed CVEs, monitor continuously — designed in, not bolted on.</p>
   </section>
 
   <div class="foot">
-    <span>COLT / S4BIZ · PREPARED FOR {{COMPANY_UPPER}} STIFTUNG gGMBH · ILLUSTRATIVE</span>
-    <span>FEATURED ISSUE: SSL-VPN EDGE :8443 (COLT AS8220) · FIX: COLT SASE/ZTNA + IP GUARDIAN + MANAGED SOC</span>
+    <span>CYBERGOD / S4BIZ · PREPARED FOR {{COMPANY_UPPER}} · ILLUSTRATIVE</span>
+    <span>FEATURED ISSUE: EXPOSED SSL-VPN EDGE :8443 · FIX: SASE/ZTNA + MANAGED DDOS PROTECTION + MANAGED SOC</span>
   </div>
 </div>
 
@@ -171,7 +176,7 @@ function mix(a,b,tt){const A=parseInt(a.slice(1),16),B=parseInt(b.slice(1),16);
   return "rgb("+r+","+g+","+bl+")";}
 function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
 
-/* SCENE 1 : exposed on Colt's own network */
+/* SCENE 1 : the exposed estate */
 (function(){
   const cv=document.getElementById("c1"),ctx=cv.getContext("2d");let W,H,nodes=[],t=0,started=0;
   function build(){const s=fit(cv);W=s.w;H=s.h;const cx=W*0.5,cy=H*0.5;nodes=[];
@@ -196,7 +201,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
       if(n.crit){ctx.globalAlpha=0.25*pulse;ctx.beginPath();ctx.arc(x,y,n.r*3.4*pulse,0,6.2832);ctx.fillStyle=RED;ctx.fill();}
       ctx.globalAlpha=1;}
     ctx.fillStyle="rgba(255,59,87,.85)";ctx.font="600 11px 'JetBrains Mono', monospace";ctx.textAlign="center";
-    ctx.fillText("COLT AS8220 · 0 BEHIND MANAGED EDGE",cx,cy+Math.min(W,H)*0.16+18);
+    ctx.fillText("EXPOSED ESTATE · 0 BEHIND MANAGED EDGE",cx,cy+Math.min(W,H)*0.16+18);
     requestAnimationFrame(frame);}
   requestAnimationFrame(frame);
   const obs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting&&!started){started=1;document.querySelectorAll("#s1 .stat .n").forEach(el=>{
@@ -287,7 +292,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
   const DDOSC="#37C8FF",IPG="#3AA0FF";
   const LANES=[{name:"Volumetric DDoS flood",col:DDOSC,key:"DDOS"},{name:"VPN portal bypass / cred-stuff (:8443)",col:RED,key:"VPN"},{name:"Lateral → core systems",col:ORANGE,key:"LAT"},
     {name:"Credential / session theft",col:AMBER,key:"CRED"},{name:"Ransomware deploy",col:VIOLET,key:"RANSOM"},{name:"Data exfiltration",col:MINT,key:"EXFIL"}];
-  const WALLS=[{name:"IP GUARDIAN",sub:"always-on DDoS scrub · no CPE",col:IPG,fx:0.30,blocks:{DDOS:0.99}},
+  const WALLS=[{name:"MANAGED DDoS",sub:"always-on DDoS scrub · no CPE",col:IPG,fx:0.30,blocks:{DDOS:0.99}},
     {name:"SASE · ZTNA",sub:"retire gateway · identity-first · quick win",col:TEAL,fx:0.42,blocks:{VPN:0.99,CRED:0.92}},
     {name:"NGFW SEGMENT",sub:"contain · core systems",col:VIOLET,fx:0.54,blocks:{LAT:0.96}},
     {name:"MANAGED SOC",sub:"detect · respond 24×7",col:AMBER,fx:0.66,blocks:{RANSOM:0.8}},
@@ -360,7 +365,7 @@ function qbez(a,c,b,t){const u=1-t;return u*u*a+2*u*t*c+t*t*b;}
       grd.addColorStop(0,"rgba(0,0,0,0)");grd.addColorStop(.5,"rgba(0,215,189,"+(0.18*a)+")");grd.addColorStop(1,"rgba(0,0,0,0)");
       ctx.fillStyle=grd;ctx.fillRect(shieldX-18,46,36,H-96);
       ctx.strokeStyle="rgba(0,215,189,"+(0.35+0.5*a)+")";ctx.lineWidth=2.4;ctx.beginPath();ctx.moveTo(shieldX,48);ctx.lineTo(shieldX,H-50);ctx.stroke();
-      ctx.fillStyle="rgba(0,215,189,"+a+")";ctx.font="700 11px 'JetBrains Mono',monospace";ctx.textAlign="center";ctx.fillText("COLT SASE/ZTNA + SOC",shieldX,36);}
+      ctx.fillStyle="rgba(0,215,189,"+a+")";ctx.font="700 11px 'JetBrains Mono',monospace";ctx.textAlign="center";ctx.fillText("SASE/ZTNA + MANAGED SOC",shieldX,36);}
     const sg=ctx.createRadialGradient(sx,sy,2,sx,sy,32);sg.addColorStop(0,"rgba(255,59,87,.45)");sg.addColorStop(1,"rgba(255,59,87,0)");
     ctx.fillStyle=sg;ctx.beginPath();ctx.arc(sx,sy,32,0,6.283);ctx.fill();
     ctx.fillStyle=RED;ctx.beginPath();ctx.arc(sx,sy,8,0,6.283);ctx.fill();

@@ -13,10 +13,20 @@ Model: $GEOPOL_HTML_MODEL, else the first of enrich._chain() (Gemma head). The L
 two bespoke scenes as small JSON; the exact CSS + canvas animations + defense scenes are fixed in
 the shell, so a weak model can never break the layout. Deterministic fallback if the model fails, so
 this NEVER blocks the run.
+
+LANGUAGE ($DECK_LANG, set by run_assessment.py):
+  · the AUTHORED scenes get enrich.lang_block(lang) appended to the prompt — the ONE registry, so a
+    new language never means a new `if de/ru` here;
+  · the DETERMINISTIC fallback reads its strings from geopol_html/i18n/<lang>.json, because a model
+    outage must not silently ship English scenes into a Russian report — the safety net has to be
+    correct in the same language as the thing it is standing in for;
+  · the fixed shell is localised by build_geopol_html.js from the SAME dictionary file.
+English keeps the literals inline, so an English run is byte-for-byte what it was.
 """
 import argparse, json, os, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+LANG = (os.environ.get("DECK_LANG") or "en").strip().lower()[:2] or "en"
 
 
 def _load(p):
@@ -26,13 +36,34 @@ def _load(p):
         return {}
 
 
-PROMPT = """You are a Colt cyber pre-sales analyst writing the two opening scenes of an animated
+def _pack(lang):
+    """The skeleton dictionary for `lang` ({} for English or a language with no file)."""
+    if not lang or lang == "en":
+        return {}
+    p = os.path.join(HERE, "geopol_html", "i18n", lang + ".json")
+    if not os.path.exists(p):
+        print("[geopol-html] no i18n/%s.json — falling back to English content" % lang, file=sys.stderr)
+        return {}
+    return _load(p)
+
+
+_FALLBACK = (_pack(LANG).get("fallback") or {})
+
+
+def _t(key, english):
+    """Deterministic-fallback string. The ENGLISH text stays here as the default, so the English
+    path never depends on a dictionary existing and cannot drift from what it rendered before."""
+    v = _FALLBACK.get(key)
+    return v if isinstance(v, str) and v else english
+
+
+PROMPT = """You are a cyber pre-sales analyst writing the two opening scenes of an animated
 GEOPOL threat report for %(company)s. Return ONLY strict JSON, no prose, no markdown.
 
 Use the REAL data below. Never invent hosts, IPs, CVEs, ASNs or breaches that are not present.
 Inline emphasis tokens allowed in h1/sub/caption: {hl}teal highlight{/hl}, {ink}bright bold{/ink},
 {red}red bold{/red}, {amber}amber bold{/amber}. Keep each sub to 2-4 sentences, dense and specific
-(name the exact exposed host/port and ASN). British English.
+(name the exact exposed host/port and ASN).%(lang_note)s
 
 Return this exact shape:
 {
@@ -93,14 +124,14 @@ def deterministic(fj, gj, company):
     top = fnd[0] if fnd else {}
     ev0 = (top.get("evidence") or [""])[0]
     crit_high = [f for f in fnd if str(f.get("sev", "")).upper() in ("CRITICAL", "HIGH")]
-    cap1 = "Findings: " + " · ".join(
+    cap1 = _t("scene1.caption.prefix", "Findings: ") + " · ".join(
         ("%s — %s" % ((f.get("evidence") or [""])[0], f.get("title", "")))[:70] for f in crit_high[:3]) if crit_high else \
-        "A small, contained internet-facing estate."
+        _t("scene1.caption.empty", "A small, contained internet-facing estate.")
     actors = gj.get("actors") or []
-    leg2 = [{"c": c, "t": (a.get("title") or a.get("sponsor") or "Threat actor")}
+    leg2 = [{"c": c, "t": (a.get("title") or a.get("sponsor") or _t("Threat actor", "Threat actor"))}
             for c, a in zip(("teal", "violet", "orange"), actors[:3])]
     if crit_high:
-        leg2.append({"c": "red", "t": (crit_high[0].get("title") or "Priority finding")[:44]})
+        leg2.append({"c": "red", "t": (crit_high[0].get("title") or _t("Priority finding", "Priority finding"))[:44]})
     # scene-3 EXPOSURES come straight from the real findings (host:port — title), so the vectors map
     # shows the target's actual estate, never a template's. vectors/impacts are exposure-class generic.
     exposures = []
@@ -110,39 +141,58 @@ def deterministic(fj, gj, company):
         exposures.append((host + " — " + (f.get("title") or "")).strip(" —")[:34] or (f.get("title") or "")[:34])
     actor_defs = []
     for c, a in zip(("violet", "amber", "teal", "red", "orange", "mint"), actors[:6]):
-        actor_defs.append({"name": (a.get("title") or a.get("sponsor") or "Threat actor")[:22],
+        actor_defs.append({"name": (a.get("title") or a.get("sponsor") or _t("Threat actor", "Threat actor"))[:22],
                            "c": c, "method": (a.get("eyebrow") or a.get("band") or "")[:26]})
+    # The h1/sub are %-format TEMPLATES, not concatenations, so a language whose word order differs
+    # (Russian puts the company after the noun) can restate the whole sentence in the dictionary.
+    # Named placeholders, never positional: a translator must be free to reorder them.
+    fmt = {"company": company, "n": len(crit_high), "hosts": hosts, "asns": asns, "ev": ev0}
     return {
         "company": company,
         "scene3": {
-            "vectors": [{"t": "Volumetric DDoS", "c": "teal"}, {"t": "Remote-access exploit", "c": "red"},
-                        {"t": "Credential stuffing", "c": "amber"}, {"t": "Web-app exploit", "c": "orange"},
-                        {"t": "Ransomware deploy", "c": "violet"}, {"t": "Data exfiltration", "c": "mint"}],
+            "vectors": [{"t": _t("Volumetric DDoS", "Volumetric DDoS"), "c": "teal"},
+                        {"t": _t("Remote-access exploit", "Remote-access exploit"), "c": "red"},
+                        {"t": _t("Credential stuffing", "Credential stuffing"), "c": "amber"},
+                        {"t": _t("Web-app exploit", "Web-app exploit"), "c": "orange"},
+                        {"t": _t("Ransomware deploy", "Ransomware deploy"), "c": "violet"},
+                        {"t": _t("Data exfiltration", "Data exfiltration"), "c": "mint"}],
             "exposures": exposures,
-            "impacts": ["Customer / user PII", "Core service delivery", "Operational continuity",
-                        "Credentials & secrets", "Brand & trust"],
+            "impacts": [_t("Customer / user PII", "Customer / user PII"),
+                        _t("Core service delivery", "Core service delivery"),
+                        _t("Operational continuity", "Operational continuity"),
+                        _t("Credentials & secrets", "Credentials & secrets"),
+                        _t("Brand & trust", "Brand & trust")],
         },
         "scene1": {
-            "h1": "%s's %sexposed estate." % (company, "{hl}" + str(len(crit_high)) + " priority{/hl} " if crit_high else ""),
-            "sub": ("%s has {ink}%s internet-facing host(s){/ink} across {ink}%s hosting ASN(s){/ink}. "
-                    "The priority exposure is {red}%s{/red}." % (company, hosts, asns, ev0)) if ev0 else
-                   ("%s presents {ink}%s internet-facing host(s){/ink} across {ink}%s ASN(s){/ink}." % (company, hosts, asns)),
-            "stats": [{"n": str(hosts), "l": "Verified exposed hosts"},
-                      {"n": str(asns), "l": "Hosting ASNs"},
-                      {"n": str(len(crit_high)), "l": "Priority findings", "bad": True},
-                      {"n": "0", "l": "Behind managed edge", "bad": True}],
-            "legend": [{"c": "teal", "t": "Owned / backbone"}, {"c": "amber", "t": "Shared hosting"},
-                       {"c": "red", "t": "Priority finding"}, {"c": "faint", "t": "Behind managed edge (0)"}],
+            "h1": (_t("scene1.h1.priority", "%(company)s's {hl}%(n)s priority{/hl} exposed estate.") if crit_high
+                   else _t("scene1.h1.plain", "%(company)s's exposed estate.")) % fmt,
+            "sub": (_t("scene1.sub.priority",
+                       "%(company)s has {ink}%(hosts)s internet-facing host(s){/ink} across "
+                       "{ink}%(asns)s hosting ASN(s){/ink}. The priority exposure is {red}%(ev)s{/red}.") if ev0
+                    else _t("scene1.sub.plain",
+                            "%(company)s presents {ink}%(hosts)s internet-facing host(s){/ink} across "
+                            "{ink}%(asns)s ASN(s){/ink}.")) % fmt,
+            "stats": [{"n": str(hosts), "l": _t("Verified exposed hosts", "Verified exposed hosts")},
+                      {"n": str(asns), "l": _t("Hosting ASNs", "Hosting ASNs")},
+                      {"n": str(len(crit_high)), "l": _t("Priority findings", "Priority findings"), "bad": True},
+                      {"n": "0", "l": _t("Behind managed edge", "Behind managed edge"), "bad": True}],
+            "legend": [{"c": "teal", "t": _t("Owned / backbone", "Owned / backbone")},
+                       {"c": "amber", "t": _t("Shared hosting", "Shared hosting")},
+                       {"c": "red", "t": _t("Priority finding", "Priority finding")},
+                       {"c": "faint", "t": _t("Behind managed edge (0)", "Behind managed edge (0)")}],
             "caption": cap1,
         },
         "scene2": {
-            "h1": (gj.get("verdict") or "The threat picture, {hl}named{/hl}.")[:70],
+            "h1": (gj.get("verdict") or _t("scene2.h1.default", "The threat picture, {hl}named{/hl}."))[:70],
             "sub": (gj.get("sectorContext") or gj.get("verdict") or
-                    "%s faces the threat set typical of its sector and exposure." % company)[:420],
-            "legend": leg2 or [{"c": "violet", "t": "Opportunistic ransomware"}],
+                    _t("scene2.sub.default",
+                       "%(company)s faces the threat set typical of its sector and exposure.") % fmt)[:420],
+            "legend": leg2 or [{"c": "violet", "t": _t("Opportunistic ransomware", "Opportunistic ransomware")}],
             "actors": actor_defs,            # drives the c2 threat-actor animation (real GEOPOL actors)
             "caption": ((gj.get("cbiqBridge") or [{}])[0].get("note")
-                        or "Most likely: opportunistic intrusion via the exposed edge. Break it cheapest with ZTNA."),
+                        or _t("scene2.caption.default",
+                              "Most likely: opportunistic intrusion via the exposed edge. "
+                              "Break it cheapest with ZTNA.")),
         },
     }
 
@@ -153,6 +203,10 @@ def author(fj, gj, company):
     try:
         sys.path.insert(0, HERE)
         import enrich as E
+        # ONE language registry (enrich.LANG_BLOCKS), never a local `if de/ru`. English keeps the
+        # historic "British English." note; any other language gets the same prompt block the decks
+        # use, so the animated report and the four decks speak with one voice.
+        block = E.lang_block(LANG)
         prompt = PROMPT % {
             "company": company,
             "scope": (fj.get("target") or {}).get("scope", ""),
@@ -161,7 +215,10 @@ def author(fj, gj, company):
             "verdict": gj.get("verdict", ""),
             "actors": _slim_actors(gj),
             "sector": gj.get("sectorContext", ""),
+            "lang_note": "" if block else " British English.",
         }
+        # appended AFTER the %-format so a future block containing a literal % can never blow up
+        prompt = prompt + block
         model = os.environ.get("GEOPOL_HTML_MODEL") or (E._chain() or ["gemma-4-31B-it"])[0]
         txt, usage = E._call(prompt, model=model, timeout=int(os.environ.get("GEOPOL_HTML_TIMEOUT", "120")))
         j = E._json(txt)

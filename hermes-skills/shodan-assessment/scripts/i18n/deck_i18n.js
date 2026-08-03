@@ -21,14 +21,23 @@
 const fs = require("fs");
 const path = require("path");
 
-const LANG = /^de/i.test(process.env.DECK_LANG || "en") ? "de" : "en";
+// LANGUAGE IS DATA, NOT A BRANCH. This used to be `/^de/i.test(...) ? "de" : "en"`, so adding a
+// third deck language meant editing this line, the PACK line, LOCALE, money() and dfmt() — five
+// places that could disagree. Now the 2-letter code selects `<code>.json`, and the pack itself
+// carries its locale, units and date format. Adding a language = adding a file.
+const LANG = (function () {
+  const want = String(process.env.DECK_LANG || "en").toLowerCase().slice(0, 2);
+  if (!want || want === "en") return "en";
+  // A language we have no dictionary for must fall back to English, never render half-translated.
+  return fs.existsSync(path.join(__dirname, want + ".json")) ? want : "en";
+})();
 const AUDIT = !!process.env.DECK_I18N_AUDIT;
 
 function _load(f) {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, f), "utf8")); }
   catch (e) { if (LANG !== "en") console.error("[i18n] could not load " + f + ": " + e.message); return {}; }
 }
-const PACK = LANG === "de" ? _load("de.json") : {};
+const PACK = LANG === "en" ? {} : _load(LANG + ".json");
 const STRINGS = PACK.strings || {};
 // UPPERCASE index: builders frequently render `foo.toUpperCase()`, so "unique IPs" must also
 // resolve for the rendered key "UNIQUE IPS" without duplicating every entry in the dictionary.
@@ -186,7 +195,9 @@ function install(pptx) {
 /* ------------------------------------------------------- locale-aware helpers
    (builders call these directly — a wrapper cannot fix numbers already baked
    into a string by the time it reaches addText) */
-const LOCALE = LANG === "de" ? "de-DE" : "en-US";
+// The pack states its own locale (de.json -> "de-DE", ru.json -> "ru-RU"). Falling back to
+// `<lang>-<LANG>` is right for every language we ship and never worse than guessing en-US.
+const LOCALE = LANG === "en" ? "en-US" : (PACK.locale || (LANG + "-" + LANG.toUpperCase()));
 function nfmt(n, dec) {
   const v = Number(n || 0);
   return v.toLocaleString(LOCALE, dec !== undefined ? { minimumFractionDigits: dec, maximumFractionDigits: dec } : undefined);
@@ -194,10 +205,13 @@ function nfmt(n, dec) {
 /** Compact money: 1.2M -> "1,2 Mio." (de) / "1.2M" (en). `sym` is prefixed if given. */
 function money(v, sym) {
   const n = Number(v || 0), a = Math.abs(n), s = sym || "";
+  // Units come from the pack. English is the only hardcoded fallback — a language without a
+  // `units` block renders English suffixes on translated prose, which is visibly wrong and
+  // therefore gets noticed, rather than silently rendering German ones.
   const U = PACK.units || {};
-  const bn = U.bn !== undefined ? U.bn : (LANG === "de" ? " Mrd." : "bn");
-  const mm = U.M !== undefined ? U.M : (LANG === "de" ? " Mio." : "M");
-  const k = U.k !== undefined ? U.k : (LANG === "de" ? " Tsd." : "k");
+  const bn = U.bn !== undefined ? U.bn : "bn";
+  const mm = U.M !== undefined ? U.M : "M";
+  const k = U.k !== undefined ? U.k : "k";
   const f = (x, d) => nfmt(x, d);
   if (a >= 1e9) return s + f(n / 1e9, 1) + bn;
   if (a >= 1e6) return s + f(n / 1e6, 1) + mm;
@@ -206,7 +220,9 @@ function money(v, sym) {
 }
 function dfmt(d) {
   const dt = d ? new Date(d) : new Date();
-  if (LANG === "de") {
+  // `dateFormat` is declared by the pack ("dmy" -> 31.12.2026, anything else -> ISO). German and
+  // Russian both use dd.mm.yyyy; stating it in the dictionary keeps the rule with the language.
+  if (PACK.dateFormat === "dmy") {
     const p = n => String(n).padStart(2, "0");
     return p(dt.getDate()) + "." + p(dt.getMonth() + 1) + "." + dt.getFullYear();
   }

@@ -27,7 +27,7 @@
 //     Each half is written so the JOIN is grammatical (case + gender agreement), which is why the
 //     word order does not always mirror the English.
 export const keyed = {
-  "assess.docLangNote": "Dokumenty są dostępne w języku angielskim i niemieckim. Język interfejsu nie należy do tej grupy, więc dokumenty powstaną po angielsku.",
+  "assess.docLangNote": "Dokumenty powstają w języku wybranym powyżej. Języka interfejsu nie ma na tej liście, więc domyślnie używany jest angielski.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "samoobs\u0142ugowo.",
   "login.lede": "Jedna nazwa na wej\u015bciu, pe\u0142na analiza powierzchni ataku na wyj\u015bciu. Ten sam silnik, kt\u00f3ry stoi za botami Telegrama \u2014 teraz w przegl\u0105darce, dla ka\u017cdego handlowca.",
@@ -80,7 +80,7 @@ export const keyed = {
   "demo.s3h": "Dowodzi, co do kogo należy",
   "demo.s3b": "Trudne jest nie znalezienie hostów — trudne jest ustalenie, które naprawdę należą do firmy. Każdy zasób jest oceniany na podstawie niezależnych dowodów (opublikowana struktura grupy, certyfikaty, właściciel rejestrowy dla poszczególnych adresów IP), a powody są zapisywane, więc sporny host da się wyjaśnić, zamiast o niego spierać.",
   "demo.s4h": "Pisze dokumenty dla zarządu",
-  "demo.s4b": "Cztery prezentacje i animowany raport, po angielsku lub po niemiecku (Hochdeutsch): co jest wystawione, ile kosztowałoby to w euro, kto realnie mógłby po to sięgnąć i która usługa domyka każdą lukę. Około trzech minut od początku do końca.",
+  "demo.s4b": "Cztery prezentacje i animowany raport (Hochdeutsch): co jest wystawione, ile kosztowałoby to w euro, kto realnie mógłby po to sięgnąć i która usługa domyka każdą lukę. Około trzech minut od początku do końca.",
   "demo.deckH": "Produkty końcowe — do pobrania",
   "demo.deckLead": "To są prawdziwe pliki, wygenerowane dla fikcyjnego Trojan Empire. Otwórz je; dokładnie to trafia do Twojej skrzynki przy prawdziwym celu.",
   "demo.deckWait": "Trwa przygotowywanie materiałów demonstracyjnych…",
@@ -176,7 +176,7 @@ export const keyed = {
 
   // ---- New assessment ----------------------------------------------------------------------------
   "assess.h1": "Nowa analiza",
-  "assess.sub": "Jedno pole: nazwa firmy albo domena. Silnik sam ustala całą powierzchnię internetową, przeczesuje Shodan i pisze cztery prezentacje dla zarządu — po angielsku lub po niemiecku (Hochdeutsch). Żadnych adresów IP, ASN-ów ani certyfikatów do wpisywania.",
+  "assess.sub": "Jedno pole: nazwa firmy albo domena. Silnik sam ustala całą powierzchnię internetową, przeczesuje Shodan i pisze cztery prezentacje dla zarządu. Żadnych adresów IP, ASN-ów ani certyfikatów do wpisywania.",
   "assess.company": "Nazwa firmy",
   "assess.companyPh": "np. Volkswagen AG",
   "assess.docLang": "Język dokumentów",
@@ -215,7 +215,7 @@ export const keyed = {
   "comp.sub.a": "Jedno pole: nazwa firmy. Silnik ocenia ekspozycję na ",
   "comp.sub.b": ", ",
   "comp.sub.c": " i ",
-  "comp.sub.d": " — zastosowanie, obowiązki, luki, terminy i ryzyko kary pieniężnej — i pisze trzy prezentacje reżimowe, prezentację z mapą drogową i animowany raport, po angielsku lub po niemiecku (Hochdeutsch). Zakres wnioskuje z samej nazwy; potwierdzasz go później.",
+  "comp.sub.d": " — zastosowanie, obowiązki, luki, terminy i ryzyko kary pieniężnej — i pisze trzy prezentacje reżimowe, prezentację z mapą drogową i animowany raport. Zakres wnioskuje z samej nazwy; potwierdzasz go później.",
   "comp.company": "Nazwa firmy",
   "comp.companyPh": "np. Siemens Healthineers AG",
   "comp.docLang": "Język dokumentów",
@@ -288,7 +288,7 @@ export const byEn = {
   "<code>pptxgenjs</code> templates lock layout; numbers stay deterministic": "Szablony <code>pptxgenjs</code> utrwalają układ; liczby pozostają deterministyczne",
   "<code>python ship.py</code>: test to commit to push to deploy to VERIFY": "<code>python ship.py</code>: test → commit → push → wdrożenie → WERYFIKACJA",
   "<code>python-telegram-bot</code>, one per bot, in Docker": "<code>python-telegram-bot</code>, po jednym na bota, w Dockerze",
-  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen - in English or Hochdeutsch.": "Łańcuch modeli AI pisze tekst; stałe szablony gwarantują strukturę i obliczenia. Otrzymujesz <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> oraz <b>animowany raport na żywo</b> do pokazania na ekranie — po angielsku lub po niemiecku (Hochdeutsch).",
+  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen.": "Łańcuch modeli AI pisze tekst; stałe szablony gwarantują strukturę i obliczenia. Otrzymujesz <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> oraz <b>animowany raport na żywo</b> do pokazania na ekranie.",
   "A findings spreadsheet with no price attached to anything": "Arkusz z ustaleniami, w którym nic nie ma ceny",
   "A number the board can actually make a decision on": "Liczba, na podstawie której zarząd naprawdę może zdecydować",
   "A real approved email address + the shared password ": "Prawdziwy zatwierdzony adres e-mail + wspólne hasło ",

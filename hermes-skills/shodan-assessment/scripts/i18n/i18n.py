@@ -16,23 +16,37 @@ Unknown strings are returned untouched (English), never dropped.
 import json, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-_PACK, _PATTERNS = None, None
+# CACHED PER LANGUAGE. The cache used to be two module globals that ignored `lang` entirely, so the
+# FIRST language loaded in a process won for every later call — harmless while only German existed,
+# a silent cross-language bug the moment a second pack shipped.
+_PACKS, _PATS = {}, {}
 
 def _pack(lang):
-    global _PACK, _PATTERNS
-    if _PACK is None:
+    lang = _code(lang)
+    if lang not in _PACKS:
         try:
-            _PACK = json.load(open(os.path.join(HERE, "%s.json" % lang), encoding="utf-8"))
+            _PACKS[lang] = json.load(open(os.path.join(HERE, "%s.json" % lang), encoding="utf-8"))
         except Exception:
-            _PACK = {"strings": {}, "patterns": []}
-        _PATTERNS = [(re.compile(p), r) for p, r in _PACK.get("patterns", [])]
-    return _PACK
+            _PACKS[lang] = {"strings": {}, "patterns": []}
+        _PATS[lang] = [(re.compile(p), r) for p, r in _PACKS[lang].get("patterns", [])]
+    return _PACKS[lang]
+
+
+def _code(lang):
+    """2-letter code. Anything without a dictionary on disk resolves to English."""
+    c = str(lang or "en").strip().lower()[:2]
+    if c == "en" or not c:
+        return "en"
+    return c if os.path.exists(os.path.join(HERE, "%s.json" % c)) else "en"
 
 def t(s, lang="de"):
-    """Translate one string; passthrough if unknown."""
-    if not isinstance(s, str) or not s.strip() or not str(lang).lower().startswith("de"):
+    """Translate one string; passthrough if unknown or if there is no pack for `lang`."""
+    if not isinstance(s, str) or not s.strip():
         return s
-    P = _pack("de"); S = P.get("strings", {})
+    code = _code(lang)
+    if code == "en":
+        return s
+    P = _pack(code); S = P.get("strings", {})
     core = s.strip()
     if core in S:
         return s.replace(core, S[core])
@@ -41,7 +55,7 @@ def t(s, lang="de"):
         for k, v in S.items():
             if k.upper() == up:
                 return s.replace(core, v.upper())
-    for rx, rep in _PATTERNS:
+    for rx, rep in _PATS.get(code, ()):
         if rx.search(core):
             # JS-style $1 backrefs in the shared dictionary -> python \1
             return s.replace(core, rx.sub(re.sub(r"\$(\d)", r"\\\1", rep), core))
@@ -66,7 +80,7 @@ _SKIP_KEYS = {
 
 def translate_json(obj, lang="de", _key=None):
     """Deep-translate a findings/cbiq/geopol structure in place-safe fashion."""
-    if not str(lang).lower().startswith("de"):
+    if _code(lang) == "en":
         return obj
     if isinstance(obj, dict):
         return {k: (v if k in _SKIP_KEYS else translate_json(v, lang, k)) for k, v in obj.items()}
@@ -77,7 +91,7 @@ def translate_json(obj, lang="de", _key=None):
     return obj
 
 def translate_file(path, lang="de"):
-    if not str(lang).lower().startswith("de") or not os.path.exists(path):
+    if _code(lang) == "en" or not os.path.exists(path):
         return False
     try:
         j = json.load(open(path, encoding="utf-8"))

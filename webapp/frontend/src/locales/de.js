@@ -5,7 +5,7 @@
 // `keyed` maps dotted keys (see locales/en.js). `byEn` maps the English sentence to its German.
 // Anything missing falls back to English. Never translate NIS2 / CRA / DORA / EU AI Act.
 export const keyed = {
-  "assess.docLangNote": "Die Dokumente sind auf Englisch und Deutsch verfügbar. Ihre Oberflächensprache gehört nicht dazu; die Dokumente werden daher auf Englisch erstellt.",
+  "assess.docLangNote": "Die Dokumente werden in der oben gewählten Sprache erstellt. Ihre Oberflächensprache gehört nicht dazu; standardmäßig wird Englisch verwendet.",
   "login.h1a": "Cyber-Pre-Sales,",
   "login.h1b": "in Eigenregie.",
   "login.lede": "Ein Name hinein, eine vollst\u00e4ndige Analyse der Angriffsfl\u00e4che heraus. Dieselbe Engine wie hinter den Telegram-Bots \u2014 jetzt im Web, f\u00fcr jeden im Vertrieb.",
@@ -54,7 +54,7 @@ export const keyed = {
   "demo.s3h": "Sie belegt, wem was gehört",
   "demo.s3b": "Das Schwierige ist nicht, Hosts zu finden — sondern zu wissen, welche wirklich dem Unternehmen gehören. Jedes Asset wird anhand unabhängiger Belege bewertet (veröffentlichte Konzernstruktur, Zertifikate, Registry-Eigentümer je IP), und die Gründe werden protokolliert. So lässt sich ein strittiger Host erklären statt bestreiten.",
   "demo.s4h": "Sie schreibt die Vorstandsunterlagen",
-  "demo.s4b": "Vier Präsentationen und ein animierter Bericht, auf Englisch oder in Hochdeutsch: was exponiert ist, was es in Euro kosten würde, wer es plausibel angreifen würde und welcher Service die jeweilige Lücke schließt. Rund drei Minuten von Anfang bis Ende.",
+  "demo.s4b": "Vier Präsentationen und ein animierter Bericht: was exponiert ist, was es in Euro kosten würde, wer es plausibel angreifen würde und welcher Service die jeweilige Lücke schließt. Rund drei Minuten von Anfang bis Ende.",
   "demo.deckH": "Die Ergebnisse — zum Herunterladen",
   "demo.deckLead": "Dies sind die echten Dateien, erzeugt für das fiktive Trojan Empire. Öffnen Sie sie: Genau das landet bei einem echten Ziel in Ihrem Postfach.",
   "demo.deckWait": "Demonstrationsartefakte werden vorbereitet…",
@@ -134,7 +134,7 @@ export const keyed = {
 
   // ---- Analyse (Neue Analyse) ----------------------------------------------------------------
   "assess.h1": "Neue Analyse",
-  "assess.sub": "Eine Eingabe: ein Firmenname oder eine Domain. Die Engine ermittelt die gesamte Angriffsfl\u00e4che, durchsucht Shodan und schreibt die vier Vorstandspr\u00e4sentationen \u2014 auf Englisch oder in Hochdeutsch. Keine IPs, ASNs oder Zertifikate einzugeben.",
+  "assess.sub": "Eine Eingabe: ein Firmenname oder eine Domain. Die Engine ermittelt die gesamte Angriffsfl\u00e4che, durchsucht Shodan und schreibt die vier Vorstandspr\u00e4sentationen. Keine IPs, ASNs oder Zertifikate einzugeben.",
   "assess.company": "Firmenname",
   "assess.companyPh": "z. B. Volkswagen AG",
   "assess.docLang": "Dokumentsprache",
@@ -172,7 +172,7 @@ export const keyed = {
   "comp.sub.a": "Eine Eingabe: ein Firmenname. Die Engine bewertet die Betroffenheit durch ",
   "comp.sub.b": ", den ",
   "comp.sub.c": " und den ",
-  "comp.sub.d": " \u2014 Anwendbarkeit, Pflichten, L\u00fccken, Fristen und Bu\u00dfgeldrisiko \u2014 und schreibt drei Regime-Pr\u00e4sentationen, eine Roadmap-Pr\u00e4sentation und einen animierten Bericht, auf Englisch oder in Hochdeutsch. Den Umfang leitet sie aus dem Namen ab; Sie best\u00e4tigen ihn anschlie\u00dfend.",
+  "comp.sub.d": " \u2014 Anwendbarkeit, Pflichten, L\u00fccken, Fristen und Bu\u00dfgeldrisiko \u2014 und schreibt drei Regime-Pr\u00e4sentationen, eine Roadmap-Pr\u00e4sentation und einen animierten Bericht. Den Umfang leitet sie aus dem Namen ab; Sie best\u00e4tigen ihn anschlie\u00dfend.",
   "comp.company": "Firmenname",
   "comp.companyPh": "z. B. Siemens Healthineers AG",
   "comp.docLang": "Dokumentsprache",
@@ -305,8 +305,8 @@ export const byEn = {
     "Allein aus dem Namen ermittelt die Engine <b>Netze, Domains und Zertifikate</b> des Unternehmens — dann sucht, bewertet und schreibt sie. Sie übergeben nie eine IP-Adresse.",
   "It queries Shodan for exposed remote-access, databases, VPNs, mail, industrial gear and known-vulnerable systems - plus the killer pivot: the company's own private CA and whois-org, which reveal the hidden estate.":
     "Sie durchsucht Shodan nach exponierten Fernzugängen, Datenbanken, VPNs, Mailservern, Industriesteuerungen und bekannt verwundbaren Systemen — und nutzt den entscheidenden Hebel: die eigene private CA und die Whois-Organisation, die den verborgenen Teil der Infrastruktur offenlegen.",
-  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen - in English or Hochdeutsch.":
-    "Eine Kette von KI-Modellen formuliert den Text; feste Vorlagen sichern Struktur und Berechnung. Sie erhalten <b>Befunde / C-BIQ (EUR) / GEOPOL / DELTAS</b> sowie einen <b>animierten Live-Bericht</b> für die Präsentation — auf Englisch oder in Hochdeutsch.",
+  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen.":
+    "Eine Kette von KI-Modellen formuliert den Text; feste Vorlagen sichern Struktur und Berechnung. Sie erhalten <b>Befunde / C-BIQ (EUR) / GEOPOL / DELTAS</b> sowie einen <b>animierten Live-Bericht</b> für die Präsentation.",
   "Before you ever see the decks, a <b>different model from a different vendor</b> re-reads every finding and challenges anything that looks like it isn't really theirs. A model is never allowed to mark its own homework.":
     "Bevor Sie die Unterlagen überhaupt sehen, liest ein <b>anderes Modell eines anderen Anbieters</b> jeden Befund erneut und hinterfragt alles, was nicht wirklich zum Unternehmen gehört. Kein Modell darf seine eigene Arbeit benoten.",
   "The decks land <b>first</b>. Then the engine tells you what it could not resolve - which related domains are yours, your netblocks if you sit behind a CDN, anything in the report that isn't yours - you answer, and it re-scopes and rebuilds.":

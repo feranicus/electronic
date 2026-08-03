@@ -35,21 +35,44 @@ NAMES = {
     "fr": "Français",
     "es": "Español",
     "pl": "Polski",
+    "ru": "Русский",
 }
 
 # English is the source language of every builder — it needs no dictionary and is always available.
 BASE = "en"
 
 
+def _has_prose_block(code: str) -> bool:
+    """Does enrich.py carry a LANG_* instruction for this code?
+
+    A dictionary translates deck CHROME. The per-company PROSE — exec_summary, why, remediation
+    bodies, the loss scenario — is written fresh by a model for every customer, so no dictionary can
+    ever reach it. Shipping `<code>.json` alone would produce a deck with translated labels wrapped
+    around English paragraphs, which is worse than an honest English deck. Read enrich.py's registry
+    as TEXT rather than importing it: this module is imported by the web app to answer a capability
+    question, and importing enrich pulls in the API key handling for no reason.
+    """
+    try:
+        with open(os.path.join(HERE, "enrich.py"), encoding="utf-8") as fh:
+            src = fh.read()
+    except OSError:
+        return False
+    return ('"%s":' % code) in src.split("LANG_BLOCKS", 1)[-1][:400]
+
+
 def doc_langs() -> list[str]:
-    """Languages the deck builders can genuinely render, English first."""
+    """Languages the deck builders can genuinely render, English first.
+
+    A language counts only when BOTH halves exist — the chrome dictionary AND the prose prompt.
+    Fail-closed: half a language is not a language.
+    """
     out = [BASE]
     try:
         for f in sorted(os.listdir(I18N_DIR)):
             if not f.endswith(".json"):
                 continue
             code = f[:-5]
-            if code != BASE and code not in out:
+            if code != BASE and code not in out and _has_prose_block(code):
                 out.append(code)
     except OSError:
         pass                                  # no dictionaries readable -> English only, never a crash

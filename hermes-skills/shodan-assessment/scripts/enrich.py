@@ -242,6 +242,43 @@ Die JSON-SCHLUESSEL bleiben unveraendert englisch — nur die WERTE sind deutsch
 Fakten, Zahlen, IDs und Nachweise bleiben unveraendert.
 """
 
+LANG_RU = """
+=== ЯЗЫК / LANGUAGE — ОБЯЗАТЕЛЬНО ===
+Пиши ВЕСЬ связный текст ИСКЛЮЧИТЕЛЬНО на русском языке (деловой регистр для CISO/CFO, обращение
+на «вы», без канцелярита и без разговорных оборотов). Это относится к КАЖДОМУ значению полей:
+exec_summary, what, why, rem, strengths, colt_mitigation, realComparable, lossScenario,
+geopol_context, qa_note.
+Переводи и профессиональную терминологию:
+  ALE -> ожидаемые годовые потери (ОГП) · PML -> вероятный максимальный ущерб (ВМУ)
+  LEF -> частота событий ущерба (ЧСУ) · TEF -> частота угрожающих событий (ЧУС)
+  Loss Magnitude -> величина ущерба (ВУ) · Cost of Delay -> цена промедления (ЦП)
+  ROSI -> рентабельность инвестиций в безопасность (РИБ) · Kill Chain -> цепочка атаки
+  finding -> находка · exposure -> экспозиция · remediation -> устранение
+  attack surface -> поверхность атаки · asset -> актив · threat actor -> субъект угрозы
+НЕ переводить (имена собственные и идентификаторы): категории услуг (SASE, ZTNA, WAF, Managed
+Firewall, IP Guardian, DPI/NDR, SD-WAN), названия методологий и стандартов (FAIR, MITRE ATT&CK,
+NIST, BSI, ISO, TISAX, NIS2, DORA, Admiralty, Monte-Carlo, Shodan, CISA KEV, EPSS, CVSS),
+идентификаторы CVE, имена хостов, IP-адреса, порты, названия протоколов (RDP, Telnet, TLS, VPN)
+и названия компаний.
+КЛЮЧИ JSON остаются английскими без изменений — на русском только ЗНАЧЕНИЯ.
+Факты, числа, идентификаторы и доказательства остаются без изменений.
+"""
+
+# THE LANGUAGE REGISTRY. `LANG_DE if lang.startswith("de") else ""` was repeated in three files, so
+# a third language meant finding and editing all three — and missing one would silently ship English
+# prose inside a translated deck. One dict, one lookup, keyed on the 2-letter code.
+LANG_BLOCKS = {"de": LANG_DE, "ru": LANG_RU}
+
+
+def lang_block(lang):
+    """The prompt instruction for `lang`, or "" for English / an unsupported code.
+
+    A dictionary can translate deck chrome; it can never translate the per-company prose a model
+    writes. So a deck language only truly exists once it has a block here — which is why
+    deck_langs.py refuses to offer a language whose pieces are not all present.
+    """
+    return LANG_BLOCKS.get(str(lang or "en").strip().lower()[:2], "")
+
 # PER-MODEL PARAMETER POLICY. Some models reject the generic payload outright. Moonshot's Kimi
 # answers `HTTP 400 {"message":"temperature must be 1 for this model"}` to our standard
 # temperature=0.35 — that single constraint is why kimi-k2.5/k2.6 looked broken for three rounds
@@ -526,7 +563,7 @@ def enrich(fj, lang="en"):
             "findings": [{"id": f["id"], "sev": f["sev"], "title": f["title"],
                           "evidence": (f.get("evidence", []) or [])[:_ev_cap]}
                          for f in fj["findings"]]}
-    prompt = PROMPT % (_bible(), (LANG_DE if str(lang).lower().startswith("de") else ""),
+    prompt = PROMPT % (_bible(), lang_block(lang),
                        json.dumps(slim, ensure_ascii=False))
     last = ""
     t0_chain = time.time()

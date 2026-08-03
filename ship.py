@@ -202,27 +202,73 @@ def do_tests():
     run([sys.executable, os.path.join(engine, "test_recall.py")])
 
     # c') the HTML report builder must survive the sample AND a thin/empty estate (no undefined/NaN)
-    import tempfile, json as _json
+    #     EVERY language the shell has a dictionary for is built, not just English. This artifact has
+    #     already shipped a bare skeleton with empty <h1></h1> while printing success once; a
+    #     localisation layer is exactly the kind of change that reintroduces that in ONE language and
+    #     leaves the others green. The language list is DERIVED from the files on disk (same doctrine
+    #     as deck_langs.py), so dropping in geopol_html/i18n/de.json gates German with no edit here.
+    import tempfile, json as _json, re as _re
     smp = os.path.join(engine, "..", "sample")
-    rp = os.path.join(tempfile.gettempdir(), "ship_report.html")
-    rc = subprocess.run([sys.executable, os.path.join(engine, "author_geopol.py"),
-                         os.path.join(smp, "findings.sample.json"),
-                         os.path.join(smp, "geopol.sample.json"), rp, "--company", "SmokeTest"],
-                        capture_output=True, text=True)
-    ok = rc.returncode == 0 and os.path.exists(rp)
-    if ok:
-        htm = open(rp, encoding="utf-8").read()
-        ok = (all(t not in htm for t in ("undefined", "NaN", "[object Object]", "__SCENE", "{{COMPANY"))
-              and all(('id="%s"' % c) in htm for c in ("c1", "c2", "c3", "ddos", "sbd"))
-              # the skeleton was extracted from the BibelTV exemplar — none of its specifics
-              # (gitlab, donor/broadcast, its VPN IP, its CVE) may leak into another company's report
-              and all(t not in htm for t in ("__S3_LEFT__", "__S3_MID__", "__S2_ACTORS__"))
-              and all(t not in htm.lower() for t in ("bibel", "gitlab", "donor", "broadcast",
-                                                     "donation", "giving flow", "213.61.87",
-                                                     "cve-2023-44487")))
-    print("  GEOPOL HTML artifact build: %s" % ("OK" if ok else "BROKEN"))
+    _gpi = os.path.join(engine, "geopol_html", "i18n")
+    _gp_langs = ["en"] + sorted(f[:-5] for f in (os.listdir(_gpi) if os.path.isdir(_gpi) else [])
+                                if f.endswith(".json") and f != "en.json")
+    ok, _htm_en = True, None
+    for _lang in _gp_langs:
+        rp = os.path.join(tempfile.gettempdir(), "ship_report_%s.html" % _lang)
+        rc = subprocess.run([sys.executable, os.path.join(engine, "author_geopol.py"),
+                             os.path.join(smp, "findings.sample.json"),
+                             os.path.join(smp, "geopol.sample.json"), rp, "--company", "SmokeTest"],
+                            capture_output=True, text=True, env=dict(os.environ, DECK_LANG=_lang))
+        lok = rc.returncode == 0 and os.path.exists(rp)
+        if lok:
+            htm = open(rp, encoding="utf-8").read()
+            lok = (all(t not in htm for t in ("undefined", "NaN", "[object Object]", "__SCENE", "{{COMPANY"))
+                   and all(('id="%s"' % c) in htm for c in ("c1", "c2", "c3", "ddos", "sbd"))
+                   # a heading that renders EMPTY is the historic failure mode — a file existing is
+                   # not a file being right
+                   and not _re.search(r"<(h1|h2)[^>]*>\s*</\1>", htm) and "SmokeTest" in htm
+                   # the two scene-04 animation LOOKUP KEYS must survive localisation: they are
+                   # compared with === / indexOf, so translating them silently breaks the animation
+                   and '"SASE · ZTNA"' in htm and "'EGRESS'" in htm
+                   # nothing customer-facing may name a carrier (Cybergod LLC / S4Biz rebrand)
+                   and "colt" not in htm.lower() and "ip guardian" not in htm.lower()
+                   # the skeleton was extracted from the BibelTV exemplar — none of its specifics
+                   # (gitlab, donor/broadcast, its VPN IP, its CVE) may leak into another company's report
+                   and all(t not in htm for t in ("__S3_LEFT__", "__S3_MID__", "__S2_ACTORS__"))
+                   and all(t not in htm.lower() for t in ("bibel", "gitlab", "donor", "broadcast",
+                                                          "donation", "giving flow", "213.61.87",
+                                                          "cve-2023-44487")))
+            if _lang == "en":
+                _htm_en = htm
+            elif lok:
+                # A DICTIONARY THAT CHANGES NOTHING IS A DICTIONARY THAT WAS NEVER APPLIED — the
+                # exact way a translation gate goes green while shipping English. Comparing against
+                # the English build is NOT enough: the builder also rewrites <html lang>, so an
+                # empty pack still produces a "different" file. Assert the translations themselves
+                # are on the page. Templated entries (%(company)s, {{COMPANY}}) are substituted by
+                # render time, so the bar is a MAJORITY, not every string.
+                _p = _json.load(open(os.path.join(_gpi, _lang + ".json"), encoding="utf-8"))
+                _vals = [v for sec in ("strings", "canvas") for v in (_p.get(sec) or {}).values()
+                         if isinstance(v, str) and len(v) > 3]
+                _hit = sum(1 for v in _vals if v in htm)
+                if not _vals or _hit < 0.6 * len(_vals):
+                    lok = False
+                    print("    [X] DECK_LANG=%s: only %d/%d dictionary strings reached the page"
+                          % (_lang, _hit, len(_vals)))
+                # …and the other direction: the builder reports every skeleton string that fell
+                # through to English. Add a paragraph to skeleton.html without translating it and
+                # THIS is what stops it — the dictionary-hit ratio above never would, because a
+                # string nobody keyed is absent from both the numerator and the denominator.
+                if "UNTRANSLATED" in (rc.stderr or ""):
+                    lok = False
+                    print("    [X] DECK_LANG=%s: untranslated skeleton strings —\n%s"
+                          % (_lang, "\n".join(l for l in rc.stderr.splitlines() if "i18n:" in l)[:900]))
+        print("  GEOPOL HTML artifact build [%s]: %s" % (_lang, "OK" if lok else "BROKEN"))
+        if not lok:
+            print((rc.stderr or "")[:300])
+        ok = ok and lok
     if not ok:
-        print((rc.stderr or "")[:300]); sys.exit("[X] author_geopol.py / build_geopol_html.js failed")
+        sys.exit("[X] author_geopol.py / build_geopol_html.js failed")
 
     # c'') clarify.py — the post-run clarification questions. Every question MUST be machine-actionable
     #      (carry a maps_to that /refine can turn into a run_assessment flag), and the free-text notes
@@ -621,6 +667,52 @@ def do_tests():
     if not i18n_ok:
         sys.exit("[X] i18n gate failed - a locale is incomplete, a raw key reached the DOM, "
                  "or a page falls back to English")
+
+    # c''''''1) DECK LANGUAGES — every language the engine CLAIMS it can produce must actually build,
+    #          and must not fall back to English mid-deck.
+    #
+    # deck_langs.doc_langs() is a capability CLAIM served to the UI and the bots at /api/langs. A claim
+    # nobody tests is how `--lang it` used to reach an engine that silently answered in English. So:
+    # for every claimed language, render the three security decks from the sample fixture with the
+    # dictionary audit on, and FAIL if any string the GERMAN pack covers is still English — German is
+    # the reference locale, so "German translates it, this one does not" is the definition of a gap.
+    lang_ok = True
+    try:
+        import importlib.util as _ilu2
+        _sp = _ilu2.spec_from_file_location("deck_langs", os.path.join(engine, "deck_langs.py"))
+        _dl = _ilu2.module_from_spec(_sp); _sp.loader.exec_module(_dl)
+        _claimed = [c for c in _dl.doc_langs() if c != "en"]
+        _de = _json.load(open(os.path.join(engine, "i18n", "de.json"), encoding="utf-8"))["strings"]
+        _ld = os.path.join(tempfile.gettempdir(), "ship_langs")
+        os.makedirs(_ld, exist_ok=True)
+        for _lc in _claimed:
+            _gaps = set()
+            for _b, _src in (("build_findings_deck.js", "findings.sample.json"),
+                             ("build_cbiq_deck.js", "cbiq.sample.json"),
+                             ("build_geopol_deck.js", "geopol.sample.json")):
+                _au = os.path.join(_ld, "audit_%s_%s.json" % (_lc, _b[6:9]))
+                _env = dict(os.environ, DECK_LANG=_lc, DECK_I18N_AUDIT="1",
+                            DECK_I18N_AUDIT_OUT=_au)
+                subprocess.run(["node", os.path.join(engine, _b), os.path.join(smp, _src),
+                                os.path.join(_ld, "%s_%s.pptx" % (_lc, _b[6:9]))],
+                               capture_output=True, text=True, env=_env, timeout=180)
+                try:
+                    for _it in _json.load(open(_au, encoding="utf-8")):
+                        if _it["s"] in _de:
+                            _gaps.add(_it["s"])
+                except Exception:
+                    pass
+            print("    %s: %d string(s) the German pack covers but %s does not"
+                  % (_lc, len(_gaps), _lc))
+            for _g in sorted(_gaps)[:6]:
+                print("       !! %r" % _g[:88])
+            if _gaps:
+                lang_ok = False
+    except Exception as _e:
+        lang_ok = False; print("    deck-language gate error: %r" % _e)
+    print("  deck languages build with no fallback-to-English: %s" % ("OK" if lang_ok else "BROKEN"))
+    if not lang_ok:
+        sys.exit("[X] a claimed deck language falls back to English - /api/langs would be lying")
 
     # c'''''') BRAND GATE. The product is Cybergod LLC / S4Biz Group; nothing a customer sees may say
     #          Colt. Grep the RENDERED ARTIFACT, never the source: the enum key "COLT" legitimately

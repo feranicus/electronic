@@ -26,6 +26,12 @@ const LINE1_DE = "Kassandra sagte den Fall Trojas voraus \u2014 und niemand glau
 const LINE2_DE = "Wir sagen die kritischen Cyber-Risiken voraus, stoppen sie, bevor sie eintreten, "
                + "und halten jedes trojanische Pferd aus Ihrer IT-Landschaft fern.";
 
+// Russian. Same contract as the German pair: these are COPIES of the i18n/ru.json values, and
+// test_creed.js asserts they are byte-identical, so the wrapped builders (via deck_i18n) and the
+// compliance builder (which carries its own labels) can never render two different creeds.
+const LINE1_RU = "Кассандра предсказала падение Трои — и никто ей не поверил.";
+const LINE2_RU = "Мы предсказываем критические киберриски, останавливаем их до реализации и не пускаем ни одного троянского коня в ваш IT-ландшафт.";
+
 /**
  * draw(pres, slide, opts) — render the creed on a cover slide.
  * opts: { x, y, w, color, accent, fontFace, rule }
@@ -44,9 +50,12 @@ function draw(pres, s, o) {
   const s2 = o.size2 != null ? o.size2 : 10.5;
   const h2 = o.h2 != null ? o.h2 : 0.40;
   const dy2 = o.dy2 != null ? o.dy2 : 0.34;
-  // only non-i18n builders pass lang; the wrapped ones leave it unset and deck_i18n translates
-  const de = String(o.lang || "en").toLowerCase().startsWith("de");
-  const l1 = de ? LINE1_DE : LINE1, l2 = de ? LINE2_DE : LINE2;
+  // Only non-i18n builders pass lang; the wrapped ones leave it unset and deck_i18n translates.
+  // A TABLE, not a ternary: `de ? X : Y` had to be rewritten for the third language, and that is
+  // exactly the kind of edit that gets made in one builder and forgotten in another.
+  const code = String(o.lang || "en").toLowerCase().slice(0, 2);
+  const BY_LANG = { de: [LINE1_DE, LINE2_DE], ru: [LINE1_RU, LINE2_RU] };
+  const [l1, l2] = BY_LANG[code] || [LINE1, LINE2];
 
   // hairline rule + gold tick: the same divider language the rest of the covers use
   if (o.rule !== false) {
@@ -59,4 +68,4 @@ function draw(pres, s, o) {
     fontSize: s2, fontFace: FF, color: col, bold: true, margin: 0 });
 }
 
-module.exports = { LINE1, LINE2, LINE1_DE, LINE2_DE, draw };
+module.exports = { LINE1, LINE2, LINE1_DE, LINE2_DE, LINE1_RU, LINE2_RU, draw };

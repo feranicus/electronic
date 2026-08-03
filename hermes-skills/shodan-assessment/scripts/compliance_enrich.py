@@ -230,6 +230,19 @@ LANG_DE = (" — schreibe ALLE Fliesstexte (rationale, gaps, colt, exec_summary,
            "Verordnungsnummern bleiben englisch/original. Uebersetze NICHT: NIS2, CRA, AI Act, Colt-"
            "Produktnamen, CVE/Artikel-IDs, Eigennamen.")
 
+LANG_RU = (" — пиши ВЕСЬ связный текст (rationale, gaps, colt, exec_summary, assumptions.note, "
+           "penalty.note) ИСКЛЮЧИТЕЛЬНО на русском языке, деловым регистром для CISO/CFO. "
+           "Названия правовых актов НЕ переводятся: NIS2, Cyber Resilience Act (CRA), EU AI Act, "
+           "DORA. Ключи JSON остаются английскими — на русском только значения. "
+           "Даты, суммы штрафов и ссылки на статьи не изменяются.")
+
+# ONE registry, same doctrine as enrich.py: a per-file `if de` is how a language gets missed.
+LANG_BLOCKS = {"de": LANG_DE, "ru": LANG_RU}
+
+
+def lang_block(lang):
+    return LANG_BLOCKS.get(str(lang or "en").strip().lower()[:2], "")
+
 
 def _merge(base, model):
     """Overlay the model's per-regime analysis onto the deterministic skeleton, keeping FIXED facts."""
@@ -273,7 +286,7 @@ def build(company, lang="en", overrides=None):
         import enrich as E
         prompt = PROMPT % {
             "company": company,
-            "lang": (LANG_DE if str(lang).lower().startswith("de") else ""),
+            "lang": lang_block(lang),
             "confirmed": json.dumps(overrides, ensure_ascii=False) if overrides else "(none supplied)",
             "reference": _ref_text()[:16000],
         }

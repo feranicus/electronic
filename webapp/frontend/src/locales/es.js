@@ -18,7 +18,7 @@
 //  * Quotation marks are Spanish angle quotes « » throughout; ¿ and ¡ are always opened.
 
 export const keyed = {
-  "assess.docLangNote": "Los documentos están disponibles en inglés y alemán. El idioma de su interfaz no es uno de ellos, por lo que los documentos se redactarán en inglés.",
+  "assess.docLangNote": "Los documentos se redactan en el idioma seleccionado arriba. El idioma de su interfaz no está entre ellos, por lo que se utiliza inglés de forma predeterminada.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "en autoservicio.",
   "login.lede": "Un nombre a la entrada, un an\u00e1lisis completo de la superficie de ataque a la salida. El mismo motor que hay detr\u00e1s de los bots de Telegram \u2014 ahora en la web, para cualquier comercial.",
@@ -71,7 +71,7 @@ export const keyed = {
   "demo.s3h": "Demuestra qué pertenece a quién",
   "demo.s3b": "Lo difícil no es encontrar hosts, sino saber cuáles son suyos. Cada activo se puntúa con indicios independientes (estructura de grupo publicada, certificados, titularidad registral por IP) y se dejan registrados los motivos, de modo que un host discutido se puede explicar en lugar de debatir.",
   "demo.s4h": "Redacta los documentos para el consejo",
-  "demo.s4b": "Cuatro presentaciones y un informe animado, en inglés o en alemán: qué está expuesto, cuánto costaría en euros, quién podría atacarlo de forma plausible y qué servicio cierra cada brecha. Unos tres minutos de principio a fin.",
+  "demo.s4b": "Cuatro presentaciones y un informe animado: qué está expuesto, cuánto costaría en euros, quién podría atacarlo de forma plausible y qué servicio cierra cada brecha. Unos tres minutos de principio a fin.",
   "demo.deckH": "Los entregables — descárguelos",
   "demo.deckLead": "Estos son los archivos reales, generados para la ficticia Trojan Empire. Ábralos: esto es exactamente lo que llega a su bandeja de entrada con un objetivo real.",
   "demo.deckWait": "Preparando los artefactos de la demostración…",
@@ -169,7 +169,7 @@ export const keyed = {
 
   // ---- Evaluación (nueva evaluación) -------------------------------------------------------------
   "assess.h1": "Nueva evaluación",
-  "assess.sub": "Una sola entrada: un nombre de empresa o un dominio. El motor resuelve por sí solo toda la huella en internet, barre Shodan y redacta las cuatro presentaciones para el consejo, en inglés o en alemán. Sin IP, ASN ni certificados que escribir.",
+  "assess.sub": "Una sola entrada: un nombre de empresa o un dominio. El motor resuelve por sí solo toda la huella en internet, barre Shodan y redacta las cuatro presentaciones para el consejo. Sin IP, ASN ni certificados que escribir.",
   "assess.company": "Nombre de la empresa",
   "assess.companyPh": "p. ej. Volkswagen AG",
   "assess.docLang": "Idioma del documento",
@@ -210,7 +210,7 @@ export const keyed = {
   "comp.sub.a": "Una sola entrada: un nombre de empresa. El motor evalúa la exposición a ",
   "comp.sub.b": ", al ",
   "comp.sub.c": " y al ",
-  "comp.sub.d": ": aplicabilidad, obligaciones, brechas, plazos y exposición a sanciones, y redacta tres presentaciones por régimen, una de hoja de ruta y un informe animado, en inglés o en alemán. Deduce el alcance a partir del nombre; usted lo confirma después.",
+  "comp.sub.d": ": aplicabilidad, obligaciones, brechas, plazos y exposición a sanciones, y redacta tres presentaciones por régimen, una de hoja de ruta y un informe animado. Deduce el alcance a partir del nombre; usted lo confirma después.",
   "comp.company": "Nombre de la empresa",
   "comp.companyPh": "p. ej. Siemens Healthineers AG",
   "comp.docLang": "Idioma del documento",
@@ -282,7 +282,7 @@ export const byEn = {
   "<code>pptxgenjs</code> templates lock layout; numbers stay deterministic": "Las plantillas <code>pptxgenjs</code> fijan el diseño; las cifras siguen siendo deterministas",
   "<code>python ship.py</code>: test to commit to push to deploy to VERIFY": "<code>python ship.py</code>: probar, confirmar, subir, desplegar y VERIFICAR",
   "<code>python-telegram-bot</code>, one per bot, in Docker": "<code>python-telegram-bot</code>, uno por bot, en Docker",
-  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen - in English or Hochdeutsch.": "Una cadena de modelos de IA redacta el texto; las plantillas fijas garantizan la estructura y los cálculos. Recibe <b>Hallazgos / C-BIQ (EUR) / GEOPOL / DELTAS</b> más un <b>informe animado en directo</b> que puede presentar en pantalla, en inglés o en alemán.",
+  "A chain of AI models writes the words; fixed templates guarantee the structure and the maths. You get <b>Findings / C-BIQ (EUR) / GEOPOL / DELTAS</b> plus a <b>live animated report</b> you present on screen.": "Una cadena de modelos de IA redacta el texto; las plantillas fijas garantizan la estructura y los cálculos. Recibe <b>Hallazgos / C-BIQ (EUR) / GEOPOL / DELTAS</b> más un <b>informe animado en directo</b> que puede presentar en pantalla.",
   "A findings spreadsheet with no price attached to anything": "Una hoja de cálculo de hallazgos sin un precio asignado a nada",
   "A number the board can actually make a decision on": "Una cifra sobre la que el consejo puede decidir de verdad",
   "A real approved email address + the shared password ": "Una dirección de correo autorizada real + la contraseña compartida ",
