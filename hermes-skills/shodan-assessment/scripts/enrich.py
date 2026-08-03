@@ -63,7 +63,16 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # the head slot belongs to the model MEASURED fastest and contract-valid on the real prompt
 # (deepseek-3.2: 25.0s, valid German, compare_models.py). Put Kimi back with one env var if you
 # want it: ENRICH_MODELS="kimi-k2.6,deepseek-3.2,llama-4-maverick,gemma-4-31B-it".
-_FALLBACKS = ["deepseek-3.2", "kimi-k2.6", "llama-4-maverick", "gemma-4-31B-it"]
+_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it", "kimi-k2.6"]
+
+# KIMI IS LAST, on measured evidence from the ecolines.net run — this reverses the earlier
+# "keep it at position 2" decision, which was preference, not measurement.
+# What it actually cost there: a 400 ("temperature must be 0.6"), then a retry that ran with
+# thinking re-enabled, 46,801 characters of output, truncation at our max_tokens ceiling, an
+# unparseable answer — and **164 seconds of a 175s slice consumed**, leaving llama-4-maverick
+# only 118s. A model that fails is cheap; a model that fails SLOWLY starves the ones behind it.
+# It stays in the chain (a fourth vendor is a real hedge against a provider-wide 429) but it can
+# no longer eat the budget before a model that has been measured to work on the real prompt.
 
 # KIMI IS HEAD, and this time on evidence rather than hope. `model_probe.py --model kimi-k2.6`
 # tried six payload shapes and the API answered in one line:
@@ -246,7 +255,12 @@ MODEL_PARAMS = {
     #     The 400-retry path did recover by re-posting without it, but that costs a whole round trip
     #     AND the retry then ran with no deadline of its own and hung for the full 175s cap. Encode
     #     the constraint so the request is right the FIRST time; do not pay to rediscover it.
-    "kimi": {"temperature": 1.0, "_drop": ["response_format"]},
+    #
+    # 2026-08 UPDATE, ecolines.net: the API now answers "temperature must be **0.6** for this model".
+    # The required value CHANGED under us. That is why `_call` no longer trusts this number: it reads
+    # the value out of the 400 body and re-sends with it. This entry is the fast path that avoids the
+    # round trip; the parser is what keeps us correct when DO retunes the model again.
+    "kimi": {"temperature": 0.6, "_drop": ["response_format"]},
 }
 
 
@@ -311,15 +325,42 @@ def _call(text, model=None, timeout=None, max_tokens=None):
         if e.code in (400, 422):
             # PRINT WHAT THE SERVER SAID. Discarding this body is exactly how "temperature must be 1
             # for this model" stayed invisible while Kimi was written off as broken.
+            _b = ""                       # bound BEFORE the try: the remediation below reads it, and
+                                          # a failed read must not turn a 400 into a NameError
             try:
-                _b = (e.read() or b"").decode("utf-8", "replace")[:200].replace("\n", " ")
+                _b = (e.read() or b"").decode("utf-8", "replace")[:400].replace("\n", " ")
                 if _b:
                     print("[warn] enrich %s: HTTP %d from the API -> %s" % (model, e.code, _b),
                           file=sys.stderr)
             except Exception:
                 pass
-            payload.pop("response_format", None)   # model may not accept it — raw_decode still saves us
-            payload.pop("chat_template_kwargs", None)
+            # TARGETED REMEDIATION, driven by what the server actually said.
+            #
+            # THE ecolines.net BUG: this used to blanket-pop `chat_template_kwargs` — which is the
+            # ONLY thing suppressing kimi's chain-of-thought. So the retry re-enabled thinking, kimi
+            # rambled to 46,801 chars, hit our max_tokens ceiling (finish_reason=length), came back
+            # as truncated non-JSON, and burned 164s of a 175s slice for nothing. The blanket fix
+            # for one 400 CAUSED the next failure.
+            #
+            # AND THE CONSTANT WAS STALE: the body said "temperature must be 0.6 for this model"
+            # while MODEL_PARAMS hardcoded 1.0 (the value the API demanded last time we looked).
+            # A number the server publishes on every rejection must be READ, not memorised — that
+            # is the difference between fixing this once and fixing it every time DO retunes a model.
+            _fix = []
+            _m = re.search(r"temperature must be ([0-9.]+)", _b or "")
+            if _m:
+                try:
+                    payload["temperature"] = float(_m.group(1)); _fix.append("temperature=" + _m.group(1))
+                except ValueError:
+                    pass
+            if "response_format" in (_b or "") or not _fix:
+                payload.pop("response_format", None); _fix.append("dropped response_format")
+            # `chat_template_kwargs` is dropped ONLY if the server names it. Never speculatively:
+            # removing it turns thinking back on, which is a far worse failure than a 400.
+            if "chat_template_kwargs" in (_b or "") or "enable_thinking" in (_b or ""):
+                payload.pop("chat_template_kwargs", None); _fix.append("dropped chat_template_kwargs")
+            print("[warn] enrich %s: retrying with %s" % (model, ", ".join(_fix) or "no change"),
+                  file=sys.stderr)
             d = _post(payload, timeout)
         else:
             raise                                   # 429/5xx must reach the retry/failover logic

@@ -329,13 +329,52 @@ _saved_post = _E._post
 _E._post = lambda p, timeout=None: (_sent.clear() or _sent.update(p) or
     {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}], "usage": {}})
 _E._call("x", model="kimi-k2.6", timeout=120)
-check("response_format" not in _sent and _sent.get("temperature") == 1.0,
-      "kimi is sent temperature=1.0 and NO response_format (the API rejects it)")
+check("response_format" not in _sent and _sent.get("temperature") == 0.6,
+      "kimi is sent temperature=0.6 and NO response_format (the API rejects both)")
+check(_sent.get("chat_template_kwargs") == {"enable_thinking": False},
+      "kimi is sent enable_thinking=False - it is a reasoning model and will otherwise ramble")
 _E._call("x", model="deepseek-3.2", timeout=120)
 check("response_format" in _sent, "other models still get response_format=json_object")
 _E._post = _saved_post
 check(_E._FALLBACKS[0] == "deepseek-3.2",
       "chain head is the model MEASURED fastest+valid on the real prompt, not the slowest")
+check(_E._FALLBACKS[-1].startswith("kimi"),
+      "kimi is LAST - it burned 164s of a 175s slice on ecolines.net and starved the next model")
+
+print("\n[21] a 400 must be fixed by what the SERVER said, never by blanket-stripping the payload")
+# ecolines.net: the API answered "temperature must be 0.6 for this model" (the required value had
+# CHANGED from 1.0). The old handler ignored the number and blanket-popped `chat_template_kwargs` —
+# the one flag suppressing kimi's chain-of-thought. The retry therefore ran with thinking ON, kimi
+# emitted 46,801 chars, hit our max_tokens ceiling, came back as truncated non-JSON, and burned
+# 164s. The blanket remedy for one 400 CAUSED the next failure.
+import io as _io21, json as _j21, urllib.error as _ue21
+
+def _post_400(body, replies):
+    calls = []
+    def _p(payload, timeout=None):
+        calls.append(_j21.loads(_j21.dumps(payload)))   # deep copy: the caller mutates the payload
+        if len(calls) == 1:
+            raise _ue21.HTTPError("u", 400, "Bad Request", {}, _io21.BytesIO(body))
+        return replies
+    return calls, _p
+
+_OK21 = {"choices": [{"message": {"content": '{"exec_summary":"x","findings":[{"id":"H1"}]}'},
+                      "finish_reason": "stop"}], "usage": {"completion_tokens": 900}}
+_calls, _E._post = _post_400(
+    b'{"message":"temperature must be 0.6 for this model","status_code":400}', _OK21)
+_txt21, _ = _E._call("p", model="kimi-k2.6", timeout=100)
+check(_calls[1].get("temperature") == 0.6, "the retry re-sends the temperature the SERVER named")
+check(_calls[1].get("chat_template_kwargs") == {"enable_thinking": False},
+      "the retry STILL suppresses thinking (the ecolines regression)")
+check("H1" in _txt21, "and the answer then parses")
+
+_calls, _E._post = _post_400(
+    b'{"message":"chat_template_kwargs is not supported for this model"}',
+    {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}], "usage": {}})
+_E._call("p", model="kimi-k2.6", timeout=100)
+check("chat_template_kwargs" not in _calls[1],
+      "chat_template_kwargs IS dropped when the server actually names it")
+_E._post = _saved_post
 
 print("\n[20] a shard must be sent the CONTRACT, and coverage must measure DEPTH")
 # lotto24.de DE run: coverage said 6/6 = 100%, and finding H1 still shipped a 38-char `what`, a

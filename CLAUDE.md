@@ -1768,3 +1768,27 @@ NEGATIVE TEST, because a gate that only ever goes green is unproven: breaking `t
 chars and deleting `q3.h` from it.js was verified to exit 1 from BOTH the catalogue and the audit,
 and to go back to 0 on restore. Note the bundle inlines the locale files, so the audit MUST rebuild
 every run (run_i18n_audit.mjs always does) or it audits yesterday's dictionaries.
+
+## ecolines.net — a blanket 400-remedy CAUSED the next failure (2026-08)
+Symptom: kimi-k2.6 burned **164s of a 175s slice** and returned garbage, leaving llama-4-maverick
+only 118s. Three findings, and the middle one is the real bug:
+1. **The constant was stale.** The API answered `"temperature must be 0.6 for this model"` while
+   `MODEL_PARAMS["kimi"]` hardcoded 1.0 — the value it demanded the LAST time we looked. A number
+   the server publishes on every rejection must be READ, not memorised.
+2. **The 400 handler disabled the protection that was working.** It blanket-popped
+   `chat_template_kwargs`, which is the ONLY thing suppressing kimi's chain-of-thought. The retry
+   therefore ran with thinking ON -> 46,801 chars -> `finish_reason=length` at our max_tokens
+   ceiling -> truncated non-JSON -> `model returned list, not the JSON object contract`. The generic
+   remedy for one error created a worse one. FIX: `_call` now parses the body and applies a TARGETED
+   fix — re-send the temperature the server named; drop `response_format` only when implicated; drop
+   `chat_template_kwargs` ONLY if the server actually names it. Never speculatively.
+3. **kimi demoted to LAST** (was position 2, kept there on preference rather than measurement).
+   A model that fails is cheap; a model that fails SLOWLY starves the models behind it. It stays in
+   the chain because a fourth vendor is a real hedge against a provider-wide 429.
+Guarded by test_recall.py §21 (temperature re-sent from the body · thinking still suppressed on the
+retry · chat_template_kwargs dropped only when named) and the updated §19.
+RULE: when an API rejects a request, fix WHAT IT NAMED. Stripping fields until something works is
+how you disable a safeguard you did not know you had.
+NOT bugs, for the record — these lines in the ecolines log are the guards working as designed:
+Cloudflare AS13335 refused as an ownership anchor, crt.sh 404 covered by CertSpotter, ASN discovery
+reported UNKNOWN rather than "none", and the co-tenant guard dropping ALEKSANDRA UN KO, SIA.
