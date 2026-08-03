@@ -113,8 +113,16 @@ export default function NewAssessment() {
       let jid = null;
       try { jid = localStorage.getItem("cg_job"); } catch { /* ignore */ }
       if (!jid) return;
-      const { ok, data } = await assessStatus(jid);
-      if (!ok || stale) { try { localStorage.removeItem("cg_job"); } catch { /* ignore */ } return; }
+      // `assessStatus` is getJSON-backed, so it returns the BODY — {ok, data} was always undefined
+      // here, which meant the re-attach ALWAYS bailed and cleared cg_job. A phone that evicted the
+      // tab could therefore never rejoin a running assessment: the whole point of storing the id.
+      // getJSON throws on 401/network, so the try/catch is what "not ok" actually looks like.
+      let data;
+      try { data = await assessStatus(jid); }
+      catch { try { localStorage.removeItem("cg_job"); } catch { /* ignore */ } return; }
+      if (stale || !data || !data.status) {
+        try { localStorage.removeItem("cg_job"); } catch { /* ignore */ } return;
+      }
       if (data.status === "running") {
         setCompany(data.company || "");
         // do NOT preload lines here: a fresh EventSource sends no Last-Event-ID, so the stream

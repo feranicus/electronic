@@ -631,6 +631,14 @@ def do_tests():
             sys.exit("[X] node is not on PATH - the i18n gate cannot run. Install Node 18+ "
                      "(the frontend build needs it too), then re-run: python ship.py")
 
+        # api.js has TWO helpers with different return contracts (getJSON -> the body, postJSON ->
+        # {ok,data}). Destructuring the wrong one compiles, runs, and silently yields undefined —
+        # it made the document-language selector show English only, and made the assessment
+        # re-attach always bail. Pure static check, no toolchain, so it runs everywhere.
+        if run(["node", "tools/api_contract.mjs"], check=False, cwd=_fe) != 0:
+            i18n_ok = False
+            print("    !! an api.js call site consumes the wrong response shape")
+
         # `run()` here STREAMS and returns an int returncode; it does not capture. The audit prints
         # its own per-language table, so streaming is what we want.
         if run(["node", "tools/i18n_catalogue.mjs", "--check"], check=False, cwd=_fe) != 0:

@@ -1822,3 +1822,27 @@ TWO PRE-EXISTING DEFECTS THIS SURFACED, both invisible until a second locale exi
 Also fixed: the UI enumerated "in English or Hoch-Deutsch" in prose across six locales — a second
 source of truth that went stale the moment Russian shipped. Prose must never restate what the
 selector already lists.
+
+## api.js has TWO return contracts — and I got it wrong twice (2026-08)
+Symptom the operator saw: the Document-language selector offered **English only**, right after
+Russian shipped and with German already working. Nothing was wrong with the engine or the
+dictionaries; `GET /api/langs` returned `{ui:[...], doc:[en,de,ru]}` correctly.
+THE BUG: `webapp/frontend/src/api.js` exposes two helpers with DIFFERENT contracts —
+    getJSON(path)  -> the PARSED BODY        (throws on 401 / network)
+    postJSON(path) -> { ok, status, data }
+`docLangs.js` did `const { ok, data } = await getLangs()`. `getLangs` is getJSON-backed, so BOTH
+names were `undefined`, the guard `if (ok && ...)` never passed, and the hook fell back to its
+English-only default. It compiles, it runs, it renders — it is only wrong at the moment it executes.
+Same root cause as calling `.returncode` on ship.py's `run()` (which returns an int): **assuming a
+helper's contract instead of reading it.**
+THE SCAN FOUND A SECOND, PRE-EXISTING INSTANCE: `NewAssessment.jsx` read `{ok, data}` from
+`assessStatus()`, so the re-attach path ALWAYS bailed and deleted `cg_job` — a phone that evicted the
+tab could never rejoin a running assessment, which is the entire reason the job id is stored.
+GATE: `webapp/frontend/tools/api_contract.mjs` parses api.js, classifies every export as
+getJSON- or postJSON-backed, and fails on any call site that destructures `{ok|data|status}` from a
+getJSON-backed call (and on a postJSON result whose `.data` is never read). Pure static analysis, no
+toolchain, so it runs on the operator's machine AND in the image build. Wired into ship.py and
+`webapp/Dockerfile`. Proven by a negative test: reintroducing the exact line exits 1, restoring it
+exits 0.
+RULE: when a module exports more than one fetch helper, their return shapes MUST be asserted by a
+check, not by memory — the failure mode is a feature silently disappearing, not an error.

@@ -31,8 +31,20 @@ export function useDocLangs() {
     let alive = true;
     (async () => {
       if (!_cache) {
-        const { ok, data } = await getLangs();
-        if (ok && data && Array.isArray(data.doc) && data.doc.length) _cache = data.doc;
+        try {
+          // CONTRACT: api.js::getJSON returns the PARSED BODY. Only postJSON returns {ok, data}.
+          // Destructuring {ok, data} here made `ok` undefined, the guard always failed, and the
+          // selector silently showed English only — with the engine perfectly able to write German
+          // and Russian. Read the helper; do not assume its shape. (Same defect as calling
+          // .returncode on ship.py's run(), which returns an int.)
+          const data = await getLangs();
+          if (data && Array.isArray(data.doc) && data.doc.length) _cache = data.doc;
+          else console.warn("[docLangs] /api/langs returned an unexpected shape:", data);
+        } catch (e) {
+          // A failed probe must not silently narrow the offer to English — say so in the console so
+          // "why is German missing?" is answerable without reading the source.
+          console.warn("[docLangs] /api/langs unreachable:", e && e.message);
+        }
       }
       if (!alive) return;
       setDocs(_cache || FALLBACK);
