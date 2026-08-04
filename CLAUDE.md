@@ -1958,3 +1958,22 @@ Guarded by test_recall.py §22, including a regression pass over EVERY earlier i
 PSL changes none of them.
 RULE: "the last two labels" is never the registrable domain. Any ownership decision keyed on a
 domain must go through psl.registrable().
+
+
+## A refusal is a FORK, not a failure — and the operator may overrule it (2026-08)
+Right after the PSL fix landed, the operator typed `gov.ru` and got a red "assessment failed". The
+guard was CORRECT (a public suffix has no owner), but the presentation was wrong in two ways:
+1. **It looked like a crash.** A deliberate decline rendered as `assess_error` with a traceback tells
+   the operator the tool broke, when it had just protected them from a deck full of strangers.
+   FIX: `shodan_recon.ScopeRefused` carries `code` + `reason` + `hint`; run_assessment emits
+   `evt=assess_refused` and exits **4** (distinct from a real failure); the web app renders an amber
+   panel with the reason, the next step and a button — never `.err` red.
+2. **It was an absolute NO.** "Show me every Russian federal body" is a legitimate request from a
+   regulator or a threat researcher. Refusing it outright is the tool substituting its judgement for
+   the operator's. FIX: `--allow-public-suffix` (UI: "Survey the whole zone anyway",
+   `AssessReq.zone_survey`) — declined BY DEFAULT so a typo or a misunderstanding is caught, honoured
+   on an EXPLICIT assertion, and `ident["zone_survey"]` marks the run so the artifact says it covers
+   many independent organisations rather than implying one customer.
+RULE: a guard that cannot be overridden by an informed operator is a bug, and a guard that presents
+its decision as a malfunction is a different bug. Give the reason, the next step, and the override.
+Same doctrine as the clarify loop: the human asserts the fact, the system records that they did.

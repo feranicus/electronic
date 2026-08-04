@@ -83,6 +83,19 @@ def _clean_domain(seed):
 import psl as _PSL
 
 
+class ScopeRefused(Exception):
+    """The request is well-formed but must not be assessed, and we can say exactly why.
+
+    This is a PRODUCT DECISION surfaced to the operator, not a failure: seeding a public suffix
+    (`gov.ru`, `co.uk`) would mix thousands of unrelated organisations into one customer deck — the
+    budget.gov.ru incident. Carrying its own type lets run_assessment.py render it as advice with a
+    concrete next step, rather than as the generic `assess_error` a real crash produces."""
+
+    def __init__(self, reason, hint="", code="scope_refused"):
+        super().__init__(reason)
+        self.reason, self.hint, self.code = reason, hint, code
+
+
 def _apex(d):
     """The REGISTRABLE domain — the unit of ownership. NOT "the last two labels".
 
@@ -95,7 +108,14 @@ def _apex(d):
 
 CIDR_RE = re.compile(r'^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$')
 
-def resolve_identity(seed):
+def resolve_identity(seed, allow_public_suffix=False):
+    """`allow_public_suffix=True` = the operator has DELIBERATELY asked for a whole shared zone.
+
+    Refusing outright was wrong: "show me every Russian federal body" is a legitimate request from a
+    regulator or a threat researcher. But it is a ZONE SURVEY, not an assessment of one company, and
+    the artifact must say so rather than quietly implying a single owner. So: declined by default
+    (which catches the typo and the misunderstanding), permitted on an explicit assertion, and the
+    result is labelled `zone_survey` all the way through to the deck."""
     ident = {"seed": seed, "asns": [], "nets": [], "org": None, "brand": None,
              "asn_holder": None, "domains": [], "org_is_carrier": False, "org_is_cdn": False, "assignment_netname": None,
              "internal_cas": [], "cert_orgs": [], "jarms": [], "cpes": [], "pinned": []}
@@ -109,15 +129,21 @@ def resolve_identity(seed):
         ident.update(nets=[s], brand=s)
     elif re.search(r'[A-Za-z]', s) and '.' in _clean_domain(s) and ' ' not in s:   # ---- domain/URL
         dom = _clean_domain(s); apex = _apex(dom)
+        ident["zone_survey"] = bool(_PSL.is_public_suffix(dom))
         # A PUBLIC SUFFIX IS NOT A CUSTOMER. Seeding `gov.ru`, `co.uk` or `com.au` asks us to assess
         # everything anyone has ever registered under a shared namespace — there is no owner to
         # corroborate against, so every downstream ownership check degenerates and the estate grows
         # without limit. Refuse loudly instead of producing a confident deck about a whole country.
-        if _PSL.is_public_suffix(dom):
-            raise SystemExit(
-                "[X] %r is a PUBLIC SUFFIX, not a company: anyone may register under it and it has "
-                "no single owner. Assessing it would mix thousands of unrelated organisations into "
-                "one deck. Give the actual registrable domain instead, e.g. 'budget.%s'." % (dom, dom))
+        if _PSL.is_public_suffix(dom) and not allow_public_suffix:
+            raise ScopeRefused(
+                "%s is a public suffix, not a company — nobody owns it and anyone can register "
+                "under it." % dom,
+                hint="Give one organisation's own domain (e.g. budget.%s) for a normal assessment. "
+                     "If you deliberately want the WHOLE zone — every body registered under %s — "
+                     "re-run with 'Survey the whole zone' enabled: you will get a ZONE SURVEY, "
+                     "clearly labelled as many independent organisations rather than one customer."
+                     % (dom, dom),
+                code="public_suffix")
         ident["domains"] = sorted({dom, apex}); ident["brand"] = apex
         try:
             ip = socket.gethostbyname(dom); ident["seed_ip"] = ip

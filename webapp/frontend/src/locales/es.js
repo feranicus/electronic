@@ -18,6 +18,8 @@
 //  * Quotation marks are Spanish angle quotes « » throughout; ¿ and ¡ are always opened.
 
 export const keyed = {
+  "assess.refusedH": "No evaluado — es una zona compartida, no una sola empresa",
+  "assess.zoneSurveyGo": "Analizar de todos modos toda la zona",
   "assess.docLangNote": "Los documentos se redactan en el idioma seleccionado arriba. El idioma de su interfaz no está entre ellos, por lo que se utiliza inglés de forma predeterminada.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "en autoservicio.",

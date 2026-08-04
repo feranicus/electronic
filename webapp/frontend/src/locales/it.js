@@ -14,6 +14,8 @@
 // moto", "…ricava da solo l'" + "intera" + " superficie internet…") are translated so the
 // CONCATENATION is grammatical; words were moved across the seam where Italian word order required.
 export const keyed = {
+  "assess.refusedH": "Non valutato — questa è una zona condivisa, non una singola azienda",
+  "assess.zoneSurveyGo": "Esaminare comunque l'intera zona",
   "assess.docLangNote": "I documenti sono redatti nella lingua selezionata sopra. La lingua della Sua interfaccia non è tra queste: per impostazione predefinita viene usato l'inglese.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "in autonomia.",

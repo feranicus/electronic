@@ -759,3 +759,13 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
    of bug as the mobile bottom bar that inherited height:100vh from the desktop sidebar. */
 .iam-page{min-height:100dvh;display:flex;flex-direction:column;background:var(--navy)}
 .iam-page > .iam{flex:1 1 auto;min-height:0}
+
+/* A deliberate refusal is guidance, not an error: amber, not red, and it carries an action.
+   Styling it like `.err` told the operator the tool broke when it had just protected them from a
+   deck full of unrelated organisations. */
+.refused{margin-top:14px;padding:14px 16px;border-radius:12px;
+  background:rgba(247,200,68,.08);border:1px solid rgba(247,200,68,.35)}
+.refused-h{font-weight:700;color:#F7C844;margin-bottom:6px}
+.refused p{margin:6px 0;color:#dfe7f5;line-height:1.5}
+.refused-hint{color:#a9b8d4;font-size:14px}
+.refused .btn{margin-top:10px}

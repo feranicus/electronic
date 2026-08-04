@@ -440,11 +440,24 @@ check(_P.is_public_suffix("gov.ru") and _P.is_public_suffix("co.uk"),
       "gov.ru / co.uk are recognised as public suffixes")
 check(not _P.is_public_suffix("otto.de") and not _P.is_public_suffix("budget.gov.ru"),
       "a real registrable domain is not mistaken for one")
+# DECLINED BY DEFAULT, but NOT forbidden: "show me every Russian federal body" is a legitimate
+# request from a regulator or a researcher. It is a ZONE SURVEY, not an assessment of one company,
+# so it needs an explicit assertion and the artifact must say what it is.
 try:
     R.resolve_identity("gov.ru")
-    check(False, "seeding a public suffix must be REFUSED")
-except SystemExit:
-    check(True, "seeding a public suffix is refused instead of assessing a whole country")
+    check(False, "seeding a public suffix must be declined by default")
+except R.ScopeRefused as _sr:
+    check(getattr(_sr, "code", "") == "public_suffix",
+          "declined with a machine-readable code, not a crash")
+    check("budget.gov.ru" in getattr(_sr, "hint", ""),
+          "the refusal names a concrete next step")
+    check("zone" in getattr(_sr, "hint", "").lower(),
+          "...and offers the deliberate whole-zone option")
+_zs = R.resolve_identity("gov.ru", allow_public_suffix=True)
+check(_zs.get("zone_survey") is True,
+      "an explicit assertion is honoured AND labelled zone_survey")
+check(R.resolve_identity("skon.de").get("zone_survey") is False,
+      "a normal company is never labelled a zone survey")
 
 # FAIL CLOSED with no brand token: rarity alone let a NATIONAL CA through.
 class _RareAPI:

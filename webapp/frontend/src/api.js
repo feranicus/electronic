@@ -25,7 +25,8 @@ export const authLogout = ()                => postJSON("/api/auth/logout", {});
 export const getMe      = ()                => getJSON("/api/me");
 
 // ---- Assessment ----
-export const startAssess = (company, lang = "en") => postJSON("/api/assess", { company, lang });
+export const startAssess = (company, lang = "en", zoneSurvey = false) =>
+  postJSON("/api/assess", { company, lang, zone_survey: zoneSurvey });
 export const assessEventsUrl = (jobId) => `/api/assess/${encodeURIComponent(jobId)}/events`;
 // records that the Art.13 notice was shown+accepted (accountability, Art. 5(2))
 export const assessStatus = (jobId) => getJSON(`/api/assess/${encodeURIComponent(jobId)}/status`);

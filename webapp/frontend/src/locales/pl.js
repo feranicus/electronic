@@ -27,6 +27,8 @@
 //     Each half is written so the JOIN is grammatical (case + gender agreement), which is why the
 //     word order does not always mirror the English.
 export const keyed = {
+  "assess.refusedH": "Nie oceniono — to strefa współdzielona, a nie jedna firma",
+  "assess.zoneSurveyGo": "Mimo to przeskanuj całą strefę",
   "assess.docLangNote": "Dokumenty powstają w języku wybranym powyżej. Języka interfejsu nie ma na tej liście, więc domyślnie używany jest angielski.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "samoobs\u0142ugowo.",

@@ -12,6 +12,8 @@
 // tab.* labels are capped at 8 characters: six of them share one 360px phone row.
 
 export const keyed = {
+  "assess.refusedH": "Non évalué — il s'agit d'une zone partagée, pas d'une seule entreprise",
+  "assess.zoneSurveyGo": "Analyser quand même toute la zone",
   "assess.docLangNote": "Les documents sont rédigés dans la langue sélectionnée ci-dessus. La langue de votre interface n'en fait pas partie : l'anglais est utilisé par défaut.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "en autonomie.",

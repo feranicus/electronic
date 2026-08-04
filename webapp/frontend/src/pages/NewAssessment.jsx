@@ -54,6 +54,11 @@ export default function NewAssessment() {
   const [decks, setDecks] = useState([]);
   const [summary, setSummary] = useState("");
   const [errMsg, setErrMsg] = useState("");
+  // A REFUSAL IS NOT AN ERROR. The engine declines a shared zone (gov.ru, co.uk) because assessing
+  // it would imply one owner for thousands of independent bodies. That is a fork in the road, not a
+  // crash, so it gets its own state and its own presentation: the reason, what to do, and a button
+  // to go ahead deliberately as a ZONE SURVEY.
+  const [refused, setRefused] = useState(null);
   // post-run clarification loop (jobhuntwow gap->answer model): after the decks are delivered we ask
   // what recon could not resolve; the operator answers / adds facts and we REFINE.
   const [jobId, setJobId] = useState(null);
@@ -180,6 +185,12 @@ export default function NewAssessment() {
         setStatus("done");
         loadClarify(jobId);                          // surface the clarification questions
         es.close();
+      } else if (payload.evt === "assess_refused") {
+        try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
+        setRefused({ reason: payload.reason || "", hint: payload.hint || "",
+                     code: payload.code || "refused" });
+        setStatus("refused");
+        es.close();
       } else if (payload.evt === "error") {
         try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
         setErrMsg(payload.message || t("assess.errFailed"));
@@ -202,17 +213,17 @@ export default function NewAssessment() {
     es.onopen = () => setNotice((n) => (n === t("assess.dropped") ? "" : n));
   }
 
-  async function run(e) {
-    e.preventDefault();
+  async function run(e, zoneSurvey = false) {
+    if (e && e.preventDefault) e.preventDefault();
     const name = company.trim();
     if (!name || status === "running") return;
     if (!ackd) { acknowledge(); }                   // first Assess click = notice was shown + accepted
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
-    setClarify(null); setAnswers({});                // fresh run — drop the previous clarification
+    setClarify(null); setAnswers({}); setRefused(null);   // fresh run — drop the previous state
     setPct(0); setShown(0); setElapsed(0); setPhase(t("assess.phaseStart")); setNotice("");
     startedRef.current = Date.now();
 
-    const { ok, data } = await startAssess(name, lang);
+    const { ok, data } = await startAssess(name, lang, zoneSurvey);
     if (!ok || !data.job_id) {
       setStatus("error");
       setErrMsg(data.message || t("assess.errStart"));
@@ -319,6 +330,22 @@ export default function NewAssessment() {
         )}
 
         {status === "error" && <div className="err">{asText(errMsg)}</div>}
+
+        {/* A DELIBERATE REFUSAL, presented as a choice rather than a failure. The engine explains
+            why a shared zone is not one company and what to do; the operator can still insist, and
+            the resulting run is labelled a ZONE SURVEY end-to-end. */}
+        {status === "refused" && refused && (
+          <div className="refused">
+            <div className="refused-h">{t("assess.refusedH")}</div>
+            <p>{asText(refused.reason)}</p>
+            {refused.hint && <p className="refused-hint">{asText(refused.hint)}</p>}
+            {refused.code === "public_suffix" && (
+              <button className="btn" type="button" onClick={() => run(null, true)}>
+                {t("assess.zoneSurveyGo")}
+              </button>
+            )}
+          </div>
+        )}
 
         {status === "done" && (
           <>

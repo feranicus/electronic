@@ -495,6 +495,11 @@ def main():
                     help="apex/host/IP the operator says is NOT theirs — force out of scope")
     ap.add_argument("--pin", action="append", default=[],
                     help="exact host IP to scan directly (VPN/mail/GitLab edge the auto-recon missed)")
+    # EXPLICIT OPERATOR ASSERTION, the only sanctioned way scope widens (same doctrine as --pin and
+    # --domain): "yes, I know gov.ru is a shared zone and I want all of it".
+    ap.add_argument("--allow-public-suffix", dest="allow_public_suffix", action="store_true",
+                    help="survey a whole shared zone (gov.ru, co.uk) — the report is labelled a "
+                         "ZONE SURVEY of many independent organisations, not one customer")
     ap.add_argument("--platform-operator", dest="platform_operator", action="store_true",
                     help="operator runs sites for clients — keep client domains out of scope")
     ap.add_argument("--notes", default="", help="free-text operator context for the LLM prose + GEOPOL")
@@ -552,7 +557,7 @@ def main():
         ident = fj.get("identity", {})
     else:
         if not a.seed: ap.error("need --seed or --from-findings")
-        ident = R.resolve_identity(a.seed)
+        ident = R.resolve_identity(a.seed, allow_public_suffix=a.allow_public_suffix)
         for asn in a.asn:
             asn = "AS"+asn.lstrip("ASas")
             if asn not in ident["asns"]:
@@ -902,6 +907,29 @@ if __name__ == "__main__":
                 if _a == "--seed" and _i + 1 < len(sys.argv): _co = sys.argv[_i + 1]
         except Exception:
             pass
+        # A REFUSAL IS NOT A CRASH. `ScopeRefused` means the request was understood and deliberately
+        # declined (e.g. seeding a public suffix like gov.ru). Rendering it as `assess_error` with a
+        # traceback and a red "assessment failed" tells the operator the tool broke, when in fact it
+        # protected them from a deck full of strangers' infrastructure. Say so, give the next step,
+        # and exit with a DISTINCT code so the web app can style it as guidance.
+        if type(_e).__name__ == "ScopeRefused":
+            _r = {"evt": "assess_refused", "company": _co, "code": getattr(_e, "code", "refused"),
+                  "reason": getattr(_e, "reason", str(_e)), "hint": getattr(_e, "hint", ""),
+                  "ts": _t.time(), "user": os.environ.get("COLT_USER", ""),
+                  "bot": os.environ.get("SERVICE", "engine"),
+                  "service": os.environ.get("SERVICE", "engine")}
+            print(json.dumps(_r), flush=True)
+            try:
+                with open(os.environ.get("EVENTS_LOG", "/var/log/colt/events.log"), "a") as _fh:
+                    _fh.write(json.dumps(_r) + "\n")
+            except Exception:
+                pass
+            print("NOT ASSESSED: %s" % _r["reason"], flush=True)
+            if _r["hint"]:
+                print("WHAT TO DO: %s" % _r["hint"], flush=True)
+            print("PROGRESS: [100%%] NOT ASSESSED — %s" % _r["reason"][:150], flush=True)
+            raise SystemExit(4)                 # 4 = declined on purpose, not a failure
+
         _rec = {"evt": "assess_error", "company": _co, "error": type(_e).__name__,
                 "message": str(_e)[:300], "ts": _t.time(),
                 "bot": os.environ.get("SERVICE", "engine"),

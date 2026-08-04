@@ -5,6 +5,8 @@
 // `keyed` maps dotted keys (see locales/en.js). `byEn` maps the English sentence to its German.
 // Anything missing falls back to English. Never translate NIS2 / CRA / DORA / EU AI Act.
 export const keyed = {
+  "assess.refusedH": "Nicht bewertet — dies ist eine gemeinsame Zone, kein einzelnes Unternehmen",
+  "assess.zoneSurveyGo": "Trotzdem die gesamte Zone erfassen",
   "assess.docLangNote": "Die Dokumente werden in der oben gewählten Sprache erstellt. Ihre Oberflächensprache gehört nicht dazu; standardmäßig wird Englisch verwendet.",
   "login.h1a": "Cyber-Pre-Sales,",
   "login.h1b": "in Eigenregie.",

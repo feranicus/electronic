@@ -7,6 +7,8 @@
 // A new string must state which space it belongs to. A key that reaches the DOM is a build failure
 // (see the SSR guard in ship.py) — a fallback that silently prints the key looks like content.
 export const keyed = {
+  "assess.refusedH": "Not assessed — this is a shared zone, not one company",
+  "assess.zoneSurveyGo": "Survey the whole zone anyway",
   "assess.docLangNote": "The documents are written in the language selected above. Your interface language is not among them, so English is used by default.",
   "login.h1a": "Cyber pre-sales,",
   "login.h1b": "self-serve.",

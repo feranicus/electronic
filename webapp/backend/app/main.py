@@ -85,6 +85,11 @@ class VerifyReq(BaseModel):
 class AssessReq(BaseModel):
     company: str
     lang: str = "en"          # coerced by doc_lang() to what the engine can render
+    # EXPLICIT OPERATOR ASSERTION. Seeding a shared zone (gov.ru, co.uk) is declined by default
+    # because it would imply a single owner for thousands of independent bodies — the budget.gov.ru
+    # incident. A regulator or researcher may legitimately want exactly that, so they can say so,
+    # and the run is then labelled a ZONE SURVEY rather than an assessment of one company.
+    zone_survey: bool = False
 
 
 class RefineReq(BaseModel):
@@ -421,7 +426,8 @@ async def assess(req: AssessReq, request: Request):
     # It used to be the SSE generator that spawned the subprocess — so closing the tab, refreshing,
     # or a phone locking its screen cancelled the generator and killed a 5-minute run. The job is now
     # owned by the server; the stream is just a viewer.
-    asyncio.create_task(_run_job(job_id, email, company, lang))
+    _ov = ["--allow-public-suffix"] if req.zone_survey else None
+    asyncio.create_task(_run_job(job_id, email, company, lang, overrides=_ov))
     return {"job_id": job_id}
 
 
