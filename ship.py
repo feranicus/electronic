@@ -26,7 +26,7 @@ What it orchestrates (each of these is still runnable alone for debugging, but y
     deploy.py --reuse --yes                    bots: rebuild + redeploy colt-stack
     deploy_web_direct.py                       web: build on the droplet over SSH (DEFAULT)
 """
-import argparse, os, subprocess, sys, time
+import argparse, base64, os, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.environ.get("DROPLET_HOST", "64.225.108.200")
@@ -89,6 +89,43 @@ def ssh(cmd, check=False, timeout=180):
     if check and r.returncode != 0:
         sys.exit("[X] remote failed: %s\n%s" % (cmd, r.stderr[:400]))
     return r.stdout
+
+
+def ssh_script(script, timeout=180, check=False):
+    """Run a MULTI-LINE bash script on the droplet in ONE ssh session.
+
+    WHY THIS EXISTS — researched, not guessed:
+      * The Windows OpenSSH client has NO ControlMaster/ControlPersist multiplexing
+        (PowerShell/Win32-OpenSSH issue #1328 is still open), so the usual fix — reuse one TCP
+        connection for every command — is simply unavailable on the operator's machine. Each ssh()
+        is a full TCP + key exchange + auth handshake.
+      * OpenSSH 9.8 (Jul 2024) enables `PerSourcePenalties` by DEFAULT: sshd records a penalty
+        against a source address for connections that do not complete as expected, penalties ACCRUE
+        with repetition, and further connections from that address are refused while a penalty is
+        live. Add `MaxStartups` (default 10:30:100) and a burst of short-lived sessions from one IP
+        is exactly the shape both mechanisms exist to damp.
+    So the only lever available is: OPEN FEWER SESSIONS. CLAUDE.md has said "prefer the
+    single-connection pattern for anything new" since deploy.py hit this wall; deploy_web_direct.py
+    already does its whole deploy in ONE session and has never hung. This helper makes that pattern
+    available to every other step.
+
+    The script is base64'd so no quoting layer (PowerShell -> ssh -> remote bash) can corrupt nested
+    quotes — the same trick deploy_web_direct.py uses for its payload."""
+    b64 = base64.b64encode(script.encode("utf-8")).decode("ascii")
+    return ssh("echo %s | base64 -d | bash" % b64, check=check, timeout=timeout)
+
+
+def _sections(out, names):
+    """Split ssh_script output on '#### <NAME>' delimiters -> {name: text}."""
+    got = {n: "" for n in names}
+    cur = None
+    for line in (out or "").splitlines():
+        if line.startswith("#### "):
+            cur = line[5:].strip()
+            continue
+        if cur in got:
+            got[cur] += line + "\n"
+    return got
 
 
 def have(exe):
@@ -167,6 +204,31 @@ def _sha_all_in_container(container, fresh=False):
     if got:                          # never cache an empty answer (a throttled ssh returns nothing)
         _SHA_CACHE[container] = got
     return got
+
+
+def _prime_sha_cache(containers):
+    """Hash the engine in SEVERAL containers in ONE ssh session, into _SHA_CACHE.
+
+    Two probes that ask different containers the same question are still two handshakes, and on a
+    link with no multiplexing and per-source penalties that is the cost that hurts. Ask once."""
+    want = [c for c in containers if c not in _SHA_CACHE]
+    if not want or DRY:
+        return
+    code = ("import hashlib,os;b=%r;fs=%r;"
+            "print(chr(10).join(r+' '+(hashlib.sha256(open(os.path.join(b,r),'rb').read()).hexdigest() "
+            "if os.path.exists(os.path.join(b,r)) else 'MISSING') for r in fs))"
+            % (ENGINE_REMOTE, list(ENGINE_FILES)))
+    script = "\n".join("echo '#### %s'; docker exec %s python3 -c \"%s\" 2>/dev/null || true"
+                       % (c, c, code) for c in want)
+    sec = _sections(ssh_script(script, timeout=120), want)
+    for c in want:
+        got = {}
+        for line in sec.get(c, "").splitlines():
+            bits = line.strip().split(" ")
+            if len(bits) == 2 and "/" in bits[0]:
+                got[bits[0]] = bits[1]
+        if got:
+            _SHA_CACHE[c] = got
 
 
 def engine_is_current(container, fresh=False):
@@ -939,7 +1001,9 @@ def do_web(use_ci):
 
     # PROVE the running container has THIS repo's engine. A green log is not evidence.
     print("\n  verifying colt-web is running the current engine...")
-    ok, stale = engine_is_current("colt-web", fresh=True)   # just deployed -> re-probe
+    _SHA_CACHE.pop("colt-web", None)               # colt-web was just rebuilt -> its hash is stale
+    _prime_sha_cache(["colt-web", "colt-assessbot"])   # ONE session answers both, and do_bots reuses it
+    ok, stale = engine_is_current("colt-web")
     if ok:
         print("  OK  colt-web engine matches the repo")
         return
@@ -1000,85 +1064,121 @@ def _import_grafana():
 
 # ------------------------------------------------------------------ 4. verify
 def do_verify(web, bots):
+    """5/5 VERIFY — everything read-only in ONE ssh session.
+
+    THE HANG THIS FIXES: this step used to open FIVE separate ssh sessions (docker ps, two engine
+    hashes, the model probe, the .env read) plus up to three more if it had to correct drift. On
+    Windows there is no ssh multiplexing to fall back on and sshd penalises repeated connections, so
+    the last one in the burst would sit there for minutes — AFTER the deploy had already succeeded.
+    One session, delimited sections, parsed locally. A correction (rare) opens a second."""
     say("5/5  VERIFY")
     ok = True
+    if DRY:
+        return True
+
+    # Build the batch from what this run does NOT already know. The engine hashes are usually cached
+    # by do_web/do_bots, so most runs ask only for `docker ps`, the model probe and the .env line.
+    parts, names = [], []
     if bots:
-        out = ssh("docker ps --format '{{.Names}}  {{.Status}}' | grep -E 'colt-' || echo NONE")
-        if "colt-assessbot" not in out:
+        parts.append("echo '#### PS'; docker ps --format '{{.Names}}  {{.Status}}' "
+                     "| grep -E 'colt-' || echo NONE")
+        names.append("PS")
+    hash_code = ("import hashlib,os;b=%r;fs=%r;"
+                 "print(chr(10).join(r+' '+(hashlib.sha256(open(os.path.join(b,r),'rb').read()).hexdigest() "
+                 "if os.path.exists(os.path.join(b,r)) else 'MISSING') for r in fs))"
+                 % (ENGINE_REMOTE, list(ENGINE_FILES)))
+    for cont, want in (("colt-web", web), ("colt-assessbot", bots)):
+        if want and cont not in _SHA_CACHE:
+            parts.append("echo '#### SHA_%s'; docker exec %s python3 -c \"%s\" 2>/dev/null || true"
+                         % (cont, cont, hash_code))
+            names.append("SHA_%s" % cont)
+    if web:
+        parts.append("echo '#### MODELS'; docker exec colt-web python3 "
+                     "/opt/shodan-skill/scripts/model_probe.py --existence 2>&1 || true")
+        parts.append("echo '#### ENV'; grep -hE '^ENRICH_MODELS?=' "
+                     "/opt/colt-stack/assess-bot/.env 2>/dev/null | tail -1 || true")
+        names += ["MODELS", "ENV"]
+    sec = _sections(ssh_script("\n".join(parts), timeout=150), names)
+
+    if bots:
+        psout = sec.get("PS", "")
+        print("    " + "\n    ".join(l for l in psout.splitlines() if l.strip()))
+        if "colt-assessbot" not in psout:
             print("  [!] colt-assessbot not visible"); ok = False
-        if "colt-promtail" not in out:
+        if "colt-promtail" not in psout:
             print("  [!] colt-promtail missing — Grafana will go quiet"); ok = False
+
     # The engine hash is the load-bearing check. HTTP 401 only proves *something* is listening —
     # a 3-day-old container answers it just as happily as a current one.
     for cont, want in (("colt-web", web), ("colt-assessbot", bots)):
-        if not want or DRY:
+        if not want:
             continue
-        # Deliberately NOT fresh: do_web/do_bots already probed this container in THIS run, and a
-        # second ssh here is what froze the ship for minutes after everything had succeeded.
-        good, stale = engine_is_current(cont)
+        if cont not in _SHA_CACHE:                      # came back in this batch, not from cache
+            got = {}
+            for line in sec.get("SHA_%s" % cont, "").splitlines():
+                bits = line.strip().split(" ")
+                if len(bits) == 2 and "/" in bits[0]:
+                    got[bits[0]] = bits[1]
+            if got:
+                _SHA_CACHE[cont] = got
+        good, stale = engine_is_current(cont)          # now answered from the cache, no new ssh
         print("  %-16s engine: %s" % (cont, "CURRENT" if good else "STALE  <-- assessments are wrong"))
         if not good:
-            for s in stale:
-                print("      " + s)
+            for st in stale:
+                print("      " + st)
             ok = False
-    if web and not DRY:
-        # CONFIG DRIFT: a stale ENRICH_MODELS in the droplet's .env silently beats the committed
-        # chain (angermann.de ran gemma-first even though the repo had already demoted it). The repo
-        # is meant to be the source of truth, so surface the disagreement instead of hiding it.
-        try:
-            # MODEL PROBE — run INSIDE the container, where OPENAI_API_KEY actually lives. On the
-            # PC the key is absent, so model_watch.py printed "catalog unavailable - skipping" on
-            # every run: a check that cannot see the thing it checks is not a check. This one asserts
-            # every model in the effective chain EXISTS in the live catalog (free, no tokens) and
-            # FAILS the deploy if not. deepseek-v4-flash 404'd in production because nothing looked.
-            _mp = ssh("docker exec colt-web python3 /opt/shodan-skill/scripts/model_probe.py "
-                      "--existence 2>&1 || true", check=False, timeout=90)
-            for _l in (_mp or "").splitlines():
-                if _l.strip():
-                    print("    " + _l.rstrip())
-            if "MISSING" in (_mp or ""):
-                sys.exit("[X] a model in the enrichment chain does NOT exist on the inference API. "
-                         "Every assessment would waste a round-trip and silently degrade. "
-                         "Fix enrich.py::_FALLBACKS using the ids model_probe.py printed.")
 
-            _envline = ssh("grep -hE '^ENRICH_MODELS?=' /opt/colt-stack/assess-bot/.env 2>/dev/null "
-                           "| tail -1 || true").strip()
-            _envchain = _envline.split("=", 1)[1].strip().strip('\'"') if "=" in _envline else ""
-            _repo = ""
+    if web:
+        # MODEL PROBE — run INSIDE the container, where OPENAI_API_KEY actually lives. On the PC the
+        # key is absent, so model_watch.py printed "catalog unavailable - skipping" on every run: a
+        # check that cannot see the thing it checks is not a check. This asserts every model in the
+        # effective chain EXISTS in the live catalog (free, no tokens). deepseek-v4-flash 404'd in
+        # production because nothing looked.
+        _mp = sec.get("MODELS", "")
+        seen = set()
+        for _l in _mp.splitlines():                    # model_probe prints its header twice; dedupe
+            t = _l.rstrip()
+            if t.strip() and t not in seen:
+                seen.add(t); print("    " + t)
+        if "MISSING" in _mp:
+            sys.exit("[X] a model in the enrichment chain does NOT exist on the inference API. "
+                     "Every assessment would waste a round-trip and silently degrade. "
+                     "Fix enrich.py::_FALLBACKS using the ids model_probe.py printed.")
+
+        # CONFIG DRIFT: a stale ENRICH_MODELS in the droplet's .env silently beats the committed
+        # chain (angermann.de ran gemma-first even though the repo had already demoted it).
+        _envline = sec.get("ENV", "").strip()
+        _envchain = _envline.split("=", 1)[1].strip().strip('\'"') if "=" in _envline else ""
+        _repo = ""
+        try:
             for _l in open(os.path.join(ENGINE_LOCAL, "scripts", "enrich.py"), encoding="utf-8"):
                 if _l.startswith("_FALLBACKS = ["):
                     _repo = ",".join(x.strip().strip('"\'') for x in
                                      _l.split("[", 1)[1].rstrip("]\n ").split(","))
                     break
-            if _envchain and _repo and _envchain.replace(" ", "") != _repo.replace(" ", ""):
-                # AUTO-CORRECT, do not merely warn. A stale ENRICH_MODELS in the droplet .env wins
-                # over the committed chain, which silently breaks "GitHub is the single source of
-                # truth" — that is how gemma stayed at the head of the chain for weeks, timing out
-                # and burning ~46% of the enrichment budget, while the repo said deepseek. Telling
-                # the operator to run a SECOND script is also a violation of the one-command rule.
-                print("  [!] ENRICH_MODELS drift — droplet %s vs repo %s; correcting the droplet"
-                      % (_envchain, _repo))
-                # DELETE the override rather than rewrite it: enrich.py::_FALLBACKS is the single
-                # source of truth, and a value present in .env silently outranks it forever after.
-                # BOTH forms. The legacy singular ENRICH_MODEL is prepended as the chain HEAD by
-                # enrich._chain(), so it silently REORDERS the committed order — that is why
-                # deepseek-v4-flash sat at position 2 and was never called even after the plural
-                # override was removed. Four homes for one value; the repo is the only one that stays.
-                ssh("sed -i -E '/^ENRICH_MODELS?=/d' /opt/colt-stack/assess-bot/.env")
-                _now = ssh("grep -hE '^ENRICH_MODELS?=' /opt/colt-stack/assess-bot/.env "
-                           "| tail -1 || true").strip()
-                if not _now.strip():
-                    ssh("cd /opt/colt-stack && docker compose -p colt-stack "
-                        "-f docker-compose.web.yml up -d web >/dev/null 2>&1 || true")
-                    print("  enrich chain: stale droplet override REMOVED, repo order now in force "
-                          "(%s); colt-web restarted" % _repo)
-                else:
-                    print("  [!] could not correct ENRICH_MODELS on the droplet — it still reads: %s"
-                          % _now)
-            elif _repo:
-                print("  enrich chain: repo order in force (%s)" % _repo)
-        except Exception as _e:
-            print("  [i] enrich-chain drift check skipped (%s)" % type(_e).__name__)
+        except OSError:
+            pass
+        if _envchain and _repo and _envchain.replace(" ", "") != _repo.replace(" ", ""):
+            # AUTO-CORRECT, do not merely warn, and do it in ONE more session. DELETE the override
+            # rather than rewrite it: enrich.py::_FALLBACKS is the single source of truth, and a
+            # value present in .env silently outranks it forever after. BOTH forms — the legacy
+            # singular ENRICH_MODEL is prepended as the chain HEAD by enrich._chain(), so it
+            # silently REORDERS the committed order.
+            print("  [!] ENRICH_MODELS drift — droplet %s vs repo %s; correcting the droplet"
+                  % (_envchain, _repo))
+            fix = ssh_script(
+                "sed -i -E '/^ENRICH_MODELS?=/d' /opt/colt-stack/assess-bot/.env\n"
+                "cd /opt/colt-stack && docker compose -p colt-stack -f docker-compose.web.yml "
+                "up -d web >/dev/null 2>&1 || true\n"
+                "echo '#### NOW'; grep -hE '^ENRICH_MODELS?=' /opt/colt-stack/assess-bot/.env "
+                "| tail -1 || true", timeout=120)
+            if not _sections(fix, ["NOW"])["NOW"].strip():
+                print("  enrich chain: stale droplet override REMOVED, repo order now in force "
+                      "(%s); colt-web restarted" % _repo)
+            else:
+                print("  [!] could not correct ENRICH_MODELS on the droplet")
+        elif _repo:
+            print("  enrich chain: repo order in force (%s)" % _repo)
 
     if web and not DRY:
         # Prove the bot-404 gate: real users must be served, crawlers must get 404, and /api/me must

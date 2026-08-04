@@ -1847,6 +1847,30 @@ exits 0.
 RULE: when a module exports more than one fetch helper, their return shapes MUST be asserted by a
 check, not by memory — the failure mode is a feature silently disappearing, not an error.
 
+## SSH SESSION COUNT is the ONLY lever on Windows — researched, not guessed (2026-08)
+Three ship.py runs hung at the very end, AFTER a fully successful deploy. I patched the symptom
+twice (a hard timeout, then a per-run hash cache) and it simply moved to the next ssh call. The
+actual constraint, verified:
+  * **The Windows OpenSSH client has NO ControlMaster/ControlPersist multiplexing.**
+    PowerShell/Win32-OpenSSH issue #1328 is still open. So the textbook fix — reuse ONE TCP
+    connection for every command — does not exist on the operator's machine. Every `ssh()` is a full
+    TCP + kex + auth handshake.
+  * **OpenSSH 9.8 (Jul 2024) enables `PerSourcePenalties` by DEFAULT.** sshd records a penalty
+    against a source ADDRESS, penalties ACCRUE with repetition, and further connections are refused
+    while one is live. With `MaxStartups` (10:30:100) on top, a burst of short-lived sessions from
+    one IP is exactly the shape both mechanisms exist to damp.
+Therefore the only available lever is OPEN FEWER SESSIONS — which is the rule CLAUDE.md already
+carried ("prefer the single-connection pattern for anything new") and which deploy_web_direct.py has
+always obeyed, and it is the ONE script that never hangs.
+FIX: `ssh_script(script)` runs a multi-line bash script in ONE session, base64'd so no quoting layer
+(PowerShell -> ssh -> bash) can corrupt nested quotes; `_sections()` splits the output on
+`#### NAME` delimiters. `_prime_sha_cache([...])` hashes the engine in SEVERAL containers in one
+call. 5/5 VERIFY now does docker ps + both engine hashes + the model probe + the .env read in ONE
+session instead of five. MEASURED on a fake droplet: the post-deploy part of ship.py went from
+**7 sessions to 2**.
+RULE FOR ANYTHING NEW: never add an `ssh()` call to a step that already opens one — add a section to
+its batch. A second handshake is not free; on this platform it is the one that gets refused.
+
 ## 5/5 VERIFY hung because it re-asked a question already answered (2026-08)
 The deploy SUCCEEDED — colt-web up, engine CURRENT, `public via caddy = 401`, the in-image i18n
 gates green — and then ship.py sat silent for minutes on the LAST probe. Two defects:
@@ -1864,3 +1888,28 @@ gates green — and then ship.py sat silent for minutes on the LAST probe. Two d
    where esbuild worked: **a check that cannot execute is not a check.**
 RULE: before adding a probe, ask whether this run already knows the answer. A redundant remote call
 is not free — it is the one that gets throttled.
+
+## ecolines.ru — the engine spoke Russian; the API never let it (2026-08)
+The operator picked «Русский», the decks came out ENGLISH, and the run log said it plainly:
+`{"evt":"assess_done", "lang":"en"}` with filenames carrying no `_RU` suffix. The engine was
+INNOCENT — `run_assessment._doc_lang("ru")` returns `ru` and renders correctly in isolation.
+THE BUG was one line, in the layer IN FRONT of the engine:
+    lang = "de" if str(req.lang or "en").lower().startswith("de") else "en"
+in `webapp/backend/app/main.py`, in **five places** (assess, assess-refine, compliance,
+compliance-refine) plus once more inside `store.create_job`. `ru` was flattened to `en` at the API
+boundary, before the engine ever saw it — and again on the way into the database, so even a fixed
+API would have lost it.
+ROOT CAUSE, and it is the pattern not the line: **I generalised the engine to N languages and did
+not walk the request path.** Same defect class as a value having four homes — generalise one layer,
+leave the layer in front on a two-language ternary, and the stale one silently wins. `deck_langs
+.supported()` is now the single authority, reached through `main.doc_lang()`; the store persists the
+decision instead of re-making it.
+GUARD: `tests/test_doc_lang.py` asserts the RULE, not the line — no module on the request path
+(webapp/backend/app + engine scripts) may contain a `startswith("de")` coercion in CODE (comments
+that describe the removed pattern are stripped first), every language `deck_langs` OFFERS must pass
+through `supported()` unchanged, everything it cannot render must fail closed to English, and
+`create_job` must not re-coerce. Proven by a negative test: reintroducing the exact line fails the
+suite, restoring it passes.
+RULE: when you generalise a capability, follow the VALUE end-to-end — UI -> API -> persistence ->
+engine — and assert it at each hop. A capability the engine has and the API discards is invisible in
+every test that only exercises the engine.

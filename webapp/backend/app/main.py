@@ -84,7 +84,7 @@ class VerifyReq(BaseModel):
 
 class AssessReq(BaseModel):
     company: str
-    lang: str = "en"          # "en" | "de" — language of the 4 generated decks
+    lang: str = "en"          # coerced by doc_lang() to what the engine can render
 
 
 class RefineReq(BaseModel):
@@ -294,6 +294,43 @@ def demo_deck(name: str):
                         content_disposition_type=("inline" if low.endswith(".html") else "attachment"))
 
 
+def _deck_langs_mod():
+    """The engine's deck_langs module, loaded once. Returns None if unavailable."""
+    global _DECK_LANGS
+    if _DECK_LANGS is None:
+        try:
+            import importlib.util as _ilu
+            _p = os.path.join(os.path.dirname(ENGINE), "deck_langs.py")
+            _s = _ilu.spec_from_file_location("deck_langs", _p)
+            _m = _ilu.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            _DECK_LANGS = _m
+        except Exception:
+            _DECK_LANGS = False
+    return _DECK_LANGS or None
+
+
+_DECK_LANGS = None
+
+
+def doc_lang(requested, fallback=None):
+    """Coerce a requested document language to one the ENGINE can actually render.
+
+    THE BUG THIS REPLACES, and it is the whole reason Russian decks came out English:
+        lang = doc_lang(req.lang)
+    That line appeared FIVE times (assess, assess-refine, compliance, compliance-refine, and again
+    in store.create_job). It hard-codes a two-language world, so `ru` was flattened to `en` at the
+    API boundary — before the engine, which had just been generalised to N languages, ever saw it.
+    The run log said `"lang": "en"` and the filenames carried no `_RU` suffix; the engine was
+    innocent. Generalising the engine while leaving the request path on a `de`-only ternary is the
+    same defect class as a value having four homes: one of them stays stale and silently wins.
+    deck_langs.supported() is the single authority — it derives the answer from the dictionaries
+    and prompt blocks actually present, and fails closed to English."""
+    want = str(requested or fallback or "en").strip().lower()[:2]
+    m = _deck_langs_mod()
+    return m.supported(want) if m else ("de" if want == "de" else "en")
+
+
 @app.get("/api/langs")
 def langs():
     """Which languages the UI ships in, and which the DECK ENGINE can actually produce.
@@ -310,12 +347,10 @@ def langs():
     """
     ui = ["en", "de", "it", "fr", "es", "pl"]
     try:
-        import importlib.util as _ilu
-        _p = os.path.join(os.path.dirname(ENGINE), "deck_langs.py")
-        _s = _ilu.spec_from_file_location("deck_langs", _p)
-        _m = _ilu.module_from_spec(_s)
-        _s.loader.exec_module(_m)
-        return {"ui": ui, "doc": _m.catalogue()}
+        _m = _deck_langs_mod()
+        if _m:
+            return {"ui": ui, "doc": _m.catalogue()}
+        raise RuntimeError("deck_langs unavailable")
     except Exception:
         # Never fail the Assess screen over a capability probe: English always works.
         return {"ui": ui, "doc": [{"code": "en", "name": "English"}]}
@@ -366,7 +401,7 @@ async def assess(req: AssessReq, request: Request):
     company = (req.company or "").strip()
     if not company:
         raise HTTPException(status_code=400, detail="company required")
-    lang = "de" if str(req.lang or "en").lower().startswith("de") else "en"
+    lang = doc_lang(req.lang)
     job_id = uuid.uuid4().hex
     _job_dir(email, job_id)  # pre-create owner-scoped dir
     store.create_job(job_id, email, company, lang)
@@ -727,7 +762,7 @@ async def assess_refine(job_id: str, req: RefineReq, request: Request):
         raise HTTPException(status_code=400, detail="no changes supplied")
 
     company = parent.get("company") or ""
-    lang = "de" if str(req.lang or parent.get("lang") or "en").lower().startswith("de") else "en"
+    lang = doc_lang(req.lang, parent.get("lang"))
     child_id = uuid.uuid4().hex
     cdir = _job_dir(email, child_id)
     store.create_job(child_id, email, company, lang)
@@ -781,7 +816,7 @@ async def compliance(req: ComplianceReq, request: Request):
     company = (req.company or "").strip()
     if not company:
         raise HTTPException(status_code=400, detail="company required")
-    lang = "de" if str(req.lang or "en").lower().startswith("de") else "en"
+    lang = doc_lang(req.lang)
     job_id = uuid.uuid4().hex
     _job_dir(email, job_id)
     store.create_job(job_id, email, company, lang)
@@ -814,7 +849,7 @@ async def compliance_refine(job_id: str, req: ComplianceRefineReq, request: Requ
     if not flags:
         raise HTTPException(status_code=400, detail="no changes supplied")
     company = parent.get("company") or ""
-    lang = "de" if str(req.lang or parent.get("lang") or "en").lower().startswith("de") else "en"
+    lang = doc_lang(req.lang, parent.get("lang"))
     child_id = uuid.uuid4().hex
     cdir = _job_dir(email, child_id)
     store.create_job(child_id, email, company, lang)

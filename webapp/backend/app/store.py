@@ -46,8 +46,12 @@ def create_job(job_id: str, email: str, company: str, lang: str = "en") -> dict:
         c.execute(
             "INSERT OR REPLACE INTO jobs(job_id,email,company,created,status,decks,summary,lang) "
             "VALUES(?,?,?,?,?,?,?,?)",
+            # STORE WHAT WAS ASKED FOR, VERBATIM. This used to re-coerce with a de-only ternary,
+            # so even a correctly-validated `ru` was flattened to `en` on the way into the DB — a
+            # SECOND place enforcing a two-language world. Validation belongs at the API boundary
+            # (main.doc_lang), which is the single authority; the store just persists the decision.
             (job_id, email.lower(), company, int(time.time()), "running", "[]", "{}",
-             "de" if str(lang).lower().startswith("de") else "en"),
+             str(lang or "en").strip().lower()[:2] or "en"),
         )
     return get_job(job_id)
 
