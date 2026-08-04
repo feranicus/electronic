@@ -499,8 +499,13 @@ def main():
                     help="operator runs sites for clients — keep client domains out of scope")
     ap.add_argument("--notes", default="", help="free-text operator context for the LLM prose + GEOPOL")
     ap.add_argument("--outdir", default="."); ap.add_argument("--audience")
+    # CHOICES ARE DERIVED, NOT LISTED. A hardcoded ["en","de"] here is a SIXTH home for the language
+    # set: the UI offered Russian, the API passed it through, and argparse then killed the run with
+    # "invalid choice: 'ru'". Ask deck_langs what can actually be rendered — the same authority the
+    # selector and the API use — so adding a dictionary lights the flag up with no edit here.
+    _langs = _DL.doc_langs()
     ap.add_argument("--lang", default=os.environ.get("DECK_LANG", "en"),
-                    choices=["en", "de"], help="language of the 4 generated decks (en|de)")
+                    choices=_langs, help="language of the generated decks (%s)" % "|".join(_langs))
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     import time as _t

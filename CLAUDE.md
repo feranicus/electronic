@@ -1904,6 +1904,16 @@ not walk the request path.** Same defect class as a value having four homes — 
 leave the layer in front on a two-language ternary, and the stale one silently wins. `deck_langs
 .supported()` is now the single authority, reached through `main.doc_lang()`; the store persists the
 decision instead of re-making it.
+SECOND HOP, SAME DISEASE (rt-solar.ru, an hour later): with the API fixed, `ru` reached the engine
+and argparse killed the run — `run_assessment.py` still declared `choices=["en","de"]`, and so did
+`compliance_assess.py`. That is a SIXTH home for the language set, in a shape my first guard did not
+match: I had grepped for `startswith("de")` and the literal pair looks nothing like it. Both now
+derive their choices from `deck_langs.doc_langs()`.
+LESSON ABOUT THE GUARD ITSELF: a test written against the ONE SPELLING you just fixed will miss the
+next spelling of the same concept. `tests/test_doc_lang.py` now matches the CONCEPT — a hand-written
+language list in any form (`startswith("de")`, `choices=[...,"de"]`, a bare `("en","de")` literal) —
+AND runs the real CLI with `--lang <code>` for every language `/api/langs` advertises. A capability
+is not shipped until the process that does the work will accept it.
 GUARD: `tests/test_doc_lang.py` asserts the RULE, not the line — no module on the request path
 (webapp/backend/app + engine scripts) may contain a `startswith("de")` coercion in CODE (comments
 that describe the removed pattern are stripped first), every language `deck_langs` OFFERS must pass

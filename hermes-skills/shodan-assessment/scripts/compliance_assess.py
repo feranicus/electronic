@@ -47,8 +47,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--company", required=True)
     ap.add_argument("--outdir", default=".")
+    # Derived, never listed — see the note in run_assessment.py. A hardcoded pair here would reject
+    # a language the selector legitimately offers.
+    import deck_langs as _DLC
+    _langs = _DLC.doc_langs()
     ap.add_argument("--lang", default=os.environ.get("DECK_LANG", "en"),
-                    choices=["en", "de"])
+                    choices=_langs, help="language of the compliance decks (%s)" % "|".join(_langs))
     # refine overrides (operator-confirmed facts)
     ap.add_argument("--sector", default=None)
     ap.add_argument("--size-band", dest="size_band", default=None,
