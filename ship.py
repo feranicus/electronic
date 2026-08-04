@@ -20,6 +20,7 @@ What it orchestrates (each of these is still runnable alone for debugging, but y
     pytest tests/                              unit tests: auth + recon
     hermes-skills/.../test_ca_pivot.py         CA-pivot regression (bibeltv false POSITIVES)
     hermes-skills/.../test_recall.py           recall regression (bibeltv false NEGATIVES)
+    hermes-skills/.../test_scope_abakus.py     scope regression (abakus wa.me -> 236 Meta hosts)
     author_geopol.py + build_geopol_html.js    the 5th deliverable (GEOPOL HTML) renders
     py_compile over every engine script        catches the truncation/syntax class of bug
     ship_web.py                                web: build -> GHCR -> Actions -> droplet -> Caddy
@@ -155,7 +156,11 @@ ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
                 "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py",
                 "scripts/enrich_parallel.py", "scripts/attribution.py",
-                "scripts/model_probe.py", "scripts/demo_build.py"]
+                "scripts/model_probe.py", "scripts/demo_build.py",
+                # scope_deny.py is the authoritative shortener/social/platform denylist. It is a
+                # SCOPE-CORRECTNESS file: a container running an older copy would happily admit
+                # wa.me again (the abakus-tk.de failure), so its hash has to be proved deployed.
+                "scripts/scope_deny.py", "scripts/psl.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -542,6 +547,23 @@ def do_tests():
         print((_rp.stdout or '') + (_rp.stderr or ''))
         sys.exit('[X] run() path test failed - the engine would crash or mis-scope in production')
     print('  run() path: executes clean, co-tenant guard correct on the shared /24')
+
+    # c''''''') THE ABAKUS-TK.DE SCOPE REGRESSION (2026-08). A 20-person telecoms reseller with one
+    #           shared IONOS VIP was shipped a deck claiming 401 IPs across 42 ASNs and 49 countries,
+    #           236 of them Meta's — all from ONE href in the site footer (`wa.me`, the WhatsApp
+    #           shortener), because `/it-infrastruktur/` matched `struktur` as a bare substring and
+    #           was read as a corporate group-structure page.
+    #           This asserts all four fixes AND that none of them cost recall: the anchored page
+    #           hints, the shared denylist, the ownership gate on group domains, and the per-domain
+    #           contribution budget — which is the one that works even if the other three fail,
+    #           because the poison arrived through an IDENTITY query and therefore poisoned the very
+    #           baseline scope_blowout and the co-tenant guard measure against.
+    _ab = subprocess.run([sys.executable, os.path.join(engine, 'test_scope_abakus.py')],
+                         capture_output=True, text=True, timeout=180)
+    if _ab.returncode != 0:
+        print((_ab.stdout or '') + (_ab.stderr or ''))
+        sys.exit('[X] SCOPE REGRESSION - a discovered domain can own the estate again. Do not ship.')
+    print('  abakus scope: shorteners denied, group domains gated, per-domain budget enforced')
 
     # c'''') The creed (the Cassandra line) sits on the cover of all five decks and is translated by
     #       TWO independent paths: deck_i18n/de.json for the four security builders, and creed.js

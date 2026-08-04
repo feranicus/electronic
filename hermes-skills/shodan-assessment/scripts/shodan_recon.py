@@ -82,6 +82,17 @@ def _clean_domain(seed):
 
 import psl as _PSL
 
+# Authoritative scope denylist, shared with group_discovery.py. Enforced at the ownership gate
+# (_owns_apex) so it covers EVERY source a domain can arrive from -- group structure, certificate
+# SAN, CT log, DNS probe or an operator's refine answer -- not just the one path that produced the
+# abakus-tk.de failure. Fails OPEN on import error: a missing denylist must not stop assessments,
+# and the per-domain contribution budget in run() is the independent backstop.
+try:
+    from scope_deny import is_denied as _DENY, why_denied as _DENY_WHY
+except Exception:                                             # pragma: no cover
+    def _DENY(a): return False
+    def _DENY_WHY(a): return ""
+
 
 class ScopeRefused(Exception):
     """The request is well-formed but must not be assessed, and we can say exactly why.
@@ -504,6 +515,14 @@ def _owns_apex(apex, brand_tokens, seed_apex, group_domains=None, structure_know
         return False, "empty"
     if apex == (seed_apex or "").lower():
         return True, "seed apex"
+    # THE ABAKUS-TK.DE GATE (2026-08). This runs AFTER the seed check -- a media or social company
+    # can legitimately BE the customer -- but BEFORE everything else, including the group-structure
+    # assertion below. That order is the whole point: `wa.me` reached scope because group discovery
+    # asserted ownership and _owns_apex then DEFERRED to that assertion, which is circular. Shared
+    # infrastructure operated for millions of unrelated parties is never the customer's, no matter
+    # which discovery step vouched for it.
+    if _DENY(apex):
+        return False, "shared infrastructure, never a customer asset (%s)" % (_DENY_WHY(apex) or "denied")
     # THE ANGERMANN FIX (recall). A brand token can only ever find domains that SPELL the brand, so
     # netbid.com / nordleasing.com / leaseback.de / buerosuche.de were structurally unreachable from
     # seed angermann.de — and they held the best findings in the engagement. group_domains comes from
@@ -916,7 +935,12 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
         try:
             import group_discovery as _GD
             _g = _GD.discover(seed_apex)
-            _group_doms = {x["domain"] for x in _g.get("strong") or []}
+            # Re-apply the denylist HERE as well as inside group_discovery. Defence in depth is
+            # deliberate: group_discovery is best-effort and may be swapped, mocked in a test, or
+            # fail its own import of scope_deny. The abakus lesson is that a rule enforced in one
+            # place protects one code path.
+            _group_doms = {x["domain"] for x in _g.get("strong") or []
+                           if x.get("domain") and not _DENY(x["domain"])}
             _group_weak = [x["domain"] for x in _g.get("weak") or []]
             ident["group_domains"] = sorted(_group_doms)
             ident["group_pages"] = list(_g.get("pages") or [])
@@ -927,7 +951,12 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
             # Authoritative only if the customer actually published a structure page AND it named
             # companies. An empty or unreachable page must NOT be read as "they have no subsidiaries"
             # (absence of evidence is never a finding) - that would silently drop real lookalikes.
-            _structure_known = bool(_g.get("pages")) and bool(_group_doms)
+            # >= 2 named companies, not >= 1. A "structure page" that yields a SINGLE external link
+            # is far more likely to be a mis-selected page whose footer we harvested than a
+            # published group roster -- which is exactly the abakus-tk.de shape (one link: wa.me).
+            # Treating that as an authoritative roster would ALSO switch on the lookalike rejection
+            # in _owns_apex and silently shrink a real estate, so the bar is raised at both ends.
+            _structure_known = bool(_g.get("pages")) and len(_group_doms) >= 2
         except Exception as _e:
             print("[auto] group-structure discovery unavailable (%s) - continuing without it"
                   % type(_e).__name__, file=sys.stderr)
@@ -969,6 +998,18 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     #        its own identity clauses.
     for _gd in sorted(_group_doms):
         if _gd in exclude_apexes:
+            continue
+        # THE ABAKUS-TK.DE FIX (2026-08). This loop used to append straight into `domains`,
+        # bypassing _consider_domain() and therefore every check the engine has -- and _owns_apex
+        # then returned True for these apexes BECAUSE they were in group_domains. Discovery
+        # vouching for itself is not a gate. Each subsidiary now passes the same gate as any other
+        # candidate; group membership still WINS inside _owns_apex, so the angermann recall
+        # (netbid.com has zero string overlap with the seed) is untouched -- but a denylisted or
+        # public-suffix apex can no longer ride in on the strength of the assertion alone.
+        if _DENY(_gd) or _PSL.is_public_suffix(_gd):
+            unowned.add(_gd)
+            print("[auto] subsidiary REFUSED: %s (%s)"
+                  % (_gd, _DENY_WHY(_gd) or "public suffix - nobody owns it"), file=sys.stderr)
             continue
         candidate_apexes.add(_gd)
         if _gd not in domains and _gd not in ident["domains"]:
@@ -1077,9 +1118,13 @@ def build_filters(ident):
     def _cat(clause):
         c = clause.lower()
         return "identity" if any(k in c for k in ("ssl", "hostname:", "org:", "http.title", "http.html", "favicon")) else "sweep"
-    def add(n, name, clause, run=False, note="", cat=None):
+    def add(n, name, clause, run=False, note="", cat=None, dom=None):
+        # `dom` records WHICH discovered domain produced this clause. run() uses it to measure each
+        # domain's contribution separately, so one bad domain can be rolled back without taking the
+        # assessment with it (the abakus-tk.de / wa.me failure). None = not attributable to a single
+        # discovered domain (ASN sweep, pinned hosts, brand text, org name).
         if clause: F.append({"n": n, "name": name, "clause": clause, "run": run, "note": note,
-                             "cat": cat or _cat(clause)})
+                             "cat": cat or _cat(clause), "dom": dom})
     if own_asn:
         add(1, "ASN sweep", f"asn:{asns}", run=True, note="every host announced from the org's ASNs")
     elif ident["asns"]:
@@ -1109,13 +1154,13 @@ def build_filters(ident):
     # exactly by the pinned net: clause above.
     _apexes = list(dict.fromkeys(_apex(str(d)) for d in domains if d))[:6]
     for d in _apexes:                    # #4 cert CN — finds origin behind CDN/hoster, any ASN
-        add(4, "TLS cert subject CN", f'ssl.cert.subject.cn:"{d}"', run=True, note="real origin even behind a CDN/hoster")
-        add(4, "TLS cert SAN (wildcard)", f'ssl.cert.subject.cn:"*.{d}"', run=True, note="wildcard certs covering every subdomain")
+        add(4, "TLS cert subject CN", f'ssl.cert.subject.cn:"{d}"', run=True, note="real origin even behind a CDN/hoster", dom=d)
+        add(4, "TLS cert SAN (wildcard)", f'ssl.cert.subject.cn:"*.{d}"', run=True, note="wildcard certs covering every subdomain", dom=d)
     for b in brands:                     # #4/#5 cert free-text across ANY ASN (cross-ASN estate)
         add(5, "TLS free-text / cert org", f'ssl:"{b}"', run=True, note="wildcard & SAN certs across any ASN")
     for d in _apexes:                    # #5 hostname / rDNS — leading dot = "any host under it"
-        add(6, "Hostname / domain", f'hostname:".{d}"', run=True, note="reverse-DNS / HTTP host")
-        add(6, "HTTP host header", f'http.host:"{d}"', run=True, note="vhost behind a shared reverse proxy")
+        add(6, "Hostname / domain", f'hostname:".{d}"', run=True, note="reverse-DNS / HTTP host", dom=d)
+        add(6, "HTTP host header", f'http.host:"{d}"', run=True, note="vhost behind a shared reverse proxy", dom=d)
     for b in brands:                     # #6 branded HTTP title/body (portals, shadow IT)
         add(14, "HTTP title (branded)", f'http.title:"{b}"', run=True, note="branded portals/login pages on any host")
         add(15, "HTTP body (branded)", f'http.html:"{b}"', run=True, note="branded body content / shadow IT")
@@ -1425,8 +1470,11 @@ def run(ident, F, audience, limit_per_query=500):
     api = shodan.Shodan(os.environ["SHODAN_API_KEY"])
     own_asns = set(ident["asns"])
     hosts = {}; asns=set(); countries=set(); records=0; dropped=0; inv={}
+    _by_dom = {}          # discovered domain -> {ips it returned}
+    _no_dom = set()       # ips proved by something NOT attributable to one discovered domain
     for f in [f for f in F if f.get("run")]:
         q = f["clause"]; cat = f.get("cat", "sweep")
+        _fdom = f.get("dom")
         n = 0
         try:
             for m in api.search_cursor(q):
@@ -1437,6 +1485,10 @@ def run(ident, F, audience, limit_per_query=500):
                     masn = ("AS" + str(m.get("asn"))) if str(m.get("asn") or "").isdigit() else (m.get("asn") or "")
                     if _is(horg, CDNS) and (own_asns and masn not in own_asns): dropped += 1; continue
                 hosts.setdefault(m.get("ip_str"), []).append(m)
+                if _fdom:
+                    _by_dom.setdefault(_fdom, set()).add(m.get("ip_str"))
+                else:
+                    _no_dom.add(m.get("ip_str"))
                 ma = m.get("asn"); c = (m.get("location") or {}).get("country_code")
                 if ma:
                     asns.add(ma)
@@ -1449,6 +1501,55 @@ def run(ident, F, audience, limit_per_query=500):
                 if n >= limit_per_query: break
         except shodan.APIError as e:
             print(f"[warn] query {q!r}: {e}", file=sys.stderr)
+    # ---- PER-DOMAIN CONTRIBUTION BUDGET (the abakus-tk.de failure, 2026-08) ----------------------
+    # abakus-tk.de is a 20-person reseller with one shared IONOS VIP. The deck claimed 401 IPs across
+    # 42 ASNs and 49 countries, 236 of them Meta's, because `wa.me` -- the WhatsApp shortener in the
+    # site footer -- was harvested as a subsidiary and became a first-class seed.
+    #
+    # The upstream causes are fixed (anchored STRUCTURE_HINTS, scope_deny, a real gate on group
+    # domains). This is the guard that does NOT depend on any of them being right. It is the
+    # generalisation of the per-pivot budget to IDENTITY queries, and it exists because of a
+    # structural blind spot the lotto24 fix did not cover:
+    #
+    #   `identity_ips = set(hosts)` is the baseline every later guard measures against, and it is
+    #   assigned AFTER all identity queries have run. When the poison arrives THROUGH an identity
+    #   query, it becomes part of the baseline. scope_blowout compared 401 hosts against a baseline
+    #   of 401 and could never fire; the co-tenant guard exempted the Meta hosts because `wa.me` was
+    #   registered as an owned apex. One bad domain disarmed every downstream check at once.
+    #
+    # So each DISCOVERED domain is now measured on its own, against what the SEED itself proved.
+    # A subsidiary may enlarge the estate; it may not BE the estate.
+    _seed_ap = _apex(ident["domains"][0]) if ident.get("domains") else None
+    _seed_proved = set(_no_dom) | set(_by_dom.get(_seed_ap, set()))
+    DOMAIN_MAX_ADD = int(os.environ.get("DOMAIN_MAX_ADD", "40"))
+    _dom_budget = max(DOMAIN_MAX_ADD, 3 * len(_seed_proved))
+    ident["domain_budget"] = _dom_budget
+    for _d in sorted(_by_dom, key=lambda x: -len(_by_dom[x])):
+        if not _d or _d == _seed_ap:
+            continue
+        _others = set(_no_dom)
+        for _o, _ips in _by_dom.items():
+            if _o != _d:
+                _others |= _ips
+        _exclusive = _by_dom[_d] - _others          # hosts ONLY this domain brought in
+        if len(_exclusive) <= _dom_budget:
+            continue
+        for _ip in _exclusive:
+            hosts.pop(_ip, None)
+        print("[auto] domain ROLLED BACK: %s contributed %d hosts on its own but the budget is %d "
+              "(the seed proved %d). A discovered domain may enlarge the estate, never be it."
+              % (_d, len(_exclusive), _dom_budget, len(_seed_proved)), file=sys.stderr)
+        ident.setdefault("domains_rolled_back", []).append(
+            {"domain": _d, "added": len(_exclusive), "budget": _dom_budget,
+             "seed_proved": len(_seed_proved)})
+        # Strip it from the owned set too, or the co-tenant guard would still treat every host
+        # carrying its name as the customer's -- which is exactly how the Meta hosts survived.
+        ident["domains"] = [x for x in (ident.get("domains") or []) if _apex(str(x)) != _d]
+        ident["group_domains"] = [x for x in (ident.get("group_domains") or []) if x != _d]
+        ident.setdefault("related_unscoped", [])
+        if _d not in ident["related_unscoped"]:
+            ident["related_unscoped"].append(_d)
+
     # auto-harvest the internal-CA issuer pivot: PRIVATE issuers seen on the estate -> re-pivot.
     # Every candidate goes through _private_ca_ok(), which fails closed. See the bibeltv.de incident:
     # 'R12'/'YR2' are public intermediates and this pivot imported ~998 strangers' hosts.

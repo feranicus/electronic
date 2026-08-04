@@ -1977,3 +1977,54 @@ guard was CORRECT (a public suffix has no owner), but the presentation was wrong
 RULE: a guard that cannot be overridden by an informed operator is a bug, and a guard that presents
 its decision as a malfunction is a different bug. Give the reason, the next step, and the override.
 Same doctrine as the clarify loop: the human asserts the fact, the system records that they did.
+
+## abakus-tk.de — ONE href in a footer became 68% of the "attack surface" (2026-08)
+A 20-consultant Lübeck telecoms reseller whose ENTIRE estate is one shared IONOS elastic-SSL VIP
+plus M365/Zoho was shipped a deck claiming **401 IPs · 42 ASNs · 49 countries**. 16 of the 17
+evidence IPs were third parties (Oracle, AWS, OVH, Contabo, Eircom, Facebook, four TR/offshore
+hosters); the ONE real host was rated NIEDRIG, the lowest in the deck. **236 of 348 inventoried
+hosts — 68% — were Meta.** The C-BIQ priced €2.5–6.8M SEW / €90M PML / 736% RSI entirely off H2,
+whose seven evidence IPs are all strangers'. GEOPOL profiled German automotive (TISAX, UNECE R155,
+VW/Winnti) for a company that resells SIP trunks.
+ROOT CAUSE, exact and reproducible: `group_discovery.STRUCTURE_HINTS` matched `struktur` as a BARE
+SUBSTRING — and **`infrastruktur` contains `struktur`**. So `/it-infrastruktur/`, the likeliest page
+path on a TELECOMS provider's website, was read as a corporate group-structure page, every external
+link on it was harvested as a "subsidiary", and the site-wide WhatsApp footer button
+(`<a href="https://wa.me/…">Chat</a>`) put **wa.me** into scope as a first-class seed →
+`hostname:".wa.me"` → Meta's global edge. The module written to fix a PROPERTY group broke on a
+telecoms company because "Infrastruktur" is that company's product.
+**WHY EVERY GUARD STAYED SILENT — the part that matters.** The guards are not independent; all
+three key off the same assertion:
+  * `identity_ips = set(hosts)` is assigned AFTER the identity queries. The poison arrived THROUGH
+    an identity query, so it became the baseline: `scope_blowout` compared 401 against 401.
+  * the co-tenant guard puts `group_domains` into `_own_aps`, so every host carrying `wa.me` was
+    explicitly EXEMPTED as "carries one of the customer's own names".
+  * `_accept_pivot` (PIVOT_MAX_ADD) guards pivots only; these hosts were not a pivot.
+  * `_owns_apex` returned True for wa.me *because it was in group_domains* — discovery vouching for
+    itself is not a gate.
+FOUR FIXES, in `scripts/`:
+1. `group_discovery.STRUCTURE_HINTS` anchors the generic tokens with `(?<![a-z])…(?![a-z])` and
+   keeps the real German compounds (konzern-/unternehmens-/firmen-struktur) listed explicitly;
+   `infra` leads ANTI_HINTS as a second, independent barrier.
+2. **NEW `scope_deny.py`** — the authoritative shortener/social/SaaS/platform/media denylist,
+   enforced BOTH at harvest (group_discovery) AND at the ownership gate (`_owns_apex`), because a
+   denylist that lives in one module protects one code path. Runs AFTER the seed test so a media or
+   social company can still BE the customer. `_SHORT_SHAPE` is deliberately narrow (1–2 char label
+   on me/ly/gy/gd/co/to/cc) — an earlier draft allowed 3 chars and .io/.ai and would have denied a
+   real startup, which is the opposite failure and the harder one to notice.
+3. group domains no longer bypass the gate: they are refused if denied or a public suffix. Group
+   membership still WINS inside `_owns_apex`, so the angermann netbid.com recall is untouched.
+   `_structure_known` now needs **≥2** named companies — one link is a mis-selected page, not a
+   published roster (and treating it as authoritative would also switch on lookalike rejection).
+4. **PER-DOMAIN CONTRIBUTION BUDGET** (`DOMAIN_MAX_ADD`, default 40; budget =
+   `max(40, 3 × seed_proved)`). `build_filters` tags each identity clause with the `dom` that
+   produced it; `run()` measures what each DISCOVERED domain contributed EXCLUSIVELY and rolls the
+   whole domain back — hosts, `ident["domains"]`, `group_domains` — recording it in
+   `domains_rolled_back` + `related_unscoped`. This is the generalisation of the lotto24 per-pivot
+   budget to IDENTITY queries, and it is the only guard that holds when the other three fail.
+RULE: **a discovered domain may ENLARGE the estate; it may never BE the estate.** And a guard whose
+baseline is computed after the untrusted input has been merged is not a guard.
+Guarded by `scripts/test_scope_abakus.py` (wired into ship.py, BLOCKING): replays the failure
+(118 Meta hosts → rolled back, 1 IONOS host kept), proves the recall side (netbid.com/netbid.io
+survive, every past-incident domain still allowed), and was verified to FAIL with
+`DOMAIN_MAX_ADD=99999` — a gate that only ever goes green is unproven.

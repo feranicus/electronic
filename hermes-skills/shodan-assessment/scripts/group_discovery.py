@@ -55,6 +55,17 @@ The `fetch` argument is a seam so tests inject fixtures instead of hitting the n
 """
 import argparse, html as _html, json, re, sys, urllib.parse, urllib.request
 
+try:                                    # authoritative scope denylist (shared with shodan_recon)
+    from scope_deny import is_denied as _denied, why_denied as _deny_why
+except Exception:                       # never let a missing import kill discovery
+    def _denied(a): return False
+    def _deny_why(a): return ""
+
+try:                                    # registrable domain via the Public Suffix List
+    import psl as _PSL
+except Exception:
+    _PSL = None
+
 UA = "Mozilla/5.0 (compatible; cybergod-recon/1.0; +https://cybergod.ai)"
 TIMEOUT = 8
 MAX_PAGES = 4           # structure pages to read (a company has ONE structure page)
@@ -66,16 +77,34 @@ MAX_CANDIDATES = 25     # hard cap: a group page cannot legitimately name 200 co
 # share widget) and bewatec.com / vesselbid.com / clarus-am.com / einkaufsfinanzierer.com
 # (M&A TRANSACTION CLIENTS). Putting an M&A client's estate in the adviser's deck is the exact
 # S-KON failure this engine exists to prevent, so the pattern is now narrow and anchored.
+# THE ABAKUS-TK.DE INCIDENT (2026-08): `struktur` was matched as a BARE SUBSTRING, and
+# `infrastruktur` contains `struktur`. So `/it-infrastruktur/` -- the single most likely page path
+# on a TELECOMS or IT provider's website -- was read as a corporate group-structure page, every
+# external link on it was harvested as a "subsidiary", and the site-wide WhatsApp footer button put
+# `wa.me` into scope. 236 of the 348 hosts in the delivered deck were Meta's.
+# The irony is in the targeting: this module was written for a PROPERTY group and broke on a
+# telecoms company, because "Infrastruktur" is that company's product.
+# The generic tokens are therefore anchored to a word boundary; the German compounds that are
+# genuinely structural (konzern-/unternehmens-/firmen-struktur) stay listed explicitly, because a
+# lookbehind cannot tell them apart from `infrastruktur` -- they all have a letter in front.
 STRUCTURE_HINTS = re.compile(
-    r"(struktur|structure|auf-einen-blick|at-a-glance|our-companies|group-companies"
-    r"|konzernstruktur|unternehmensstruktur|beteiligungen|tochtergesellschaft|subsidiar"
+    r"((?<![a-z])struktur(?![a-z])|(?<![a-z])structure(?![a-z])"
+    r"|konzernstruktur|unternehmensstruktur|firmenstruktur|gesellschaftsstruktur"
+    r"|auf-einen-blick|at-a-glance|our-companies|group-companies"
+    r"|beteiligungen|tochtergesellschaft|subsidiar"
     r"|/gruppe/?$|/group/?$|/companies/?$|/divisions/?$)", re.I)
 
 # Pages that LOOK corporate but publish OTHER companies' names: press releases quote media,
 # reference/transaction pages name clients, property pages name assets, career pages name tools.
 # Anything matching this is never read as a structure page, whatever else it matches.
+#
+# `infra` leads this list, and it is belt-and-braces for the anchoring above: ANTI_HINTS is
+# evaluated FIRST and hard-excludes, so even if a future edit loosens STRUCTURE_HINTS again, an
+# infrastructure page can no longer be read as a group-structure page. Two independent barriers,
+# because the single barrier is what failed on abakus-tk.de.
 ANTI_HINTS = re.compile(
-    r"(newsroom|presse|press|news|mitteilung|publikation|referenz|reference|transaktion"
+    r"(infrastruktur|infrastructure|infra"
+    r"|newsroom|presse|press|news|mitteilung|publikation|referenz|reference|transaktion"
     r"|transaction|deal|case-stud|projekt|project|objekt|immobilie|expose|karriere|career"
     r"|job|stellen|archiv|blog|historie|history|geschichte|team|kontakt|contact|impressum"
     r"|datenschutz|privacy|recht|agb|terms|cookie|sitemap|suche|search|login|umfrage)", re.I)
@@ -87,6 +116,14 @@ ANTI_HINTS = re.compile(
 WIDGET_RE = re.compile(r"(\bshare\b|sharer|addthis|addtoany|/intent/|share\.com|/share/)", re.I)
 
 # Never treat these as subsidiaries: social, tooling, CDNs, standards bodies, gov, common SaaS.
+#
+# THE ABAKUS-TK.DE LESSON (2026-08): this set used to be the ONLY suppression, and it named
+# `whatsapp.com` and `t.me` but not `wa.me`. A denylist that lives in one module protects one code
+# path -- and `wa.me` could equally have arrived from a certificate SAN, a CT record or a refine
+# answer, with nothing downstream to object. The authoritative list now lives in scope_deny.py and
+# is enforced BOTH here (at harvest) and in shodan_recon._owns_apex (at the ownership gate), ahead
+# of the group-structure assertion itself. What remains below is a local supplement, kept so this
+# module still degrades sensibly if scope_deny is ever unavailable.
 NOISE_APEX = {
     "facebook.com", "twitter.com", "x.com", "linkedin.com", "instagram.com", "youtube.com",
     "xing.com", "google.com", "gstatic.com", "googleapis.com", "gmail.com", "apple.com",
@@ -109,9 +146,17 @@ _MULTI = {"co.uk", "org.uk", "ac.uk", "gov.uk", "co.at", "or.at", "ch.ch", "com.
 
 
 def _apex(host):
-    """Registrable domain. Mirrors shodan_recon._apex so the two agree on what a 'domain' is."""
+    """Registrable domain (eTLD+1). Delegates to psl.py so this module and shodan_recon can never
+    disagree about what a 'domain' is -- the budget.gov.ru incident (2026-08) was caused by exactly
+    such a hand-rolled 'last two labels' rule, which turned every federal ministry into one
+    organisation. The local _MULTI table below is only a fallback if psl.py is unavailable."""
     h = (host or "").strip().lower().rstrip(".")
     h = h.split("/")[0].split(":")[0]
+    if _PSL is not None:
+        try:
+            return _PSL.registrable(h) or ""
+        except Exception:
+            pass
     parts = [p for p in h.split(".") if p]
     if len(parts) < 2:
         return ""
@@ -214,10 +259,18 @@ def discover(seed_apex, fetch=None, log=None, max_pages=MAX_PAGES):
     # 2) harvest EXTERNAL domains from those pages (strong) and from the homepage (weak)
     strong, weak, pages, org_names = {}, {}, [], []
 
+    denied_seen = {}
+
     def _harvest(html, src_url, bucket, why):
         for url, text in _links(html, src_url):
             apex = _apex(urllib.parse.urlparse(url).netloc)
             if not apex or apex == seed_apex or apex in NOISE_APEX:
+                continue
+            # THE ABAKUS GATE. `wa.me` in a site footer is not a subsidiary; it is the WhatsApp
+            # click-to-chat shortener, and admitting it put 236 Meta hosts into a 20-person
+            # reseller's deck. Recorded rather than silently dropped, so the log explains itself.
+            if _denied(apex):
+                denied_seen[apex] = _deny_why(apex) or "denied"
                 continue
             if WIDGET_RE.search(url) or WIDGET_RE.search(apex):
                 continue                    # xing-share.com et al are widgets, not subsidiaries
@@ -247,8 +300,12 @@ def discover(seed_apex, fetch=None, log=None, max_pages=MAX_PAGES):
         % (seed_apex, len(pages), len(s), len(w)))
     if s:
         say("[group] group domains: %s" % ", ".join(x["domain"] for x in s))
+    if denied_seen:
+        say("[group] DENIED %d shared-infrastructure apex(es) (never a subsidiary): %s"
+            % (len(denied_seen),
+               ", ".join("%s (%s)" % (k, v) for k, v in sorted(denied_seen.items())[:8])))
     return {"seed": seed_apex, "strong": s, "weak": w, "pages": pages,
-            "org_names": sorted(set(org_names))[:40]}
+            "denied": sorted(denied_seen), "org_names": sorted(set(org_names))[:40]}
 
 
 def main():
