@@ -80,8 +80,18 @@ def _clean_domain(seed):
     s = re.sub(r'(?i)^\w+://', '', seed.strip()).split('/')[0].split('?')[0].split('@')[-1]
     return s.lower().lstrip('.')
 
+import psl as _PSL
+
+
 def _apex(d):
-    p = d.split('.'); return ".".join(p[-2:]) if len(p) >= 2 else d
+    """The REGISTRABLE domain — the unit of ownership. NOT "the last two labels".
+
+    THE budget.gov.ru INCIDENT: this used to be `".".join(p[-2:])`, so `budget.gov.ru` became
+    `gov.ru` — and so did duma.gov.ru, nalog.gov.ru, mchs.gov.ru and every other ministry. The
+    ownership gate then agreed the entire Russian federal government was one customer: 203 IPs and
+    €11-28M of priced risk for a request about ONE budget site. `gov.ru` / `co.uk` / `com.au` are
+    PUBLIC SUFFIXES — sharing one means sharing nothing. See psl.py."""
+    return _PSL.registrable(d)
 
 CIDR_RE = re.compile(r'^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$')
 
@@ -99,6 +109,15 @@ def resolve_identity(seed):
         ident.update(nets=[s], brand=s)
     elif re.search(r'[A-Za-z]', s) and '.' in _clean_domain(s) and ' ' not in s:   # ---- domain/URL
         dom = _clean_domain(s); apex = _apex(dom)
+        # A PUBLIC SUFFIX IS NOT A CUSTOMER. Seeding `gov.ru`, `co.uk` or `com.au` asks us to assess
+        # everything anyone has ever registered under a shared namespace — there is no owner to
+        # corroborate against, so every downstream ownership check degenerates and the estate grows
+        # without limit. Refuse loudly instead of producing a confident deck about a whole country.
+        if _PSL.is_public_suffix(dom):
+            raise SystemExit(
+                "[X] %r is a PUBLIC SUFFIX, not a company: anyone may register under it and it has "
+                "no single owner. Assessing it would mix thousands of unrelated organisations into "
+                "one deck. Give the actual registrable domain instead, e.g. 'budget.%s'." % (dom, dom))
         ident["domains"] = sorted({dom, apex}); ident["brand"] = apex
         try:
             ip = socket.gethostbyname(dom); ident["seed_ip"] = ip
@@ -241,6 +260,15 @@ def _private_ca_ok(cn, ident, api=None):
     cn = (cn or "").strip()
     if not cn:
         return False, "empty CN"
+    # NO BRAND TOKENS -> NO PIVOT. budget.gov.ru produced `brand tokens: (none)` (the seed apex was
+    # wrongly `gov.ru` and `gov` is legal-form noise), and with nothing to corroborate against, the
+    # rarity test alone let 'Russian Trusted Sub CA' through — a NATIONAL certificate authority that
+    # signs the whole federal government. Rarity is not ownership: an issuer can be rare in Shodan's
+    # index and still belong to somebody else entirely. When we hold no distinctive token for the
+    # target, every downstream corroboration check is a no-op, so the honest answer is to widen
+    # nothing at all. Fail closed.
+    if not _brand_tokens(ident):
+        return False, "no brand token known for the target — cannot corroborate any pivot"
     if _is(cn, PUBLIC_CAS):
         return False, "known public CA"
     if _OPAQUE_CA_RE.match(cn):

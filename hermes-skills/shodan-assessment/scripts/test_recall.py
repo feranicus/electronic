@@ -411,3 +411,49 @@ check(_rep4["coverage"] == 1.0, "a full-depth answer scores 100%")
 check(_rep4["shards"][0].get("tok_s") is not None,
       "throughput is recorded per shard so the next timeout is read, not guessed")
 _E._call = _sv
+
+
+print("\n[22] budget.gov.ru — a PUBLIC SUFFIX is not a company (the whole-government blow-out)")
+# The delivered deck claimed 203 IPs and EUR 11-28M of priced risk across duma.gov.ru, nalog.gov.ru,
+# mchs.gov.ru, fssp.gov.ru and the rest of the Russian federal government — for a request about ONE
+# budget-transparency site. ONE line caused it: `_apex` returned the last two labels, so every
+# ministry resolved to the same "apex" `gov.ru` and the ownership gate agreed they were one customer.
+import psl as _P
+
+for _h, _want in (("budget.gov.ru", "budget.gov.ru"), ("duma.gov.ru", "duma.gov.ru"),
+                  ("nalog.gov.ru", "nalog.gov.ru"), ("www.bbc.co.uk", "bbc.co.uk"),
+                  ("example.com.au", "example.com.au"), ("a.b.example.co.jp", "example.co.jp")):
+    check(_P.registrable(_h) == _want,
+          "registrable(%s) = %s" % (_h, _P.registrable(_h)))
+check(R._apex("budget.gov.ru") != R._apex("duma.gov.ru"),
+      "two ministries are NOT the same owner (this is the whole bug)")
+
+# Regression: every earlier incident domain must be unchanged by the PSL.
+for _h, _want in (("skon.de", "skon.de"), ("gitlab.bibel.tv", "bibel.tv"),
+                  ("vorteile.otto.de", "otto.de"), ("ecolines.net", "ecolines.net"),
+                  ("email-archiv-rightmart.de", "email-archiv-rightmart.de"),
+                  ("angermann.3cx.eu", "3cx.eu")):
+    check(R._apex(_h) == _want, "regression: _apex(%s) still %s" % (_h, _want))
+
+# The seed itself may not BE a public suffix.
+check(_P.is_public_suffix("gov.ru") and _P.is_public_suffix("co.uk"),
+      "gov.ru / co.uk are recognised as public suffixes")
+check(not _P.is_public_suffix("otto.de") and not _P.is_public_suffix("budget.gov.ru"),
+      "a real registrable domain is not mistaken for one")
+try:
+    R.resolve_identity("gov.ru")
+    check(False, "seeding a public suffix must be REFUSED")
+except SystemExit:
+    check(True, "seeding a public suffix is refused instead of assessing a whole country")
+
+# FAIL CLOSED with no brand token: rarity alone let a NATIONAL CA through.
+class _RareAPI:
+    def count(self, q): return {"total": 300}
+
+_no_tok = {"seed": "gov.ru", "brand": "gov.ru", "org": "gov.ru", "domains": ["gov.ru"]}
+check(not R._brand_tokens(_no_tok), "the incident shape really does yield zero brand tokens")
+_ok, _why = R._private_ca_ok("Russian Trusted Sub CA", _no_tok, _RareAPI())
+check(not _ok, "no brand token -> CA pivot refused (%s)" % _why)
+_bib = {"seed": "bibeltv.de", "brand": "bibeltv.de", "org": None, "domains": ["bibeltv.de"]}
+check(R._private_ca_ok("Bibel TV Issuing CA 01", _bib, _RareAPI())[0],
+      "a genuine branded private CA still passes")

@@ -1923,3 +1923,38 @@ suite, restoring it passes.
 RULE: when you generalise a capability, follow the VALUE end-to-end — UI -> API -> persistence ->
 engine — and assert it at each hop. A capability the engine has and the API discards is invisible in
 every test that only exercises the engine.
+
+## budget.gov.ru — ONE line made the whole Russian government one customer (2026-08)
+The operator asked for **budget.gov.ru** and received a deck covering duma.gov.ru, nalog.gov.ru,
+minfin.gov.ru, mchs.gov.ru, fssp.gov.ru, fsb-adjacent hosts and ~120 more: **203 IPs, 12 findings,
+EUR 11-28M of priced risk**, and the report even renamed the customer to `gov.ru`.
+THE CAUSE, one line:
+    def _apex(d):
+        p = d.split('.'); return ".".join(p[-2:])
+`budget.gov.ru` -> `gov.ru`. So did every ministry. The ownership gate — the thing the entire
+zero-false-positive design rests on — then agreed they were all the same organisation. The same line
+turns `bbc.co.uk` into `co.uk` and `example.com.au` into `com.au`.
+`gov.ru` / `co.uk` / `com.au` are **PUBLIC SUFFIXES**: nobody owns them, anyone may register under
+them. Two names sharing one share NOTHING. This did not merely widen scope, it inverted the meaning
+of the ownership test.
+FIX — `scripts/psl.py`, three barriers, each independent:
+1. **`_apex()` is now the REGISTRABLE domain (eTLD+1).** Preferred source is the OFFICIAL list at
+   `scripts/data/public_suffix_list.dat` (fetch it with `python update_psl.py`); absent that, a
+   committed STRUCTURAL rule — under a two-letter ccTLD, a second label from the small set of
+   ADMINISTRATIVE labels (gov, co, com, ac, edu, mil, gouv, govt, ...) is a suffix, not a
+   registration. The rule encodes the CLASS, not a hand-typed zone list that would go stale.
+2. **A public suffix may not be SEEDED.** `resolve_identity("gov.ru")` now refuses with an
+   explanation instead of confidently assessing a country.
+3. **No brand tokens -> no pivot, at all.** The run logged `brand tokens: (none)` (the bad apex made
+   `gov` legal-form noise), and with nothing to corroborate against, the rarity test alone admitted
+   **'Russian Trusted Sub CA'** — a NATIONAL certificate authority — as "the customer's private CA",
+   pulling in +44 hosts. RARITY IS NOT OWNERSHIP: an issuer can be rare in Shodan's index and still
+   belong to somebody else entirely. When we hold no distinctive token, every downstream
+   corroboration is a no-op, so the honest answer is to widen nothing.
+FAIL DIRECTION: when unsure, take MORE labels, i.e. a NARROWER estate. A narrow estate misses some of
+the customer's own hosts (a recall bug); a wide one puts a stranger's infrastructure in their deck.
+Guarded by test_recall.py §22, including a regression pass over EVERY earlier incident domain
+(skon.de, bibel.tv, otto.de, ecolines.net, email-archiv-rightmart.de, angermann.3cx.eu) to prove the
+PSL changes none of them.
+RULE: "the last two labels" is never the registrable domain. Any ownership decision keyed on a
+domain must go through psl.registrable().
