@@ -2170,3 +2170,32 @@ ONE source for these numbers. Guarded by test_scope_abakus.py §12 (inventory ho
 unique IPs; the ASN count must be consistent with the surviving host count).
 RULE: any headline number must be computed AFTER the last thing that can change it. A count taken
 mid-pipeline is a claim about a state the deck never describes.
+
+## An EMPTY estate is an honest outcome — the valve inverted (abakus-tk.de, 2026-08, CORRECTION)
+The cert-name fix worked (`abakusconsulting.co.uk` refused, scope back to ONE domain) and the run
+got WORSE: **25 IPs, 6 findings, EUR 6-16M priced** on a 20-person reseller. One log line explains it:
+```
+co-tenant guard REFUSED: it would have dropped 25 of 25 hosts (100%) - keeping everything
+```
+The attribution gate had already removed every record on the IONOS VIP — that day Shodan's records
+for it named `pro-tec.org` and `www.parcarmeen.com`, NOT abakus — so the 25 hosts left really were
+all strangers. The guard identified all 25 correctly and then refused, because dropping them would
+empty the deck. Those 25 strangers became six findings.
+**The "never empty a deck" invariant was the bug.** It was written for lotto24.de, where a malformed
+`org:` pivot injected 381 strangers and refusing at least left the operator something. That case is
+now handled UPSTREAM by the per-pivot and per-domain budgets, so emptiness no longer has to be
+prevented at the co-tenant guard — and preventing it there guarantees the worst possible deck on the
+most common target shape we see.
+RULE: **"nothing of yours is externally observable" is a TRUE, defensible and saleable result** for a
+company whose whole presence is shared hosting and SaaS. A deck full of other people's servers is
+none of those things. Emptiness is no longer a refusal trigger; the only surviving refusal is the
+narrow lotto24/angermann one — a mass drop on a target that OWNS address space means the whois data
+is the suspect, not the estate. Pinned hosts and hosts carrying the customer's own names are exempt
+before the guard runs, so for it to empty the estate every remaining host must be unpinned, unnamed
+and whois-owned by somebody else, which is the definition of "they are strangers".
+`ident["no_attributable_estate"]` is set and logged so a zero reads as a finding, not a broken run.
+NOTE THE TEST INVERSION: `test_run_path.py`'s "the guard must never EMPTY a deck" assertion was
+DELIBERATELY inverted, with the reasoning kept in the file. A test that encodes a doctrine must be
+rewritten when the doctrine is corrected — deleting it would lose why.
+Guarded by test_scope_abakus.py §13 and the rewritten test_run_path.py section (both directions:
+no address space -> drop; own address space -> still refuse).

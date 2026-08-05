@@ -482,6 +482,48 @@ check((_asns3 or 0) <= max(1, _ips3 or 0),
       "ASN count (%s) is consistent with %s surviving host(s)" % (_asns3, _ips3))
 
 
+
+# =============================================================== 13. an empty estate is honest
+print("\n== 13. an empty estate is an honest outcome, not a reason to keep strangers ==")
+# The 2026-08-05 15:30 run. The attribution gate had already removed every record on the IONOS VIP
+# (that day Shodan's records for it named pro-tec.org and parcarmeen.com), so the 25 hosts left were
+# ALL strangers. The co-tenant guard flagged 25 of 25 -- and then REFUSED, because dropping them
+# would empty the deck. Those 25 became SIX findings and a EUR 6-16M price tag on a 20-person
+# reseller. Emptiness is no longer a reason to keep anything.
+STRANGERS = [_h("45.10.%d.7" % i, "Neue Medien Muennich GmbH", ["kunde-%d.de" % i], asn="AS47447")
+             for i in range(1, 26)]
+_install_routing_shodan([("abakus-tk.de", STRANGERS)], default=[])
+EMPT = dict(BRANDY)
+EMPT.update({"domains": ["abakus-tk.de"], "pinned": ["217.160.0.136"], "brand_variants": [],
+             "related_unscoped": [], "asns": [], "nets": []})
+for k in ("scanned_ips", "cotenants_refused", "cotenants_dropped", "no_attributable_estate"):
+    EMPT.pop(k, None)
+_oe = R.run(EMPT, R.build_filters(EMPT), audience="internal", limit_per_query=500)
+
+check(not EMPT.get("cotenants_refused"),
+      "the valve does NOT refuse just because the result would be empty")
+check(not set(EMPT.get("scanned_ips") or []),
+      "all 25 strangers are dropped: %d host(s) left" % len(EMPT.get("scanned_ips") or []))
+check(bool(EMPT.get("no_attributable_estate")),
+      "the empty outcome is stated explicitly, not left as a silent zero")
+_shodan_findings = [f for f in (_oe.get("findings") or []) if f.get("ft") not in ("no_caa", "dns_no_service")]
+check(not _shodan_findings,
+      "no findings are invented from other companies' hosts (%d)" % len(_shodan_findings))
+
+# ...and the lotto24/angermann doctrine is untouched: with its OWN address space, a 95% drop still
+# means the whois data is the suspect.
+OWN2 = dict(EMPT)
+OWN2.update({"asns": ["AS8220"], "nets": ["217.110.51.0/24"], "domains": ["angermann.de"],
+             "seed": "angermann.de", "brand_tokens": ["angermann"], "pinned": ["217.110.51.2"],
+             "related_unscoped": []})
+for k in ("scanned_ips", "cotenants_refused", "no_attributable_estate"):
+    OWN2.pop(k, None)
+_install_routing_shodan([("217.110.51", OWNED_MIX), ("angermann.de", OWNED_MIX)], default=[])
+R.run(OWN2, R.build_filters(OWN2), audience="internal", limit_per_query=500)
+check(bool(OWN2.get("cotenants_refused")),
+      "a target that OWNS address space still gets the mass-drop refusal (lotto24 doctrine intact)")
+
+
 print("\n" + ("FAILED: %d" % len(FAILS) if FAILS else "ALL ABAKUS SCOPE CHECKS PASSED"))
 for f in FAILS:
     print("   - " + f)

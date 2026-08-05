@@ -114,18 +114,49 @@ for ip, who in (("217.110.51.18", "Nordrheinische Aerzteversorgung"),
                 ("217.110.51.122", "FACT"), ("217.110.51.135", "Regus")):
     check(ip in dropped and ip not in kept, "co-tenant guard DROPS %s (%s)" % (ip, who))
 
-print("\n== the guard must never EMPTY a deck (audit_fp doctrine) ==")
+print("\n== an EMPTY estate is an honest outcome (doctrine CORRECTED 2026-08) ==")
+# THIS ASSERTION USED TO BE THE OPPOSITE, and the inversion is deliberate.
+#
+# The old rule was "the guard must never empty a deck": if every remaining host looked foreign, it
+# refused and kept them all. That was written for lotto24.de, where a malformed org: pivot injected
+# 381 strangers and refusing at least left the operator with something.
+#
+# On abakus-tk.de (2026-08-05) the same rule produced the worst deck of the engagement. The
+# attribution gate had already removed every record on the customer's shared IONOS VIP -- that day
+# Shodan's records for it named pro-tec.org and parcarmeen.com -- so the 25 hosts left really were
+# ALL strangers. The valve refused, and those 25 became SIX findings and a EUR 6-16M price tag on a
+# 20-person telecoms reseller.
+#
+# "Nothing of yours is externally observable" is a TRUE, defensible and saleable result for a
+# company whose whole presence is shared hosting and SaaS. A deck full of other people's servers is
+# none of those things. The lotto24 case is now handled upstream by the per-pivot and per-domain
+# budgets, so emptiness no longer has to be prevented here.
+# The surviving refusal is narrower and still tested below: a mass drop on a target that OWNS
+# address space means the whois data is the suspect, not the estate.
 recs2 = [_h("10.0.0.%d" % n, "Some Other Company GmbH", ["other.de"]) for n in range(1, 6)]
 _install_fake_shodan(recs2)
 import importlib
 importlib.reload(R)
 i2 = _ident([])
+i2["asns"], i2["nets"] = [], []          # no address space of its own -> the abakus shape
 R.run(i2, [{"n": 1, "name": "net", "clause": 'net:"10.0.0.0/24"', "run": True, "cat": "sweep"}],
       "Internal")
-check(len(i2.get("scanned_ips") or []) > 0,
-      "when EVERY host looks foreign the guard refuses rather than shipping an empty deck")
-check(not (i2.get("cotenants_dropped") or []), "nothing was dropped on the refusal path")
-check(bool(i2.get("cotenants_refused")), "the refusal is recorded for observability")
+check(not (i2.get("scanned_ips") or []),
+      "with no address space of its own, strangers are DROPPED even if that empties the estate")
+check(not i2.get("cotenants_refused"),
+      "emptiness alone is no longer a reason to keep other companies' hosts")
+check(bool(i2.get("no_attributable_estate")),
+      "the empty outcome is stated explicitly rather than left as a silent zero")
+
+print("\n  ...but a target that OWNS address space still gets the lotto24 refusal")
+i2b = _ident([])
+i2b["asns"], i2b["nets"] = ["AS8220"], ["10.0.0.0/24"]
+_install_fake_shodan(recs2)
+importlib.reload(R)
+R.run(i2b, [{"n": 1, "name": "net", "clause": 'net:"10.0.0.0/24"', "run": True, "cat": "sweep"}],
+      "Internal")
+check(bool(i2b.get("cotenants_refused")),
+      "own ASN/prefixes + a mass drop -> the whois data is the suspect, keep everything and say so")
 
 
 print("\n== the lotto24.de failure: a malformed org: pivot must not own the estate ==")

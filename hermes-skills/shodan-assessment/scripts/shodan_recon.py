@@ -2068,10 +2068,24 @@ def run(ident, F, audience, limit_per_query=500):
     # EXPECTED result, not a malfunction -- so applying the threshold there guarantees the wrong
     # answer on the most common shape of German SMB prospect we see (S-KON, rightmart, abakus).
     # The invariant worth keeping is the narrow one: never drop into an EMPTY deck.
+    #
+    # 2026-08, SECOND CORRECTION. "Never drop into an EMPTY deck" was still a refusal trigger, and
+    # on the next abakus-tk.de run it fired: the attribution gate had already removed every record
+    # on the IONOS VIP (that day Shodan's records for it named pro-tec.org and parcarmeen.com), so
+    # the 25 hosts left were ALL strangers. Dropping them would have emptied the estate, the valve
+    # refused, and 25 other companies' hosts became SIX findings and a EUR 6-16M price tag on a
+    # 20-person reseller.
+    # An empty estate is an HONEST outcome, and on a target whose whole presence is shared hosting
+    # it is frequently the CORRECT one: "nothing of yours is externally observable" is a true,
+    # defensible and even saleable result. A deck full of strangers is neither.
+    # So emptiness is no longer a reason to keep anything. The only surviving refusal is the
+    # lotto24/angermann one: a mass drop on a target that DOES own address space means the whois
+    # data is the suspect, not the estate. Pinned hosts and hosts carrying the customer's own names
+    # are exempt before we ever get here, so for this to empty the estate every remaining host must
+    # be unpinned, unnamed and whois-owned by somebody else -- which is exactly "they are strangers".
     _owns_space = bool(ident.get("asns")) or bool(ident.get("nets"))
-    _would_empty = not hosts
     _mass_drop = len(_cotenant) > 0.75 * (len(hosts) + len(_cotenant))
-    if _cotenant and (_would_empty or (_mass_drop and _owns_space)):
+    if _cotenant and _mass_drop and _owns_space:
         # Snapshot the denominator BEFORE restoring. The old message computed it after the restore
         # loop, so the co-tenants were counted twice and lotto24.de reported "dropped 379 of 783"
         # against a real estate of 404. A guard that misreports its own arithmetic sends the next
@@ -2201,6 +2215,17 @@ def run(ident, F, audience, limit_per_query=500):
         findings.sort(key=lambda f: SEV_ORDER.index(f["sev"]) if f["sev"] in SEV_ORDER else 9)
         print("[auto] DNS hygiene: %d finding(s) from the zone itself (%s)"
               % (len(_dns_findings), ", ".join(f["ft"] for f in _dns_findings)), file=sys.stderr)
+
+    # A target can legitimately end with NOTHING externally observable — a small company whose whole
+    # presence is shared hosting and SaaS. Say so explicitly rather than letting a silent zero look
+    # like a broken run, and record it so the decks and the LLM prose can state the honest headline
+    # ("no attributable external exposure") instead of reaching for filler.
+    if not hosts and (ident.get("pinned") or ident.get("domains")):
+        ident["no_attributable_estate"] = True
+        print("[auto] NO ATTRIBUTABLE ESTATE: every observed record belonged to a co-tenant or a "
+              "provider. The customer's own addresses are known (%d pinned) but nothing on them "
+              "identifies itself as theirs. That is a finding, not a failure."
+              % len(ident.get("pinned") or []), file=sys.stderr)
 
     # ---- REBUILD THE INVENTORY FROM THE FINAL ESTATE (defect D8/A11, closed 2026-08) ------------
     # `inv`, `asns` and `countries` were accumulated DURING the query loop and never re-derived, so
