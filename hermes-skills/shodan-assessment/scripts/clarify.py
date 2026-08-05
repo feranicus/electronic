@@ -177,6 +177,30 @@ def build(fj):
             "maps_to": "exclude_hosts",   # backend: IP-> exclude pin, domain-> --exclude-domain
         })
 
+    # 4b) Names that RESOLVE but have no observable service. On abakus-tk.de these were
+    #     intranet. and dev., pointing at Artfiles addresses where the provider's own router
+    #     answers ICMP host-unreachable — i.e. nothing is plugged in. That is the signature of a
+    #     decommissioned host whose DNS record was never retired, and if the address is reassigned
+    #     the name can be claimed by whoever gets it (with no CAA record, including a valid
+    #     certificate for it).
+    #     We CANNOT assert it from public data alone — absence of a Shodan record is not proof a
+    #     host is gone — so it is put to the operator instead. Their answer is what turns a
+    #     candidate into a finding, which is the same contract as every other question here.
+    _stale = (owned.get("resolved_no_service") or tgt.get("resolved_no_service") or [])
+    if _stale:
+        qs.append({
+            "id": "stale_dns",
+            "kind": "hosts_multi",
+            "title": "These names resolve, but nothing answers. Are they still in service?",
+            "body": ("Each of these hostnames still resolves in public DNS, but no service is "
+                     "observable at its address. That usually means the server was decommissioned "
+                     "and the DNS record was never removed. Tick the ones that are NO LONGER in "
+                     "service and I will report them as retire-the-record items rather than as "
+                     "live infrastructure."),
+            "options": ["%s -> %s" % (d.get("name"), d.get("ip")) for d in _stale][:20],
+            "maps_to": "exclude_hosts",
+        })
+
     # 5) Always: a free-text box for anything the questions did not cover (sector focus, "ignore our
     #    marketing CDN", "we also own brand X"). Fed to the LLM prose + GEOPOL as operator context.
     qs.append({

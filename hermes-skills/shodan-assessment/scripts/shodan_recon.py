@@ -420,6 +420,26 @@ SAAS_CNAME = (
 )
 
 
+def _caa(domain):
+    """CAA records for a domain via DoH, or None if the lookup FAILED.
+
+    [] means "queried successfully, no CAA published" -- a real finding.
+    None means "could not ask" -- never a finding (absence of evidence is never a finding).
+    Python's stdlib resolver cannot query type 257, so this goes over DNS-over-HTTPS, which the
+    engine already uses elsewhere and which works from inside the container.
+    """
+    try:
+        j = _get_json("https://dns.google/resolve?name=%s&type=CAA"
+                      % urllib.parse.quote(str(domain)), timeout=8)
+    except Exception:
+        return None
+    if not isinstance(j, dict) or "Status" not in j:
+        return None
+    if int(j.get("Status", -1)) != 0:
+        return None
+    return [a.get("data", "") for a in (j.get("Answer") or []) if a.get("type") == 257]
+
+
 def _cname_chain(name):
     """The CNAME aliases a hostname resolves through, lowercased. [] on any failure.
 
@@ -1122,6 +1142,10 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
               "avoids speculative noise on a partner/network brand): %s"
               % (len(_skipped), ", ".join(_skipped[:6])), file=sys.stderr)
     probed = _probe_subdomains(sorted(_probe_apexes))
+    # Keep the name -> address map. run() needs it to spot names that resolve but have no
+    # observable service (the possible-dangling-DNS candidate), which is a DNS-derived finding
+    # and cannot be reconstructed from the Shodan results alone.
+    ident["resolved"] = {k: list(v) for k, v in probed.items()}
     for fqdn, ips in probed.items():
         low = fqdn.lower()
         ap = _apex(low)
@@ -1553,6 +1577,27 @@ TEMPLATES = {
  "remote_admin":("Exposed remote-admin (Telnet/VNC/WinRM/SMB)", ["Brute-force / cleartext protocols"], ["SASE / ZTNA — broker admin access","Managed Firewall — block cleartext admin ports"], ["MITRE T1133"]),
  "exposed_panel":("Exposed login / admin / OWA panel", ["Credential attacks; panel-CVE surface"], ["Managed WAF — shield the panel + rate-limit","SASE — identity-broker + geofence"], ["OWASP"]),
  "legacy_tls": ("Legacy / weak TLS (SSLv3/TLS1.0/1.1)", ["MITM / downgrade; PCI/DORA gap"], ["Managed Firewall — enforce TLS>=1.2 policy","Managed WAF — terminate modern TLS"], ["RFC 8996"]),
+ # DNS-derived findings. These come from the zone, not from a Shodan record, and they are the two
+ # cheapest real findings on a target whose whole estate is shared hosting -- abakus-tk.de, where
+ # every Shodan observation belonged to a co-tenant, had both of them.
+ "no_caa": ("No CAA record — any certificate authority may issue for this domain",
+            ["A CAA record tells every public CA which issuers you authorise. Without one, ANY of the ~90 trusted CAs may issue a certificate for this domain, and a mis-issued or fraudulently obtained certificate is indistinguishable from a legitimate one to a browser.",
+             "For an organisation whose brand is the trust vehicle in customer correspondence and invoicing, a valid certificate on a name the customer recognises is the missing piece of a convincing phishing or business-email-compromise campaign.",
+             "This compounds with any hostname that resolves to an address no longer under the organisation's control: whoever receives that address next can complete an HTTP-01 or TLS-ALPN challenge and obtain a genuine certificate for the subdomain."],
+            [{"tag": "COLT", "title": "Publish CAA and monitor issuance",
+              "body": "WHY THIS SERVICE: a CAA record is a five-minute DNS change that removes an entire class of mis-issuance, and it is the only control that constrains which CAs may act on your name at all. WHAT YOU GET: issuance restricted to the authorities you actually use, plus certificate-transparency monitoring that alerts on any certificate issued for your domains. HOW: we publish the CAA set alongside your existing DNS, add the incident-report contact, and wire CT log monitoring into your alerting."},
+             {"tag": "OSS", "title": "Certificate Transparency monitoring",
+              "body": "WHY THIS SERVICE: CAA prevents; CT detects. Free CT monitors watch every public log and notify on certificates issued for your names, including ones you did not request. WHAT YOU GET: notification within minutes of an unexpected issuance. HOW: subscribe the domain set to a CT monitor and route alerts to the same mailbox that receives your security notifications."}],
+            ["RFC 8659", "CA/Browser Forum Baseline Requirements", "BSI TR-02102"]),
+ "dns_no_service": ("Hostnames resolve to addresses with no observable service — possible dangling DNS",
+            ["These names still resolve in public DNS, but no service is observable at their addresses in public data. That is consistent with a decommissioned host whose DNS record was never removed.",
+             "If the address has been returned to the hosting provider and reassigned, whoever receives it next controls what your customers reach at that hostname — and can complete a domain-validation challenge to obtain a genuine TLS certificate for it.",
+             "This is reported as a CANDIDATE, not a confirmed weakness: absence of a record in public data is not proof that a host is gone. Confirm which of these are still in service, and the assessment will be rebuilt with your answer."],
+            [{"tag": "COLT", "title": "DNS hygiene review and record retirement",
+              "body": "WHY THIS SERVICE: dangling records accumulate silently because decommissioning a server and editing a zone are two different tasks owned by two different people. A review catches them in one pass. WHAT YOU GET: a zone where every record points at something you still control, and a retirement step wired into your change process so it does not recur. HOW: we reconcile the zone against your live estate, retire what is stale, and hand back a documented record set."},
+             {"tag": "COLT", "title": "Publish CAA to blunt the takeover path",
+              "body": "WHY THIS SERVICE: a dangling record becomes dangerous mainly because a stranger can get a valid certificate for it. CAA closes that even before the record is cleaned up. WHAT YOU GET: issuance restricted to your own authorities, so a reassigned address cannot be turned into a trusted lookalike. HOW: one DNS change, deployed alongside the record retirement above."}],
+            ["MITRE T1584.001", "NIST SP 800-81", "BSI IT-Grundschutz NET.2"]),
  "expired_tls":("Expired TLS certificate", ["Trust failure; eases MITM"], ["Managed Security Service — certificate lifecycle + monitoring"], []),
  "self_signed":("Self-signed certificate", ["No trust anchor"], ["Managed Security Service — CA-signed certs + automated renewal"], []),
  "verbose_banner":("Verbose service banners", ["Eases attacker recon"], ["Managed WAF / Firewall — suppress product/version banners"], []),
@@ -2067,6 +2112,64 @@ def run(ident, F, audience, limit_per_query=500):
                 "title": f"{title}{extra} ({nhost} host{'s' if nhost > 1 else ''})",
                 "what": [f"{len(b['ips'])} host(s) match this exposure pattern."],
                 "evidence": b["evidence"], "why": why, "rem": rem, "refs": refs})
+    # ---- DNS-DERIVED FINDINGS (abakus-tk.de, 2026-08) -------------------------------------------
+    # On a target whose entire estate is shared hosting, Shodan can produce NOTHING attributable --
+    # every record on the VIP belongs to a co-tenant, and the customer's own vhost is invisible
+    # because the front end requires SNI. The zone, however, is unambiguously theirs. These two
+    # checks are pure DNS, cost nothing, and on abakus-tk.de both fire: no CAA at all, and two
+    # names (intranet., dev.) resolving to addresses where a router answers host-unreachable.
+    _dns_findings = []
+    _seedd = _apex(ident["domains"][0]) if ident.get("domains") else None
+    if _seedd:
+        _c = _caa(_seedd)
+        if _c is not None and not _c:          # queried OK and genuinely empty
+            _t, _w, _r, _f = TEMPLATES["no_caa"]
+            _dns_findings.append({"sev": "MEDIUM", "ft": "no_caa", "title": _t,
+                                  "what": ["No CAA record is published for %s." % _seedd],
+                                  "evidence": ["%s  CAA -> no records (NXRRSET)" % _seedd],
+                                  "why": _w, "rem": _r, "refs": _f})
+        elif _c is None:
+            print("[auto] CAA lookup failed for %s - reported as unknown, no finding claimed"
+                  % _seedd, file=sys.stderr)
+
+    # A name that resolves but has NO record anywhere in the sweep is a CANDIDATE for a retired
+    # host whose DNS was never cleaned up. It is deliberately not asserted: Shodan not holding a
+    # record is not proof a host is gone (absence of evidence is never a finding), so the wording
+    # says "possible" and clarify.py puts it to the operator. Confirming it in a refine run is what
+    # turns it into a real finding.
+    _no_service = []
+    for _fq, _ips in (ident.get("resolved") or {}).items():
+        _v4 = [i for i in _ips if ":" not in str(i)]
+        if not _v4:
+            continue
+        if any(i in hosts for i in _v4):
+            continue                            # something IS observable there
+        if _is_saas_tenancy(_fq):
+            continue                            # a SaaS tenancy is not their host to begin with
+        _no_service.append((_fq, _v4[0]))
+    if _no_service:
+        ident["resolved_no_service"] = [{"name": n, "ip": i} for n, i in sorted(_no_service)][:20]
+        _t, _w, _r, _f = TEMPLATES["dns_no_service"]
+        _dns_findings.append({"sev": "MEDIUM", "ft": "dns_no_service",
+                              "title": "%s (%d name%s)" % (_t, len(_no_service),
+                                                           "s" if len(_no_service) > 1 else ""),
+                              "what": ["%d hostname(s) resolve to addresses with no service "
+                                       "observable in public data." % len(_no_service)],
+                              "evidence": ["%s -> %s  (no observable service)" % (n, i)
+                                           for n, i in sorted(_no_service)[:8]],
+                              "why": _w, "rem": _r, "refs": _f})
+
+    for _df in _dns_findings:
+        _sev = _df["sev"]
+        idc[_sev] = idc.get(_sev, 0) + 1
+        counts[_sev] = counts.get(_sev, 0) + 1
+        _df["id"] = _sev[0] + str(idc[_sev])
+        findings.append(_df)
+    if _dns_findings:
+        findings.sort(key=lambda f: SEV_ORDER.index(f["sev"]) if f["sev"] in SEV_ORDER else 9)
+        print("[auto] DNS hygiene: %d finding(s) from the zone itself (%s)"
+              % (len(_dns_findings), ", ".join(f["ft"] for f in _dns_findings)), file=sys.stderr)
+
     # Every IP the sweep KEPT has already passed recon's ownership gate, so it is owned by
     # definition. The FP auditor uses this set to avoid dropping a legitimately-scanned host that
     # simply wasn't in the DNS-probe pin list (that dropped skon.de's real critical).

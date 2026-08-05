@@ -367,6 +367,50 @@ check("85.158.4.40" in set(ATTR2.get("scanned_ips") or []),
       "a record with NO names is kept - absence of evidence is never a finding")
 
 
+
+# =============================================================== 10. DNS-derived findings
+print("\n== 10. the zone produces findings when Shodan cannot ==")
+# On abakus-tk.de every Shodan record belonged to a co-tenant, so the sweep can yield nothing
+# attributable. The ZONE is unambiguously theirs, and it held two real findings: no CAA at all,
+# and two names (intranet., dev.) resolving to addresses where Artfiles' own router answers
+# host-unreachable -- verified by the operator with `nmap --reason`.
+_install_routing_shodan([("abakus-tk.de", IONOS)], default=[])
+_orig_caa, _orig_chain2 = R._caa, R._cname_chain
+R._caa = lambda d: []                       # queried OK, genuinely no CAA published
+R._cname_chain = lambda n: []               # nothing is a SaaS tenancy in this fixture
+
+DNSF = dict(BRANDY)
+DNSF.update({"domains": ["abakus-tk.de"], "pinned": ["217.160.0.136"], "brand_variants": [],
+             "related_unscoped": [], "asns": [], "nets": [],
+             "resolved": {"intranet.abakus-tk.de": ["212.72.175.109"],
+                          "dev.abakus-tk.de": ["212.72.175.110"],
+                          "www.abakus-tk.de": ["217.160.0.136"]}})
+for k in ("scanned_ips", "records_unattributable", "resolved_no_service"):
+    DNSF.pop(k, None)
+_out = R.run(DNSF, R.build_filters(DNSF), audience="internal", limit_per_query=500)
+_fts = {f.get("ft") for f in (_out.get("findings") or [])}
+_titles = [f.get("title", "") for f in (_out.get("findings") or [])]
+
+check("no_caa" in _fts, "missing CAA is a finding: %s" % [t for t in _titles if "CAA" in t][:1])
+check("dns_no_service" in _fts, "names that resolve with no observable service are surfaced")
+_ns = {d["name"] for d in (DNSF.get("resolved_no_service") or [])}
+check("intranet.abakus-tk.de" in _ns and "dev.abakus-tk.de" in _ns,
+      "both dead names flagged: %s" % sorted(_ns))
+check("www.abakus-tk.de" not in _ns,
+      "a name that DOES have an observable service is not flagged")
+
+# A FAILED CAA lookup must never become a finding. Absence of evidence is never a finding.
+R._caa = lambda d: None
+DNSF2 = dict(DNSF)
+for k in ("scanned_ips", "records_unattributable", "resolved_no_service"):
+    DNSF2.pop(k, None)
+DNSF2["resolved"] = {}
+_out2 = R.run(DNSF2, R.build_filters(DNSF2), audience="internal", limit_per_query=500)
+check("no_caa" not in {f.get("ft") for f in (_out2.get("findings") or [])},
+      "a FAILED CAA lookup claims nothing (absence of evidence is never a finding)")
+R._caa, R._cname_chain = _orig_caa, _orig_chain2
+
+
 print("\n" + ("FAILED: %d" % len(FAILS) if FAILS else "ALL ABAKUS SCOPE CHECKS PASSED"))
 for f in FAILS:
     print("   - " + f)

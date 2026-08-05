@@ -614,6 +614,11 @@ def main():
             "cert_names": list(ident.get("cert_names_found") or []),
             "group_domains": list(ident.get("group_domains") or []),
             "cotenants_dropped": list(ident.get("cotenants_dropped") or []),
+            # Names that resolve with no observable service, and records on shared infrastructure
+            # that named someone else. Both feed clarify.py: the first as a question the operator
+            # answers, the second so a reviewer can see WHY the estate is smaller than the DNS.
+            "resolved_no_service": list(ident.get("resolved_no_service") or []),
+            "records_unattributable": list(ident.get("records_unattributable") or []),
             "cert_siblings": list(ident.get("cert_sibling_apexes") or []),
             "excluded": (list(ident.get("exclude_apexes") or []) + list(ident.get("exclude_ips") or [])),
             "platform_operator": bool(ident.get("platform_operator")),

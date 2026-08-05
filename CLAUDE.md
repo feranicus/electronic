@@ -2106,3 +2106,36 @@ attributable technical finding of the whole engagement —
 PHP/8.3.32 + WordPress + The Events Calendar, `Set-Cookie: ZPORTALSESSID` with **no Secure and no
 SameSite**, and **no HSTS, CSP, X-Frame-Options or X-Content-Type-Options at all**. That is their
 application, on their vhost, and every line of it is remediable by them. Shodan could never see it.
+
+## The ZONE is a finding source when Shodan is blind (abakus-tk.de, 2026-08)
+On a target whose whole estate is shared hosting, Shodan can produce NOTHING attributable: every
+record on the IONOS VIP belonged to a co-tenant, and the customer's own vhost is invisible because
+the front end requires SNI. The engine therefore had a structural blind spot — it could only ever
+report other people's hosts or nothing at all. **The DNS zone, however, is unambiguously theirs.**
+Two pure-DNS checks were added, and on abakus-tk.de BOTH fire:
+1. **`no_caa`** — `_caa(domain)` over DoH (stdlib cannot query type 257). `[]` = queried OK and
+   genuinely empty -> MEDIUM finding. **`None` = the lookup FAILED -> no finding at all**, per the
+   standing rule that absence of evidence is never a finding.
+2. **`dns_no_service`** — a name that resolves but has NO record anywhere in the sweep. Deliberately
+   worded "possible dangling DNS" and NOT asserted: Shodan not holding a record is not proof a host
+   is gone. `clarify.py` puts it to the operator (`stale_dns` -> `exclude_hosts`); their answer is
+   what turns a candidate into a finding. SaaS tenancies are skipped — they were never the
+   customer's host to begin with.
+THE TWO COMPOUND, and that is the sellable part: with no CAA, whoever is reassigned a dangling
+address can complete an HTTP-01/TLS-ALPN challenge and obtain a **genuine, browser-trusted
+certificate** for the customer's own subdomain. Neither finding needs a single packet sent to the
+customer.
+GROUND TRUTH THAT PROVED IT: `nmap --reason` against 212.72.175.108/109/110 returned
+`host-unreach from 212.53.200.102` — and RIPEstat shows 212.53.200.102 is **Artfiles' own router**
+(AS8893, the same holder as the target block). An ICMP host-unreachable from the LAST-HOP router
+means the prefix is routed but nothing answers ARP: the hosts are GONE, not firewalled. A firewall
+gives `no-response` or `reset`. `intranet.abakus-tk.de` and `dev.abakus-tk.de` are dangling.
+ALSO FOUND, by reading the WordPress REST API the operator queried by hand: `/wp-json/wp/v2/users`
+returns HTTP 200 with two usernames (`abakustk_admin`, `lennox`) AND a second brand domain in the
+admin's profile — **abakus-tk.online**, which resolves to the same IONOS VIP and which no recon
+path had discovered. App-layer checks like this are NOT implemented: fetching a customer page is
+sending packets to their infrastructure, and "not one packet" is a product promise, not a default
+to change silently. If it is ever added it must be an explicit per-engagement opt-in with the ToU
+wording changed in the same edit.
+Guarded by test_scope_abakus.py §10 (CAA empty -> finding; CAA lookup failed -> NO finding; dead
+names flagged; a name with an observable service not flagged).
