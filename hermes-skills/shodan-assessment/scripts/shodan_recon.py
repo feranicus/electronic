@@ -397,6 +397,51 @@ def _resolve(name):
     return out
 
 
+# A probed subdomain that CNAMEs into one of these is a SaaS TENANCY, not a host the customer owns.
+# THE ABAKUS-TK.DE FAILURE (2026-08): the DNS probe resolved autodiscover./webmail./exchange./auth.
+# — all CNAMEd into Microsoft 365 — and PINNED the answers. Pinned hosts deliberately bypass the
+# CDN/hoster drop in run() (that exemption exists so a legitimately-pinned S-KON host on shared
+# infrastructure is not discarded), so Microsoft's shared Exchange Online front ends (52.98.x.x,
+# 40.99.x.x) entered scope as "the customer's own hosts" and dragged in every co-tenant on them.
+# The customer's DNS pointing at Microsoft means THEY USE MICROSOFT. It is not an address they own,
+# nobody can remediate it, and anything observed on it belongs to millions of other tenants.
+SAAS_CNAME = (
+    "outlook.com", "office.com", "office365.com", "microsoft.com", "microsoftonline.com",
+    "lync.com", "skypeforbusiness.com", "sharepoint.com", "onmicrosoft.com", "azurefd.net",
+    "trafficmanager.net", "azureedge.net", "windows.net",
+    "google.com", "googlemail.com", "googlehosted.com", "ghs.google.com", "googleusercontent.com",
+    "zoho.eu", "zoho.com", "zohohost.com", "zohomail.eu",
+    "mailgun.org", "sendgrid.net", "mandrillapp.com", "pphosted.com", "mimecast.com",
+    "hornetsecurity.com", "retarus.com", "nospamproxy.de", "securemail.de",
+    "salesforce.com", "force.com", "hubspot.net", "zendesk.com", "freshdesk.com",
+    "cloudflare.net", "akamaiedge.net", "akamai.net", "edgekey.net", "edgesuite.net",
+    "cloudfront.net", "awsglobalaccelerator.com", "elb.amazonaws.com",
+    "wixdns.net", "squarespace.com", "shopify.com", "myshopify.com", "webflow.io",
+)
+
+
+def _cname_chain(name):
+    """The CNAME aliases a hostname resolves through, lowercased. [] on any failure.
+
+    getaddrinfo() throws the chain away, which is precisely the information needed to tell
+    'a host we own' from 'a SaaS tenancy we rent'."""
+    try:
+        _canon, aliases, _ips = socket.gethostbyname_ex(name)
+        out = [str(_canon or "").lower().rstrip(".")]
+        out += [str(a).lower().rstrip(".") for a in (aliases or [])]
+        return [a for a in out if a and a != str(name).lower()]
+    except Exception:
+        return []
+
+
+def _is_saas_tenancy(name):
+    """True if this hostname is a tenancy on somebody else's SaaS platform -> never pin its IPs."""
+    for c in _cname_chain(name):
+        if any(c == s or c.endswith("." + s) for s in SAAS_CNAME):
+            return True
+    return False
+
+
 def _probe_subdomains(domains, cap=120):
     """Resolve a curated subdomain list against each known domain.
 
@@ -1062,6 +1107,17 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
             continue
         if fqdn not in domains and fqdn not in ident["domains"]:
             domains.append(fqdn)
+        # A name that CNAMEs into Microsoft 365, Google Workspace, Zoho or a CDN is a TENANCY.
+        # Pinning it puts a provider's shared front end into scope as the customer's own host --
+        # and because pinned hosts bypass the CDN/hoster drop, every co-tenant on that front end
+        # comes with it. abakus-tk.de: autodiscover/webmail/exchange/auth pinned 10 Microsoft IPs.
+        if _is_saas_tenancy(fqdn):
+            ident.setdefault("saas_tenancies", [])
+            if fqdn not in ident["saas_tenancies"]:
+                ident["saas_tenancies"].append(fqdn)
+                print("[auto] SaaS tenancy NOT pinned: %s (CNAME into a provider platform - the "
+                      "customer uses it, they do not own the address)" % fqdn, file=sys.stderr)
+            continue
         # PIN resolved IPs as exact hosts (ident["pinned"], not nets: run_net is off for hosters).
         # Only owned hostnames reach here, so a pinned IP is always the target's.
         for ip in ips:
@@ -1118,13 +1174,13 @@ def build_filters(ident):
     def _cat(clause):
         c = clause.lower()
         return "identity" if any(k in c for k in ("ssl", "hostname:", "org:", "http.title", "http.html", "favicon")) else "sweep"
-    def add(n, name, clause, run=False, note="", cat=None, dom=None):
+    def add(n, name, clause, run=False, note="", cat=None, dom=None, guard=None, sel=None):
         # `dom` records WHICH discovered domain produced this clause. run() uses it to measure each
         # domain's contribution separately, so one bad domain can be rolled back without taking the
         # assessment with it (the abakus-tk.de / wa.me failure). None = not attributable to a single
         # discovered domain (ASN sweep, pinned hosts, brand text, org name).
         if clause: F.append({"n": n, "name": name, "clause": clause, "run": run, "note": note,
-                             "cat": cat or _cat(clause), "dom": dom})
+                             "cat": cat or _cat(clause), "dom": dom, "guard": guard, "sel": sel})
     if own_asn:
         add(1, "ASN sweep", f"asn:{asns}", run=True, note="every host announced from the org's ASNs")
     elif ident["asns"]:
@@ -1156,14 +1212,27 @@ def build_filters(ident):
     for d in _apexes:                    # #4 cert CN — finds origin behind CDN/hoster, any ASN
         add(4, "TLS cert subject CN", f'ssl.cert.subject.cn:"{d}"', run=True, note="real origin even behind a CDN/hoster", dom=d)
         add(4, "TLS cert SAN (wildcard)", f'ssl.cert.subject.cn:"*.{d}"', run=True, note="wildcard certs covering every subdomain", dom=d)
+    # BRAND FREE-TEXT SELECTORS ARE RARITY-GATED (the abakus-tk.de failure, 2026-08).
+    # "Abakus" is the German word for abacus and the name of dozens of unrelated companies, so
+    # ssl:"abakus" / http.title:"abakus" / http.html:"abakus" matched Cloudflare, Hetzner, OVH,
+    # Vultr, Scaleway, Infomaniak, Google and Amazon -- 192 IPs across 44 ASNs and 15 countries for
+    # a company with ZERO announced prefixes. http.html: is the worst of the three: it matches any
+    # page whose BODY merely contains the word.
+    # The rule already existed for the CA pivot after bibeltv ("never let a selector that can match
+    # the whole internet become an ownership anchor") and was enforced by an api.count() test in
+    # _private_ca_ok. It was never applied to the BRAND selectors, which are the same shape.
+    # guard="rarity" makes run() count the selector first and refuse it if it is not distinctive.
     for b in brands:                     # #4/#5 cert free-text across ANY ASN (cross-ASN estate)
-        add(5, "TLS free-text / cert org", f'ssl:"{b}"', run=True, note="wildcard & SAN certs across any ASN")
+        add(5, "TLS free-text / cert org", f'ssl:"{b}"', run=True, note="wildcard & SAN certs across any ASN",
+            guard="rarity", sel="brand:%s" % b)
     for d in _apexes:                    # #5 hostname / rDNS — leading dot = "any host under it"
         add(6, "Hostname / domain", f'hostname:".{d}"', run=True, note="reverse-DNS / HTTP host", dom=d)
         add(6, "HTTP host header", f'http.host:"{d}"', run=True, note="vhost behind a shared reverse proxy", dom=d)
     for b in brands:                     # #6 branded HTTP title/body (portals, shadow IT)
-        add(14, "HTTP title (branded)", f'http.title:"{b}"', run=True, note="branded portals/login pages on any host")
-        add(15, "HTTP body (branded)", f'http.html:"{b}"', run=True, note="branded body content / shadow IT")
+        add(14, "HTTP title (branded)", f'http.title:"{b}"', run=True, note="branded portals/login pages on any host",
+            guard="rarity", sel="brand:%s" % b)
+        add(15, "HTTP body (branded)", f'http.html:"{b}"', run=True, note="branded body content / shadow IT",
+            guard="rarity", sel="brand:%s" % b)
     for h in favicons:                   # #7 favicon hash (branded icon, any host)
         add(16, "Favicon hash", f'http.favicon.hash:{h}', run=True, note="every host serving the branded icon")
     # ---- §3 advanced identity pivots (the *super* part) ----
@@ -1472,7 +1541,43 @@ def run(ident, F, audience, limit_per_query=500):
     hosts = {}; asns=set(); countries=set(); records=0; dropped=0; inv={}
     _by_dom = {}          # discovered domain -> {ips it returned}
     _no_dom = set()       # ips proved by something NOT attributable to one discovered domain
+
+    # ---- RARITY GATE ON BRAND SELECTORS (the abakus-tk.de failure, 2026-08) ---------------------
+    # "Abakus" is the German word for abacus. ssl:"abakus" / http.title:"abakus" / http.html:"abakus"
+    # therefore matched dozens of unrelated companies across Cloudflare, Hetzner, OVH, Vultr,
+    # Scaleway, Infomaniak, Google and Amazon: 192 IPs, 44 ASNs, 15 countries, for a target with
+    # ZERO announced prefixes. These clauses are cat="identity", which means they ALSO bypass the
+    # CDN/hoster drop below and are never put through _corroborates -- so nothing was checking them
+    # at all.
+    # This is the SAME test _private_ca_ok has run since bibeltv: ask Shodan how many hosts the
+    # selector matches globally, and refuse it if the answer says it is not distinctive. It is
+    # vendor-agnostic, needs no word list, costs one count() call, and it runs BEFORE the query so
+    # no credits are burned on a selector we are going to discard anyway.
+    BRAND_MAX_HOSTS = int(os.environ.get("BRAND_MAX_HOSTS", "2000"))
+    _rejected_sel = {}
+
+    def _selector_is_distinctive(f):
+        if f.get("guard") != "rarity":
+            return True
+        try:
+            n = int((api.count(f["clause"]) or {}).get("total", 0))
+        except Exception as e:
+            # Fail OPEN but say so: count() is unavailable on some plans, and silently dropping
+            # every brand clause would gut recall on targets where the brand is genuinely rare.
+            print("[auto] rarity check unavailable for %s (%s) - clause kept"
+                  % (f["clause"], type(e).__name__), file=sys.stderr)
+            return True
+        if n > BRAND_MAX_HOSTS:
+            _rejected_sel[f["clause"]] = n
+            print("[auto] brand selector REFUSED: %s matches %d hosts globally (> %d) - it is a "
+                  "common word, not an ownership anchor" % (f["clause"], n, BRAND_MAX_HOSTS),
+                  file=sys.stderr)
+            return False
+        return True
+
     for f in [f for f in F if f.get("run")]:
+        if not _selector_is_distinctive(f):
+            continue
         q = f["clause"]; cat = f.get("cat", "sweep")
         _fdom = f.get("dom")
         n = 0
@@ -1519,6 +1624,9 @@ def run(ident, F, audience, limit_per_query=500):
     #
     # So each DISCOVERED domain is now measured on its own, against what the SEED itself proved.
     # A subsidiary may enlarge the estate; it may not BE the estate.
+    if _rejected_sel:
+        ident["selectors_refused"] = [{"clause": c, "global_hosts": n}
+                                      for c, n in sorted(_rejected_sel.items())]
     _seed_ap = _apex(ident["domains"][0]) if ident.get("domains") else None
     _seed_proved = set(_no_dom) | set(_by_dom.get(_seed_ap, set()))
     DOMAIN_MAX_ADD = int(os.environ.get("DOMAIN_MAX_ADD", "40"))
@@ -1789,7 +1897,20 @@ def run(ident, F, audience, limit_per_query=500):
     # GUARDRAIL, same doctrine as audit_fp: an automatic filter that can EMPTY a deck is worse than
     # no filter. If the org data would delete everything (or almost everything) the org data is what
     # is wrong, not the estate - keep it all and say so loudly.
-    if _cotenant and (not hosts or len(_cotenant) > 0.75 * (len(hosts) + len(_cotenant))):
+    #
+    # THE ABAKUS-TK.DE CORRECTION (2026-08). The valve fired on a run where the guard was RIGHT:
+    # it flagged 182 of 192 hosts (95%) as co-tenants -- correctly, they were Microsoft, Cloudflare,
+    # Hetzner and OVH tenants -- then refused and kept every one of them.
+    # The 75% threshold encodes an assumption that only holds when the target HAS its own address
+    # space: there, a mass drop means the whois data is wrong. On a target with NO ASN and NO
+    # prefixes, whose whole estate is shared multi-tenant hosting, co-tenants dominating is the
+    # EXPECTED result, not a malfunction -- so applying the threshold there guarantees the wrong
+    # answer on the most common shape of German SMB prospect we see (S-KON, rightmart, abakus).
+    # The invariant worth keeping is the narrow one: never drop into an EMPTY deck.
+    _owns_space = bool(ident.get("asns")) or bool(ident.get("nets"))
+    _would_empty = not hosts
+    _mass_drop = len(_cotenant) > 0.75 * (len(hosts) + len(_cotenant))
+    if _cotenant and (_would_empty or (_mass_drop and _owns_space)):
         # Snapshot the denominator BEFORE restoring. The old message computed it after the restore
         # loop, so the co-tenants were counted twice and lotto24.de reported "dropped 379 of 783"
         # against a real estate of 404. A guard that misreports its own arithmetic sends the next

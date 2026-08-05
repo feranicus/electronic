@@ -2028,3 +2028,45 @@ Guarded by `scripts/test_scope_abakus.py` (wired into ship.py, BLOCKING): replay
 (118 Meta hosts → rolled back, 1 IONOS host kept), proves the recall side (netbid.com/netbid.io
 survive, every past-incident domain still allowed), and was verified to FAIL with
 `DOMAIN_MAX_ADD=99999` — a gate that only ever goes green is unproven.
+
+## abakus-tk.de round 2 — a DICTIONARY WORD as an ownership anchor (2026-08)
+With `wa.me` denied, the re-run STILL produced **192 IPs · 44 ASNs · 15 countries** for a company the
+same log correctly described as `ASN — · 0 prefixes`. Inventory: IONOS 94 · Microsoft 11 · AWS 10 ·
+DigitalOcean 9 · Hetzner 8 · OVH 5 · Cloudflare 4 · Google 4 · Infomaniak 3 · Scaleway 2 · Vultr 2.
+THREE COMPOUNDING CAUSES, all now fixed:
+1. **`ssl:"abakus"` / `http.title:"abakus"` / `http.html:"abakus"` — "Abakus" is the German word for
+   abacus** and the trading name of dozens of unrelated firms (ABAKUS Internet Marketing, Abakus
+   Consulting …). `http.html:` is the worst: it matches any page whose BODY contains the word.
+   These clauses are `cat="identity"`, so they ALSO bypass the CDN/hoster drop in `run()` and are
+   never put through `_corroborates` — **nothing was checking them at all.** The rule
+   ("never let a selector that can match the whole internet become an ownership anchor") was
+   encoded for the CA pivot after bibeltv, via `api.count()` in `_private_ca_ok`, and never applied
+   to the brand selectors, which are the same shape. FIX: `guard="rarity"` on those clauses +
+   `_selector_is_distinctive()` in run(), refusing anything matching > `BRAND_MAX_HOSTS` (2000)
+   globally. Vendor-agnostic, no word list, one count() call, and it runs BEFORE the query so no
+   credits are burned. Fails OPEN (count() is plan-dependent) and logs when it cannot check.
+   Recorded in `ident["selectors_refused"]`.
+2. **The DNS probe PINNED SaaS tenancies.** `autodiscover/webmail/exchange/auth.abakus-tk.de` all
+   CNAME into Microsoft 365, so the probe pinned Microsoft's shared Exchange Online front ends
+   (52.98.x.x, 40.99.x.x) — and `cat="pinned"` deliberately bypasses the hoster drop (that exemption
+   exists so a legitimately-pinned S-KON host on shared infra is not discarded), so every co-tenant
+   on those front ends came with them. FIX: `_cname_chain()` (getaddrinfo throws the CNAME chain
+   away; `gethostbyname_ex` keeps it) + `_is_saas_tenancy()` against `SAAS_CNAME`. A name that
+   CNAMEs into a provider platform is recorded in `ident["saas_tenancies"]` and never pinned.
+   **The customer's DNS pointing at Microsoft means they USE Microsoft.** It is not an address they
+   own, nobody can remediate it, and everything on it belongs to other tenants.
+3. **The co-tenant guard was RIGHT and its own valve overruled it** — flagged 182 of 192 (95%),
+   then refused because >75%. That threshold encodes an assumption that only holds when the target
+   HAS address space: there, a mass drop means the whois data is wrong. On a target with no ASN and
+   no prefixes, co-tenants dominating is the EXPECTED result. FIX: the valve now refuses only if the
+   drop would EMPTY the deck, or if it is a mass drop AND the target owns ASNs/prefixes (the
+   lotto24/angermann doctrine, unchanged and still tested).
+ALSO SEEN, same root cause as (1): `abakusconsulting.co.uk` — a different UK company — entered scope
+because "abakus" is a substring of "abakusconsulting" and the name appeared on a **shared IONOS
+elastic-SSL certificate**. The cert-name discovery comment claims "a shared-hosting neighbour's cert
+can never drag its own domain into scope"; that holds only while the brand token is distinctive.
+RULE: **a brand token is an ownership anchor only if it is RARE.** Test rarity against the index,
+never against intuition — the engineer who picks the token speaks the language and cannot hear that
+it is a common word.
+Guarded by test_scope_abakus.py §6-§8 (generic-word refusal, SaaS-tenancy pinning, valve behaviour
+with and without owned address space).

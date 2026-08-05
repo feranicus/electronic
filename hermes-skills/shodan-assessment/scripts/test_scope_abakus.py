@@ -215,6 +215,98 @@ check(any(str(ip).startswith("87.234.246.") for ip in _h2),
       "the netbid mail cluster is still in scope (the angermann engagement's best finding)")
 
 
+
+# =============================================================== 6. the generic-word brand
+print("\n== 6. a brand that is a common word is refused as an ownership anchor ==")
+# THE SECOND ABAKUS RUN (2026-08). With wa.me denied, the deck STILL claimed 192 IPs / 44 ASNs /
+# 15 countries -- because "Abakus" is the German word for abacus and the name of dozens of
+# unrelated firms. ssl:"abakus", http.title:"abakus" and http.html:"abakus" matched Cloudflare,
+# Hetzner, OVH, Vultr, Scaleway, Infomaniak, Google and Amazon. Those clauses are cat="identity",
+# so they ALSO skip the CDN drop and are never corroborated: nothing was checking them at all.
+BRANDY = {"seed": "abakus-tk.de", "company": "abakusTK", "domains": ["abakus-tk.de"],
+          "asns": [], "nets": [], "pinned": ["217.160.0.136"], "brand_tokens": ["abakus"],
+          "group_domains": [], "org": "abakus-tk.de", "org_is_cdn": True, "org_is_carrier": False,
+          "asn_holder": "IONOS", "shared_asns": [], "related_unscoped": [], "favicons": [],
+          "issuers": [], "internal_cas": [], "cert_orgs": [], "jarms": [], "cpes": [],
+          "org_variants": [], "brand_variants": ["abakus"], "brand": "abakus",
+          "exclude_ips": [], "exclude_apexes": [], "ct_domains": []}
+
+FB = R.build_filters(BRANDY)
+_guarded = [f["clause"] for f in FB if f.get("guard") == "rarity"]
+check(any(c.startswith('ssl:"') for c in _guarded), "ssl:\"brand\" is rarity-guarded")
+check(any(c.startswith("http.title:") for c in _guarded), "http.title:\"brand\" is rarity-guarded")
+check(any(c.startswith("http.html:") for c in _guarded), "http.html:\"brand\" is rarity-guarded")
+
+# A common word matches the internet; a distinctive one does not. Both answers come from Shodan's
+# own count(), so there is no word list to maintain and no language to get wrong.
+COMMON = [_h("10.0.0.%d" % i, "Hetzner Online GmbH", ["something-abakus.de"]) for i in range(1, 40)]
+_install_routing_shodan([('ssl:"abakus"', COMMON), ("http.title", COMMON), ("http.html", COMMON),
+                         ("abakus-tk.de", IONOS)], default=[])
+_fake = sys.modules["shodan"]
+_realcount = _fake.Shodan.count
+_fake.Shodan.count = lambda self, q, **k: {"total": 250000 if "abakus" in q and "-tk" not in q else 3}
+
+BRANDY2 = dict(BRANDY); BRANDY2["related_unscoped"] = []
+R.run(BRANDY2, R.build_filters(BRANDY2), audience="internal", limit_per_query=500)
+_est = set(BRANDY2.get("scanned_ips") or [])
+check(bool(BRANDY2.get("selectors_refused")),
+      "the common-word selectors were refused (%s)"
+      % ([s["clause"] for s in (BRANDY2.get("selectors_refused") or [])][:3]))
+check(not any(str(i).startswith("10.0.0.") for i in _est),
+      "no host arrived through a common-word brand selector")
+check("217.160.0.136" in _est, "the genuine host still arrives through the precise clauses")
+_fake.Shodan.count = _realcount
+
+
+# =============================================================== 7. SaaS tenancies
+print("\n== 7. a SaaS tenancy is never pinned as an owned host ==")
+_orig_chain = R._cname_chain
+R._cname_chain = lambda n: {
+    "autodiscover.abakus-tk.de": ["autodiscover.outlook.com"],
+    "webmail.abakus-tk.de": ["abakustk.mail.protection.outlook.com"],
+    "exchange.abakus-tk.de": ["outlook.office365.com"],
+    "auth.abakus-tk.de": ["login.microsoftonline.com"],
+    "intranet.abakus-tk.de": [],
+    "vpn.acme.de": ["vpn-edge.acme.de"],
+}.get(n, [])
+for n in ["autodiscover.abakus-tk.de", "webmail.abakus-tk.de", "exchange.abakus-tk.de",
+          "auth.abakus-tk.de"]:
+    check(R._is_saas_tenancy(n), "SaaS tenancy, not pinned: %s" % n)
+for n in ["intranet.abakus-tk.de", "vpn.acme.de"]:
+    check(not R._is_saas_tenancy(n), "genuinely the customer's own host, still pinned: %s" % n)
+R._cname_chain = _orig_chain
+
+
+# =============================================================== 8. the co-tenant valve
+print("\n== 8. the co-tenant valve no longer disarms itself on shared hosting ==")
+# Real numbers from the run: 182 of 192 flagged (95%), valve refused, all 182 kept.
+MIXED = [_h("217.160.0.136", "abakusTK", ["abakus-tk.de"], asn="AS8560")] + \
+        [_h("52.98.253.%d" % i, "Microsoft Corporation", ["outlook.com"], asn="AS8075")
+         for i in range(1, 40)]
+_install_routing_shodan([("abakus-tk.de", MIXED)], default=[])
+
+SHARED = dict(BRANDY)
+SHARED.update({"asns": [], "nets": [], "pinned": ["217.160.0.136"], "brand_variants": [],
+               "related_unscoped": [], "domains": ["abakus-tk.de"]})
+SHARED.pop("scanned_ips", None)
+R.run(SHARED, R.build_filters(SHARED), audience="internal", limit_per_query=500)
+_s = set(SHARED.get("scanned_ips") or [])
+check(not SHARED.get("cotenants_refused"),
+      "no ASN and no prefixes -> a mass co-tenant drop is EXPECTED, not a malfunction")
+check("217.160.0.136" in _s, "the customer's own pinned host survives the drop")
+check(len(_s) < 10, "Microsoft's shared front ends are gone: %d host(s) left" % len(_s))
+
+# ...but where the target DOES own address space, a 95% drop still means the whois data is the
+# suspect, and the valve must still refuse. That is the lotto24/angermann doctrine, unchanged.
+OWNED = dict(SHARED)
+OWNED.update({"asns": ["AS8220"], "nets": ["217.110.51.0/24"], "related_unscoped": []})
+OWNED.pop("scanned_ips", None); OWNED.pop("cotenants_refused", None)
+_install_routing_shodan([("abakus-tk.de", MIXED), ("217.110.51", MIXED)], default=[])
+R.run(OWNED, R.build_filters(OWNED), audience="internal", limit_per_query=500)
+check(bool(OWNED.get("cotenants_refused")),
+      "with its own ASN/prefixes the valve still refuses a 95% drop (whois is the suspect)")
+
+
 print("\n" + ("FAILED: %d" % len(FAILS) if FAILS else "ALL ABAKUS SCOPE CHECKS PASSED"))
 for f in FAILS:
     print("   - " + f)
