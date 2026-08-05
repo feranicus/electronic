@@ -411,6 +411,77 @@ check("no_caa" not in {f.get("ft") for f in (_out2.get("findings") or [])},
 R._caa, R._cname_chain = _orig_caa, _orig_chain2
 
 
+
+# =============================================================== 11. cert-name on a shared VIP
+print("\n== 11. a neighbour's certificate on a shared VIP is not ownership ==")
+# The one false positive left in the 2026-08-05 re-run: abakusconsulting.co.uk, a UK consulting
+# firm, entered scope because "abakus" is a substring of "abakusconsulting" and its certificate sat
+# on the same IONOS elastic-SSL VIP. It became a first-class seed and produced the deck's only
+# remaining bad finding (H1, four CVEs on 2a00:da00:100f:f000::206).
+def _certrec(ip, org, cn, sans):
+    return {"ip_str": ip, "port": 443, "org": org, "transport": "tcp", "product": "nginx",
+            "hostnames": [], "http": {}, "asn": "AS8560", "location": {"country_code": "GB"},
+            "ssl": {"cert": {"subject": {"CN": cn},
+                             "extensions": [{"name": "subjectAltName",
+                                             "data": ",".join("DNS:" + s for s in sans)}]}}}
+
+
+# (a) shared hoster + the cert names ONLY the neighbour -> refuse
+NEIGH = [_certrec("2a00:da00:100f:f000::206", "1&1 IONOS SE", "*.abakusconsulting.co.uk",
+                  ["*.abakusconsulting.co.uk", "abakusconsulting.co.uk"])]
+_install_routing_shodan([("abakus-tk.de", NEIGH)], default=[])
+CN1 = dict(BRANDY)
+CN1.update({"domains": ["abakus-tk.de"], "pinned": [], "brand_variants": [],
+            "brand_tokens": ["abakus"], "related_unscoped": [], "asns": [], "nets": []})
+for k in ("scanned_ips", "cert_names_found", "cert_names_refused"):
+    CN1.pop(k, None)
+R.run(CN1, R.build_filters(CN1), audience="internal", limit_per_query=500)
+check(not any("abakusconsulting" in str(d) for d in (CN1.get("domains") or [])),
+      "abakusconsulting.co.uk is NOT scoped from a neighbour's cert on a shared VIP")
+check(any("abakusconsulting" in str(x) for x in (CN1.get("cert_names_refused") or [])),
+      "the refusal is recorded rather than silently dropped")
+
+# (b) the bibeltv.de recall: the SAME certificate names the customer too -> that is real evidence
+#     of common operation and must still bring the sibling domain into scope.
+SIB = [_certrec("1.2.3.4", "1&1 IONOS SE", "bibeltv.de",
+                ["bibeltv.de", "www.bibeltv.de", "bibel.tv"])]
+_install_routing_shodan([("bibeltv.de", SIB)], default=[])
+CN2 = dict(BRANDY)
+# brand_tokens carries "bibel" as well as "bibeltv" because _brand_tokens_from() harvests the cert
+# subject-O ("Bibel TV ...") -- that is what the real run had, and without it the fixture would be
+# testing a target the engine never saw.
+CN2.update({"seed": "bibeltv.de", "domains": ["bibeltv.de"], "pinned": [], "brand_variants": [],
+            "brand_tokens": ["bibeltv", "bibel"], "related_unscoped": [], "asns": [], "nets": []})
+for k in ("scanned_ips", "cert_names_found", "cert_names_refused"):
+    CN2.pop(k, None)
+R.run(CN2, R.build_filters(CN2), audience="internal", limit_per_query=500)
+check(any("bibel.tv" in str(d) for d in (CN2.get("domains") or [])),
+      "bibel.tv IS still scoped: the same certificate names the customer (shared SAN = common operation)")
+
+
+# =============================================================== 12. one source for the counts
+print("\n== 12. the inventory is derived from the FINAL estate, not the raw sweep ==")
+# The 2026-08-05 deck said "1 UNIQUE IPS - 47 ASNS - 15 COUNTRIES" on slide 2 and "144 HOSTS -
+# 12 ASNs" on slide 5. One host cannot span 47 autonomous systems. inv/asns/countries were
+# accumulated during the query loop and never re-derived after the guards removed records.
+MIX2 = [_h("217.160.0.136", "IONOS SE", ["abakus-tk.de"], asn="AS8560")] + \
+       [_h("10.9.%d.1" % i, "Hetzner Online GmbH", ["someone-else-%d.de" % i], asn="AS24940")
+        for i in range(1, 30)]
+_install_routing_shodan([("abakus-tk.de", MIX2)], default=[])
+INVT = dict(BRANDY)
+INVT.update({"domains": ["abakus-tk.de"], "pinned": ["217.160.0.136"], "brand_variants": [],
+             "related_unscoped": [], "asns": [], "nets": []})
+INVT.pop("scanned_ips", None)
+_o3 = R.run(INVT, R.build_filters(INVT), audience="internal", limit_per_query=500)
+_s3 = _o3.get("summary") or {}
+_ips3, _asns3 = _s3.get("unique_ips"), _s3.get("asns")
+_inv_hosts = sum(int(r.get("hosts") or 0) for r in (_s3.get("inventory") or []))
+check(_inv_hosts <= (_ips3 or 0),
+      "inventory hosts (%s) never exceed unique IPs (%s)" % (_inv_hosts, _ips3))
+check((_asns3 or 0) <= max(1, _ips3 or 0),
+      "ASN count (%s) is consistent with %s surviving host(s)" % (_asns3, _ips3))
+
+
 print("\n" + ("FAILED: %d" % len(FAILS) if FAILS else "ALL ABAKUS SCOPE CHECKS PASSED"))
 for f in FAILS:
     print("   - " + f)

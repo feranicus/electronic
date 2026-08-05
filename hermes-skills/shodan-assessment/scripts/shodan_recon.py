@@ -1831,6 +1831,38 @@ def run(ident, F, audience, limit_per_query=500):
                                           bool(ident.get("group_pages")))
                 if not _own:
                     continue
+                # THE abakusconsulting.co.uk FALSE POSITIVE (2026-08). The comment above claims "a
+                # shared-hosting neighbour's cert can never drag its own domain into scope". That
+                # holds only while the brand token is DISTINCTIVE. "abakus" is the German word for
+                # abacus, so it matched "abakusconsulting" -- a different company, in the UK, whose
+                # certificate merely happened to sit on the same IONOS elastic-SSL VIP. It was then
+                # scoped as a first-class seed and produced the deck's only remaining false finding.
+                #
+                # A certificate is STRONG evidence of common operation when it names the customer
+                # TOO -- that is exactly how bibeltv.de found bibel.tv, and that recall must not be
+                # lost. It is WEAK evidence when it names only the other party and the host is
+                # shared infrastructure: then all we have observed is that two customers of the same
+                # hoster have similar-looking names.
+                if _ap != _seed_apex0 and _why.startswith("brand token"):
+                    _shared_h = False
+                    for _mm in _ms:
+                        _o = (_mm.get("org") or "") + " " + (_mm.get("isp") or "")
+                        if _is(_o, CDNS) or _looks_like_provider(_o):
+                            _shared_h = True
+                            break
+                    _names_here = {n.lower().lstrip("*.") for n in _cert_names(_m)}
+                    _also_ours = any(x == _o2 or x.endswith("." + _o2)
+                                     for x in _names_here
+                                     for _o2 in ({_seed_apex0} | {_apex(d) for d in ident["domains"]})
+                                     if _o2)
+                    if _shared_h and not _also_ours:
+                        ident.setdefault("cert_names_refused", [])
+                        if _nm not in ident["cert_names_refused"]:
+                            ident["cert_names_refused"].append(_nm)
+                            print("[auto] cert-name REFUSED: %s (on shared infrastructure %s, and "
+                                  "the certificate does not also name the customer -- a brand-token "
+                                  "substring is not ownership)" % (_nm, _ip), file=sys.stderr)
+                        continue
                 if _nm not in ident["domains"]:
                     _cert_new.setdefault(_nm, set()).add(_ip)
                 if _ip not in ident["pinned"]:
@@ -2169,6 +2201,29 @@ def run(ident, F, audience, limit_per_query=500):
         findings.sort(key=lambda f: SEV_ORDER.index(f["sev"]) if f["sev"] in SEV_ORDER else 9)
         print("[auto] DNS hygiene: %d finding(s) from the zone itself (%s)"
               % (len(_dns_findings), ", ".join(f["ft"] for f in _dns_findings)), file=sys.stderr)
+
+    # ---- REBUILD THE INVENTORY FROM THE FINAL ESTATE (defect D8/A11, closed 2026-08) ------------
+    # `inv`, `asns` and `countries` were accumulated DURING the query loop and never re-derived, so
+    # they still counted every record the attribution gate, the co-tenant guard and the rollbacks
+    # had since removed. The abakus-tk.de deck showed the result on two adjacent slides:
+    # "1 UNIQUE IPS · 47 ASNS · 15 COUNTRIES" against an asset inventory of "144 HOSTS · 12 ASNs".
+    # One host cannot span 47 autonomous systems. A reader who compares two slides stops trusting
+    # the whole document, which is exactly what the rightmart forensics said about this defect.
+    # There is now ONE source for these numbers: the surviving host set.
+    inv, asns, countries = {}, set(), set()
+    for _ip, _ms in hosts.items():
+        for _m in _ms:
+            _ma = _m.get("asn")
+            _cc = (_m.get("location") or {}).get("country_code")
+            if _ma:
+                asns.add(_ma)
+                _e = inv.setdefault(_ma, {"holder": None, "cc": set(), "ips": set()})
+                _e["holder"] = _e["holder"] or (_m.get("org") or _m.get("isp"))
+                if _cc:
+                    _e["cc"].add(_cc)
+                _e["ips"].add(_ip)
+            if _cc:
+                countries.add(_cc)
 
     # Every IP the sweep KEPT has already passed recon's ownership gate, so it is owned by
     # definition. The FP auditor uses this set to avoid dropping a legitimately-scanned host that

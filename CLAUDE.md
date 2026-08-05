@@ -2139,3 +2139,34 @@ to change silently. If it is ever added it must be an explicit per-engagement op
 wording changed in the same edit.
 Guarded by test_scope_abakus.py §10 (CAA empty -> finding; CAA lookup failed -> NO finding; dead
 names flagged; a name with an observable service not flagged).
+
+## The last abakus false positive: a NEIGHBOUR'S certificate on a shared VIP (2026-08)
+The re-run went 192 IPs -> 1 and the attribution gate dropped 174 co-tenant records
+(tagesklinik-hamburg.net, rh-it-beratung.com, reikidosmundos.com). One bad finding survived:
+H1, four CVEs on `2a00:da00:100f:f000::206` — which is **abakusconsulting.co.uk**, a UK consulting
+firm. It entered through `_cert_names` harvesting on a swept host:
+`_owns_apex("abakusconsulting.co.uk", tokens={"abakus"})` -> the squashed label is
+"abakusconsulting", "abakus" is a substring -> OWNED.
+The code comment there claimed "a shared-hosting neighbour's cert can never drag its own domain into
+scope". **That holds only while the brand token is DISTINCTIVE** — and "abakus" is the German word
+for abacus. The rarity gate added for Shodan brand SELECTORS did not cover `_owns_apex`'s token test.
+FIX, and it is a principle rather than a threshold: a certificate is STRONG evidence of common
+operation when it **also names the customer** (that is exactly how bibeltv.de reached bibel.tv, via
+a shared SAN). It is WEAK evidence when it names only the other party AND the host is provider /
+multi-tenant infrastructure — then all that has been observed is that two customers of the same
+hoster have similar-looking names. So a cert-name discovery admitted ONLY by a brand-token substring
+is refused when the host is shared and the certificate does not also name an owned domain; recorded
+in `ident["cert_names_refused"]`. Guarded by test_scope_abakus.py §11, which asserts BOTH directions
+(abakusconsulting refused, bibel.tv still scoped).
+
+## D8/A11 CLOSED — the inventory is derived from the FINAL estate (2026-08)
+The same deck printed **"1 UNIQUE IPS · 47 ASNS · 15 COUNTRIES"** on slide 2 and
+**"144 HOSTS · 12 OPERATORS · 12 ASNs"** on slide 5. One host cannot span 47 autonomous systems.
+CAUSE: `inv`, `asns` and `countries` were accumulated DURING the query loop and never re-derived, so
+they still counted every record the attribution gate, the co-tenant guard and the domain/pivot
+rollbacks had since removed. Every guard worked; the metrics object simply predated them.
+FIX: rebuild `inv`/`asns`/`countries` from the surviving `hosts` dict after all guards have run.
+ONE source for these numbers. Guarded by test_scope_abakus.py §12 (inventory hosts may never exceed
+unique IPs; the ASN count must be consistent with the surviving host count).
+RULE: any headline number must be computed AFTER the last thing that can change it. A count taken
+mid-pipeline is a claim about a state the deck never describes.
