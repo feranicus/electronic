@@ -298,13 +298,73 @@ check(len(_s) < 10, "Microsoft's shared front ends are gone: %d host(s) left" % 
 
 # ...but where the target DOES own address space, a 95% drop still means the whois data is the
 # suspect, and the valve must still refuse. That is the lotto24/angermann doctrine, unchanged.
+# NOTE the co-tenants here are ORDINARY COMPANIES, not providers - which is what the real shared
+# Colt /24 held (a doctors' pension fund, FACT, Regus). Using a hoster's name instead would be
+# unrealistic AND would be handled earlier by the attribution gate, so the valve would never run.
+OWNED_MIX = [_h("217.110.51.2", "Horst F.G. Angermann GmbH", ["angermann.de"], asn="AS8220")] + \
+            [_h("217.110.51.%d" % i, "NORDRHEINISCHE AERZTEVERSORGUNG", ["naev.de"], asn="AS8220")
+             for i in range(20, 60)]
 OWNED = dict(SHARED)
-OWNED.update({"asns": ["AS8220"], "nets": ["217.110.51.0/24"], "related_unscoped": []})
+OWNED.update({"asns": ["AS8220"], "nets": ["217.110.51.0/24"], "related_unscoped": [],
+              "domains": ["angermann.de"], "pinned": ["217.110.51.2"],
+              "brand_tokens": ["angermann"], "seed": "angermann.de"})
 OWNED.pop("scanned_ips", None); OWNED.pop("cotenants_refused", None)
-_install_routing_shodan([("abakus-tk.de", MIXED), ("217.110.51", MIXED)], default=[])
+_install_routing_shodan([("217.110.51", OWNED_MIX), ("angermann.de", OWNED_MIX)], default=[])
 R.run(OWNED, R.build_filters(OWNED), audience="internal", limit_per_query=500)
 check(bool(OWNED.get("cotenants_refused")),
       "with its own ASN/prefixes the valve still refuses a 95% drop (whois is the suspect)")
+
+
+
+# =============================================================== 9. the attribution gate
+print("\n== 9. a record on a shared VIP must NAME the customer to become a finding ==")
+# The operator pulled Shodan's real records for abakus-tk.de's two addresses. Verbatim:
+#   217.160.0.136           :80  http.host = mlslight.com
+#   217.160.0.136           :443 hostnames  = bboca.de
+#   2001:8d8:100f:f000::269 :443 http.host = www.stefan-ried.de, cert CN *.stefan-ried.de
+# Not one names abakus-tk.de. The VIP requires SNI, so Shodan can never see the customer's vhost.
+def _rec(ip, port, org, host=None, hostnames=(), cn=None):
+    m = {"ip_str": ip, "port": port, "org": org, "transport": "tcp", "product": "nginx",
+         "hostnames": list(hostnames), "http": {"host": host} if host else {},
+         "location": {"country_code": "DE"}, "asn": "AS8560"}
+    if cn:
+        m["ssl"] = {"cert": {"subject": {"CN": cn}}}
+    return m
+
+
+VIP = [
+    _rec("217.160.0.136", 80, "IONOS SE", host="mlslight.com",
+         hostnames=["217-160-0-136.elastic-ssl.ui-r.com", "mlslight.com"]),
+    _rec("217.160.0.136", 443, "IONOS SE", host="217.160.0.136",
+         hostnames=["217-160-0-136.elastic-ssl.ui-r.com", "bboca.de"]),
+    _rec("217.160.0.136", 8443, "IONOS SE", host="www.abakus-tk.de",
+         hostnames=["abakus-tk.de"], cn="*.abakus-tk.de"),
+]
+_install_routing_shodan([("abakus-tk.de", VIP), ("217.160.0.136", VIP)], default=[])
+
+ATTR = dict(BRANDY)
+ATTR.update({"domains": ["abakus-tk.de"], "pinned": ["217.160.0.136"], "brand_variants": [],
+             "related_unscoped": [], "asns": [], "nets": []})
+ATTR.pop("scanned_ips", None)
+R.run(ATTR, R.build_filters(ATTR), audience="internal", limit_per_query=500)
+
+_ua = ATTR.get("records_unattributable") or []
+_names = {d["name"] for d in _ua}
+check(bool(_ua), "unattributable records were dropped and recorded (%d)" % len(_ua))
+check(any("mlslight" in n for n in _names), "mlslight.com dropped - it is a co-tenant, not abakus")
+check(any("bboca" in n for n in _names), "bboca.de dropped - co-tenant")
+check("217.160.0.136" in set(ATTR.get("scanned_ips") or []),
+      "the IP itself is KEPT: the record naming abakus-tk.de survives the gate")
+
+# Fail-open case: a record with no names at all cannot be shown to be somebody else's. This is what
+# protects the S-KON WatchGuard, whose only anchor is a self-signed certificate.
+NONAME = [_rec("85.158.4.40", 443, "ScaleUp Technologies GmbH")]
+_install_routing_shodan([("abakus-tk.de", NONAME)], default=[])
+ATTR2 = dict(ATTR); ATTR2.update({"pinned": ["85.158.4.40"], "related_unscoped": []})
+ATTR2.pop("scanned_ips", None); ATTR2.pop("records_unattributable", None)
+R.run(ATTR2, R.build_filters(ATTR2), audience="internal", limit_per_query=500)
+check("85.158.4.40" in set(ATTR2.get("scanned_ips") or []),
+      "a record with NO names is kept - absence of evidence is never a finding")
 
 
 print("\n" + ("FAILED: %d" % len(FAILS) if FAILS else "ALL ABAKUS SCOPE CHECKS PASSED"))

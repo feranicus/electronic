@@ -2070,3 +2070,39 @@ never against intuition — the engineer who picks the token speaks the language
 it is a common word.
 Guarded by test_scope_abakus.py §6-§8 (generic-word refusal, SaaS-tenancy pinning, valve behaviour
 with and without owned address space).
+
+## PINNING PROVES THE ADDRESS, NOT THE OBSERVATION (abakus-tk.de, proved 2026-08)
+The operator pulled Shodan's ACTUAL records for abakus-tk.de's two addresses. Verbatim:
+```
+217.160.0.136           :80   http.host = mlslight.com
+217.160.0.136           :443  hostnames  = bboca.de
+2001:8d8:100f:f000::269 :80   http.host = cpi-projects.co.uk
+2001:8d8:100f:f000::269 :443  http.host = www.stefan-ried.de   cert CN *.stefan-ried.de
+```
+**Not one record names abakus-tk.de.** The deck's "Standard services exposed - nginx" finding was a
+stranger's private blog. Both IPs are legitimately PINNED (the customer's own DNS resolves there)
+and pinned hosts deliberately bypass the hoster drop — that exemption exists so a real S-KON host on
+shared infra is not discarded — so every co-tenant observation was inherited as the customer's.
+MECHANISM, verified by hand: the IONOS elastic-SSL VIP **requires SNI**.
+`openssl s_client -connect 217.160.0.136:443 -servername abakus-tk.de` returns `CN=*.abakus-tk.de`;
+the same command WITHOUT `-servername` aborts with `tlsv1 alert internal error` (alert 80) and no
+certificate at all. Shodan scans by IP with whatever hostname it happens to know, so the customer's
+vhost is structurally invisible to it. No filter set can fix that — it is the ground truth of the
+target, and the honest deck line is "shared hosting, not externally observable", not a finding.
+FIX — `_record_names(m)` + `_names_the_target()` + the attribution gate in `run()`: on
+provider/multi-tenant infrastructure (`_is(org, CDNS)` or `_looks_like_provider`) a record may only
+become a finding if it identifies itself with one of the customer's own names (rDNS, HTTP Host,
+domains, cert CN/SAN). Dropped records are recorded in `ident["records_unattributable"]`.
+FAILS OPEN in the one ambiguous case: a record carrying NO names at all cannot be shown to be a
+co-tenant's either, so it is KEPT — same doctrine as the co-tenant guard's "no org recorded -> no
+evidence -> keep", and it is what protects the S-KON WatchGuard whose only anchor is a self-signed
+certificate.
+RULE: **pinning proves the ADDRESS is theirs; it does not make every OBSERVATION on it theirs.**
+Guarded by test_scope_abakus.py §9 (the real co-tenant records dropped, the record naming the
+customer kept, the no-names record kept).
+WHAT THE RIGHT ANSWER LOOKS LIKE: one curl with the correct SNI produced the first genuinely
+attributable technical finding of the whole engagement —
+`curl -sSI --resolve abakus-tk.de:443:217.160.0.136 https://abakus-tk.de/` returns Apache +
+PHP/8.3.32 + WordPress + The Events Calendar, `Set-Cookie: ZPORTALSESSID` with **no Secure and no
+SameSite**, and **no HSTS, CSP, X-Frame-Options or X-Content-Type-Options at all**. That is their
+application, on their vhost, and every line of it is remediable by them. Shodan could never see it.

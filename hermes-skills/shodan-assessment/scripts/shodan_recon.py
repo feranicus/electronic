@@ -796,6 +796,33 @@ def _cert_names(m):
     return clean
 
 
+def _record_names(m):
+    """Every hostname this Shodan RECORD claims: rDNS, HTTP Host, domains and certificate names.
+
+    Distinct from _cert_names(), which reads the certificate only. This is the full set of names
+    by which a single observation identifies itself."""
+    out = set()
+    for h in (m.get("hostnames") or []):
+        out.add(str(h).lower().strip("."))
+    for d in (m.get("domains") or []):
+        out.add(str(d).lower().strip("."))
+    hh = ((m.get("http") or {}).get("host"))
+    if hh:
+        out.add(str(hh).lower().strip("."))
+    for n in _cert_names(m):
+        out.add(str(n).lower().strip(". *"))
+    return {n for n in out if n and "." in n}
+
+
+def _names_the_target(m, own_names):
+    """Does this record identify itself with one of the customer's own names?"""
+    for n in _record_names(m):
+        for ap in own_names:
+            if n == ap or n.endswith("." + ap):
+                return True
+    return False
+
+
 def _brand_tokens_from(seed_apex, org_names):
     """Distinctive tokens from the seed domain label AND the cert subject Organization.
 
@@ -1871,6 +1898,63 @@ def run(ident, F, audience, limit_per_query=500):
         _a = _apex(_d)
         if _a: _own_aps.add(_a)
     if _seed_apex0: _own_aps.add(_seed_apex0)
+
+    # ---- SHARED-VIP ATTRIBUTION GATE (proved on abakus-tk.de, 2026-08) --------------------------
+    # abakus-tk.de resolves to an IONOS elastic-SSL VIP. Both of its addresses are legitimately
+    # PINNED -- their own DNS points there -- and pinned hosts deliberately bypass the hoster drop.
+    # But the operator pulled Shodan's actual records for those two IPs, and this is what they say:
+    #
+    #   217.160.0.136          :80   http.host = mlslight.com
+    #   217.160.0.136          :443  hostnames = bboca.de
+    #   2001:8d8:100f:f000::269 :80  http.host = cpi-projects.co.uk
+    #   2001:8d8:100f:f000::269 :443 http.host = www.stefan-ried.de, cert CN *.stefan-ried.de
+    #
+    # NOT ONE record names abakus-tk.de. The deck's "Standard services exposed - nginx" finding was
+    # literally a stranger's private blog. The cause is mechanical: the VIP requires SNI (without
+    # it the server aborts the handshake with alert 80 - verified by hand), and Shodan scans by IP
+    # with whatever hostname it happens to know. The customer's vhost is therefore invisible to it.
+    #
+    # RULE: pinning proves the ADDRESS is theirs. It does not make every OBSERVATION on it theirs.
+    # On provider/multi-tenant infrastructure a record may only become a finding if it identifies
+    # itself with one of the customer's names.
+    # Fails OPEN in the one case where we genuinely cannot tell: a record carrying NO names at all
+    # cannot be shown to be a co-tenant's either, so it is kept. That is the same doctrine the
+    # co-tenant guard already uses ("no org recorded -> no evidence -> keep"), and it is what
+    # protects the S-KON WatchGuard, whose only anchor is a self-signed certificate.
+    _attr_dropped = []
+    for ip in list(hosts.keys()):
+        _kept = []
+        for m in hosts[ip]:
+            _org_m = (m.get("org") or "") + " " + (m.get("isp") or "")
+            _shared = _is(_org_m, CDNS) or _looks_like_provider(_org_m)
+            if not _shared:
+                _kept.append(m); continue            # not provider space -> the IP itself attributes
+            _nm = _record_names(m)
+            if not _nm:
+                _kept.append(m); continue            # no names at all -> cannot disprove ownership
+            if _names_the_target(m, _own_aps):
+                _kept.append(m); continue            # the record names the customer
+            # Log the most INFORMATIVE name, not the alphabetically first one: the reverse-DNS of
+            # a shared VIP ("217-160-0-136.elastic-ssl.ui-r.com") sorts ahead of the co-tenant's
+            # real domain and tells the reader nothing about whose record this is.
+            _hh = ((m.get("http") or {}).get("host") or "").lower().strip(".")
+            _pick = _hh if (_hh and "." in _hh and not _hh.replace(".", "").isdigit()) else ""
+            if not _pick:
+                _nonptr = [n for n in sorted(_nm)
+                           if not re.match(r"^[\d\-]+\.", n) and not _is(n, CDNS)]
+                _pick = (_nonptr or sorted(_nm))[0]
+            _attr_dropped.append((ip, m.get("port"), _pick[:40]))
+        if _kept:
+            hosts[ip] = _kept
+        else:
+            del hosts[ip]
+    if _attr_dropped:
+        ident["records_unattributable"] = [{"ip": i, "port": p, "name": n}
+                                           for i, p, n in _attr_dropped][:40]
+        print("[auto] attribution gate: dropped %d record(s) on shared/provider infrastructure that "
+              "name someone else (e.g. %s) - pinning proves the address, not the observation"
+              % (len(_attr_dropped),
+                 ", ".join("%s:%s=%s" % t for t in _attr_dropped[:3])), file=sys.stderr)
     # NOTE: do NOT skip on identity_ips here. It is assigned as set(hosts) AFTER every filter has
     # run, so on a net/prefix sweep it contains the co-tenants too and the guard would never fire.
     # Only a PINNED host (resolved from the target's own DNS) is ours by definition.
