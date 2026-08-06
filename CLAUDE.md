@@ -2199,3 +2199,69 @@ DELIBERATELY inverted, with the reasoning kept in the file. A test that encodes 
 rewritten when the doctrine is corrected — deleting it would lose why.
 Guarded by test_scope_abakus.py §13 and the rewritten test_run_path.py section (both directions:
 no address space -> drop; own address space -> still refuse).
+
+## adpolice.gov.ae — three defects, all in data we already had (2026-08)
+A four-finding deck for Abu Dhabi Police. One finding was a false positive, one was the most serious
+exposure in the engagement WRONGLY LABELLED, and the framework list cited EU and automotive law at
+an Emirati police force.
+
+**D1 — THE TLS NEGATION BUG. The widest false-positive source in the product's history.**
+Shodan's `ssl.versions` array lists every protocol tested and marks the UNSUPPORTED ones with a
+leading minus:
+```
+5.194.255.186:443   ['-TLSv1','-SSLv2','-SSLv3','-TLSv1.1','TLSv1.2','-TLSv1.3']   <- TLS1.2 ONLY
+151.253.157.21:443  [ 'TLSv1','-SSLv2','-SSLv3', 'TLSv1.1','TLSv1.2','-TLSv1.3']   <- genuinely legacy
+```
+`classify()` did `v.lstrip("-")` — it STRIPPED the sign and then matched — so a host that had
+explicitly DISABLED TLS 1.0 was reported as offering it. Every modern host lists its disabled
+protocols, so this fired on essentially every host the engine ever saw. **Every deck already
+delivered is suspect on any TLS finding.** FIX: filter on the SIGN, never on membership —
+`enabled = [v for v in versions if not v.startswith("-")]`.
+
+**D2 — the service was named from the PORT, not the REDIRECT CHAIN.**
+`151.253.157.21:443` was reported as "a mail service gateway". Its own Shodan record contained:
+```
+301 -> https://mediahubtest.adpolice.gov.ae/otmm/ux-html/index.html
+302 -> /otdsws/login?logon_appname=Digital+Asset+Management+CE+25.4
+```
+OpenText Media Management behind OpenText Directory Services — and the hostname says **test**. The
+one internet-facing host the force owns under its own certificate is a NON-PRODUCTION media
+repository, and it was rated Medium for a TLS issue that was itself half false.
+FIX: `_redirect_trail(m)` feeds `http.redirects[].location/host`, `http.location` and `http.host`
+into `_hay()`, plus two new detectors — `ecm_exposed` (OpenText/Documentum/SharePoint/Alfresco/
+FileNet/AEM class) and `nonprod_exposed` (test/dev/staging/uat/sandbox/demo). Non-production is
+HIGH on its own and CRITICAL when it is also a content platform. The non-prod token is DELIMITED
+(`(?<![a-z])test(?![a-z])`) so "attestation", "protest", "devices" and "labour" do not trigger it —
+a substring rule there would fire on half the internet.
+RULE: **`http.redirects`, `http.location`, `http.title` and `http.host` identify a service far more
+reliably than `product` and `port`. Read them before naming an asset.**
+
+**D3 — the framework set was hardcoded to a German automotive supplier.** TISAX and UNECE R155
+(vehicle type-approval) plus NIS2 and GDPR, in front of a UAE police force — the THIRD recurrence
+of D9/A7. FIX: `build_findings_deck.js` selects the regime set from `d.target.country`, which
+`shodan_recon` now publishes (the dominant country of the surviving estate, or the ccTLD).
+AE -> UAE IA Standards / ADDA-ADSIC; GB -> NCSC Cyber Essentials / UK GDPR; CH -> revFADP /
+NCSC-CH; EU -> NIS2 / GDPR (+ BSI TR-02102 for DE); everything else -> ISO 27001 / NIST CSF.
+RULE: citing the wrong regulator is worse than citing none — it tells the reader the document was
+not written for them.
+
+**D4 — the attribution gate did not fire on a shared GOVERNMENT platform.** `5.194.255.186` was
+reported as ADP's "core portal". It presents cert CN `tamm.abudhabi`, O `Department of Government
+Enablement` — the shared TAMM platform where the police are one tenant of ~160. The gate keyed on
+"does the holder look like a hoster", and a government digital authority does not (16 announced
+prefixes, under the >20 threshold). FIX: the rule is not about the holder. **If the customer owns
+NO ASN and NO prefixes, nothing can be attributed by IP at all, and identity — a name or a
+certificate — is the only evidence available.** `_no_space` now forces the gate on.
+
+**D5 — my own `dns_no_service` detector asserted from absence.** It flagged `mail.`,
+`autodiscover.` and `media.` as possible dangling DNS because their IPs were absent from Shodan.
+All three are alive; the force's MX hosts are absent from every export too, because Shodan indexes
+what it has scanned and mail infrastructure frequently is not. It was raised as MEDIUM on the
+strength of abakus-tk.de, where `nmap --reason` had independently proved `host-unreach`.
+FIX: demoted to a clarify question only (`stale_dns`), never an automatic finding. The operator's
+answer is what turns it into one on a refine run. I broke the repo's oldest standing rule with a
+detector I wrote three days earlier — absence of evidence is never a finding.
+
+Guarded by `scripts/test_classify_adpolice.py` (wired into ship.py, BLOCKING): the two real
+ssl.versions arrays, the real OpenText redirect chain, the delimited non-prod token against four
+substring traps, the per-jurisdiction regime sets, and that dangling DNS is a question.

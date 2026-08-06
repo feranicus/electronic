@@ -106,13 +106,20 @@ except NameError as e:
     print("\n%d FAILURE(S)" % len(FAILS)); sys.exit(1)
 
 kept = set(ident.get("scanned_ips") or [])
-dropped = {c["ip"] for c in (ident.get("cotenants_dropped") or [])}
-check("217.110.51.2" in kept, "co-tenant guard KEEPS Angermann's own .2 (whois org corroborates)")
-check("217.110.51.7" in kept, "co-tenant guard KEEPS Angermann's own .7")
-check("87.234.246.51" in kept, "co-tenant guard KEEPS netbid.com (a group-structure domain)")
+# Assert the OUTCOME, not which guard produced it. Two gates now exclude a co-tenant and either is
+# a correct answer: the attribution gate (the record names somebody else on shared/no-own-space
+# infrastructure) runs first, and the co-tenant guard (whois org does not corroborate) second.
+# The earlier version of this test named the mechanism, so tightening the earlier gate broke it
+# while the behaviour it cares about was still exactly right.
+excluded = ({c["ip"] for c in (ident.get("cotenants_dropped") or [])} |
+            {r["ip"] for r in (ident.get("records_unattributable") or [])})
+check("217.110.51.2" in kept, "Angermann's own .2 is KEPT (whois org corroborates)")
+check("217.110.51.7" in kept, "Angermann's own .7 is KEPT")
+check("87.234.246.51" in kept, "netbid.com is KEPT (a group-structure domain)")
 for ip, who in (("217.110.51.18", "Nordrheinische Aerzteversorgung"),
                 ("217.110.51.122", "FACT"), ("217.110.51.135", "Regus")):
-    check(ip in dropped and ip not in kept, "co-tenant guard DROPS %s (%s)" % (ip, who))
+    check(ip not in kept and ip in excluded,
+          "%s (%s) is excluded from the estate and recorded" % (ip, who))
 
 print("\n== an EMPTY estate is an honest outcome (doctrine CORRECTED 2026-08) ==")
 # THIS ASSERTION USED TO BE THE OPPOSITE, and the inversion is deliberate.

@@ -565,6 +565,21 @@ def do_tests():
         sys.exit('[X] SCOPE REGRESSION - a discovered domain can own the estate again. Do not ship.')
     print('  abakus scope: shorteners denied, group domains gated, per-domain budget enforced')
 
+    # c'''''''') THE ABU DHABI POLICE CLASSIFY REGRESSION (2026-08). Three defects, all in data the
+    #            engine already had: (1) `v.lstrip("-")` on Shodan's ssl.versions array stripped the
+    #            NEGATION sign, so a TLS-1.2-only host was reported as offering TLS 1.0 — the widest
+    #            false-positive source in the product's history, firing on essentially every host
+    #            ever scanned; (2) the OpenText Media Management TEST instance was called "a mail
+    #            service gateway" because the classifier read `port` and `product` instead of
+    #            http.redirects; (3) the framework list cited NIS2, GDPR, TISAX and UNECE R155 at an
+    #            Emirati police force — the third recurrence of D9/A7.
+    _ap = subprocess.run([sys.executable, os.path.join(engine, 'test_classify_adpolice.py')],
+                         capture_output=True, text=True, timeout=120)
+    if _ap.returncode != 0:
+        print((_ap.stdout or '') + (_ap.stderr or ''))
+        sys.exit('[X] CLASSIFY REGRESSION - TLS negation / service identity / jurisdiction. Do not ship.')
+    print('  adpolice classify: TLS sign respected, redirects read, frameworks follow jurisdiction')
+
     # c'''') The creed (the Cassandra line) sits on the cover of all five decks and is translated by
     #       TWO independent paths: deck_i18n/de.json for the four security builders, and creed.js
     #       itself for build_compliance_deck.js (which has no deck_i18n). test_creed.js pins them

@@ -1419,8 +1419,33 @@ _NAS_PORTS = {5000, 5001, 8080, 8443}          # Synology DSM / QNAP QTS web UI 
 _PBX_PORTS = {5060, 5061, 5090, 5001}          # SIP + 3CX web client
 
 
+def _redirect_trail(m):
+    """Every URL/host this record redirects THROUGH, plus its own Host header.
+
+    THE adpolice.gov.ae MISS (2026-08). Host 151.253.157.21:443 was reported as "a mail service
+    gateway" because the engine read `port` and `product`. Its own Shodan record contained:
+        301 -> https://mediahubtest.adpolice.gov.ae/otmm/ux-html/index.html
+        302 -> /otdsws/login?logon_appname=Digital+Asset+Management+CE+25.4
+    That is OpenText Media Management behind OpenText Directory Services, and the hostname says
+    TEST. The single internet-facing host the force owns under its own certificate is a
+    NON-PRODUCTION media repository — the most serious finding in the engagement, and it was
+    already in data we had.
+    A redirect chain names the application far more reliably than a port ever will."""
+    http = m.get("http") or {}
+    out = []
+    for r in (http.get("redirects") or []):
+        if isinstance(r, dict):
+            out += [str(r.get("location") or ""), str(r.get("host") or "")]
+            out.append(str((r.get("data") or ""))[:200])
+        else:
+            out.append(str(r)[:200])
+    out += [str(http.get("location") or ""), str(http.get("host") or "")]
+    return " ".join(x for x in out if x)
+
+
 def _hay(m):
-    """Every string on a host record that can name a product: banner, cert, HTTP server + title."""
+    """Every string on a host record that can name a product: banner, cert, HTTP server + title,
+    AND the redirect chain — see _redirect_trail for why that last one is load-bearing."""
     ssl = (m.get("ssl") or {}).get("cert") or {}
     subj = ssl.get("subject") or {}
     http = m.get("http") or {}
@@ -1428,7 +1453,23 @@ def _hay(m):
                      str(subj.get("CN", "")), str(subj.get("O", "")),
                      str(http.get("server") or ""), str(http.get("title") or ""),
                      str(http.get("html_hash") or ""), str(m.get("data") or "")[:400],
+                     _redirect_trail(m),
                      " ".join(str(h) for h in (m.get("hostnames") or []))])
+
+
+# A NON-PRODUCTION system on the public internet is a first-rank finding regardless of what it runs:
+# test data is real data, test instances are patched last, and their credentials are weakest.
+# Matched on a delimited token so "attestation", "protest" and "devices" do not trigger it.
+_NONPROD_RE = re.compile(
+    r"(?i)(?<![a-z])(test|testing|dev|devel|development|staging|stage|uat|qa|sandbox|preprod"
+    r"|pre-prod|demo|poc|lab|training|schulung|abnahme)(?![a-z])")
+
+# Enterprise content, DAM and identity platforms. These hold the crown jewels and hide behind a
+# generic reverse proxy, so they never match on `product`. OpenText OTMM/OTDS is the adpolice case.
+_ECM_RE = re.compile(
+    r"(?i)(otmm|otdsws|opentext|documentum|media management|digital asset management"
+    r"|alfresco|nuxeo|sharepoint|filenet|hyland|onbase|laserfiche|m-files|elo enterprise"
+    r"|censhare|bynder|canto cumulus|adobe experience manager|/aem/)")
 
 
 def _high_value_hit(m):
@@ -1443,6 +1484,14 @@ def _high_value_hit(m):
         return "CRITICAL", "backup_console"         # own the backups, own the recovery
     if _PBX_RE.search(hay) or port in (5060, 5061):
         return "HIGH", "pbx_exposed"                # toll fraud + 3CX supply-chain history
+    # An enterprise content / DAM / records platform is a crown-jewel store. On adpolice.gov.ae the
+    # engine had the OpenText redirect chain in hand and still called the host a mail gateway.
+    _nonprod = bool(_NONPROD_RE.search(hay))
+    if _ECM_RE.search(hay):
+        return ("CRITICAL" if _nonprod else "HIGH"), ("nonprod_exposed" if _nonprod else "ecm_exposed")
+    # Any non-production system on the public internet, whatever it runs.
+    if _nonprod and (port in (80, 443, 8080, 8443) or (m.get("http") or {}).get("title")):
+        return "HIGH", "nonprod_exposed"
     return "", ""
 
 
@@ -1510,8 +1559,20 @@ def classify(m):
     if port in REMOTE_HI: return "HIGH","remote_admin"
     if title and re.search(r'(?i)login|admin|portal|vpn|dashboard|phpmyadmin|webmin|outlook|exchange', title):
         return "HIGH","exposed_panel"
-    versions = ssl.get("versions") or []
-    if any(v.lstrip("-") in ("TLSv1","TLSv1.0","SSLv3","SSLv2","TLSv1.1") for v in versions): return "MEDIUM","legacy_tls"
+    # ---- THE TLS NEGATION BUG (adpolice.gov.ae, 2026-08) ----------------------------------------
+    # Shodan's ssl.versions array lists EVERY protocol it tested and marks the UNSUPPORTED ones with
+    # a leading minus:
+    #     5.194.255.186:443  ['-TLSv1','-SSLv2','-SSLv3','-TLSv1.1','TLSv1.2','-TLSv1.3']
+    # That host is TLS-1.2-only and correctly configured. The old line did `v.lstrip("-")` — it
+    # STRIPPED the minus and then matched, so a host that had explicitly DISABLED TLS 1.0 was
+    # reported as offering it. Every modern host lists its disabled protocols, so this raised a
+    # legacy-TLS finding on essentially every host the engine ever saw. It is the single widest
+    # false-positive source in the product's history and it affects every deck already delivered.
+    # Filter on the SIGN, never on membership.
+    versions = [str(v) for v in (ssl.get("versions") or [])]
+    enabled = [v for v in versions if not v.startswith("-")]
+    if any(v in ("TLSv1", "TLSv1.0", "SSLv3", "SSLv2", "TLSv1.1") for v in enabled):
+        return "MEDIUM", "legacy_tls"
     cert = ssl.get("cert") or {}
     if cert.get("expired"): return "MEDIUM","expired_tls"
     # self-signed: issuer == subject, OR the issuer is a device/private CA (not a public CA)
@@ -1577,6 +1638,26 @@ TEMPLATES = {
  "remote_admin":("Exposed remote-admin (Telnet/VNC/WinRM/SMB)", ["Brute-force / cleartext protocols"], ["SASE / ZTNA — broker admin access","Managed Firewall — block cleartext admin ports"], ["MITRE T1133"]),
  "exposed_panel":("Exposed login / admin / OWA panel", ["Credential attacks; panel-CVE surface"], ["Managed WAF — shield the panel + rate-limit","SASE — identity-broker + geofence"], ["OWASP"]),
  "legacy_tls": ("Legacy / weak TLS (SSLv3/TLS1.0/1.1)", ["MITM / downgrade; PCI/DORA gap"], ["Managed Firewall — enforce TLS>=1.2 policy","Managed WAF — terminate modern TLS"], ["RFC 8996"]),
+ "nonprod_exposed": ("Non-production system reachable from the public internet",
+            ["A system whose own hostname or application banner identifies it as test, development, staging, UAT or a demo is reachable from the internet. Non-production environments are patched last, monitored least and configured most loosely — default credentials, verbose errors and debug endpoints survive there long after they are removed from production.",
+             "Test systems are routinely loaded with a copy of real production data, so the data-protection exposure is identical to production while the control set is not. For a public authority that means real case, personnel or citizen records sitting behind the weakest configuration in the estate.",
+             "This is also the classic lateral-movement entry point: the test instance usually authenticates against the same directory as production, so a credential harvested here is a credential that works there."],
+            [{"tag": "COLT", "title": "Remove the non-production estate from the public internet",
+              "body": "WHY THIS SERVICE: a test system has no legitimate reason to answer an anonymous request from the internet, and no patch cycle will ever make it as safe as production. Removing reachability is the only fix that scales. WHAT YOU GET: the environment stays fully usable to the people who need it and disappears from every scanner and every opportunistic attack. HOW: published through an identity-aware access layer, so access is by named user and device rather than by network position, with the public listener retired."},
+             {"tag": "COLT", "title": "Access control before the application",
+              "body": "WHY THIS SERVICE: the login page of a test instance is itself the exposure — it discloses the platform, the version and often the tenant. Authenticating at the edge means an unauthenticated request never reaches the application at all. WHAT YOU GET: brute force, credential stuffing and pre-auth vulnerabilities all stop at the edge. HOW: enforced at the access proxy with MFA, delivered and monitored as a managed service."},
+             {"tag": "PSF", "title": "Environment inventory and separation review",
+              "body": "WHY THIS SERVICE: non-production systems reach the internet because nobody owns the question of which environments exist and how they are reached. An inventory answers it once. WHAT YOU GET: a list of every environment, who may reach it and from where, plus the data-handling rules for test copies of live records. HOW: a structured workshop with the platform and application owners, ending in a documented separation standard."}],
+            ["ISO/IEC 27001 A.8.31", "NIST SP 800-53 CM-2", "MITRE T1190"]),
+ "ecm_exposed": ("Enterprise content / digital-asset platform exposed",
+            ["An enterprise content-management or digital-asset platform is reachable from the internet. These systems are the document of record for an organisation — case files, media, contracts, evidence — so a single credential compromise yields the archive rather than one application's data.",
+             "The platforms are large, integrate with the corporate directory and are typically internet-facing only for a small group of external contributors, which makes the exposure disproportionate to the use case.",
+             "Their login portals disclose the product and the exact release in the redirect chain, giving an attacker a precise version to match against known vulnerabilities before sending a single unusual request."],
+            [{"tag": "COLT", "title": "Publish the archive through identity-aware access",
+              "body": "WHY THIS SERVICE: the platform needs to be reachable by named people, not by the internet. An access layer separates those two things, which no amount of patching does. WHAT YOU GET: external contributors keep working, the anonymous internet loses its route to the archive, and every access is attributable. HOW: published through a managed access proxy with MFA and per-group policy."},
+             {"tag": "COLT", "title": "Managed WAF in front of the portal",
+              "body": "WHY THIS SERVICE: where the portal must stay public, exploit delivery has to be blocked ahead of the application, because a content platform's patch cycle is measured in quarters. WHAT YOU GET: pre-authentication exploit attempts are stopped before they reach the software, with the attempts logged as evidence. HOW: deployed in front of the existing portal with no change to the application."}],
+            ["ISO/IEC 27001 A.5.15", "MITRE T1190", "OWASP A01"]),
  # DNS-derived findings. These come from the zone, not from a Shodan record, and they are the two
  # cheapest real findings on a target whose whole estate is shared hosting -- abakus-tk.de, where
  # every Shodan observation belonged to a co-tenant, had both of them.
@@ -2003,7 +2084,18 @@ def run(ident, F, audience, limit_per_query=500):
         _kept = []
         for m in hosts[ip]:
             _org_m = (m.get("org") or "") + " " + (m.get("isp") or "")
-            _shared = _is(_org_m, CDNS) or _looks_like_provider(_org_m)
+            # THE TAMM FALSE POSITIVE (adpolice.gov.ae, 2026-08). 5.194.255.186 was reported as Abu
+            # Dhabi Police's "core portal". It presents cert CN `tamm.abudhabi`, O `Department of
+            # Government Enablement` — the shared TAMM government platform, on which the police are
+            # one tenant of roughly 160. The gate did not fire because its holder is a government
+            # digital authority, which is multi-tenant but looks nothing like a hoster: no "hosting"
+            # in the name, and 16 announced prefixes, under the >20 provider threshold.
+            # The general rule is not about what the holder looks like. It is about whether the
+            # customer has any address space of its own: if they own NO ASN and NO prefixes, then
+            # nothing can be attributed to them by IP, and identity — a name or a certificate — is
+            # the ONLY evidence available. That is exactly what the S-KON playbook has always said.
+            _no_space = not (ident.get("asns") or ident.get("nets"))
+            _shared = _no_space or _is(_org_m, CDNS) or _looks_like_provider(_org_m)
             if not _shared:
                 _kept.append(m); continue            # not provider space -> the IP itself attributes
             _nm = _record_names(m)
@@ -2194,16 +2286,20 @@ def run(ident, F, audience, limit_per_query=500):
             continue                            # a SaaS tenancy is not their host to begin with
         _no_service.append((_fq, _v4[0]))
     if _no_service:
+        # DEMOTED TO A QUESTION (adpolice.gov.ae, 2026-08). I built this as a MEDIUM finding on the
+        # strength of abakus-tk.de, where nmap later proved the addresses genuinely dead. On Abu
+        # Dhabi Police the same logic flagged `mail.`, `autodiscover.` and `media.` — all perfectly
+        # alive. Their MX hosts are absent from every Shodan export too, because Shodan indexes what
+        # it has scanned and mail infrastructure frequently is not.
+        # "Not in Shodan" is ABSENCE OF EVIDENCE, and the standing rule in this repo is that absence
+        # of evidence is never a finding. My own detector broke it. It is now surfaced ONLY as a
+        # clarification question; the operator's answer is what turns it into a finding on a refine
+        # run, which is the same contract every other candidate here follows.
         ident["resolved_no_service"] = [{"name": n, "ip": i} for n, i in sorted(_no_service)][:20]
-        _t, _w, _r, _f = TEMPLATES["dns_no_service"]
-        _dns_findings.append({"sev": "MEDIUM", "ft": "dns_no_service",
-                              "title": "%s (%d name%s)" % (_t, len(_no_service),
-                                                           "s" if len(_no_service) > 1 else ""),
-                              "what": ["%d hostname(s) resolve to addresses with no service "
-                                       "observable in public data." % len(_no_service)],
-                              "evidence": ["%s -> %s  (no observable service)" % (n, i)
-                                           for n, i in sorted(_no_service)[:8]],
-                              "why": _w, "rem": _r, "refs": _f})
+        print("[auto] %d name(s) resolve with no observable service - put to the operator as a "
+              "question, NOT raised as a finding (absence of evidence is never a finding): %s"
+              % (len(_no_service), ", ".join(n for n, _ in sorted(_no_service)[:5])),
+              file=sys.stderr)
 
     for _df in _dns_findings:
         _sev = _df["sev"]
@@ -2254,8 +2350,17 @@ def run(ident, F, audience, limit_per_query=500):
     # definition. The FP auditor uses this set to avoid dropping a legitimately-scanned host that
     # simply wasn't in the DNS-probe pin list (that dropped skon.de's real critical).
     ident["scanned_ips"] = sorted(hosts.keys())
+    # The estate's dominant country. The deck builders bind the FRAMEWORK set to it: citing NIS2,
+    # GDPR and automotive TISAX at an Emirati police force told that reader the document was not
+    # written for them (adpolice.gov.ae, 2026-08 — the third recurrence of this defect).
+    _cc = ""
+    if countries:
+        _cc = sorted(countries, key=lambda c: -sum(1 for _e in inv.values() if c in _e["cc"]))[0]
+    elif ident.get("tld_cc"):
+        _cc = str(ident["tld_cc"]).upper()
     return {"target": {"company": company_name(ident), "audience": audience or "Internal — Cybergod LLC · S4Biz Group",
                        "date": datetime.date.today().isoformat(),
+                       "country": _cc,
                        "scope": _scope_line(ident)},
             "identity": ident,
             "summary": {"records": records, "unique_ips": len(hosts), "asns": len(asns) or len(ident["asns"]),

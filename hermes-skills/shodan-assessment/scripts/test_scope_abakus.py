@@ -392,7 +392,13 @@ _fts = {f.get("ft") for f in (_out.get("findings") or [])}
 _titles = [f.get("title", "") for f in (_out.get("findings") or [])]
 
 check("no_caa" in _fts, "missing CAA is a finding: %s" % [t for t in _titles if "CAA" in t][:1])
-check("dns_no_service" in _fts, "names that resolve with no observable service are surfaced")
+# DELIBERATE CHANGE (adpolice.gov.ae, 2026-08): dangling DNS is a QUESTION, not a finding.
+# It used to be raised as MEDIUM here on the strength of abakus, where nmap later proved the
+# addresses genuinely dead. On Abu Dhabi Police the same logic flagged mail./autodiscover./media.,
+# all perfectly alive — mail infrastructure is routinely absent from Shodan. "Not indexed" is
+# absence of evidence, and absence of evidence is never a finding.
+check("dns_no_service" not in _fts,
+      "dangling DNS is NOT asserted as a finding (absence of evidence)")
 _ns = {d["name"] for d in (DNSF.get("resolved_no_service") or [])}
 check("intranet.abakus-tk.de" in _ns and "dev.abakus-tk.de" in _ns,
       "both dead names flagged: %s" % sorted(_ns))

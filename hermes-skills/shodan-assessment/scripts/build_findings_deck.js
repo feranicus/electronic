@@ -417,13 +417,42 @@ function drawTable(slide, rows, opts) {
   s.addText(filters.map((x, i) => ({ text: x, options: { breakLine: i < filters.length - 1, fontSize: 8.4, fontFace: FB, color: C.ink, bullet: { code: "2022", indent: 10 } } })),
     { x: 0.4, y: 2.92, w: 4.6, h: 1.9, valign: "top", margin: 0, paraSpaceAfter: 3 });
   s.addText("FRAMEWORKS MAPPED", { x: 5.15, y: 2.70, w: 4.6, h: 0.22, fontSize: 9, fontFace: FB, bold: true, color: C.teal, charSpacing: 2, margin: 0 });
-  const fw = [
-    "BSI TR-02102 " + EMDASH + " crypto / TLS baselines (DE)",
-    "CISA KEV " + EMDASH + " known-exploited vulnerabilities",
-    "ISO/IEC 27001 " + EMDASH + " control-objective mapping",
-    "TISAX " + EMDASH + " automotive information-security assurance",
-    "UNECE R155 " + EMDASH + " vehicle cyber-security type-approval",
-  ];
+  // FRAMEWORKS ARE BOUND TO JURISDICTION (adpolice.gov.ae, 2026-08 — the THIRD recurrence).
+  // This list was hardcoded to a German automotive supplier: it put TISAX and UNECE R155 (vehicle
+  // type-approval) in front of a law firm, a telecoms reseller and finally the Abu Dhabi Police,
+  // alongside NIS2 and GDPR — EU law that does not reach an Emirati police force at all. Citing the
+  // wrong regulator is worse than citing none: it tells the reader the document was not written for
+  // them. The regime set now follows the estate's own country, which the recon already knows.
+  const cc = String((d.target && (d.target.country || d.target.cc)) || "").toUpperCase();
+  const EU = ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV",
+              "LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"];
+  let fw;
+  if (cc === "AE") {
+    fw = ["UAE Information Assurance Standards " + EMDASH + " NESA / TDRA baseline controls",
+          "ADDA / ADSIC Abu Dhabi information-security policy",
+          "ISO/IEC 27001 " + EMDASH + " control-objective mapping",
+          "CISA KEV " + EMDASH + " known-exploited vulnerabilities"];
+  } else if (cc === "GB" || cc === "UK") {
+    fw = ["NCSC Cyber Essentials " + EMDASH + " baseline technical controls",
+          "UK GDPR / DPA 2018 " + EMDASH + " security of processing",
+          "ISO/IEC 27001 " + EMDASH + " control-objective mapping",
+          "CISA KEV " + EMDASH + " known-exploited vulnerabilities"];
+  } else if (cc === "CH") {
+    fw = ["revFADP " + EMDASH + " Swiss data-protection security duty",
+          "NCSC-CH minimum ICT standard",
+          "ISO/IEC 27001 " + EMDASH + " control-objective mapping",
+          "CISA KEV " + EMDASH + " known-exploited vulnerabilities"];
+  } else if (!cc || EU.indexOf(cc) >= 0) {
+    fw = ["NIS2 Art. 21 " + EMDASH + " risk-management measures",
+          "GDPR Art. 32 " + EMDASH + " security of processing",
+          "ISO/IEC 27001 " + EMDASH + " control-objective mapping",
+          "CISA KEV " + EMDASH + " known-exploited vulnerabilities"];
+    if (cc === "DE") fw.splice(2, 0, "BSI TR-02102 " + EMDASH + " crypto / TLS baselines (DE)");
+  } else {
+    fw = ["ISO/IEC 27001 " + EMDASH + " control-objective mapping",
+          "NIST CSF 2.0 " + EMDASH + " identify / protect / detect",
+          "CISA KEV " + EMDASH + " known-exploited vulnerabilities"];
+  }
   s.addText(fw.map((x, i) => ({ text: x, options: { breakLine: i < fw.length - 1, fontSize: 8.4, fontFace: FB, color: C.ink, bullet: { code: "2022", indent: 10 } } })),
     { x: 5.15, y: 2.92, w: 4.6, h: 1.9, valign: "top", margin: 0, paraSpaceAfter: 3 });
   s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.86, w: 9.3, h: 0.42, fill: { color: C.light }, line: { type: "none" } });
