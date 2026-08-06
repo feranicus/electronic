@@ -400,12 +400,41 @@ def _job_dir(email: str, job_id: str) -> Path:
     return d
 
 
+def _enforce_quota(email: str) -> None:
+    """Refuse to start a run once an evaluation account has used its allowance.
+
+    The quota lives in colt_auth beside the allow-list, because "who may use this" and "how much"
+    are the same question and answering them in two places is how they drift apart. Absent from the
+    map = unlimited, so every existing user is unaffected.
+    Enforced HERE, before the job row is created, so a refused attempt does not consume a slot and
+    does not appear in History as a run that never happened. Refusal is a 429 with the numbers in
+    it, not a generic error: the person should be able to see exactly where they stand.
+    """
+    try:
+        import colt_auth
+        cap = colt_auth.quota_for(email)
+    except Exception:
+        return                              # never let a quota lookup break an assessment
+    if not cap:
+        return
+    used = store.count_jobs(email)
+    if used >= cap:
+        _log(evt="quota_exceeded", user=email, used=used, cap=cap)
+        raise HTTPException(
+            status_code=429,
+            detail=("Assessment limit reached: %d of %d used. This is an evaluation account. "
+                    "Contact feranicus@s4biz.io to raise the limit." % (used, cap)))
+    if used + 1 == cap:
+        _log(evt="quota_last", user=email, used=used + 1, cap=cap)
+
+
 @app.post("/api/assess")
 async def assess(req: AssessReq, request: Request):
     email = _require_email(request)
     company = (req.company or "").strip()
     if not company:
         raise HTTPException(status_code=400, detail="company required")
+    _enforce_quota(email)
     lang = doc_lang(req.lang)
     job_id = uuid.uuid4().hex
     _job_dir(email, job_id)  # pre-create owner-scoped dir
@@ -822,6 +851,7 @@ async def compliance(req: ComplianceReq, request: Request):
     company = (req.company or "").strip()
     if not company:
         raise HTTPException(status_code=400, detail="company required")
+    _enforce_quota(email)          # Assess and Compliance share one allowance
     lang = doc_lang(req.lang)
     job_id = uuid.uuid4().hex
     _job_dir(email, job_id)

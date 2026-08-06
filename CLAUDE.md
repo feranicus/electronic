@@ -2296,3 +2296,29 @@ looked healthy while returning a sixth of the estate.
 Guarded by `scripts/test_asn_enterprise.py` (wired into ship.py, BLOCKING): replays the REAL
 captured searchcomplete response, asserts all 7 RBC ASNs are found AND that the six same-prefix
 strangers are refused, plus that a DACH target does not regress.
+
+## Per-user assessment quota + two evaluation accounts (2026-08)
+Whitelisted `mr.nvisinc@gmail.com` (NVIS Inc) and `mordechai.rabinovich@rbc.com` (RBC), each capped
+at **5 assessments**. There was no quota mechanism at all before this.
+WHERE IT LIVES: `colt_auth.USER_QUOTAS`, beside `PARTNER_EMAILS`. "Who may use this" and "how much"
+are the same question, and answering them in two files is how they drift apart. Addresses and
+quotas are NOT secrets, so committing them makes them auditable in git and reviewable in a PR,
+which an env var on a droplet never is. `USER_QUOTAS="a@x.com=10"` overrides at runtime.
+Absent from the map = unlimited, so no existing user is affected.
+**rbc.com is deliberately NOT in PARTNER_DOMAINS.** Only the named person was asked for; trusting
+the domain would admit ~90,000 bank staff and could not be undone quietly afterwards.
+BOTH FRONT DOORS ENFORCE IT, or the other one is simply the way around the cap:
+  * web - `main._enforce_quota()` on BOTH `/api/assess` and `/api/compliance`, counting
+    `store.count_jobs(email)`. Checked BEFORE the job row is created, so a refused attempt does not
+    consume a slot or appear in History. Refusal is a 429 carrying the actual numbers.
+  * Telegram - `bot.py` cannot see colt-web's jobs table, so it counts
+    `cost_ledger.count_for_user()` on the shared `colt_events` volume, which both containers mount.
+Counting includes failed and running jobs: counting only successes would let an evaluation account
+retry forever on a target that legitimately produces nothing, and ignoring running jobs could be
+beaten by firing several at once. Assess and Compliance share one allowance.
+Both lookups fail OPEN - a quota check must never take an assessment down.
+Guarded by `tests/test_quota.py`: the two accounts can log in, both are capped at 5, case and
+whitespace do not bypass it, `someone.else@rbc.com` is refused, existing users stay unlimited, and
+both front doors are asserted to enforce.
+NOTE: ruff's F821 gate caught a missing `sys` import in the bot path during this change - the gate
+added after the angermann NameError outage, doing exactly its job.

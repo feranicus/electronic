@@ -84,6 +84,19 @@ def history(email: str) -> list:
     return [_row_to_dict(r) for r in rows]
 
 
+def count_jobs(email: str) -> int:
+    """How many assessments this identity has STARTED, ever.
+
+    Counts every row, including failed and running ones. A quota that only counted successes would
+    let an evaluation account retry forever on a target that legitimately produces nothing, and a
+    quota that ignored running jobs could be beaten by firing several at once.
+    Both Assess and Compliance runs live in this table, so one number covers both."""
+    with _conn() as c:
+        row = c.execute("SELECT COUNT(*) AS n FROM jobs WHERE email=?",
+                        ((email or "").lower(),)).fetchone()
+    return int(row["n"] if row and "n" in row.keys() else (row[0] if row else 0))
+
+
 def _row_to_dict(r) -> dict:
     # NOTE: this hardcodes the column list, so ANY new column must be added here too — otherwise it
     # is silently dropped between the DB and the caller. That is exactly how `lang` was lost: the

@@ -70,6 +70,24 @@ def record(company, cost_usd=0.0, tokens_in=0, tokens_out=0, model=None,
         print("[warn] cost_ledger.record: %s" % e)
         return {}
 
+def count_for_user(user):
+    """How many assessments this identity has completed, from the durable ledger.
+
+    The web app counts its own jobs table, which the Telegram bots cannot see. The ledger CAN be
+    seen by both — it lives on the shared colt_events volume — so it is what lets the bot enforce
+    the same per-user allowance instead of being a way around it.
+    Fails OPEN (returns 0) on any error: a quota lookup must never take an assessment down."""
+    u = (user or "").strip().lower()
+    if not u:
+        return 0
+    try:
+        with _conn() as c:
+            row = c.execute("SELECT COUNT(*) FROM runs WHERE LOWER(user)=?", (u,)).fetchone()
+        return int(row[0] if row else 0)
+    except Exception:
+        return 0
+
+
 def totals(c=None):
     """Lifetime rollup: spend, count, average, first/last timestamps."""
     own = c is None

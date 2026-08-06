@@ -19,8 +19,40 @@ EMAIL_RE    = re.compile(r"^[a-z]+(?:-[a-z]+)*\.[a-z]+(?:-[a-z]+)*@colt\.net$", 
 #   EXTRA_ALLOWED_EMAILS="a@x.ch,b@y.com"     EXTRA_ALLOWED_DOMAINS="foo.io,bar.com"
 PARTNER_EMAILS  = {"ud@objectale.ch",                 # Objectale partner
                    "r.helle@lancon.de",               # LANCON partner
-                   "frank.oldenburg@abakus-tk.de"}    # abakus tk — Colt reseller
+                   "frank.oldenburg@abakus-tk.de",    # abakus tk — Colt reseller
+                   "mr.nvisinc@gmail.com",            # NVIS Inc — evaluation, 5-assessment cap
+                   "mordechai.rabinovich@rbc.com"}    # RBC — evaluation, 5-assessment cap
+# NAMED addresses only. rbc.com is deliberately NOT added to PARTNER_DOMAINS: that would admit
+# every one of the bank's ~90,000 staff, which is not what was asked for and could not be undone
+# quietly once the domain is trusted.
 PARTNER_DOMAINS = {"s4biz.io"}                 # S4BIZ — whole domain trusted
+
+# ---------------------------------------------------------------- per-user assessment quota
+# An evaluation account gets a fixed number of assessments, not an open tap. Kept HERE, beside the
+# allow-list, because the two answer the same question ("who may use this, and how much") and a
+# quota that lives somewhere else will drift out of step with the identity it applies to.
+# Like the addresses above, a quota is NOT a secret: committing it makes it auditable in git and
+# reviewable in a pull request, which an env var on a droplet never is.
+#   value = maximum assessments that identity may ever start
+#   absent = unlimited (every existing user is unaffected)
+# Override or extend at runtime without a code change:
+#   USER_QUOTAS="someone@x.com=10,other@y.com=3"
+USER_QUOTAS = {
+    "mr.nvisinc@gmail.com":         5,
+    "mordechai.rabinovich@rbc.com": 5,
+}
+for _kv in (os.environ.get("USER_QUOTAS", "") or "").split(","):
+    if "=" in _kv:
+        _e, _n = _kv.split("=", 1)
+        try:
+            USER_QUOTAS[_e.strip().lower()] = int(_n.strip())
+        except ValueError:
+            pass
+
+
+def quota_for(email: str):
+    """Maximum assessments this identity may start, or None for unlimited."""
+    return USER_QUOTAS.get((email or "").strip().lower())
 
 _GENERIC_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 

@@ -484,10 +484,32 @@ async def _run_assessment(msg, ctx, uid, seed, extra, ui="en"):
     _log(evt="assess_start", company=seed, user=str(uid), lang=lang,
          email=AUTH.authed.get(str(uid), {}).get("email", ""), ts=int(time.time()))
 
+    _who = AUTH.authed.get(str(uid), {}).get("email", "")
+
+    # PER-USER QUOTA. The web app counts its own jobs table, which this process cannot see, so the
+    # bot counts the durable cost ledger on the shared colt_events volume instead. Without this the
+    # Telegram front door would simply be the way around an evaluation cap. Both look up the same
+    # allowance in colt_auth, so the two can never disagree about who is limited.
+    try:
+        import colt_auth as _CA
+        _cap = _CA.quota_for(_who)
+        if _cap:
+            import sys as _sys
+            _sys.path.insert(0, os.path.dirname(ENGINE))
+            import cost_ledger as _CL
+            _used = _CL.count_for_user(_who)
+            if _used >= _cap:
+                _log(evt="quota_exceeded", user=_who, used=_used, cap=_cap)
+                await msg.reply_text(
+                    "Assessment limit reached: %d of %d used. This is an evaluation account.\n"
+                    "Contact feranicus@s4biz.io to raise the limit." % (_used, _cap))
+                return
+    except Exception:
+        pass                       # a quota lookup must never take an assessment down
+
     status = await msg.reply_text(tl(ui, "working") % seed)
     steps = []
 
-    _who = AUTH.authed.get(str(uid), {}).get("email", "")
     cmd = ["python3", ENGINE, "--seed", seed, "--outdir", OUTDIR] + list(extra)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
