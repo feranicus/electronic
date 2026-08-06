@@ -52,6 +52,69 @@ def _relevant(seed, holder):
     return a == b or (" %s " % a) in (" %s " % b)      # whole-token containment only
 
 
+def _terms(seed):
+    """Query variants for a company name. RIPEstat's searchcomplete matches on the AS HANDLE
+    prefix, not on the holder description, so "Royal Bank of Canada" alone returns nothing while
+    "RBC" returns seven of the bank's autonomous systems. Derive the acronym and the leading words
+    as well, then let _relevant() do the precision work on the holder string."""
+    s = (seed or "").strip()
+    if not s:
+        return []
+    out = [s]
+    words = [w for w in re.split(r"[^A-Za-z0-9]+", s) if w]
+    if len(words) >= 2:
+        acr = "".join(w[0] for w in words if len(w) > 2 or w.isupper())
+        if len(acr) >= 2:
+            out.append(acr.upper())
+        out.append(" ".join(words[:2]))
+    big = [w for w in words if len(w) >= 5]
+    if big:
+        out.append(big[0])
+    seen, uniq = set(), []
+    for t in out:
+        k = t.lower()
+        if k and k not in seen:
+            seen.add(k); uniq.append(t)
+    return uniq[:4]
+
+
+def ripestat(term, cap=40):
+    """RIPEstat searchcomplete — the only GLOBAL source here, and the one that was missing.
+
+    WHY IT MATTERS (Royal Bank of Canada, 2026-08). RBC announces at least twelve autonomous
+    systems. The engine found TWO, because ripe_db covers only the RIPE region (RBC is ARIN),
+    caida returned nothing, bgpview does not resolve inside the container, and PeeringDB lists only
+    networks that peer publicly. Everything here was DACH-shaped: fine for a Mittelstand target,
+    structurally blind on a North American enterprise.
+    searchcomplete indexes every RIR, so it sees ARIN handles. Verified live: "RBC" returns
+    AS11544, AS36256, AS398669, AS399409, AS399410, AS400717 and AS400736, every one of them held
+    by Royal Bank of Canada -- alongside Bosch, Raiffeisenbank and a Catholic college, which is
+    exactly why the holder string is corroborated before anything is accepted.
+    """
+    out = []
+    for t in _terms(term):
+        try:
+            d = _get("https://stat.ripe.net/data/searchcomplete/data.json?resource=%s&sourceapp=cybergod"
+                     % urllib.parse.quote(t))
+            for cat in ((d.get("data") or {}).get("categories") or []):
+                if str(cat.get("category", "")).lower() != "asns":
+                    continue
+                for s in (cat.get("suggestions") or []):
+                    desc = str(s.get("description") or "")
+                    holder = desc.split(" - ", 1)[-1].strip() or desc
+                    if not _relevant(term, holder):
+                        continue                       # Bosch / Raiffeisenbank / a college
+                    try:
+                        n = int(str(s.get("value") or "").upper().lstrip("AS"))
+                    except Exception:
+                        continue
+                    if n and n not in out:
+                        out.append(n)
+        except Exception as e:
+            ERRORS.append({"source": "ripestat/%s" % t[:18], "error": repr(e)[:120]})
+    return out[:cap]
+
+
 def ripe_db(term, cap=12):
     """RIPE database aut-num search — authoritative for Europe/DACH."""
     out = []
@@ -124,11 +187,17 @@ def bgpview(term, cap=12):
     return out
 
 
-def discover(term, cap=12):
-    """Merge every source. Returns {asns, per_source, errors, ok}."""
+def discover(term, cap=40):
+    """Merge every source. Returns {asns, per_source, errors, ok}.
+
+    The cap is 40, not 12. A large enterprise legitimately announces dozens of autonomous systems
+    -- Royal Bank of Canada has at least twelve -- and a cap tuned for a Mittelstand target silently
+    truncates the estate of every bank, carrier and government we will ever assess. Precision is
+    enforced by _relevant() on the holder string, not by an arbitrary ceiling."""
     del ERRORS[:]
     per = {}
-    for name, fn in (("ripe-db", ripe_db), ("caida", caida), ("peeringdb", peeringdb), ("bgpview", bgpview)):
+    for name, fn in (("ripestat", ripestat), ("ripe-db", ripe_db), ("caida", caida),
+                     ("peeringdb", peeringdb), ("bgpview", bgpview)):
         try:
             per[name] = fn(term, cap)
         except Exception as e:
@@ -141,7 +210,7 @@ def discover(term, cap=12):
             if a not in merged:
                 merged.append(a)
     # ok = at least one source ANSWERED (empty answer from a live source is still an answer)
-    ok = len(ERRORS) < 4
+    ok = len(ERRORS) < 5
     return {"asns": merged[:cap], "per_source": per, "errors": list(ERRORS), "ok": ok}
 
 

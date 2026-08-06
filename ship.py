@@ -160,7 +160,7 @@ ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts
                 # scope_deny.py is the authoritative shortener/social/platform denylist. It is a
                 # SCOPE-CORRECTNESS file: a container running an older copy would happily admit
                 # wa.me again (the abakus-tk.de failure), so its hash has to be proved deployed.
-                "scripts/scope_deny.py", "scripts/psl.py"]
+                "scripts/scope_deny.py", "scripts/psl.py", "scripts/asn_sources.py", "scripts/clarify.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
@@ -579,6 +579,22 @@ def do_tests():
         print((_ap.stdout or '') + (_ap.stderr or ''))
         sys.exit('[X] CLASSIFY REGRESSION - TLS negation / service identity / jurisdiction. Do not ship.')
     print('  adpolice classify: TLS sign respected, redirects read, frameworks follow jurisdiction')
+
+    # c''''''''') THE ENTERPRISE ASN REGRESSION (Royal Bank of Canada, 2026-08). RBC announces at
+    #             least twelve autonomous systems; the engine found TWO. Every discovery source was
+    #             RIPE/DACH-shaped — ripe_db covers only the RIPE region and RBC is ARIN, caida
+    #             returned nothing, bgpview does not resolve in the container, and PeeringDB lists
+    #             only networks that peer publicly. Structurally blind on every North American,
+    #             Asian and Gulf enterprise, i.e. on the accounts worth the most. This replays the
+    #             real captured RIPEstat response and asserts both recall (7 RBC ASNs) and precision
+    #             (Bosch, Raiffeisenbank and a Catholic college share the handle prefix and must not
+    #             be adopted).
+    _ae = subprocess.run([sys.executable, os.path.join(engine, 'test_asn_enterprise.py')],
+                         capture_output=True, text=True, timeout=120)
+    if _ae.returncode != 0:
+        print((_ae.stdout or '') + (_ae.stderr or ''))
+        sys.exit('[X] ASN DISCOVERY REGRESSION - an enterprise estate would be truncated. Do not ship.')
+    print('  enterprise ASNs: global source first, holder-corroborated, cap 40')
 
     # c'''') The creed (the Cassandra line) sits on the cover of all five decks and is translated by
     #       TWO independent paths: deck_i18n/de.json for the four security builders, and creed.js

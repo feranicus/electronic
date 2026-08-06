@@ -2265,3 +2265,34 @@ detector I wrote three days earlier — absence of evidence is never a finding.
 Guarded by `scripts/test_classify_adpolice.py` (wired into ship.py, BLOCKING): the two real
 ssl.versions arrays, the real OpenText redirect chain, the delimited non-prod token against four
 substring traps, the per-jurisdiction regime sets, and that dangling DNS is a question.
+
+## Royal Bank of Canada — ASN discovery was DACH-shaped, and enterprises are not (2026-08)
+RBC announces at least TWELVE autonomous systems (bgp.he.net: AS400736, AS400717, AS399410,
+AS399409, AS398669, AS36256, AS32176, AS20069, AS16731, AS16730, AS16729, AS11544). The engine
+found **two**, both from PeeringDB, and reported `scope: ASN AS399409,AS16729 · 1 prefixes`.
+ROOT CAUSE — every source was RIPE-region shaped:
+  * `ripe_db` searches rest.db.ripe.net, which covers the RIPE region only. **RBC is ARIN** -> "-"
+  * `caida` returned nothing
+  * `bgpview` does not resolve inside the container (documented, long-standing)
+  * `peeringdb` lists only networks that PEER PUBLICLY -> 2 of 12
+Fine for a Mittelstand target; structurally blind on every North American, Asian and Gulf
+enterprise — i.e. on exactly the accounts worth the most.
+FIX: **`asn_sources.ripestat()`** using RIPEstat `searchcomplete`, which indexes EVERY RIR, placed
+FIRST in the chain so a RIPE-only failure can never decide the answer. It matches on the AS HANDLE
+prefix rather than the holder description, so `_terms()` derives the acronym as well as the full
+name ("Royal Bank of Canada" -> also "RBC"), and `_relevant()` then corroborates the HOLDER — which
+is what keeps Bosch (China), Raiffeisenbank, Republic Bank & Trust, Red Bend Catholic College and
+the RBC Convention Centre out, all of which share the handle prefix. Verified live: 2 -> 7 ASNs.
+Also: `discover()` cap raised 12 -> **40**. A bank, carrier or government legitimately announces
+dozens; a cap tuned for a Mittelstand target silently truncates the estate of every large account.
+HONEST LIMIT: no public API is authoritative across all five RIRs, so 7 of 12 is better, not
+complete. `clarify.py` therefore ALWAYS asks on a target with its own address space — it prints
+what was found and invites the operator to paste what is missing (`confirm_asns` -> `include_asns`
+-> `--asn`). The operator can read the full list off bgp.he.net in ten seconds, and that answer is
+worth more than another heuristic.
+RULE FOR ENTERPRISE ACCOUNTS: a discovery chain must be checked against a target OUTSIDE the region
+it was built for before it is trusted. Every source here answered "-" without erroring, so the run
+looked healthy while returning a sixth of the estate.
+Guarded by `scripts/test_asn_enterprise.py` (wired into ship.py, BLOCKING): replays the REAL
+captured searchcomplete response, asserts all 7 RBC ASNs are found AND that the six same-prefix
+strangers are refused, plus that a DACH target does not regress.

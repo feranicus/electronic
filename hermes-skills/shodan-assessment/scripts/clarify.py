@@ -201,6 +201,27 @@ def build(fj):
             "maps_to": "exclude_hosts",
         })
 
+    # 4c) LARGE ENTERPRISE: confirm the autonomous-system list. Royal Bank of Canada announces at
+    #     least twelve ASNs; the engine found two, because every discovery source was RIPE-shaped
+    #     and RBC is ARIN. The global source added since then finds seven, which is far better and
+    #     still not provably complete — no public API is authoritative across all five RIRs.
+    #     So on any target that HAS its own address space we show what we found and ask. The
+    #     operator can read the full list off bgp.he.net in ten seconds, and their answer is worth
+    #     more than another heuristic.
+    if asns:
+        qs.append({
+            "id": "confirm_asns",
+            "kind": "text",
+            "title": "We found %d autonomous system%s. Are any missing?"
+                     % (len(asns), "s" if len(asns) != 1 else ""),
+            "body": ("Discovered: %s. Large groups often announce more than public sources list, and "
+                     "subsidiaries frequently sit under their own AS numbers. Paste any that are "
+                     "missing (comma-separated, e.g. AS16729, AS20069) and I will sweep them too."
+                     % ", ".join(str(a) for a in asns[:20])),
+            "placeholder": "AS16729, AS16730, AS20069",
+            "maps_to": "include_asns",
+        })
+
     # 5) Always: a free-text box for anything the questions did not cover (sector focus, "ignore our
     #    marketing CDN", "we also own brand X"). Fed to the LLM prose + GEOPOL as operator context.
     qs.append({
