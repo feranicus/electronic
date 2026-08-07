@@ -55,16 +55,23 @@ export default function MoreMenu() {
     <div className="moremenu" ref={box}>
       <button
         type="button"
-        className="btn sm ghost more-t"
+        className="more-t"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t("nav.more")}
         onClick={() => setOpen((v) => !v)}
       >
-        {/* The word on a wide screen, the glyph on a phone — chosen in CSS so there is no resize
-            listener and no second source of truth for the breakpoint. */}
+        {/* NOT a .btn. Inheriting `.btn.sm.ghost` gave it a 1.5px border, a 999px radius and a
+            34px min-height around a ~6px glyph — that geometry IS a circle, and it sat next to
+            the language pill looking like a different, broken control. `.more-t` now matches
+            `.lang-trigger` exactly: same border weight, same radius, same height, same type.
+            An inline SVG rather than the "⋮" character: a text glyph inherits line-height and
+            font metrics and renders differently on every Android font, which is what made it
+            look mis-centred. */}
+        <svg className="more-i" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+          <path d="M3 6h14M3 10h14M3 14h9" />
+        </svg>
         <span className="lg">{t("nav.more")}</span>
-        <span className="sm" aria-hidden="true">&#8942;</span>
       </button>
       {open && (
         <div className="more-p" role="menu">

@@ -2824,3 +2824,88 @@ KIMI'S PANEL FEEDBACK, ACTED ON (the standing rule):
     coarse". It compares SETS of hostnames and terminal handlers, not counts and not hashes; the
     counts are only the printed summary. The hash comparison Kimi is remembering was removed
     earlier the same day, for exactly the reason it gives.
+
+## IT PASSED STAGING AND FAILED PRODUCTION BECAUSE IT WAS NEVER THE SAME CODE (2026-08-07)
+One `python ship.py`, one commit, three different answers from the SAME check:
+```
+local tests   : catalogue 253 keyed + 203 by-English = 456   PASS
+staging build : catalogue 253 keyed + 203 by-English = 456   PASS   <- and the AI panel said GO
+production    : catalogue 253 keyed + 213 by-English = 466   FAIL, 11 missing per locale
+```
+A commit cannot produce three catalogues. **It was never the same code.** `pack()` read the
+WORKING DIRECTORY, and ship.py reads that directory FIVE separate times — test it, commit it, push
+it, pack it for staging, pack it AGAIN for production. An editor (mine — I was still writing
+translation files while the operator ran the ship I had just told him to run) changed the tree
+between the staging pack and the production pack. The pack sizes recorded it: 4639 KB then 4640 KB,
+docker context 389 KB then 429 KB.
+**So the staging gate was not wrong and the panel was not wrong — they validated a DIFFERENT
+ARTEFACT.** A green staging run says nothing about production if the two were handed different
+bytes, and neither does a safe-point tag that names a commit nobody deployed.
+FIX — `deploy_web_direct.pack()` now packs `git archive HEAD`: the COMMIT, which is immutable. The
+tested tree, the staging input, the production input and the `good-*` tag are then provably the
+same bytes, and a mid-flight edit simply does not ship until it is committed. A dirty tree is
+reported ("packing the COMMIT abc1234, not your working copy") rather than silently shipped, and
+`_keep()` is now the single exclusion rule shared by both the archive path and the fallback.
+SIDE BENEFIT: `git archive` emits REPOSITORY bytes (LF), not the Windows working-copy CRLF, so the
+deployed artefact stops depending on which platform packed it.
+PROCESS LESSON, MINE: **do not edit the working tree while the operator is running a deploy.**
+Finish, verify, tell them to run it, then stop touching files. The code fix makes the failure mode
+harmless, but the discipline is what stops the confusion.
+Guarded by `tests/test_deploy_immutability.py` (5 tests): the pack equals HEAD; an edit made during
+a ship cannot reach the deploy; two packs of one HEAD are byte-identical in content; exclusions
+still hold; a dirty tree is reported with real paths. Proven by restoring the working-tree pack and
+watching the suite fail.
+ALSO FIXED: `_tree_state()` sliced `ln[3:]` off `git status --porcelain` and printed
+"eploy_web_direct.py". A diagnostic that misreports a path sends the next investigation down the
+wrong road — same class as the co-tenant guard that misreported its own denominator.
+
+## THE ANDROID "⋮" CIRCLE — a control that inherits the wrong geometry (2026-08-07)
+Photographed on a phone: the MoreMenu trigger rendered as a hollow circle beside the language
+pill, reading as a broken element rather than a menu. Cause is arithmetic, again: it reused
+`.btn sm ghost`, which is `border:1.5px solid var(--line)` + `border-radius:999px` +
+`min-height:34px` wrapped around a **~6px glyph**. A 999px radius on a box that is 26px wide and
+34px tall IS a circle. It also carried a heavier border and a different height than the
+`.lang-trigger` sitting next to it, so the two controls did not read as siblings.
+FIX: `.more-t` is no longer a `.btn`. It mirrors `.lang-trigger` field for field — border,
+radius, min-height, font-size, font-weight, padding, background — so the pair are visibly the same
+family, and the glyph is an inline SVG rather than the "⋮" CHARACTER (a text glyph inherits
+line-height and font metrics and renders differently on every Android font, which is what made it
+look mis-centred). Phone: 41x34px, ratio 1.21 — a pill, not a circle.
+GATE: `tools/header_layout.mjs` now also asserts the CONTROL's geometry, not just the row's — the
+six properties must match `.lang-trigger`, and the trigger may never be a `.btn` again.
+
+**TWO OF MY OWN CHECKS WERE VACUOUS AND THE NEGATIVE TEST IS WHAT EXPOSED THEM:**
+1. A comparison printed `match` for six properties while reading `<missing>` from BOTH rules — it
+   was comparing two absent values. The extractor now RAISES when a selector is not found, so a
+   check can never "pass" by failing to read its subject.
+2. The `.btn` detector read `mm.match(/className="([^"]*)"/)[1]` — the FIRST className in the file,
+   which is the wrapper `<div className="moremenu">`, not the button. It could never see the
+   trigger's class. It now slices the `<button>` element specifically. **A check aimed at the wrong
+   element is a check that cannot fail** — same family as validating a temp copy instead of the
+   mounted file.
+3. And the harness itself: the first negative test asserted BEFORE restoring, so when it (correctly)
+   reported MISS it left the working tree holding the broken class, and the next baseline run failed
+   for a reason that had nothing to do with the code. Any harness that mutates real files must
+   restore in a `finally` — the same lesson as "a negative test that mutates production-shaped state
+   is an outage with a pass/fail label", one level down.
+
+## `git archive` APPLIES autocrlf — the commit-pack fix was half a fix (2026-08-07)
+`tests/test_deploy_immutability.py` failed on the operator's Windows box while passing in a Linux
+sandbox, with the least useful possible message: `At index 52 diff: b'\r' != b'\n'`.
+CAUSE: **`git archive` performs the same end-of-line conversion as a checkout.** With
+`core.autocrlf=true` (the Windows default) it emits CRLF, while `git show HEAD:path` emits the raw
+LF blob. So packing the commit made the artefact immutable but NOT platform-independent — a
+Windows packer and a Linux packer would still ship different bytes, which is one of the two things
+the change was supposed to guarantee. The test earned its keep on its first real run.
+FIX: `git -c core.autocrlf=false -c core.eol=lf archive …`. `-c` outranks the repo and global
+config, so the archive is repository bytes on every OS.
+**MEASURED, NOT READ OFF THE DOCS** — and the measurement corrected me twice:
+  * `-c core.eol=lf` ALONE does nothing: with autocrlf=true still set, the archive was still 562
+    CRLF pairs. Only `core.autocrlf=false` suppresses it. Had I "fixed" it with `eol` alone the
+    bug would have survived behind a green local run.
+  * A Linux sandbox cannot reproduce this at all. The proof is a temp `git clone` with
+    `core.autocrlf=true` written into ITS OWN config file (never the shared `.git`): without the
+    flags 562 CRLF and != HEAD, with them 0 CRLF and == HEAD.
+Also: the test now DIAGNOSES this case by name ("the pack has CRLF, HEAD has LF — pass
+-c core.autocrlf=false") instead of printing a byte index. A failure message that does not name the
+mechanism costs the next person the same hour it cost me.

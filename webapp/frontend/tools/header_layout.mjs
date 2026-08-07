@@ -51,6 +51,38 @@ for (const c of Object.keys(L)) {
 }
 console.log("  all six fit");
 
+// THE TRIGGER MUST LOOK LIKE THE CONTROL BESIDE IT, not like a hollow circle.
+// The first version reused `.btn sm ghost`: 1.5px border, 999px radius, 34px min-height around a
+// ~6px glyph. On Android that rendered as an empty circle next to the language pill and read as a
+// broken element. These assertions pin the geometry, not the intention.
+const css = readFileSync("src/styles.css", "utf8");
+const block = (sel) => {
+  const i = css.indexOf(sel + "{");
+  if (i < 0) throw new Error("selector not found, the check would be vacuous: " + sel);
+  const body = css.slice(i + sel.length + 1, css.indexOf("}", i)).replace(/\s+/g, " ");
+  return Object.fromEntries(body.replace(/;$/, "").split(";").filter((d) => d.includes(":"))
+    .map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()]));
+};
+{
+  const t = block(".more-t"), l = block(".lang-trigger");
+  for (const k of ["border", "border-radius", "min-height", "font-size", "font-weight", "padding"]) {
+    if (t[k] === undefined || l[k] === undefined) fail("more-t/lang-trigger: cannot read " + k);
+    else if (t[k] !== l[k]) fail("the More trigger does not match the language pill on " + k
+      + " (" + t[k] + " vs " + l[k] + ") - it will look like a different control");
+  }
+  // Target the TRIGGER, not the first className in the file. The first version matched the
+  // wrapper <div className="moremenu">, so it could never see the button's class and the negative
+  // test caught it as a MISS - a check aimed at the wrong element is a check that cannot fail.
+  const mm = readFileSync("src/components/MoreMenu.jsx", "utf8");
+  const btn = mm.slice(mm.indexOf("<button"), mm.indexOf(">", mm.indexOf("aria-label")));
+  const cls = (btn.match(/className="([^"]*)"/) || [, ""])[1];
+  if (!cls) fail("cannot find the More trigger's className - the geometry check would be vacuous");
+  else if (/\bbtn\b/.test(cls))
+    fail("the More trigger is a .btn again (class=\"" + cls + "\") - that geometry renders as a "
+       + "hollow circle around the icon, which is what the operator photographed");
+  console.log("  trigger geometry: matches the language pill, not a .btn");
+}
+
 // The menu must reach every page a visitor needs; on a phone it is the ONLY route to them.
 const mm = readFileSync("src/components/MoreMenu.jsx", "utf8");
 for (const r of ["/experience", "/contact", "/impressum", "/privacy"])

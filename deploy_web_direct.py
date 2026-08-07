@@ -31,12 +31,72 @@ INCLUDE = ["webapp", "hermes-skills/shodan-assessment", "colt_auth.py",
            "docker-compose.web.yml", "deploy", ".dockerignore"]
 EXCLUDE = {"node_modules", "__pycache__", "dist", ".git", ".pytest_cache", "shodan-out"}
 
+def _keep(name):
+    """One exclusion rule, used by BOTH pack paths (git archive and the working-tree fallback)."""
+    return not (set(name.split("/")) & EXCLUDE)
+
+
 def _filter(ti):
-    if set(ti.name.split("/")) & EXCLUDE:
-        return None
-    return ti
+    return ti if _keep(ti.name) else None
+
+def _tree_state():
+    """(is_clean, short_sha, dirty_paths) — what git thinks of the working tree, right now."""
+    def g(*a):
+        r = subprocess.run(["git"] + list(a), cwd=HERE, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=30)
+        return (r.stdout or "").strip() if r.returncode == 0 else ""
+    sha = g("rev-parse", "--short", "HEAD")
+    dirty = [ln[2:].strip() for ln in g("status", "--porcelain").splitlines() if ln.strip()]
+    return (not dirty), sha, dirty
+
 
 def pack():
+    """Pack the sources that will be BUILT on the droplet.
+
+    THE WORKING TREE IS A MOVING TARGET AND THAT IS HOW A DEPLOY GOES OUT UNTESTED.
+    ship.py does: test the tree -> commit the tree -> push -> pack the tree for staging -> pack the
+    tree AGAIN for production. Five separate reads of a MUTABLE thing. On 2026-08-07 an editor was
+    still writing translation files while a ship was running: the tests saw 203 by-English strings,
+    the staging pack saw 203 (and passed, and the AI panel said GO on it), and ninety seconds later
+    the production pack saw 213 with the translations half-written — so production failed a gate
+    that staging had just passed, on "the same commit". It was never the same code.
+
+    So we pack from `git archive HEAD` — the COMMITTED tree, which is immutable — and fall back to
+    the working directory only when git is unavailable. What ships is then provably the commit that
+    was tested, pushed and tagged, and staging and production are guaranteed identical inputs.
+    """
+    clean, sha, dirty = _tree_state()
+    if sha:
+        if not clean:
+            # NOT fatal: the operator may have deliberately left something out of the commit. But
+            # they must know that what deploys is HEAD, not what they are looking at in the editor.
+            print("  [!] working tree is DIRTY (%d path(s), e.g. %s)" % (len(dirty), ", ".join(dirty[:3])))
+            print("      packing the COMMIT %s, not your working copy - uncommitted edits will NOT ship."
+                  % sha)
+        tf = tempfile.NamedTemporaryFile(suffix=".tar", delete=False); tf.close()
+        # -c core.autocrlf=false -c core.eol=lf: `git archive` applies the SAME end-of-line
+        # conversion as a checkout, so on Windows (core.autocrlf=true) it emits CRLF while
+        # `git show HEAD:path` emits the raw LF blob. That would leave the deployed artifact
+        # platform-dependent — exactly what packing the commit was supposed to remove — and it is
+        # what tests/test_deploy_immutability.py caught on the operator's machine while passing in
+        # a Linux sandbox. Forcing both off makes the archive the REPOSITORY bytes on every OS.
+        r = subprocess.run(["git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+                            "archive", "--format=tar", "-o", tf.name, "HEAD"] + list(INCLUDE),
+                           cwd=HERE, capture_output=True, text=True, timeout=180)
+        if r.returncode == 0 and os.path.getsize(tf.name) > 0:
+            gz = tf.name + ".gz"
+            with tarfile.open(tf.name) as src, tarfile.open(gz, "w:gz") as dst:
+                for m in src.getmembers():
+                    if _keep(m.name):
+                        dst.addfile(m, src.extractfile(m) if m.isfile() else None)
+            os.unlink(tf.name)
+            print("  packing COMMIT %s (immutable - staging and prod get identical bytes)" % sha)
+            return gz
+        print("  [!] git archive failed (%s) - falling back to the working tree"
+              % ((r.stderr or "").strip()[:120]))
+        try: os.unlink(tf.name)
+        except Exception: pass
+
     tf = tempfile.NamedTemporaryFile(suffix=".tgz", delete=False); tf.close()
     with tarfile.open(tf.name, "w:gz") as tar:
         for item in INCLUDE:
