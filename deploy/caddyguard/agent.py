@@ -415,6 +415,84 @@ def cmd_show():
     return 0
 
 
+# ---------------------------------------------------------------------------------------------
+# DRIFT — is the RUNNING process serving what the FILE says?
+#
+# This is the 2026-08-07 mechanism: Caddy reads its config ONLY at start, so a file edited after
+# startup is silently unapplied and nothing notices until the next restart. With the admin API on,
+# we can ask the running process directly.
+#
+# WHY NOT COMPARE HASHES. The first version md5'd `caddy adapt` against `GET /config/` and reported
+# DRIFT on a perfectly healthy box — including immediately after a reboot, with the SAME two hashes
+# before and after. That is the tell: a reboot makes Caddy re-read the file, so a genuinely stale
+# process CANNOT survive one. Two hashes that stay different across a restart are not two configs,
+# they are two SERIALISATIONS of one config. `adapt` emits the adapter's JSON; the admin API
+# re-marshals from parsed Go structs, which reorders keys and fills in defaults. Byte equality was
+# never achievable and the check could only ever fail.
+#
+# So compare the thing the question is actually about: WHAT IS SERVED. The set of matched hostnames
+# and the set of terminal handlers (proxy upstreams, file roots, redirect/respond) is stable under
+# re-serialisation and is exactly what changes when a block is truncated or replaced — which is the
+# defect this check exists to catch.
+def _served(cfg):
+    hosts, handlers = set(), set()
+
+    def walk(o):
+        if isinstance(o, dict):
+            h = o.get("host")
+            if isinstance(h, list):
+                hosts.update(str(x) for x in h)
+            hd = o.get("handler")
+            if hd == "reverse_proxy":
+                for u in o.get("upstreams") or []:
+                    if isinstance(u, dict) and u.get("dial"):
+                        handlers.add("proxy:" + str(u["dial"]))
+            elif hd == "file_server":
+                handlers.add("file_server")
+            elif hd == "static_response":
+                handlers.add("respond:%s" % (o.get("status_code") or o.get("headers") or ""))
+            elif hd == "vars" and o.get("root"):
+                handlers.add("root:" + str(o["root"]))
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk((cfg or {}).get("apps", {}))
+    return hosts, handlers
+
+
+def cmd_drift():
+    c = container()
+    if not c:
+        print("[!] no caddy container - cannot compare"); return 0
+    disk_raw = sh(["docker", "exec", c, "caddy", "adapt", "--config", "/etc/caddy/Caddyfile"]).stdout
+    run_raw = sh(["docker", "exec", c, "wget", "-qO-", "http://127.0.0.1:2019/config/"]).stdout
+    if not (run_raw or "").strip():
+        # NOT a failure. `admin off` is a legitimate configuration; a check that cannot see its
+        # subject must say so, not invent a verdict. (The ruff gate and the esbuild probe taught
+        # this the expensive way.)
+        print("SKIP admin API unreachable (admin off?) - cannot read the running config"); return 0
+    try:
+        d_hosts, d_h = _served(json.loads(disk_raw))
+        r_hosts, r_h = _served(json.loads(run_raw))
+    except Exception as e:
+        print("SKIP could not parse a config (%s)" % e); return 0
+    if d_hosts == r_hosts and d_h == r_h:
+        print("OK running config serves exactly what the file says "
+              "(%d host(s), %d handler(s))" % (len(r_hosts), len(r_h)))
+        return 0
+    print("DRIFT the running process is NOT serving the file on disk")
+    for label, dset, rset in (("hosts", d_hosts, r_hosts), ("handlers", d_h, r_h)):
+        only_d, only_r = sorted(dset - rset), sorted(rset - dset)
+        if only_d:
+            print("   %s on DISK but NOT running : %s" % (label, ", ".join(only_d)))
+        if only_r:
+            print("   %s RUNNING but not on disk  : %s" % (label, ", ".join(only_r)))
+    return 1
+
+
 def main(argv):
     if not argv:
         return cmd_show()
@@ -431,6 +509,8 @@ def main(argv):
         return cmd_assemble("--apply" in rest)
     if cmd == "check":
         return cmd_check("--heal" in rest)
+    if cmd == "drift":
+        return cmd_drift()
     if cmd == "show":
         return cmd_show()
     print(__doc__)

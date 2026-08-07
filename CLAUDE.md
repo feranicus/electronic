@@ -2600,3 +2600,35 @@ into the LIVE `/opt/caddyguard/blocks/` and re-assembled the running config — 
 down and reported `post_reboot_proxy_routes 000`. **A negative test that mutates production-shaped
 state is not a test, it is an outage with a pass/fail label.** `config_drift` stays because it only
 reads.
+
+## THE CHECK WAS BROKEN, NOT THE SYSTEM — config_drift blocked two clean deploys (2026-08-07)
+`config_drift` md5'd `caddy adapt --config /etc/caddy/Caddyfile` against the admin API's
+`GET /config/` and reported DRIFT on a healthy staging box, twice, taking the gate to NO-GO and
+refusing to promote a good build. All four panel models agreed the system was broken and proposed
+fixes for a fault that did not exist. **They were all wrong, and so was I.**
+Those two endpoints are two SERIALISATIONS of ONE config: `adapt` emits the adapter's JSON; the
+admin API re-marshals from parsed Go structs, reordering keys and filling in defaults (`admin`,
+`logging`, `automatic_https`). Byte equality was never achievable, so the check could only ever
+fail — it was a false positive by construction, on every box, forever.
+**THE TELL WAS IN ITS OWN OUTPUT: the two hashes were IDENTICAL before and after the reboot.**
+Caddy re-reads its config at start, so a genuinely stale process CANNOT survive a restart — that
+is the entire mechanism of the 6 Aug outage. A check whose result is unchanged by the event that
+would fix the fault is not measuring the fault. That single observation settles it without needing
+to know anything about Caddy's JSON.
+FIX: `agent.py drift` compares WHAT IS SERVED — the set of matched hostnames and the set of
+terminal handlers (proxy upstreams, file_server, respond, root). Stable under re-serialisation, and
+it is exactly what changes when a block is truncated or replaced. ONE implementation: stagegate's
+`config_drift` and caddyguard's production DRIFT step both shell out to it, so the gate and the
+repair can never disagree. `admin off` or an unparseable config prints SKIP — a check that cannot
+see its subject must say so, not invent a verdict.
+Guarded by `test_drift.py` (wired into ship.py, BLOCKING) which pins BOTH directions: the healthy
+re-serialisation is not flagged, the 6 Aug truncation is caught by name, and the file_server-in-
+front-of-a-FastAPI-app shape is caught by handler. Proven by deleting the handler comparison —
+2 failures — and restoring it.
+ON THE PANEL: this is the counterexample to trusting it. kimi's diagnosis ("the container restart
+logic does not re-read the updated config file") is refuted by the check's own reboot evidence, and
+deepseek/gemma/maverick each restated the failure as a cause. The standing rule stands — act on
+what the panel gets RIGHT — but the deterministic checks decide, and when a check contradicts
+physics, suspect the check. Kimi did land one true observation worth keeping: `config_reread`
+passes on TIMING (started N seconds after the write) and therefore proves startup ordering, not
+that the right file was read. The semantic drift check is what actually answers that question.

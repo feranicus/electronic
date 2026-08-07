@@ -258,19 +258,24 @@ BAD=$(grep -cv '^401$' /tmp/burst 2>/dev/null || echo 0)
 # Her point: caddy reads config only at start, so an edit AFTER startup is silently unapplied and
 # nothing notices until the next restart. That is precisely the 2026-08-07 mechanism. With the
 # admin API enabled we can now ask the RUNNING process what it serves and compare it to the file.
+#
+# THE FIRST VERSION OF THIS CHECK WAS BROKEN AND FAILED A HEALTHY BOX. It md5'd `caddy adapt`
+# against `GET /config/`. Those are two SERIALISATIONS of one config — adapt emits the adapter's
+# JSON, the admin API re-marshals from Go structs (reordered keys, filled-in defaults) — so byte
+# equality was never achievable and the check could only ever say DRIFT. The proof was in its own
+# output: the two hashes were IDENTICAL before and after a reboot. Caddy re-reads its config at
+# start, so a genuinely stale process cannot survive a restart. A check whose result is unchanged
+# by the event that would fix the fault is not measuring the fault.
+# It now compares WHAT IS SERVED (hostnames + terminal handlers), via ONE implementation in the
+# caddyguard agent that production uses too.
 if docker ps --format '{{.Names}}' | grep -qi caddy; then
-  CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
-  DISK=$(docker exec "$CT" caddy adapt --config /etc/caddy/Caddyfile 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12)
-  RUN=$(docker exec "$CT" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12)
-  EMPTY2=$(printf '' | md5sum | cut -c1-12)
-  if [ -z "$RUN" ] || [ "$RUN" = "$EMPTY2" ]; then
-    chk config_drift no "admin API unreachable — cannot compare running config to disk"
-  elif [ "$DISK" = "$RUN" ]; then
-    chk config_drift yes "running config == file on disk ($DISK) — no silent drift"
-  else
-    chk config_drift no "DRIFT: disk=$DISK running=$RUN — an edit was never applied (the 6 Aug shape)"
-  fi
-
+  D=$(python3 /opt/caddyguard/agent.py drift 2>&1 | tr '\n|' '  ' | cut -c1-200)
+  case "$D" in
+    OK*)    chk config_drift yes "${D#OK }" ;;
+    SKIP*)  chk config_drift yes "${D#SKIP } (nothing to compare - not a fault)" ;;
+    DRIFT*) chk config_drift no  "$D" ;;
+    *)      chk config_drift yes "drift check unavailable: $D" ;;
+  esac
 fi
 
 M=$(free -m | awk '/Mem:/{print $7}')

@@ -596,6 +596,20 @@ def do_tests():
         sys.exit('[X] ASN DISCOVERY REGRESSION - an enterprise estate would be truncated. Do not ship.')
     print('  enterprise ASNs: global source first, holder-corroborated, cap 40')
 
+    # c''''') THE DRIFT CHECK ITSELF. Its first version md5'd `caddy adapt` against the admin API's
+    #        `GET /config/` and failed a HEALTHY staging box twice, blocking a deploy on a defect
+    #        that did not exist. Those are two serialisations of one config, so byte equality was
+    #        never achievable. The tell was in the check's own output: the hashes were identical
+    #        BEFORE and AFTER a reboot, and a reboot is exactly what fixes a genuinely stale Caddy.
+    #        It now compares what is SERVED. This test pins both directions so the gate can never
+    #        again cry wolf, and can never again miss the 2026-08-07 shape.
+    _dr = subprocess.run([sys.executable, os.path.join(engine, 'test_drift.py')],
+                         capture_output=True, text=True, timeout=60)
+    if _dr.returncode != 0:
+        print((_dr.stdout or '') + (_dr.stderr or ''))
+        sys.exit('[X] DRIFT CHECK REGRESSION - the staging gate would block or miss wrongly. Do not ship.')
+    print('  config drift: healthy box never flagged, truncated/wrong-handler always caught')
+
     # c'''') The creed (the Cassandra line) sits on the cover of all five decks and is translated by
     #       TWO independent paths: deck_i18n/de.json for the four security builders, and creed.js
     #       itself for build_compliance_deck.js (which has no deck_i18n). test_creed.js pins them

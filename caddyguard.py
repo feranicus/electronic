@@ -169,23 +169,19 @@ else
 fi
 
 echo "#### DRIFT"
-# THE RUNNING PROCESS vs THE FILE. jobhuntwow stayed blank for hours because the file was right and
-# the process was serving something else. `caddy reload` reported success. Only comparing the two
-# catches it — this is the 2026-08-07 mechanism, checked on PRODUCTION at last.
-CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
-docker exec "$CT" caddy adapt --config /etc/caddy/Caddyfile 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/d1
-docker exec "$CT" wget -qO- http://localhost:2019/config/ 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/d2
-D=$(cat /tmp/d1); R=$(cat /tmp/d2); EMPTY=$(printf '' | md5sum | cut -c1-12)
-if [ -z "$R" ] || [ "$R" = "$EMPTY" ]; then
-  echo "[!] admin API unreachable - cannot prove the running config came from disk"
-elif [ "$D" = "$R" ]; then
-  echo "running config == file on disk ($D)"
-else
-  echo "[!] DRIFT: disk=$D running=$R - FORCING a full admin-API load"
-  docker exec "$CT" sh -c 'caddy adapt --config /etc/caddy/Caddyfile > /tmp/cfg.json && curl -sS -X POST -H "Content-Type: application/json" --data @/tmp/cfg.json http://localhost:2019/load && echo FORCED_LOAD_OK'
+# THE RUNNING PROCESS vs THE FILE. jobhuntwow stayed blank for hours because the file was right
+# and the process was serving something else; `caddy reload` reported success. Compares WHAT IS
+# SERVED, not bytes - see agent.py::cmd_drift for why a hash comparison is always a false positive.
+python3 /opt/caddyguard/agent.py drift
+if python3 /opt/caddyguard/agent.py drift 2>/dev/null | grep -q '^DRIFT'; then
+  echo "-> forcing a full admin-API load so the process matches the file"
+  CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
+  # `caddy reload` IS the admin-API load - it adapts the file and POSTs it to /load itself.
+  # (busybox wget in caddy:2-alpine has no --post-file, so hand-rolling the POST would fail.)
+  docker exec "$CT" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile && echo FORCED_LOAD_OK \
+    || echo "   [!] reload refused - the file is invalid; caddyguard check --heal will rebuild it"
   sleep 3
-  docker exec "$CT" wget -qO- http://localhost:2019/config/ 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/d3
-  echo "after force-load: running=$(cat /tmp/d3) disk=$D"
+  python3 /opt/caddyguard/agent.py drift
 fi
 
 echo "#### VERIFY"
