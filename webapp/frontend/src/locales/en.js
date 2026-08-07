@@ -10,7 +10,7 @@ export const keyed = {
   "assess.refusedH": "Not assessed — this is a shared zone, not one company",
   "assess.zoneSurveyGo": "Survey the whole zone anyway",
   "assess.docLangNote": "The documents are written in the language selected above. Your interface language is not among them, so English is used by default.",
-  "login.h1a": "Cyber pre-sales,",
+  "login.h1a": "Sales & pre-sales,",
   "login.h1b": "self-serve.",
   "login.lede": "One name in, a full attack-surface assessment out. The same engine behind the Telegram bots \u2014 now on the web, for every seller.",
   "login.prog1": "Sign in",
@@ -230,7 +230,7 @@ export const keyed = {
   // ---- Assistant (Cassandra) ---------------------------------------------------------------------
   "assist.h1": "Assistant",
   "assist.sub": "Cassandra - research, MEDDPICC qualification, and outreach drafting for your accounts.",
-  "assist.greeting": "Hi, I'm Cassandra - your pre-sales sidekick. Ask me for company research, a MEDDPICC breakdown, or outreach copy.",
+  "assist.greeting": "Hi, I'm Cassandra - your sales & pre-sales sidekick. Ask me for company research, a MEDDPICC breakdown, or outreach copy.",
   "assist.ph": "Ask Cassandra\u2026",
   "assist.send": "Send",
   "assist.errServer": "Something went wrong. Try again.",

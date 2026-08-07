@@ -29,7 +29,13 @@ services:
       - TELEMETRY_HASH_IPS=0
       - DAILY_REPORT=1                 # "who used the platform + what they ran" -> ALERT_EMAIL
       - DAILY_REPORT_HOUR=7            # UTC
-      - ALERT_EMAIL=feranicus@s4biz.io,jevgenijs.vainsteins@colt.net
+      # 2026-08: the colt.net address was REMOVED — the operator no longer works there, and mailing
+      # a former employer's inbox with platform telemetry and security alerts is a data-protection
+      # problem, not just noise. ALERT_EMAIL stays a comma list so more recipients can be added.
+      - ALERT_EMAIL=feranicus@s4biz.io
+      # SEO: allow search engines + link unfurlers, 404 everything else. The default now lives in
+      # visitors.py; this line exists so the deployment can narrow it without a code change.
+      - BOT_404_ALLOW=googlebot,bingbot,duckduckbot,linkedinbot,slackbot,whatsapp,telegrambot
       # AbuseIPDB reporting is OPT-IN: set ABUSEIPDB_KEY (free key at abuseipdb.com/account/api) to
       # submit hostile IPs daily. Empty = detect + digest only, nothing sent to third parties.
       # ABUSEIPDB_KEY is a SECRET -> put it in assess-bot/.env on the droplet, NOT here.

@@ -21,7 +21,7 @@ export const keyed = {
   "assess.refusedH": "No evaluado — es una zona compartida, no una sola empresa",
   "assess.zoneSurveyGo": "Analizar de todos modos toda la zona",
   "assess.docLangNote": "Los documentos se redactan en el idioma seleccionado arriba. El idioma de su interfaz no está entre ellos, por lo que se utiliza inglés de forma predeterminada.",
-  "login.h1a": "Cyber pre-sales,",
+  "login.h1a": "Ventas & pre-sales,",
   "login.h1b": "en autoservicio.",
   "login.lede": "Un nombre a la entrada, un an\u00e1lisis completo de la superficie de ataque a la salida. El mismo motor que hay detr\u00e1s de los bots de Telegram \u2014 ahora en la web, para cualquier comercial.",
   "login.prog1": "Acceso",

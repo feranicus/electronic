@@ -1,0 +1,61 @@
+# cybergod.ai — Cybergod LLC · S4Biz Group
+#
+# NOTE: robots.txt is a REQUEST, not a control. The real enforcement is the bot gate in
+# webapp/backend/app/visitors.py: BOT_404=1 serves a 404 to bots on page routes, and only the
+# crawlers named in BOT_404_ALLOW get through. This file states the intent for the ones we allow,
+# so the two must be kept in agreement — a crawler allowed here but 404'd there simply wastes
+# crawl budget and depresses ranking.
+
+# Search engines we WANT: they are how customers find the platform.
+User-agent: Googlebot
+Allow: /
+
+User-agent: Googlebot-Image
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+# Link unfurlers: these render the card when someone shares cybergod.ai in a chat.
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: Slackbot
+Allow: /
+
+User-agent: WhatsApp
+Allow: /
+
+User-agent: TelegramBot
+Allow: /
+
+# Everything else — scrapers, SEO-backlink harvesters, vulnerability scanners, AI training
+# crawlers. Blocked by default. Flip an individual one on only if it earns its keep.
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: *
+Disallow: /api/
+Disallow: /app
+Disallow: /login
+Allow: /
+
+# The authenticated cabinet must never be indexed: /app and /login are owner-scoped and a crawler
+# there only ever produces a 401 page in the index.
+
+Sitemap: https://cybergod.ai/sitemap.xml

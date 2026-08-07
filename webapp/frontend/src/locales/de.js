@@ -8,7 +8,7 @@ export const keyed = {
   "assess.refusedH": "Nicht bewertet — dies ist eine gemeinsame Zone, kein einzelnes Unternehmen",
   "assess.zoneSurveyGo": "Trotzdem die gesamte Zone erfassen",
   "assess.docLangNote": "Die Dokumente werden in der oben gewählten Sprache erstellt. Ihre Oberflächensprache gehört nicht dazu; standardmäßig wird Englisch verwendet.",
-  "login.h1a": "Cyber-Pre-Sales,",
+  "login.h1a": "Vertrieb & Pre-Sales,",
   "login.h1b": "in Eigenregie.",
   "login.lede": "Ein Name hinein, eine vollst\u00e4ndige Analyse der Angriffsfl\u00e4che heraus. Dieselbe Engine wie hinter den Telegram-Bots \u2014 jetzt im Web, f\u00fcr jeden im Vertrieb.",
   "login.prog1": "Anmelden",
@@ -203,7 +203,7 @@ export const keyed = {
   // ---- Assistent (Cassandra) ------------------------------------------------------------------
   "assist.h1": "Assistent",
   "assist.sub": "Cassandra - Recherche, MEDDPICC-Qualifizierung und Entw\u00fcrfe f\u00fcr die Kundenansprache.",
-  "assist.greeting": "Hallo, ich bin Cassandra - Ihre Unterst\u00fctzung im Pre-Sales. Fragen Sie mich nach einer Unternehmensrecherche, einer MEDDPICC-Analyse oder Texten f\u00fcr die Kundenansprache.",
+  "assist.greeting": "Hallo, ich bin Cassandra - Ihre Unterst\u00fctzung in Vertrieb & Pre-Sales. Fragen Sie mich nach einer Unternehmensrecherche, einer MEDDPICC-Analyse oder Texten f\u00fcr die Kundenansprache.",
   "assist.ph": "Cassandra fragen\u2026",
   "assist.send": "Senden",
   "assist.errServer": "Etwas ist schiefgelaufen. Bitte erneut versuchen.",

@@ -12,8 +12,9 @@ import json, os, time, urllib.parse, urllib.request
 
 TG_TOKEN   = os.environ.get("BOT_TOKEN", "")
 ALERT_CHAT = os.environ.get("ALERT_TG_CHAT", "")          # numeric chat id; auto-discovered if empty
-# Comma-separated list -> both the S4BIZ and the Colt addresses get every alert + daily report.
-ALERT_MAIL = os.environ.get("ALERT_EMAIL", "feranicus@s4biz.io,jevgenijs.vainsteins@colt.net")
+# Comma-separated list -> every address here gets every alert + the daily report.
+# 2026-08: the colt.net recipient was removed (the operator left Colt); do not re-add it.
+ALERT_MAIL = os.environ.get("ALERT_EMAIL", "feranicus@s4biz.io")
 ALERT_MAILS = [e.strip() for e in ALERT_MAIL.split(",") if e.strip()]
 GMAIL_SENDER = os.environ.get("GMAIL_SENDER", "")
 GMAIL_SA_B64 = os.environ.get("GMAIL_SA_B64", "")

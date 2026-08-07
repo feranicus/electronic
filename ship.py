@@ -1276,6 +1276,11 @@ def main():
     ap.add_argument("--direct", action="store_true",
                     help="(default) deploy straight to the droplet over SSH")
     ap.add_argument("--no-test", action="store_true", help="skip the test gate")
+    ap.add_argument("--no-stage", action="store_true",
+                    help="skip the staging validation and deploy straight to production")
+    ap.add_argument("--fast-stage", action="store_true",
+                    help="validate on staging but SKIP the reboot test (faster, weaker — the "
+                         "reboot is the test that would have caught the 2026-08-07 outage)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
     ap.add_argument("--rollback", nargs="?", const="AUTO", default=None,
                     help="restore a known-good state and redeploy it (default: last-known-good; "
@@ -1303,6 +1308,36 @@ def main():
         return
 
     do_git(a.message or "ship: engine + web update")
+
+    # ---- STAGING GATE — validate on the twin BEFORE production is touched -------------------
+    #      The 2026-08-07 outage had no environment in which the change could be REBOOTED first.
+    #      stagegate deploys to the staging droplet, health-checks it, reboots it, health-checks it
+    #      again, then has 2 soldiers + 2 auditors write the verdict digest to email + Telegram.
+    #      The gate itself is deterministic (operating principle 5: the LLM assists, never decides).
+    #      Skipped by --no-stage, and never blocks a rollback.
+    if not a.no_stage and not DRY:
+        print("\n" + "-" * 74)
+        print("  STAGING GATE — validate on the twin, reboot it, then decide     [+%ds]"
+              % int(time.time() - T0))
+        print("-" * 74)
+        try:
+            import stagegate
+            gate, digest = stagegate.run(reboot_test=not a.fast_stage)
+            print("\n" + (digest or "").replace("\n", "\n  "))
+            print("\n  STAGING GATE: %s" % gate)
+            print("  " + (stagegate.notify("cybergod staging validation: %s" % gate, digest) or ""))
+            if gate != "GO":
+                print("\n  [!] REFUSING TO DEPLOY TO PRODUCTION — staging did not validate.")
+                print("      Nothing was changed on %s. Fix the failed checks above and re-run." % HOST)
+                print("      Override deliberately with:  python ship.py --no-stage")
+                sys.exit(2)
+        except SystemExit:
+            raise
+        except Exception as _e:
+            # A broken GATE must not become a broken DEPLOY. Report loudly, continue — the same
+            # doctrine as the FP auditor: a check is a signal, not an authority over the pipeline.
+            print("  [!] staging gate could not run (%s: %s) — continuing to production."
+                  % (type(_e).__name__, str(_e)[:160]))
 
     if web:
         do_web(a.ci)

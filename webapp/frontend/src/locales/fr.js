@@ -15,7 +15,7 @@ export const keyed = {
   "assess.refusedH": "Non évalué — il s'agit d'une zone partagée, pas d'une seule entreprise",
   "assess.zoneSurveyGo": "Analyser quand même toute la zone",
   "assess.docLangNote": "Les documents sont rédigés dans la langue sélectionnée ci-dessus. La langue de votre interface n'en fait pas partie : l'anglais est utilisé par défaut.",
-  "login.h1a": "Cyber pre-sales,",
+  "login.h1a": "Ventes & pre-sales,",
   "login.h1b": "en autonomie.",
   "login.lede": "Un nom en entr\u00e9e, une analyse compl\u00e8te de la surface d'attaque en sortie. Le m\u00eame moteur que derri\u00e8re les bots Telegram \u2014 d\u00e9sormais sur le web, pour chaque commercial.",
   "login.prog1": "Connexion",

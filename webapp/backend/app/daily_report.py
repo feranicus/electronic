@@ -97,7 +97,7 @@ def build(hours=24):
     L.append("  Security alerts               : %d" % len(alerts))
     L.append("")
 
-    L.append("WHO ACCESSED THE PLATFORM AND WHAT THEY RAN  (Colt AE / partner email = identity)")
+    L.append("WHO ACCESSED THE PLATFORM AND WHAT THEY RAN  (user / partner email = identity)")
     L.append("-" * 72)
     if not per_user:
         L.append("  (nobody signed in during this window)")
@@ -149,7 +149,7 @@ def build(hours=24):
     L.append("-" * 72)
     L.append("Personal data in this report (email, IP, country) is processed for security monitoring")
     L.append("and service administration — GDPR Art. 6(1)(f). Retention: see cybergod.ai/privacy.")
-    L.append("Full detail: godeyes.ai/observe -> 'Colt Web (cybergod.ai)'")
+    L.append("Full detail: godeyes.ai/observe -> 'Cybergod Web (cybergod.ai)'")
     return day, "\n".join(L)
 
 

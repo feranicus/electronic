@@ -1,4 +1,4 @@
-"""Central config for the Colt web app backend — everything from env (same names the bots use)."""
+"""Central config for the Cybergod.ai web app backend — everything from env (same names the bots use)."""
 import os
 from pathlib import Path
 

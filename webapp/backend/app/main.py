@@ -1,4 +1,4 @@
-"""Colt cyber pre-sales web app — FastAPI backend.
+"""Cybergod.ai — Sales & Pre-Sales cyber-risk platform. FastAPI backend.
 
 Turns the Telegram-bot logic into a web app:
   * colt_auth.Auth for zero-trust login (email + shared password + emailed 6-digit OTP),
@@ -33,7 +33,7 @@ from .settings import (
     SESSION_COOKIE_SECURE, CORS_ORIGINS,
 )
 
-app = FastAPI(title="Colt Cyber Pre-Sales API", version="1.0.0")
+app = FastAPI(title="Cybergod.ai Sales & Pre-Sales API", version="1.0.0")
 
 # ---- visitor telemetry + security alerting -------------------------------------------------------
 # One JSON event per request (ip/device/bot/status/ms) -> Loki -> Grafana "Visitor Log", and the same
@@ -279,9 +279,9 @@ def demo_meta():
                   for p in sorted(DEMO_DIR.glob("*_Animated*.html"))]
     return {"company": DEMO_COMPANY, "fabricated": True, "notice": DEMO_NOTICE,
             "ready": ready, "decks": decks,
-            "access_contact": "jevgenijs.vainsteins@colt.net",
-            "access_note": ("Live assessments against your own estate are available to Colt "
-                            "employees and Colt Partners only.")}
+            "access_contact": "feranicus@s4biz.io",
+            "access_note": ("Live assessments against your own estate are available to "
+                            "Cybergod partners and licensed customers.")}
 
 
 @app.get("/api/demo/deck/{name}")

@@ -96,7 +96,7 @@ def fire(rule, subject, title, lines, severity="HIGH"):
     body = "\n".join(str(x) for x in lines)
     stamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
     full = "%s\n\nWhen : %s\nRule : %s\nWhere: cybergod.ai (colt-web)\n\n%s\n\n" \
-           "Grafana: godeyes.ai/observe -> 'Colt Web (cybergod.ai)' -> Security row" % (
+           "Grafana: godeyes.ai/observe -> 'Cybergod Web (cybergod.ai)' -> Security row" % (
                title, stamp, rule, body)
     notify._log(evt="security_alert", rule=rule, severity=severity, subject=str(subject)[:120],
                 title=title[:160], detail=body[:600])
@@ -170,7 +170,7 @@ def observe_http(ev):
             fire("download_burst", who, "Unusual deck-download volume (possible exfiltration)",
                  ["User/IP: %s" % who,
                   "Downloads in %ds: %d (threshold %d)" % (DL_WIN, _count("dl:%s" % who, DL_WIN), DL_N),
-                  "These decks are INTERNAL Colt pursuit material."])
+                  "These decks are INTERNAL pursuit material."])
 
     # 7) one account seen from several IPs in a short window = shared or stolen session
     user = ev.get("user")
@@ -198,7 +198,7 @@ def observe_login_failure(email, ip, reason, ua=""):
               "Reason      : %s" % reason,
               "User-Agent  : %s" % (ua or "-")[:160],
               "",
-              "Gate: colt.net address OR a named partner, + the shared password, + an emailed OTP.",
+              "Gate: an approved company domain OR a named partner, + the shared password, + an emailed OTP.",
               "A failure here means the password or the identity was wrong — no session was issued."],
              severity="CRITICAL")
     # password spraying: one IP, several identities

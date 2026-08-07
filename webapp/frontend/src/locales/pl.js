@@ -30,7 +30,7 @@ export const keyed = {
   "assess.refusedH": "Nie oceniono — to strefa współdzielona, a nie jedna firma",
   "assess.zoneSurveyGo": "Mimo to przeskanuj całą strefę",
   "assess.docLangNote": "Dokumenty powstają w języku wybranym powyżej. Języka interfejsu nie ma na tej liście, więc domyślnie używany jest angielski.",
-  "login.h1a": "Cyber pre-sales,",
+  "login.h1a": "Sprzedaż i pre-sales,",
   "login.h1b": "samoobs\u0142ugowo.",
   "login.lede": "Jedna nazwa na wej\u015bciu, pe\u0142na analiza powierzchni ataku na wyj\u015bciu. Ten sam silnik, kt\u00f3ry stoi za botami Telegrama \u2014 teraz w przegl\u0105darce, dla ka\u017cdego handlowca.",
   "login.prog1": "Logowanie",
@@ -248,7 +248,7 @@ export const keyed = {
   // mythological figure in the creed is "Kasandra".
   "assist.h1": "Asystent",
   "assist.sub": "Cassandra — badanie firm, kwalifikacja MEDDPICC i redagowanie wiadomości do Twoich klientów.",
-  "assist.greeting": "Cześć, jestem Cassandra — Twoja prawa ręka w pre-sales. Poproś o badanie firmy, rozpisanie MEDDPICC albo treść wiadomości do klienta.",
+  "assist.greeting": "Cześć, jestem Cassandra — Twoja prawa ręka w sprzedaży i pre-sales. Poproś o badanie firmy, rozpisanie MEDDPICC albo treść wiadomości do klienta.",
   "assist.ph": "Zapytaj Cassandrę…",
   "assist.send": "Wyślij",
   "assist.errServer": "Coś poszło nie tak. Spróbuj ponownie.",

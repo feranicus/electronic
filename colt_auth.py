@@ -147,7 +147,7 @@ class Auth:
         if not (email_allowed(email) and hmac.compare_digest(pw or "", COLT_PW)):
             self._fail(uid)
             self.log(evt="auth", bot=self.bot, result="fail", email=email.lower()[:60], user=u, ts=int(_now()))
-            return ("denied", "❌ Access denied. Requires a valid Colt email (name.familyname@colt.net) and the access password.")
+            return ("denied", "❌ Access denied. Requires an approved company email and the access password.")
         if not REQUIRE_2FA:
             self.authed[u] = {"email": email.lower(), "ts": int(_now())}; self._save()
             self.log(evt="auth", bot=self.bot, result="ok", email=email.lower(), user=u, ts=int(_now()))
@@ -180,7 +180,7 @@ class Auth:
         msg["Subject"] = "Your cybergod.ai access code"
         msg["From"] = SMTP_FROM or GMAIL_SENDER; msg["To"] = email
         msg.set_content("Your one-time access code is: %s\n\nIt expires in %d minutes.\n"
-                        "If you did not request this, ignore this email.\n\n- Colt pre-sales bot" % (code, OTP_TTL // 60))
+                        "If you did not request this, ignore this email.\n\n- Cybergod.ai" % (code, OTP_TTL // 60))
         return msg
 
     def _send_otp(self, email, code):

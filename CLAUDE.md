@@ -2442,6 +2442,60 @@ Guarded by a test that replays the real shape: structural rejects it, a klima wr
 fragment byte-identical, restore SKIPS a newer backup whose block is rubble and takes the balanced
 one, and a fragment carrying another project's markers is refused.
 
+## STAGING TWIN — a second droplet, and the reboot is the whole point (2026-08)
+The 2026-08-07 outage had no environment in which the change could be REBOOTED before production.
+`stagegate.py` (a BUILDING BLOCK; ship.py calls it before the prod deploy) fixes exactly that:
+deploy to staging -> health -> **reboot it** -> health again -> AI digest -> only then production.
+- **STAGING = 165.245.244.174**, FRA1, 4 GB / 2 AMD vCPU / 80 GB, Ubuntu 24.04 — deliberately the
+  SAME size, image and region as prod. A twin that differs in region or size is not a twin: latency
+  to the inference endpoint, host hardware generation and kernel line are precisely the variables
+  that make "it worked in staging" untrue. Canada was rejected for staging (it is a DR idea, not a
+  staging one) and because /privacy claims EU-only data.
+- **SYNTHETIC DATA ONLY.** Staging builds its state from the committed RFC 5737 demo fixtures. No
+  production personal data crosses over, so the EU-only claim needs no second location disclosed.
+- **An LXC on the prod box was rejected**: 4 GB with ~1.8 GB free cannot hold a twin, and a
+  container sharing the host kernel cannot validate a kernel reboot — the one thing we need to test.
+- **The gate is DETERMINISTIC.** `quorum.py` runs INSIDE colt-web on staging (that is where
+  OPENAI_API_KEY lives) and asks 2 soldiers (deepseek, maverick) + 2 auditors (gemma, kimi), one per
+  vendor, for a written verdict. They produce the REASONING and the risk digest; the GO/NO-GO comes
+  from the checks. Operating principle 5, and it fails safe both ways: a 429 cannot block a good
+  release, and an agreeable model cannot wave through a dead container. Dissent is surfaced loudly.
+- ship.py EXITS 2 and touches nothing in production on NO-GO. `--no-stage` overrides deliberately,
+  `--fast-stage` skips only the reboot (weaker — say so).
+- A broken GATE must never become a broken DEPLOY: an exception in stagegate is reported and the
+  ship continues. Same doctrine as the FP auditor — a check is a signal, not an authority.
+
+## SEO — the tags were the SECOND cause; the bot gate was the first (2026-08)
+Google showed "colt — cyber pre-sales" for cybergod.ai months after the rebrand. Editing meta tags
+would have changed NOTHING: `BOT_404=1` with an empty `BOT_404_ALLOW` served **Googlebot a 404**, so
+Google could never re-crawl and kept serving a snippet harvested from the old GitHub Pages landing.
+- `visitors.py` default is now `googlebot,bingbot,duckduckbot,linkedinbot,slackbot,whatsapp,
+  telegrambot`. Everything else — scrapers, SEO harvesters, AI-training crawlers, vuln scanners —
+  still gets a 404. `/sitemap.xml` joined `/robots.txt` in EXEMPT_EXACT: a crawler fetches it before
+  it has identified itself, and 404-ing the sitemap silently kills indexing.
+- `index.html` carries title/description/canonical/robots + OG + Twitter + **JSON-LD**
+  (Organization / WebSite / SoftwareApplication). The JSON-LD is what earns a rich result instead of
+  a bare blue link, and it is the highest-leverage SEO item on a single-page app.
+- `public/robots.txt` and `public/sitemap.xml` must AGREE with the bot gate — a crawler allowed in
+  robots.txt but 404'd by the gate just burns crawl budget. Only public routes are in the sitemap;
+  /app and /login are owner-scoped and would only ever index a 401.
+- Product scope is **"Sales and Pre-Sales"**, not pre-sales: `login.h1a` in all six locales, the
+  Cassandra system prompts, legal.jsx, and the API title.
+
+## A PROMPT AND A DEFAULT ARE BOTH CUSTOMER-FACING (2026-08)
+Two Colt leaks survived the rebrand because the brand gate greps RENDERED artifacts:
+1. `assistant.py::SYSTEM_PROMPT` said "senior Colt Technology Services (DACH) pre-sales assistant" —
+   so Cassandra introduced herself as a Colt assistant in every reply. A system prompt is a string
+   that reaches a human, via the model.
+2. `notify.py::ALERT_MAIL` DEFAULTED to `feranicus@s4biz.io,jevgenijs.vainsteins@colt.net`. Removing
+   the address from compose was not enough: if `ALERT_EMAIL` is ever unset (fresh deploy, wiped
+   .env) the default silently resumes mailing a former employer platform telemetry and security
+   alerts — a data-protection problem, not just noise. **A default IS configuration.**
+Also fixed: `/api/demo`'s public `access_contact`, the login denial message, the alerts digest.
+LEFT DELIBERATELY: `ALLOWED_EMAIL_DOMAIN=colt.net` still lets Colt AEs LOG IN, and the internal
+docker names (`colt-web`, `colt-net`, `colt_auth.py`). Removing the login domain would lock out
+current users and is a business decision, not a rebrand.
+
 ## caddyguard is a BUILDING BLOCK of ship.py — and the argv length limit that hid as "ssh missing"
 I shipped `python caddyguard.py` as a SECOND command. That is operating principle 7, broken again:
 the operator runs `python ship.py`, full stop. caddyguard is now invoked BY ship.py after verify,

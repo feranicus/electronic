@@ -236,7 +236,7 @@ const IMPRESSUM_SRC = {
     s7p: (<>Die durch den Betreiber erstellten Inhalte und Werke auf diesen Seiten unterliegen dem
           deutschen Urheberrecht. Die durch cybergod.ai erzeugten Analyse­dokumente sind internes
           Vertriebs­material und nicht zur öffentlichen Verbreitung bestimmt.</>),
-    note: "Hinweis: cybergod.ai ist ein zugangsbeschränktes internes Werkzeug für die Cyber-Pre-Sales-Analyse; es steht der Allgemeinheit nicht zur Nutzung offen.",
+    note: "Hinweis: cybergod.ai ist ein zugangsbeschränktes Werkzeug für die Cyber-Analyse in Vertrieb & Pre-Sales; es steht der Allgemeinheit nicht zur Nutzung offen.",
     todo: "⚠ Dieses Impressum ist noch unvollständig. Vor der Veröffentlichung müssen Name, Anschrift und Telefonnummer in OPERATOR (src/legal.jsx) eingetragen werden — ein unvollständiges Impressum ist abmahnfähig.",
   },
   en: {
@@ -259,7 +259,7 @@ const IMPRESSUM_SRC = {
     s7p: (<>Content created by the operator on these pages is subject to German copyright law. The
           analysis documents produced by cybergod.ai are internal sales material and are not intended
           for public distribution.</>),
-    note: "Note: cybergod.ai is an access-restricted internal tool for cyber pre-sales analysis; it is not open to the general public.",
+    note: "Note: cybergod.ai is an access-restricted tool for cyber analysis in sales and pre-sales; it is not open to the general public.",
     todo: "⚠ This legal notice is incomplete. Name, postal address and phone number must be filled into OPERATOR (src/legal.jsx) before publication — an incomplete Impressum is legally actionable in Germany.",
   },
 };
@@ -296,7 +296,7 @@ const CONTACT_SRC = {
 const PRIVACY_SRC = {
   de: {
     h1: "Datenschutz & Datenverarbeitung", sub: "Privacy & data processing — cybergod.ai",
-    lead: "cybergod.ai ist ein internes Werkzeug für die Cyber-Pre-Sales-Analyse. Diese Seite beschreibt, welche Daten wir verarbeiten, auf welcher Rechtsgrundlage, wo sie liegen und wie lange wir sie aufbewahren — gemäß DSGVO Art. 13/14.",
+    lead: "cybergod.ai ist ein Werkzeug für die Cyber-Analyse in Vertrieb & Pre-Sales. Diese Seite beschreibt, welche Daten wir verarbeiten, auf welcher Rechtsgrundlage, wo sie liegen und wie lange wir sie aufbewahren — gemäß DSGVO Art. 13/14.",
     s1: "1. Wo Ihre Daten liegen",
     s1p: (<><strong>Ihre personenbezogenen Daten bleiben in der EU.</strong> Anwendung, Datenbank,
          Sitzungen, erzeugte Dokumente und Sicherheits­protokolle laufen ausschließlich auf einem
@@ -377,7 +377,7 @@ const PRIVACY_SRC = {
   },
   en: {
     h1: "Privacy & data processing", sub: "Datenschutz & Datenverarbeitung — cybergod.ai",
-    lead: "cybergod.ai is an internal tool for cyber pre-sales analysis. This page explains what data we process, on what legal basis, where it is stored and how long we keep it — under GDPR Art. 13/14.",
+    lead: "cybergod.ai is a tool for cyber analysis in sales and pre-sales. This page explains what data we process, on what legal basis, where it is stored and how long we keep it — under GDPR Art. 13/14.",
     s1: "1. Where your data lives",
     s1p: (<><strong>Your personal data stays in the EU.</strong> The application, database, sessions,
          generated documents and security logs all run on a single server in the{" "}
@@ -446,7 +446,7 @@ const PRIVACY_SRC = {
     s6p: (<>The controller under the GDPR is <strong>{OPERATOR.name}</strong>, {OPERATOR.street},{" "}
           {OPERATOR.zipCity}, {OPERATOR.country} —{" "}
           <a href={"mailto:" + OPERATOR.email}>{OPERATOR.email}</a>. Full details in the{" "}
-          <a href="/impressum">legal notice</a>. Internal use for pre-sales; the generated
+          <a href="/impressum">legal notice</a>. Use in sales and pre-sales; the generated
           documents are internal sales material. You have the right to lodge a complaint with a data
           protection supervisory authority (Art. 77 GDPR); the competent authority is{" "}
           <strong>{OPERATOR.authority}</strong>.</>),

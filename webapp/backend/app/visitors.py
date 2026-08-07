@@ -47,14 +47,28 @@ def _i(name, d):
 
 
 BOT_404            = os.environ.get("BOT_404", "1") != "0"
-BOT_404_ALLOW      = [x.strip().lower() for x in os.environ.get("BOT_404_ALLOW", "").split(",") if x.strip()]
+# DEFAULT CHANGED 2026-08: search engines are now allowed through.
+# For months the default was "allow nobody", which meant Googlebot got a 404 on every page route.
+# The consequence was not merely "we are not indexed" — Google kept serving a STALE snippet
+# harvested from the old GitHub Pages landing ("colt — cyber pre-sales"), and could never refresh
+# it, because refreshing requires a successful crawl. Editing the meta tags alone would have
+# changed nothing at all.
+# Google + Bing + DuckDuckGo, and the unfurlers that render the link card in LinkedIn/Slack/
+# WhatsApp/Telegram. Every scraper, SEO-backlink harvester, AI-training crawler and vulnerability
+# scanner still gets a 404. Keep this list in agreement with public/robots.txt.
+BOT_404_ALLOW      = [x.strip().lower() for x in os.environ.get(
+    "BOT_404_ALLOW",
+    "googlebot,bingbot,duckduckbot,linkedinbot,slackbot,whatsapp,telegrambot"
+).split(",") if x.strip()]
 VISIT_NOTIFY       = os.environ.get("VISIT_NOTIFY", "1") != "0"
 VISIT_DEDUPE_S     = _i("VISIT_DEDUPE_S", 6 * 3600)
 VISIT_MAX_PER_HOUR = _i("VISIT_MAX_PER_HOUR", 30)
 
 # Paths the gate must never touch. See the module docstring for why /api is here.
 EXEMPT_PREFIXES = ("/api/", "/.well-known/")
-EXEMPT_EXACT    = ("/robots.txt", "/favicon.ico", "/healthz", "/health")
+# /sitemap.xml belongs here for the same reason /robots.txt does: a crawler fetches it BEFORE it
+# has identified itself as anything we recognise, and 404-ing the sitemap silently kills indexing.
+EXEMPT_EXACT    = ("/robots.txt", "/sitemap.xml", "/favicon.ico", "/healthz", "/health")
 
 _seen = {}          # visitor key -> last-alerted ts
 _sent = deque()     # timestamps of visit alerts, for the hourly cap

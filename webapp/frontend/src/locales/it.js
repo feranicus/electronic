@@ -17,7 +17,7 @@ export const keyed = {
   "assess.refusedH": "Non valutato — questa è una zona condivisa, non una singola azienda",
   "assess.zoneSurveyGo": "Esaminare comunque l'intera zona",
   "assess.docLangNote": "I documenti sono redatti nella lingua selezionata sopra. La lingua della Sua interfaccia non è tra queste: per impostazione predefinita viene usato l'inglese.",
-  "login.h1a": "Cyber pre-sales,",
+  "login.h1a": "Vendite & pre-sales,",
   "login.h1b": "in autonomia.",
   "login.lede": "Un nome in ingresso, un'analisi completa della superficie di attacco in uscita. Lo stesso motore dei bot Telegram \u2014 ora sul web, per chiunque venda.",
   "login.prog1": "Accesso",
@@ -225,7 +225,7 @@ export const keyed = {
   // ---- Assistente (Cassandra) ------------------------------------------------------------------
   "assist.h1": "Assistente",
   "assist.sub": "Cassandra - ricerca, qualificazione MEDDPICC e stesura dei messaggi di contatto per i Suoi clienti.",
-  "assist.greeting": "Salve, sono Cassandra - il Suo supporto nel pre-sales. Mi chieda una ricerca su un'azienda, un'analisi MEDDPICC o un testo di contatto.",
+  "assist.greeting": "Salve, sono Cassandra - il Suo supporto in vendite e pre-sales. Mi chieda una ricerca su un'azienda, un'analisi MEDDPICC o un testo di contatto.",
   "assist.ph": "Chieda a Cassandra…",
   "assist.send": "Invia",
   "assist.errServer": "Qualcosa non ha funzionato. Riprovi.",
