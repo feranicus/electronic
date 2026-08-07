@@ -11,7 +11,7 @@ live, restart the caddy container as a last resort -> verify colt-web single-net
 Usage:  python deploy_web_direct.py
 Env (optional): DROPLET_HOST (default 64.225.108.200), DROPLET_USER (root), SSH_KEY (path)
 """
-import os, sys, base64, subprocess, tarfile, tempfile
+import os, sys, base64, subprocess, tarfile, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.environ.get("DROPLET_HOST", "64.225.108.200")
@@ -96,11 +96,36 @@ def remote(proxy=True):
 
 REMOTE = remote(True)      # kept so existing callers/readers see the production script unchanged
 
-def preflight(tgt):
-    """Prove we can reach the droplet BEFORE doing anything slow, and say so out loud."""
-    print("== preflight: ssh %s (10s timeout) ==" % tgt, flush=True)
-    r = subprocess.run(SSH_BASE + [tgt, "echo ssh-ok && docker ps --format '{{.Names}}' | head -5"],
-                       capture_output=True, text=True)
+def preflight(tgt, tries=3):
+    """Prove we can reach the droplet BEFORE doing anything slow, and say so out loud.
+
+    HARD TIMEOUT + BACK-OFF. `-o ConnectTimeout` only bounds the TCP/kex phase; a connection that
+    sshd accepts and then stalls (PerSourcePenalties, MaxStartups) hangs the whole deploy with no
+    output at all — which is exactly what happened here, twice. CLAUDE.md has required a hard
+    subprocess timeout on every ssh since deploy.py hit the same wall; this function never got one.
+    Penalties DECAY, so backing off and retrying is the correct response, not failing the ship.
+    """
+    print("== preflight: ssh %s (hard 25s timeout, %d tries) ==" % (tgt, tries), flush=True)
+    r, delay = None, 20
+    for attempt in range(tries):
+        try:
+            r = subprocess.run(
+                SSH_BASE + [tgt, "echo ssh-ok && docker ps --format '{{.Names}}' | head -5"],
+                capture_output=True, text=True, timeout=25)
+        except subprocess.TimeoutExpired:
+            r = None
+        if r is not None and r.returncode == 0 and "ssh-ok" in (r.stdout or ""):
+            break
+        if attempt < tries - 1:
+            print("   no answer (attempt %d/%d) — sshd may be throttling; waiting %ds"
+                  % (attempt + 1, tries, delay), flush=True)
+            time.sleep(delay)
+            delay *= 2
+    if r is None:
+        sys.exit("[X] ssh to %s timed out %d times.\n"
+                 "    OpenSSH 9.8 enables PerSourcePenalties by default and penalties ACCRUE.\n"
+                 "    They decay on their own — wait ~5 minutes and re-run.\n"
+                 "    (Or: python ship.py --no-stage, which opens far fewer sessions.)" % (tgt, tries))
     if r.returncode or "ssh-ok" not in (r.stdout or ""):
         err = (r.stderr or "").strip()[:300]
         sys.exit(
@@ -152,7 +177,12 @@ def main():
         "",
     ])
     print("== upload + build + wire + verify (ONE ssh; the docker build takes 2-4 min) ==", flush=True)
-    r = subprocess.run(SSH_BASE + [tgt, "bash -s"], input=payload.encode("utf-8"))
+    try:
+        r = subprocess.run(SSH_BASE + [tgt, "bash -s"],
+                           input=payload.encode("utf-8"), timeout=1200)
+    except subprocess.TimeoutExpired:
+        sys.exit("[X] the remote build exceeded 20 minutes and was killed.\n"
+                 "    Nothing is left half-applied: compose is idempotent, just re-run.")
     if r.returncode:
         sys.exit("[X] remote deploy failed (see output above)")
     print("\nDONE. If 'public via caddy = 401', open https://cybergod.ai/login")

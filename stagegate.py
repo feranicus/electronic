@@ -159,6 +159,51 @@ docker exec "$C" python3 /opt/shodan-skill/scripts/demo_build.py >/tmp/demo.out 
 [ $? -eq 0 ] && chk engine_runs yes "demo artifacts built from RFC 5737 fixtures" \
              || chk engine_runs no "$(tail -3 /tmp/demo.out | tr '\n' ' ')"
 
+# ---- RAISED BY THE AUDIT PANEL, now checks rather than caveats -----------------------------
+# kimi-k2.6: "engine_runs uses static fixtures... could be stale cached bytecode".
+# Correct. Hash the engine files INSIDE the container and compare to what was just shipped.
+# This is the same doctrine as the production engine_is_current() verify: a container that
+# started is not the code that shipped.
+docker exec "$C" sh -c 'cd /opt/shodan-skill && sha256sum scripts/shodan_recon.py scripts/enrich.py \
+  scripts/run_assessment.py 2>/dev/null | md5sum | cut -c1-12' > /tmp/eh 2>/dev/null
+EH=$(cat /tmp/eh 2>/dev/null)
+LH=$(cd /opt/colt-stack/hermes-skills/shodan-assessment && sha256sum scripts/shodan_recon.py \
+  scripts/enrich.py scripts/run_assessment.py 2>/dev/null | md5sum | cut -c1-12)
+[ -n "$EH" ] && [ "$EH" = "$LH" ] && chk engine_fresh yes "container engine == shipped sources ($EH)" \
+  || chk engine_fresh no "container=$EH shipped=$LH — the container is NOT running what we sent"
+
+# kimi-k2.6: "no evidence caddy RE-READ its config after reboot vs recycling a cached one".
+# Also correct, and it is the EXACT shape of the 2026-08-07 outage: a file that validates while
+# the process serves something else entirely. Ask the running process what it is serving and
+# compare it to the file on disk.
+if docker ps --format '{{.Names}}' | grep -qi caddy; then
+  CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
+  docker exec "$CT" caddy adapt --config /etc/caddy/Caddyfile 2>/dev/null \
+    | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/ondisk
+  docker exec "$CT" wget -qO- http://localhost:2019/config/ 2>/dev/null \
+    | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/running
+  D=$(cat /tmp/ondisk 2>/dev/null); R=$(cat /tmp/running 2>/dev/null)
+  if [ -z "$R" ] || [ "$R" = "d41d8cd98f00b204" ]; then
+    # No admin API on this instance. Say so honestly instead of scoring a pass we cannot justify.
+    chk config_reread no "cannot query the admin API — cannot PROVE the running config came from disk"
+  elif [ "$D" = "$R" ]; then
+    chk config_reread yes "the RUNNING config matches the file on disk ($D)"
+  else
+    chk config_reread no "disk=$D running=$R — the process is serving a DIFFERENT config"
+  fi
+fi
+
+# gemma-4-31B-it: "not tested under load... concurrency bottlenecks".
+# A modest burst: 40 concurrent requests. Not a load test — it is a concurrency SMOKE test, and
+# it catches the failure that matters here (a proxy or worker pool that 5xx's under parallelism).
+for i in $(seq 1 40); do
+  curl -s -o /dev/null -w '%{http_code}\n' --max-time 20 http://127.0.0.1:8090/api/me &
+done > /tmp/burst 2>/dev/null; wait
+OK4=$(grep -c '^401$' /tmp/burst 2>/dev/null || echo 0)
+BAD=$(grep -cv '^401$' /tmp/burst 2>/dev/null || echo 0)
+[ "${OK4:-0}" -ge 38 ] && chk concurrency yes "40 parallel requests -> ${OK4}x401, ${BAD} other" \
+  || chk concurrency no "40 parallel requests -> only ${OK4}x401, ${BAD} other (5xx under load?)"
+
 M=$(free -m | awk '/Mem:/{print $7}')
 [ "${M:-0}" -gt 300 ] && chk memory yes "${M}MB available" || chk memory no "only ${M}MB available"
 D=$(df --output=pcent / | tail -1 | tr -dc '0-9')
