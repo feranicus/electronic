@@ -126,11 +126,11 @@ for d in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de; do
   END=$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null \
         | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
   if [ -n "$END" ]; then
-    LEFT=$(( ( $(date -d "$END" +%s) - $(date +%s) ) / 86400 ))
-    if [ "$LEFT" -lt 14 ]; then printf '   [!] %-28s %s days left  <- RENEW\n' "$d" "$LEFT"
-    else printf '   %-32s %s days left\n' "$d" "$LEFT"; fi
+    LEFT=$(( ( $(date -d "$END" +%%s) - $(date +%%s) ) / 86400 ))
+    if [ "$LEFT" -lt 14 ]; then printf '   [!] %%-28s %%s days left  <- RENEW\n' "$d" "$LEFT"
+    else printf '   %%-32s %%s days left\n' "$d" "$LEFT"; fi
   else
-    printf '   [!] %-28s no certificate presented\n' "$d"
+    printf '   [!] %%-28s no certificate presented\n' "$d"
   fi
 done
 echo "-- local probes:"
@@ -141,7 +141,37 @@ echo "END"
 """ % (agent, svc, tmr, "check" if check_only else "install", "yes" if restore else "no")
 
 
+def _selftest():
+    """RENDER THE SCRIPT BEFORE SHIPPING IT.
+
+    This function exists because I broke it exactly this way: a `printf '%-28s'` added to a
+    %-FORMATTED string, so Python consumed the spec and build() raised — and the failure was
+    invisible because the caller only echoed stdout. CLAUDE.md has carried the "a literal % must
+    be %%" rule since the `[100%%]` progress line; a rule that is not enforced is a rule that gets
+    broken. Rendering both variants costs microseconds and makes the class impossible to ship.
+    """
+    for restore in (True, False):
+        for check in (True, False):
+            try:
+                out = build(restore, check)
+            except (TypeError, ValueError) as e:
+                sys.exit("[X] caddyguard script does not render (%s: %s)\n"
+                         "    Almost certainly a bare %% inside the %%-formatted template — it must "
+                         "be %%%%.\n    Nothing was sent to the droplet." % (type(e).__name__, e))
+            # NOTE: the RENDERED script legitimately contains shell format specs — `printf '%s'`
+            # is ordinary shell. Asserting their absence confuses the shell's specs with Python's
+            # and fails on correct output. The only thing worth asserting here is that Python's
+            # own substitution completed without raising; a bare % in the template is exactly
+            # what makes it raise.
+            # The script's final line is  echo "END"  — quote included, so endswith("END") is
+            # off by one character. Match the line, not a suffix.
+            if 'echo "END"' not in out:
+                sys.exit("[X] caddyguard script rendered truncated — refusing to send it.")
+    return True
+
+
 def main():
+    _selftest()
     ap = argparse.ArgumentParser(description="Install shared-proxy guardrails; restore jobhuntwow.")
     ap.add_argument("--check", action="store_true", help="read-only status, change nothing")
     ap.add_argument("--no-restore", action="store_true", help="do not restore the jhw block")

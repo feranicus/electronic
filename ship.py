@@ -1380,8 +1380,12 @@ def main():
                                  capture_output=True, text=True, encoding="utf-8",
                                  errors="replace", timeout=600)
             print("")
-            _cgout = (_cg.stdout or "").rstrip()
-            print(_cgout or "  caddyguard: no output")
+            # STDERR TOO. caddyguard crashed with a TypeError and printed NOTHING here, because
+            # only stdout was echoed — so "reported a problem" appeared with no problem visible.
+            # Same defect just fixed for patchwatch; a building block that fails must be able to
+            # say why, or the operator re-runs it blind.
+            _cgout = ((_cg.stdout or "") + (_cg.stderr or "")).rstrip()
+            print(_cgout or "  caddyguard: no output at all (crashed before printing?)")
 
             # THE REBOOT GATE MUST BE ON THE BOX, NOT JUST IN THE REPO.
             # caddyguard reports whether the droplet's patchwatch copy carries the gate that

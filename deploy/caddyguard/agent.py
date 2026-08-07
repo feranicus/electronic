@@ -262,13 +262,25 @@ def cmd_restore(name, src=None, force=False):
     block is healthy — otherwise a routine deploy would silently overwrite a project's current
     config with whatever an old backup happened to contain. It only acts when the fragment is
     missing, empty (markers but no site block), or brace-unbalanced. `--force` overrides."""
+    # "HEALTHY" MUST MEAN IT ROUTES SOMETHING.
+    # The first version accepted any brace-balanced, non-empty block — so jobhuntwow's clobbered
+    # block, which is comments plus a `log { }` and NO reverse_proxy, passed as healthy and the
+    # restore skipped it for days. Caddy served it as 200-with-an-empty-body: the site "worked"
+    # by every structural measure and showed a blank page to every visitor.
+    # A site block with no routing directive is not a site. Check for one.
+    ROUTES = ("reverse_proxy", "respond", "redir", "file_server", "php_fastcgi", "import")
     cur = read(name_to_file(name))
     if cur and not force:
         o, c = balance(cur)
-        if o == c and o > 0:
-            print("%s already healthy (%d lines, braces %d/%d) — nothing to restore"
-                  % (name, cur.count("\n") + 1, o, c))
+        code = "\n".join(l.split("#")[0] for l in cur.split("\n"))
+        routes = [d for d in ROUTES if d in code]
+        if o == c and o > 0 and routes:
+            print("%s already healthy (%d lines, braces %d/%d, routes via %s) — nothing to restore"
+                  % (name, cur.count("\n") + 1, o, c, "/".join(routes)))
             return 0
+        if o == c and o > 0 and not routes:
+            print("%s parses but has NO routing directive (%s) — it would serve an empty 200. "
+                  "Restoring." % (name, ", ".join(ROUTES[:3]) + ", ..."))
     def _ls(d, pref=""):
         # Never let an unreadable directory abort the search — a restore that dies on /root
         # permissions is a restore that does not happen.
@@ -293,6 +305,12 @@ def cmd_restore(name, src=None, force=False):
         o, c = balance(blk)
         if o != c or o == 0:
             print("   skip %s (block present but braces %d/%d)" % (p, o, c))
+            continue
+        # A candidate must ROUTE, not merely parse — otherwise we would "restore" the same empty
+        # block that caused the blank page, from a backup taken after the damage.
+        bcode = "\n".join(x.split("#")[0] for x in blk.split("\n"))
+        if not any(d in bcode for d in ROUTES):
+            print("   skip %s (block parses but routes nothing)" % p)
             continue
         write_inplace(name_to_file(name), blk.rstrip() + "\n")
         print("restored %s from %s (%d lines, braces %d/%d)"
