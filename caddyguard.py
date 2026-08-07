@@ -138,7 +138,17 @@ if [ "%s" = "yes" ]; then
       *) echo "   [!] NOT on videodead_appnet - caddy cannot resolve jhw-web at all" ;;
     esac
     CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
-    echo "   caddy -> jhw-web:8000 : $(docker exec "$CT" wget -qS -O /dev/null http://jhw-web:8000/ 2>&1 | grep -m1 HTTP/ | tr -d '\r' || echo 'NO ANSWER')"
+    # MEASURE THE BODY, not the status line. A 200 with an empty body is the whole symptom, and a
+    # probe that discards the body cannot tell the two apart. This is decisive: if the upstream
+    # itself returns 0 bytes the fault is INSIDE jhw-web (its own project), not in this proxy.
+    for path in / /api/health; do
+      B=$(docker exec "$CT" wget -qO- "http://jhw-web:8000$path" 2>/dev/null | wc -c)
+      H=$(docker exec "$CT" wget -qS -O /dev/null "http://jhw-web:8000$path" 2>&1 | grep -m1 HTTP/ | tr -d '\r')
+      printf '   upstream %%-12s %%s  %%s bytes%%s\n' "$path" "${H:-NO ANSWER}" "$B" \
+        "$([ "$B" -lt 200 ] && echo '   <- EMPTY: jhw-web itself is serving nothing' || true)"
+    done
+    echo "   jhw-web health : $(docker inspect jhw-web -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}no healthcheck{{end}}' 2>/dev/null)"
+    echo "   jhw-web image  : $(docker inspect jhw-web -f '{{.Config.Image}} started {{.State.StartedAt}}' 2>/dev/null)"
   else
     echo "   [!] jhw-web is NOT running - nothing to reverse_proxy to. Start it from ITS own project."
     docker ps -a --format '{{.Names}}\t{{.Status}}' | grep -i jhw || true
@@ -207,7 +217,11 @@ for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.c
   R=$(curl -sk -o /tmp/body -w '%%{http_code} %%{size_download}' --max-time 12 "$u")
   CODE=${R%% *}; BYTES=${R##* }
   FLAG=""
-  case "$CODE" in 2*|3*|401) [ "$BYTES" -lt 200 ] && [ "$CODE" != "401" ] && FLAG="   <- EMPTY BODY, the upstream is not answering" ;; *) FLAG="   <- FAILED" ;; esac
+  case "$CODE" in
+    2*)      [ "$BYTES" -lt 200 ] && FLAG="   <- EMPTY BODY, the upstream is not answering" ;;
+    3*|401)  : ;;   # a redirect legitimately has no body; 401 is the healthy answer for /api/me
+    *)       FLAG="   <- FAILED" ;;
+  esac
   printf '   %%-42s %%s  %%s bytes%%s\n' "$u" "$CODE" "$BYTES" "$FLAG"
 done
 echo "END"
@@ -261,12 +275,14 @@ def main():
         print("ssh failed (rc=%s): %s" % (rc, (err or "").strip()[:400]))
         return 2
 
-    for k in ("INSTALL", "STATE", "MIGRATE", "RESTORE", "ASSEMBLE", "TIMER",
-              "PATCHWATCH_GATE", "CHECK", "VERIFY"):
-        s = sections(out).get(k)
-        if s:
+    # Print EVERY section the remote script emitted, in the order it emitted them. A hardcoded
+    # list here silently swallowed the DRIFT section on its first run: the check executed on the
+    # droplet and nobody ever saw the answer. A second home for "which sections exist" is exactly
+    # the drift this file exists to prevent.
+    for k, sec in sections(out).items():
+        if sec.strip():
             print("\n--- %s ---" % k)
-            print("   " + s.replace("\n", "\n   "))
+            print("   " + sec.replace("\n", "\n   "))
     if (err or "").strip():
         print("\n[stderr] " + err.strip()[:500])
 

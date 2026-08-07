@@ -268,6 +268,27 @@ BAD=$(grep -cv '^401$' /tmp/burst 2>/dev/null || echo 0)
 # by the event that would fix the fault is not measuring the fault.
 # It now compares WHAT IS SERVED (hostnames + terminal handlers), via ONE implementation in the
 # caddyguard agent that production uses too.
+#
+# MOUNT STALENESS - the hop that let a correct file sit in front of a dead site for hours.
+# /etc/caddy/Caddyfile is a single-FILE bind mount, pinned to an inode. Replace the file instead
+# of truncating it and the container reads the OLD inode forever: validate passes (it validates a
+# fresh temp copy), reload succeeds (loading old bytes), and the semantic drift check passes
+# (both its sides read from inside the container). This is the ONLY comparison that spans the
+# mount, so staging must exercise it before production ever does.
+if docker ps --format '{{.Names}}' | grep -qi caddy; then
+  CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
+  CF=$(docker inspect "$CT" --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{end}}{{end}}')
+  if [ -n "$CF" ]; then
+    HS=$(sha256sum "$CF" | cut -c1-12)
+    CS=$(docker exec "$CT" sha256sum /etc/caddy/Caddyfile 2>/dev/null | cut -c1-12)
+    [ "$HS" = "$CS" ] \
+      && chk mount_fresh yes "container reads the current file ($HS) - bind mount is not stale" \
+      || chk mount_fresh no  "STALE MOUNT: host=$HS container=$CS - the proxy is serving a replaced inode"
+  else
+    chk mount_fresh yes "no single-file Caddyfile mount on this box - nothing to compare"
+  fi
+fi
+
 if docker ps --format '{{.Names}}' | grep -qi caddy; then
   D=$(python3 /opt/caddyguard/agent.py drift 2>&1 | tr '\n|' '  ' | cut -c1-200)
   case "$D" in

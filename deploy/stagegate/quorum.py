@@ -49,6 +49,26 @@ except Exception as _e:                                    # pragma: no cover
 SOLDIERS = ["deepseek-3.2", "llama-4-maverick"]
 AUDITORS = ["gemma-4-31B-it", "kimi-k2.6"]
 
+ARCH = """HOW CONFIG REACHES THE PROXY ON THIS SYSTEM (facts, so you do not have to guess):
+  * ONE shared Caddy fronts every domain. /etc/caddy/Caddyfile is a single-FILE bind mount from the
+    host, so the mount is pinned to an INODE. Replacing the file (mv, sed -i, tmp+rename) leaves the
+    container reading the OLD inode forever, while the host file looks perfectly correct.
+  * Caddy reads its config ONLY at start (or on an explicit reload). A file edited afterwards is
+    silently unapplied until the next restart - that was the 2026-08-07 outage, latent for 12 hours.
+  * Therefore config has THREE hops, and a check must say WHICH one it measured:
+      1. host file  -> container file   (crosses the mount; only a host-vs-container hash sees it)
+      2. container file -> running config (crosses the reload)
+      3. what is actually SERVED         (hostnames + handlers)
+  * `caddy validate` proves NOTHING about hops 1 or 2: it validates a freshly-mounted temp copy.
+  * `caddy adapt` output and the admin API's GET /config/ are two SERIALISATIONS of one config.
+    They are NEVER byte-identical (key order, filled-in defaults), so a hash comparison between
+    them is a false positive by construction. Compare what is SERVED instead.
+  * A restart re-reads config, so any 'staleness' that survives a reboot is NOT staleness. If a
+    check reports the same result before and after a reboot, suspect the CHECK.
+  * There is no Kubernetes, no config-map, no entrypoint that copies config, and no hot-reload
+    watcher. Do not propose one; propose changes to files that exist.
+"""
+
 SOLDIER_PROMPT = """You are a release engineer reviewing a STAGING validation run before the change
 is promoted to production. The production host serves several live customer domains from ONE shared
 reverse proxy, so a bad promotion takes every site down at once.
@@ -139,9 +159,9 @@ def main():
     slim = json.dumps(ev, indent=1)[:9000]     # bound the prompt; latency scales with prompt size
     reviews = []
     for m in SOLDIERS:
-        reviews.append(dict(role="soldier", **_ask(m, SOLDIER_PROMPT % slim)))
+        reviews.append(dict(role="soldier", **_ask(m, SOLDIER_PROMPT % (ARCH + "\n" + slim))))
     for m in AUDITORS:
-        reviews.append(dict(role="auditor", **_ask(m, AUDITOR_PROMPT % slim)))
+        reviews.append(dict(role="auditor", **_ask(m, AUDITOR_PROMPT % (ARCH + "\n" + slim))))
 
     answered = [r for r in reviews if not r.get("error")]
     dissent = [r for r in answered if r["verdict"] == "no-go"]

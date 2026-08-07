@@ -2632,3 +2632,70 @@ what the panel gets RIGHT — but the deterministic checks decide, and when a ch
 physics, suspect the check. Kimi did land one true observation worth keeping: `config_reread`
 passes on TIMING (started N seconds after the write) and therefore proves startup ordering, not
 that the right file was read. The semantic drift check is what actually answers that question.
+
+## A CHECK YOU CANNOT SEE IS NOT A CHECK — and a probe that discards the body proves nothing
+Two defects in one caddyguard run, both mine, both the same disease as the ruff gate that silently
+skipped for weeks:
+1. **The DRIFT section ran on the droplet and was never printed.** `caddyguard.main()` iterated a
+   HARDCODED tuple of section names, so a section the remote script emits but the list does not
+   mention is dropped on the floor. Two homes for "which sections exist". FIX: print every section
+   `sections()` returns, in emission order (`recover.sections` is an ordered dict, asserted by a
+   test) — adding a section to the script is now the only edit needed.
+2. **The jhw upstream probe was `wget -qS -O /dev/null`.** It reported `HTTP/1.1 200 OK` for an app
+   that may be returning NOTHING — the precise failure under investigation. I had written the rule
+   ("probes report BYTES, not just the status code") one screen earlier and then broke it in the
+   next function. FIX: `wget -qO- ... | wc -c` on `/` AND `/api/health`, plus the container's
+   health state and image/start time. That is decisive: **0 bytes from `jhw-web:8000` itself means
+   the fault is inside that container (its own project, `python jhw.py deploy`), not in the shared
+   proxy; N>0 bytes upstream with 0 bytes publicly means the proxy is dropping it and it is mine.**
+   Until that number exists, either claim is a guess.
+Also: a 3xx has NO BODY BY DESIGN, so flagging `www.jobhuntwow.com`'s 301 as "EMPTY BODY" was
+noise — and noise in a diagnostic is how the one real line gets skipped.
+`_selftest()` earned its keep again: `printf '%-12s'` inside the %-formatted template raised
+TypeError and the run aborted with "Nothing was sent to the droplet" instead of shipping a broken
+script. Every literal % in that template must be doubled.
+
+## THE BIND-MOUNT HOP — three green lights over a dead site (2026-08-07, the jobhuntwow finish)
+The operator restored jobhuntwow with its OWN orchestrator (`python jhw.py deploy`) and that run
+printed the answer my whole investigation had missed:
+```
+[!] caddy is reading a STALE copy of the Caddyfile (bind-mount inode was replaced)
+    host file : 979f0bd3...   in caddy : f4aaa45a...
+-> restarting caddy so the bind mount re-resolves the path
+```
+`/etc/caddy/Caddyfile` is a single-FILE bind mount, so the container is pinned to an INODE. Once
+something replaces the file rather than truncating it, the container reads the OLD inode forever —
+and EVERY layer I had built reported success over it:
+  * `caddy validate` passes — it validates a freshly-mounted TEMP COPY of the new text, never the
+    file the running container actually reads;
+  * `caddy reload` succeeds — and loads the STALE bytes;
+  * my new semantic drift check passes — because BOTH of its sides (`caddy adapt` and the admin
+    API) read from INSIDE the container, so they agree perfectly on the wrong config;
+  * the watchdog passes — the file is valid and the container is running.
+Four checks, all honest, all measuring hops that were fine. **CONFIG HAS THREE HOPS and a check
+must say which one it measured:** host file -> container file (crosses the MOUNT) -> running config
+(crosses the RELOAD) -> what is actually SERVED. I had built hops 2 and 3 and never hop 1 — even
+though `deploy_direct.py` in the jobhuntwow project had solved it months ago with a plain
+host-vs-container sha256, and CLAUDE.md already carried the inode rule in prose.
+FIX — `agent.py::mount_sync()`, used in three places so no path can skip it:
+  * `apply()` calls it AFTER writing and BEFORE reloading, and REFUSES (rolling the file back)
+    rather than reloading into a mount the proxy cannot see;
+  * `cmd_check --heal` (the 10-minute watchdog) treats a stale mount as UNHEALTHY and restarts to
+    re-resolve it — a restart is the only thing that re-resolves a single-file mount, so it is done
+    only when the hashes actually disagree, since it blips every vhost on the box;
+  * `cmd_drift` checks hop 1 FIRST and names the broken hop instead of reporting a generic OK.
+  Failure to repair is reported, never swallowed: `STILL STALE after restart` says the mount source
+  is not the file we are writing.
+DEV/TEST AND PROD BOTH: stagegate gains `mount_fresh` so the twin exercises it before production
+ever does, and caddyguard runs the same agent code on prod. ONE implementation.
+THE LLM PANEL got the facts, not more authority: `quorum.ARCH` now states the three hops, that
+validate proves nothing about hops 1-2, that adapt-vs-admin-API are two serialisations and can
+never be byte-equal, that a fault surviving a reboot is not staleness, and that there is no k8s /
+config-map / hot-reload watcher in this system so it must not propose one. On the config_drift
+false positive all four models invented plausible fixes for a non-existent fault; they were
+reasoning without a map. Deterministic checks still decide.
+HONEST ACCOUNTING: I did not truncate the jhw block — `migrate` found it already at braces 0/0,
+which is the 6 Aug damage. But my run REPORTED SUCCESS while the site stayed dead, twice, because
+every check I owned was on the wrong side of the mount. Guarded by test_drift.py (detected ·
+repaired by restart · unfixable reported · read-only never restarts · no-container and unreadable
+both SKIP), proven by disabling the comparison and watching the suite fail.

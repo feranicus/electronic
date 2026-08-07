@@ -189,6 +189,51 @@ def backup(tag="auto"):
     return p
 
 
+def _sha_host(p):
+    import hashlib
+    return hashlib.sha256(open(p, "rb").read()).hexdigest() if os.path.exists(p) else ""
+
+
+def _sha_in_container(c):
+    o = sh(["docker", "exec", c, "sha256sum", "/etc/caddy/Caddyfile"]).stdout.strip()
+    return o.split()[0] if o else ""
+
+
+def mount_sync(c, fix=True):
+    """Does the CONTAINER see the file we just wrote? (ok, message)
+
+    THE HOP NOTHING WAS CHECKING. /etc/caddy/Caddyfile is a single-FILE bind mount, so the mount
+    is pinned to an INODE. Anything that replaces the file rather than truncating it (`mv`,
+    `sed -i`, a tmp-file-plus-rename, an editor writing a new file) leaves the container reading
+    the OLD inode forever. `caddy reload` then succeeds and loads the STALE bytes, `caddy validate`
+    passes because it validates a freshly-mounted temp copy, and the drift check passes because
+    BOTH of its sides read from inside the container. Three green lights over a dead site.
+    This is the only comparison that spans the mount, so it is the only one that can see it.
+    """
+    if not c:
+        return True, "no container - nothing to compare"
+    h, k = _sha_host(LIVE), _sha_in_container(c)
+    if not k:
+        return True, "could not read the file inside the container - skipping"
+    if h == k:
+        return True, "container reads the current file (%s)" % h[:12]
+    if not fix:
+        return False, "STALE MOUNT: host=%s container=%s" % (h[:12], k[:12])
+    # A restart is the only way to re-resolve a single-file bind mount. It is a few seconds of
+    # blip for EVERY vhost on this box, so it is done only when the hashes actually disagree.
+    sh(["docker", "restart", c])
+    for _ in range(20):
+        time.sleep(1)
+        if sh(["docker", "exec", c, "true"]).returncode == 0:
+            break
+    time.sleep(3)
+    k2 = _sha_in_container(c)
+    if k2 == h:
+        return True, "stale mount repaired by restart (now %s)" % h[:12]
+    return False, ("STILL STALE after restart: host=%s container=%s - the mount source is not %s"
+                   % (h[:12], k2[:12], LIVE))
+
+
 def apply(text, why=""):
     """Validate -> backup -> in-place write -> graceful reload. Rolls back on any failure."""
     c = container()
@@ -198,6 +243,13 @@ def apply(text, why=""):
     before = read(LIVE)
     b = backup("pre")
     write_inplace(LIVE, text)
+    # BEFORE reloading: prove the container can even SEE what we just wrote. Reloading through a
+    # stale mount re-applies the old config and reports success.
+    msync, mmsg = mount_sync(c)
+    print("   mount: %s" % mmsg)
+    if not msync:
+        write_inplace(LIVE, before)
+        return False, "cannot reach the running proxy's config (%s) - NOT applied, %s" % (mmsg, b)
     r = sh(["docker", "exec", c, "caddy", "reload", "--config", "/etc/caddy/Caddyfile"])
     if r.returncode != 0:
         # exec fails while the container is restarting; a stop/start is the only path then.
@@ -369,9 +421,15 @@ def cmd_check(heal):
     port = os.environ.get("CADDY_PORT", "443")
     bound = (":%s" % port) in sh(["bash", "-c", "ss -lnt 2>/dev/null || netstat -lnt"]).stdout
 
-    healthy = (not probs) and vok and st == "running" and bound
+    # THE MOUNT IS PART OF HEALTH. `validate` checks the HOST file and `st` checks the container,
+    # but if the single-file bind mount is pinned to a replaced inode the proxy is serving bytes
+    # neither of those two ever looks at. --heal restarts to re-resolve it; a read-only run
+    # reports it. Never silently: a proxy reading a file nobody can see is the latent bomb.
+    msync, mmsg = mount_sync(c, fix=bool(heal)) if c else (True, "no container")
+
+    healthy = (not probs) and vok and st == "running" and bound and msync
     if healthy:
-        print("OK  live config valid · proxy running · :443 bound")
+        print("OK  live config valid · proxy running · :%s bound · %s" % (port, mmsg))
         return 0
 
     detail = ["CADDY GUARD — the shared proxy config is NOT healthy",
@@ -379,7 +437,8 @@ def cmd_check(heal):
               "container: %s (%s)" % (c or "none", st),
               ":%s bound: %s" % (port, "yes" if bound else "NO"),
               "structural: %s" % ("; ".join(probs) if probs else "ok"),
-              "validate:   %s" % ("ok" if vok else vmsg)]
+              "validate:   %s" % ("ok" if vok else vmsg),
+              "mount:      %s" % mmsg]
     print("\n".join(detail))
 
     if heal and os.path.isdir(FRAG):
@@ -467,6 +526,16 @@ def cmd_drift():
     c = container()
     if not c:
         print("[!] no caddy container - cannot compare"); return 0
+    # HOP 1 - HOST FILE  ->  CONTAINER FILE (across the bind mount).
+    # The first version of this check compared only hops 2 and 3, BOTH of which read from inside
+    # the container. A stale single-file mount makes both sides agree perfectly on the wrong
+    # bytes, so the check reported OK over a dead site. Check the mount first, always.
+    ok, msg = mount_sync(c, fix=False)
+    print(("OK   mount: " if ok else "STALE MOUNT ") + msg)
+    if not ok:
+        print("   the container is reading a REPLACED INODE - `caddy reload` is loading old bytes")
+        print("   fix: caddyguard check --heal (restarts the proxy so the mount re-resolves)")
+        return 1
     disk_raw = sh(["docker", "exec", c, "caddy", "adapt", "--config", "/etc/caddy/Caddyfile"]).stdout
     run_raw = sh(["docker", "exec", c, "wget", "-qO-", "http://127.0.0.1:2019/config/"]).stdout
     if not (run_raw or "").strip():
