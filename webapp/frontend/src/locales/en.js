@@ -72,6 +72,8 @@ export const keyed = {
   "nav.deep": "Deep dive",
   "nav.secure": "Security",
   "nav.demo": "Demo",
+  "nav.more": "More",
+  "nav.privacy": "Privacy",
   "nav.contact": "Contact",
   "nav.open": "Open the app",
   "nav.login": "Log in",

@@ -41,7 +41,10 @@ button{font-family:inherit}
 #hd{position:sticky;top:0;z-index:20;background:rgba(8,16,32,.4);
   backdrop-filter:blur(6px);border-bottom:1px solid transparent;transition:.3s}
 #hd.s{background:rgba(8,16,32,.9);border-color:var(--line)}
-#hd .wrap{display:flex;align-items:center;gap:16px;height:58px}
+#hd .wrap{display:flex;align-items:center;gap:16px;height:58px;flex-wrap:nowrap}
+/* A fixed-height flex row must never wrap: the second line escapes the 58px box and lands
+   on top of the page heading (photographed on the German /experience, 7 Aug 2026). */
+@media (max-width:1000px){#hd nav a:not(.btn){display:none}}
 .brand{font-weight:800;font-size:20px}
 #hd nav{margin-left:auto;display:flex;gap:15px;font-size:13.5px;color:var(--mut);
   flex-wrap:wrap;align-items:center}
@@ -803,3 +806,27 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{padding:5px 11px;border:1px solid var(--bd);border-radius:999px;font-size:13px;
   background:var(--pnl)}
+
+/* ---- MoreMenu (added 7 Aug 2026) ------------------------------------------------------------
+   Collapses Who we are / Contact / Impressum / Privacy behind one trigger. On desktop this makes
+   the header row SHORTER than before those links existed; on a phone it is the only route to
+   those pages, since `#hd nav a:not(.btn)` is hidden and the bottom tab bar is full. */
+.moremenu{position:relative;display:inline-flex}
+.more-t{display:inline-flex;align-items:center;gap:0}
+.more-t .sm{display:none}                       /* glyph is phone-only */
+.more-p{position:absolute;top:calc(100% + 8px);right:0;min-width:190px;z-index:60;
+  display:flex;flex-direction:column;padding:6px;border:1px solid var(--bd);border-radius:12px;
+  background:var(--pnl,#0d1830);box-shadow:0 14px 36px rgba(0,0,0,.45)}
+.more-p a{padding:9px 12px;border-radius:8px;color:var(--mut);font-size:14px;white-space:nowrap}
+.more-p a:hover{background:rgba(255,255,255,.06);color:var(--teal)}
+
+@media (max-width:720px){
+  /* The trigger becomes a glyph: "More"/"Mehr"/"Więcej" is ~46px of a 360px row and the row is
+     already brand + Demo + language + this. Measured, not guessed. */
+  .more-t .lg{display:none}
+  .more-t .sm{display:inline;font-size:18px;line-height:1}
+  .more-t{padding:8px 12px}
+  /* The panel must clear the notch-aware sticky header and stay inside the viewport. */
+  .more-p{right:0;min-width:200px}
+  .more-p a{padding:12px 14px;font-size:15px}   /* >=44px touch target */
+}

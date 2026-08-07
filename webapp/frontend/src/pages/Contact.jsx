@@ -1,6 +1,6 @@
 // /contact — a direct line. Channels come from OPERATOR in ../legal.jsx; a channel with no handle
 // set is rendered as "coming soon" rather than a dead link.
-import { CONTACT, OPERATOR, GROUP, useLegalLang, LangToggle } from "../legal";
+import { CONTACT, OPERATOR, GROUP, useLegalLang } from "../legal";
 import { useT } from "../i18n.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
 
@@ -13,7 +13,7 @@ const ICONS = {
 };
 
 export default function Contact() {
-  const [lang, setLang] = useLegalLang();
+  const [lang] = useLegalLang();
   const t = CONTACT[lang];
   const [, , tk] = useT();
 
@@ -36,7 +36,6 @@ export default function Contact() {
           <h1 className="page-h">{t.h1}</h1>
           <p className="page-sub">{t.sub}</p>
         </div>
-        <LangToggle lang={lang} setLang={setLang} />
       </div>
 
       <p className="legal-lead" style={{ maxWidth: 760 }}>{t.lead}</p>

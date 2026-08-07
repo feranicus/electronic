@@ -8,12 +8,12 @@
 //
 // EVERY FACT HERE COMES FROM legal.jsx (GROUP, PRINCIPAL). Company names, client names, VAT numbers
 // and technology names are proper nouns and are NOT translated; only the surrounding prose is.
-import { GROUP, PRINCIPAL, OPERATOR, useLegalLang, LangToggle } from "../legal";
+import { GROUP, PRINCIPAL, OPERATOR, useLegalLang } from "../legal";
 import { useT } from "../i18n.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
 
 export default function Experience() {
-  const [lang, setLang] = useLegalLang();
+  const [lang] = useLegalLang();
   const [, , t] = useT();
 
   return (
@@ -24,7 +24,6 @@ export default function Experience() {
           <h1 className="page-h">{t("exp.h1")}</h1>
           <p className="page-sub">{t("exp.sub")}</p>
         </div>
-        <LangToggle lang={lang} setLang={setLang} />
       </div>
 
       <p className="legal-lead" style={{ maxWidth: 780 }}>{t("exp.lead")}</p>

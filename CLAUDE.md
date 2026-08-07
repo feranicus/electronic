@@ -2744,3 +2744,38 @@ FOOTNOTE, in fairness to the deploy: production was never actually broken. `LIVE
 so the prod DRIFT step correctly printed *"running config serves exactly what the file says
 (11 hosts, 9 handlers)"*. The system was fine; **the gate was not**, and a gate that cannot be
 trusted when it is green is worth nothing when it is red.
+
+## TWO LANGUAGE BARS, AND A HEADER ROW I DID NOT RE-MEASURE (2026-08-07)
+The operator photographed both: `/contact` showing a language selector in the header AND another
+in the page body, and the German `/experience` with "Zur Anwendung" sitting on top of the "Wer wir
+sind" heading.
+1. **The duplicate control.** Every legal page rendered its own `<LangToggle/>` in `.legal-head`
+   from the days before SiteHeader existed. Once the header carried the site-wide toggle, that
+   second one became a second control for one value — the "two homes" smell, in the UI. Removed
+   from Contact / Impressum / Privacy / Experience; the header's is the only one. NOT removed from
+   NewAssessment: that one lives INSIDE the Art. 13 privacy notice and is a different control in a
+   different context, so the guard is scoped to "a page that renders SiteHeader must not also
+   render a LangToggle" rather than the blunter rule that would have flagged it.
+2. **THE HEADER ROW IS ARITHMETIC AND I ADDED A CONTROL WITHOUT RE-MEASURING.** CLAUDE.md already
+   said, twice, that a fixed-height flex bar must be added up — brand + every control + gaps — in
+   the LONGEST language, because German is systematically longer and overflows first. I added
+   `nav.about` to the nav and shipped. Measured after the fact: German went from 834px to 914px
+   against a `.wrap` inner width of 1136px at full size — and the row has no `flex-wrap:nowrap`,
+   so at a narrower viewport it wrapped, and the second line escaped the fixed 58px box and landed
+   on the page content.
+FIX, one component for both problems: **`MoreMenu`** collapses Who we are / Contact / Impressum /
+Privacy behind a single trigger. On desktop the row gets SHORTER than before those links existed
+(de 914 -> 834). On a phone it is the only route to those pages at all, because
+`#hd nav a:not(.btn){display:none}` hides plain links and the bottom tab bar is already full at six
+items — which is what the operator asked for. The trigger shows the word on a wide screen and a
+glyph on a phone, chosen in CSS so there is no resize listener and no second breakpoint to keep in
+sync (same pattern as the language toggle's Deutsch/DE).
+Also: `flex-wrap:nowrap` on `#hd .wrap` so a fixed-height row can never put a second line over the
+page, and plain nav links now hide below **1000px**, not 720px — there was a band between the two
+where the row could still overflow and nothing measured it.
+GATE: `tools/header_layout.mjs`, wired into ship.py AND the frontend image build. It computes the
+row width in all six languages at three breakpoints against the budget READ FROM THE CSS
+(`.wrap` max-width 1180 minus 22px padding each side), asserts the menu reaches every page, and
+asserts exactly one language toggle exists. Proven by reintroducing both defects and watching each
+fail. RULE, now enforced rather than written down: adding anything to the header means running the
+measurement, and the measurement is part of the build.

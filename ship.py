@@ -791,6 +791,15 @@ def do_tests():
             i18n_ok = False
             print("    !! an api.js call site consumes the wrong response shape")
 
+        # HEADER LAYOUT. A fixed-height flex row is ARITHMETIC: brand + every control + gaps, in
+        # the LONGEST language. Adding "Who we are" to the nav pushed the GERMAN row past the
+        # viewport and "Zur Anwendung" landed on top of the page heading. CLAUDE.md had recorded
+        # that rule twice; I added a control and did not re-measure. This also pins "exactly one
+        # language toggle" - the operator was shown two on every legal page.
+        if run(["node", "tools/header_layout.mjs"], check=False, cwd=_fe) != 0:
+            i18n_ok = False
+            print("    !! the header row overflows, or a duplicate language control is back")
+
         # `run()` here STREAMS and returns an int returncode; it does not capture. The audit prints
         # its own per-language table, so streaming is what we want.
         if run(["node", "tools/i18n_catalogue.mjs", "--check"], check=False, cwd=_fe) != 0:

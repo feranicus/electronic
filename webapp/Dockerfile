@@ -16,7 +16,8 @@ COPY webapp/frontend/ ./
 # `--check` fails if any of the six locales is incomplete; run_i18n_audit.mjs renders 11 pages x 6
 # languages and fails on a raw dotted key in the DOM, a leaked undefined, an over-length tab label,
 # or English function-word residue above 6% (i.e. sentences silently falling back).
-RUN node tools/api_contract.mjs && node tools/i18n_catalogue.mjs --check && node tools/run_i18n_audit.mjs
+RUN node tools/api_contract.mjs && node tools/header_layout.mjs \
+    && node tools/i18n_catalogue.mjs --check && node tools/run_i18n_audit.mjs
 RUN npm run build
 
 # ---- stage 2: FastAPI backend + the deck engine, serving the built SPA ----

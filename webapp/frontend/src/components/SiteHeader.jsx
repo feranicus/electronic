@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { LangToggle } from "../legal";
 import { useT } from "../i18n";
+import MoreMenu from "./MoreMenu.jsx";
 
 /* SiteHeader — the one navigation bar, on every public page.
  *
@@ -28,11 +29,13 @@ export default function SiteHeader({ onLanding = false }) {
         <a href={p("#edge")}>{t("nav.why")}</a>
         <a href={p("#map")}>{t("nav.machine")}</a>
         <a href={p("#secure")}>{t("nav.secure")}</a>
-        <Link to="/experience">{t("nav.about")}</Link>
-        <Link to="/contact">{t("nav.contact")}</Link>
         {/* Demo must be a .btn: the phone rule `#hd nav a:not(.btn){display:none}` hides plain
             links, and this is the one entry point an anonymous visitor can actually use. */}
         {pathname !== "/demo" && <Link className="btn sm ghost" to="/demo">{t("nav.demo")}</Link>}
+        {/* Who we are / Contact / Impressum / Privacy live in here. On desktop that SHORTENS the
+            row (two links -> one trigger); on a phone it is the ONLY way to reach those pages,
+            because plain nav links are hidden and the bottom tab bar is already full. */}
+        <MoreMenu />
         <LangToggle lang={lang} setLang={setLang} />
         <Link className="btn sm" to="/login">{t("nav.open")}</Link>
       </nav>

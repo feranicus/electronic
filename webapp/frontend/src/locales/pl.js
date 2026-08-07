@@ -90,6 +90,8 @@ export const keyed = {
   "nav.deep": "Szczegóły techniczne",
   "nav.secure": "Bezpieczeństwo",
   "nav.demo": "Demo",
+  "nav.more": "Wi\u0119cej",
+  "nav.privacy": "Prywatno\u015b\u0107",
   "nav.contact": "Kontakt",
   "nav.open": "Otwórz aplikację",
   "nav.login": "Zaloguj się",
