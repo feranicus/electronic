@@ -82,14 +82,20 @@ def ssh_script(script, timeout=240):
         # so the reader THREAD raised UnicodeDecodeError, subprocess returned stdout=None, and the
         # caller crashed on `write(None)` far away from the cause. Same family as the CRLF rule
         # already recorded for the deploy scripts: never let the platform decide the bytes.
+        # BINARY IN, DECODE OURSELVES. Text mode on Windows translates every "\n" we write into
+        # "\r\n", so bash was fed a CRLF script and answered `$'\r': command not found`. CLAUDE.md
+        # has carried this exact rule since the deploy scripts hit it ("send LF bytes, never
+        # text=True") and I broke it anyway the moment the payload moved to stdin.
+        # Binary mode also keeps the UTF-8 fix: we decode explicitly instead of letting the
+        # platform's cp1252 locale codec try (and die on the umlauts in the Caddyfile comments).
         r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), cmd],
-                           input=script, capture_output=True, timeout=timeout,
-                           encoding="utf-8", errors="replace")
+                           input=script.encode("utf-8"), capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return "", "TIMEOUT after %ds" % timeout, 124
     except FileNotFoundError:
         return "", "ssh client not found on this machine", 127
-    return (r.stdout or ""), (r.stderr or ""), r.returncode
+    dec = lambda b: (b or b"").decode("utf-8", "replace")   # noqa: E731
+    return dec(r.stdout), dec(r.stderr), r.returncode
 
 
 def sections(out):

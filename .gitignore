@@ -58,3 +58,6 @@ docs/.~lock*
 webapp/frontend/tools/catalogue.json
 webapp/frontend/tools/gap.*.json
 webapp/frontend/ssrtmp/
+
+# Forensic bundles: host inventory, IPs, log excerpts. Diagnostic output, never source.
+forensics-*.txt

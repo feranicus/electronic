@@ -2456,6 +2456,13 @@ diagnosis on a machine where ssh works. FIX: the script goes over **stdin** (`ss
 `input=script`); no length limit, still ONE session.
 RULE: never put a payload in argv. And when an error names a missing *program*, check whether the
 *command line* is the thing that is wrong.
+THEN THE NEXT RUN FAILED ON `$'\r': command not found` — moving the payload to stdin re-exposed the
+CRLF trap this file has warned about since deploy.py: **Python text mode on Windows rewrites every
+`\n` we write into `\r\n`**, so bash got a CRLF script. `input=script.encode("utf-8")` in BINARY
+mode (decoding stdout ourselves) fixes it and keeps the UTF-8 handling. Guarded by a test that
+sends the real payload to `bash -s` as bytes and asserts the umlauts survive.
+`forensics-*.txt` is gitignored — it is diagnostic output (host inventory, IPs, log excerpts),
+never source, and three of them were accidentally committed.
 
 `recover.py` is the one command: it probes from outside, then in ONE ssh session reads uptime,
 disk, memory, who is bound to 80/443, running/stopped/RESTARTING containers, `docker logs` for
