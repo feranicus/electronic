@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import Impressum from "./pages/Impressum.jsx";
 import Contact from "./pages/Contact.jsx";
+import Experience from "./pages/Experience.jsx";
 import Privacy from "./pages/Privacy";
 import Landing from "./pages/Landing.jsx";
 import Demo from "./pages/Demo.jsx";
@@ -16,6 +17,7 @@ export default function App() {
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/impressum" element={<Impressum />} />
       <Route path="/contact" element={<Contact />} />
+      <Route path="/experience" element={<Experience />} />
       <Route path="/app/*" element={<Cabinet />} />
     </Routes>
   );

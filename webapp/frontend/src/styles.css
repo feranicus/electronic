@@ -769,3 +769,37 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .refused p{margin:6px 0;color:#dfe7f5;line-height:1.5}
 .refused-hint{color:#a9b8d4;font-size:14px}
 .refused .btn{margin-top:10px}
+
+/* ---- who we are / experience (added 7 Aug 2026) --------------------------------------------
+   The group cards and the delivery record. Grids are auto-fit so the same markup works from a
+   360px phone to a wide desktop without a second breakpoint to keep in sync. */
+.exp-h2{font-size:22px;margin:30px 0 8px;letter-spacing:-.01em}
+.exp-p{color:var(--mut);line-height:1.65;max-width:820px;margin:0 0 14px}
+.exp-note{color:var(--mut);font-size:13px;line-height:1.55;max-width:820px;margin:12px 0 0;opacity:.85}
+.grp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.grp-card{display:flex;flex-direction:column;gap:3px;padding:14px;border:1px solid var(--bd);
+  border-radius:12px;background:var(--pnl)}
+.grp-flag{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;
+  color:var(--acc);margin-bottom:4px}
+.grp-name{font-weight:650;font-size:15px}
+.grp-juris{color:var(--mut);font-size:13px}
+.grp-role{color:var(--mut);font-size:13px;line-height:1.4;margin-top:2px}
+.grp-reg{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--mut);margin-top:6px;
+  word-break:break-word}
+.grp-city{color:var(--mut);font-size:12px}
+.tribe-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.tribe{padding:14px;border:1px solid var(--bd);border-radius:12px;background:var(--pnl);
+  display:flex;flex-direction:column;gap:6px}
+.tribe-h{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--acc)}
+.tribe-n{line-height:1.5}
+.work-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}
+.work{padding:14px;border:1px solid var(--bd);border-radius:12px;background:var(--pnl);
+  display:flex;flex-direction:column;gap:4px}
+.work-c{font-weight:650}
+.work-s{font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--acc)}
+.work-w{color:var(--mut);font-size:13.5px;line-height:1.5;margin-top:2px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:5px 11px;border:1px solid var(--bd);border-radius:999px;font-size:13px;
+  background:var(--pnl)}

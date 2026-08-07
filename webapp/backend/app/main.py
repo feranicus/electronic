@@ -950,7 +950,7 @@ if (_DIST / "assets").is_dir():
 # Keep this in step with App.jsx's <Route> list. It was already stale (impressum/contact were
 # missing) — harmless only because _is_probe ALSO requires a probe hint, but a whitelist that does
 # not list the real routes is a trap waiting for the first route whose name contains ".git" or "sh".
-_APP_ROUTES = {"", "login", "app", "privacy", "impressum", "contact", "demo"}
+_APP_ROUTES = {"", "login", "app", "privacy", "impressum", "contact", "demo", "experience"}
 _PROBE_HINT = (".php", ".asp", ".aspx", ".jsp", ".cgi", ".env", ".git", ".sql", ".bak", ".old",
                ".zip", ".tar", ".gz", ".yml", ".yaml", ".ini", ".conf", ".sh", ".py", ".rb",
                ".db", ".sqlite", ".pem", ".key", ".log", ".swp", ".htpasswd",

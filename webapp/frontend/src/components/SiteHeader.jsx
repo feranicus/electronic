@@ -28,6 +28,7 @@ export default function SiteHeader({ onLanding = false }) {
         <a href={p("#edge")}>{t("nav.why")}</a>
         <a href={p("#map")}>{t("nav.machine")}</a>
         <a href={p("#secure")}>{t("nav.secure")}</a>
+        <Link to="/experience">{t("nav.about")}</Link>
         <Link to="/contact">{t("nav.contact")}</Link>
         {/* Demo must be a .btn: the phone rule `#hd nav a:not(.btn){display:none}` hides plain
             links, and this is the one entry point an anonymous visitor can actually use. */}

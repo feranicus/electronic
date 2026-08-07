@@ -908,6 +908,9 @@ def do_tests():
             (os.path.join(_fe, "src", "pages", "Landing.jsx"), "js"),
             (os.path.join(_fe, "src", "pages", "Login.jsx"), "js"),
             (os.path.join(_fe, "src", "pages", "Demo.jsx"), "js"),
+            (os.path.join(_fe, "src", "pages", "Experience.jsx"), "js"),
+            (os.path.join(_fe, "src", "pages", "Contact.jsx"), "js"),
+            (os.path.join(_fe, "src", "pages", "Impressum.jsx"), "js"),
             (os.path.join(_fe, "src", "legal.jsx"), "js"),
             (os.path.join(_fe, "src", "components", "Sidebar.jsx"), "js"),
             (os.path.join(_fe, "index.html"), "html"),                    # browser tab
@@ -920,13 +923,26 @@ def do_tests():
         # Infrastructure identifiers legitimately keep the old name (log paths, the auth-store key,
         # the shared auth module, container/volume names). They are never shown to a user.
         _INFRA = re.compile(r"/var/log/colt|colt_auth|COLT_USER|colt_events|colt-|colttechbot")
+        # ONE DELIBERATE EXCEPTION, NARROWLY SCOPED: the principal's EMPLOYMENT HISTORY on
+        # /experience names Huawei, Colt and Cogent as carriers he has worked for. That is
+        # biography — the same line appears on the operator's own approved capability deck — and it
+        # is categorically different from branding the PRODUCT as Colt, which is what this gate
+        # exists to prevent. The exception matches only the exact tribes-array line in legal.jsx;
+        # a second occurrence anywhere, including elsewhere in that file, still fails.
+        _BIO = re.compile(r'names:\s*\["Huawei",\s*"Colt",\s*"Cogent"\]')
         for _p, _kind in _SURFACES:
             if not os.path.exists(_p):
                 continue
             _src = open(_p, encoding="utf-8").read()
             _vis = (re.sub(r"#[^\n]*", "", _src) if _kind == "py"
                     else re.sub(r"/\*.*?\*/", "", re.sub(r"//[^\n]*", "", _src), flags=re.S))
-            _bad = [h for h in re.findall(r"(?i).{0,40}colt.{0,40}", _vis) if not _INFRA.search(h)]
+            _bad = [h for h in re.findall(r"(?i).{0,40}colt.{0,40}", _vis)
+                    if not _INFRA.search(h) and not _BIO.search(h)]
+            # Prove the exception cannot widen: legal.jsx may carry the employer name EXACTLY once.
+            if os.path.basename(_p) == "legal.jsx" and len(re.findall(r"(?i)colt", _vis)) != 1:
+                brand_ok = False
+                print("    !! legal.jsx names 'Colt' %d times - the bio exception allows exactly 1"
+                      % len(re.findall(r"(?i)colt", _vis)))
             if _bad:
                 brand_ok = False
                 print("    !! %s still shows 'Colt': %s"
@@ -938,6 +954,12 @@ def do_tests():
             print("    !! the OTP email subject still says Colt")
     except Exception as _e:
         brand_ok = False; print("    brand gate error: %r" % _e)
+    _lg = open(os.path.join(HERE, "webapp", "frontend", "src", "legal.jsx"), encoding="utf-8").read()
+    _noaddr = re.findall(r'name: "([^"]+)"[^}]*?street: ""', _lg)
+    if _noaddr:
+        print("  [i] group entities with no registered street address (pages omit it, no invented "
+              "data): %s" % ", ".join(_noaddr))
+
     print("  brand: nothing customer-facing says 'Colt' "
           "(6 decks EN+DE · web · PWA shell · 2 Telegram bots · OTP email): %s"
           % ("OK" if brand_ok else "BROKEN"))

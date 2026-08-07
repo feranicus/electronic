@@ -21,6 +21,7 @@ import { tr } from "../src/i18n.jsx";
 import Landing from "../src/pages/Landing.jsx";
 import Demo from "../src/pages/Demo.jsx";
 import Contact from "../src/pages/Contact.jsx";
+import Experience from "../src/pages/Experience.jsx";
 import Privacy from "../src/pages/Privacy.jsx";
 import Impressum from "../src/pages/Impressum.jsx";
 import Login from "../src/pages/Login.jsx";
@@ -34,7 +35,7 @@ import Assistant from "../src/pages/Assistant.jsx";
 import History from "../src/pages/History.jsx";
 import Sidebar from "../src/components/Sidebar.jsx";
 
-const PAGES = { Landing, Demo, Contact, Privacy, Impressum, Login,
+const PAGES = { Landing, Demo, Contact, Experience, Privacy, Impressum, Login,
                 NewAssessment, Compliance, Assistant, History, Sidebar };
 const CODES = LANGS.map((l) => l.code);
 let fail = 0;

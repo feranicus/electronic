@@ -1,6 +1,7 @@
 // /contact — a direct line. Channels come from OPERATOR in ../legal.jsx; a channel with no handle
 // set is rendered as "coming soon" rather than a dead link.
-import { CONTACT, OPERATOR, useLegalLang, LangToggle } from "../legal";
+import { CONTACT, OPERATOR, GROUP, useLegalLang, LangToggle } from "../legal";
+import { useT } from "../i18n.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
 
 const ICONS = {
@@ -14,6 +15,7 @@ const ICONS = {
 export default function Contact() {
   const [lang, setLang] = useLegalLang();
   const t = CONTACT[lang];
+  const [, , tk] = useT();
 
   const cards = [
     // WhatsApp first: it is the channel with the shortest time-to-reply, and the one the LinkedIn
@@ -57,13 +59,33 @@ export default function Contact() {
         ))}
       </div>
 
+      {/* WHO WE ARE. A buyer who cannot see the counterparty looks it up and stops the
+          conversation - publishing the registrations is the answer, not hiding them. */}
+      <div className="panel" style={{ marginTop: 18 }}>
+        <h2 style={{ marginTop: 0, fontSize: 20 }}>{tk("grp.h")}</h2>
+        <p style={{ color: "var(--mut)", margin: "0 0 14px", lineHeight: 1.6 }}>{tk("grp.p")}</p>
+        <div className="grp-grid">
+          {GROUP.entities.map((e) => (
+            <div className="grp-card" key={e.id}>
+              <span className="grp-flag">{e.flag}</span>
+              <span className="grp-name">{e.name}</span>
+              <span className="grp-juris">{tk(e.jurisdictionKey)}</span>
+              <span className="grp-reg">{e.reg}</span>
+            </div>
+          ))}
+        </div>
+        <p style={{ margin: "14px 0 0" }}>
+          <a className="btn sm ghost" href="/experience">{tk("exp.h1")} &rarr;</a>
+        </p>
+      </div>
+
       <div className="panel" style={{ marginTop: 18 }}>
         <h2 style={{ marginTop: 0, fontSize: 20 }}>{t.access}</h2>
         <p style={{ color: "var(--mut)", margin: 0, lineHeight: 1.6 }}>{t.accessD}</p>
       </div>
 
       <p className="legal-foot" style={{ marginTop: 16 }}>
-        {t.legal}<a href="/impressum">Impressum</a> &middot; <a href="/privacy">Datenschutz / Privacy</a>
+        {t.legal}<a href="/experience">{tk("exp.h1")}</a> &middot; <a href="/impressum">Impressum</a> &middot; <a href="/privacy">Datenschutz / Privacy</a>
       </p>
     </div>
   );

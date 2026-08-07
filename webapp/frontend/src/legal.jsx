@@ -209,6 +209,71 @@ export const OPERATOR = {
   whatsappLabel: "+351 939 994 642",
   github:   "https://github.com/feranicus",
 };
+// ---------------------------------------------------------------- WHO WE ARE (the group)
+// ONE SOURCE OF TRUTH for the corporate facts, used by /contact, /impressum, /privacy and
+// /experience. Transcribed from the two S4biz capability decks (slides "ONE PRINCIPAL. FOUR FLAGS."
+// and "REGISTERED WHERE IT MATTERS.") — these are registration facts, not marketing copy, so they
+// are NOT translated. A company name and a VAT number are the same in every language, and a
+// translated registration number would be a defect.
+//
+// `street` is deliberately empty where we do not hold a verified registered address. The pages
+// render what exists and omit what does not; ship.py prints a NOTICE (not a failure) listing any
+// entity without one, so the gap is visible without inventing an address onto a legal page.
+export const GROUP = {
+  // The CONTRACTING and DATA-CONTROLLER entity for cybergod.ai. Operator's decision, 7 Aug 2026:
+  // Stars4business OÜ, consistent with the capability decks and the partner contracts.
+  controllerId: "ee",
+  entities: [
+    { id: "ee", name: "Stars4business OÜ", jurisdictionKey: "grp.jEe", flag: "EE", type: "OÜ",
+      city: "Tallinn", street: "", reg: "VAT EE102156878", roleKey: "grp.roleEe" },
+    { id: "de", name: "S4biz UG (haftungsbeschränkt)", jurisdictionKey: "grp.jDe", flag: "DE", type: "UG",
+      city: "Pinneberg", street: "", reg: "USt-IdNr. DE361822318", roleKey: "grp.roleDe" },
+    { id: "pt", name: "S4BIZ Unipessoal Lda", jurisdictionKey: "grp.jPt", flag: "PT",
+      type: "Sociedade Unipessoal por Quotas",
+      city: "Lisboa", street: "", reg: "NIF 518007596", roleKey: "grp.rolePt" },
+    { id: "us", name: "CyberGod LLC", jurisdictionKey: "grp.jUs", flag: "US", type: "LLC",
+      city: "Lewes, DE", street: "", reg: "EIN on file · registered agent HBS", roleKey: "grp.roleUs" },
+  ],
+};
+export const controller = () => GROUP.entities.find((e) => e.id === GROUP.controllerId);
+export const entitiesMissingAddress = () => GROUP.entities.filter((e) => !e.street);
+
+// ---------------------------------------------------------------- the principal
+// Employment history and delivered engagements, from the S4biz decks and the competence brief.
+// Company and client names are proper nouns and are never translated.
+export const PRINCIPAL = {
+  name: "Evgeny \u201cJev\u201d Vainshtein",
+  roleKey: "exp.role",
+  since: 2001,
+  // The three tribes. `k` is a lookup key for the heading; the names are facts.
+  tribes: [
+    { k: "exp.t1", names: ["Cognyte", "Cyberbit (Elbit Systems)", "Intellexa"] },
+    { k: "exp.t2", names: ["AWS", "Red Hat", "Canonical", "NetApp"] },
+    // Employment history. Colt appears here as a FORMER/CURRENT EMPLOYER, exactly as it does on the
+    // operator's own approved capability deck — that is biography, not product branding. ship.py's
+    // brand gate allows the name ONLY inside this array and nowhere else on the site.
+    { k: "exp.t3", names: ["Huawei", "Colt", "Cogent"] },
+  ],
+  // Delivered engagements. Figures are as published in the operator's own competence brief.
+  work: [
+    { client: "Telefónica",       sector: "exp.sTelco",  what: "exp.wTelefonica" },
+    { client: "Deutsche Telekom", sector: "exp.sTelco",  what: "exp.wDt" },
+    { client: "Volkswagen",       sector: "exp.sAuto",   what: "exp.wVw" },
+    { client: "European bank",    sector: "exp.sBank",   what: "exp.wBank" },
+    { client: "Cogent",           sector: "exp.sCarrier", what: "exp.wCogent" },
+    { client: "Luxair",           sector: "exp.sAvia",   what: "exp.wLuxair" },
+    { client: "Israel MoD · ELTA", sector: "exp.sDef",   what: "exp.wElta" },
+    { client: "E.ON",             sector: "exp.sEnergy", what: "exp.wEon" },
+    { client: "AON",              sector: "exp.sIns",    what: "exp.wAon" },
+  ],
+  langs: ["Python", "Kotlin", "Rust", "Java", "C#", "C++", "Go", "JavaScript"],
+  oss: [
+    { name: "Perseus Shield (Android)", href: "https://github.com/cybergodai/Perseus_Sheild_Android" },
+    { name: "Cybergod", href: "https://github.com/cybergodai/cybergodai" },
+    { name: "feranicus", href: "https://github.com/feranicus" },
+  ],
+};
+
 export const operatorReady = () =>
   ![OPERATOR.name, OPERATOR.street, OPERATOR.zipCity, OPERATOR.phone]
     .some((v) => String(v).startsWith("TODO"));
@@ -365,8 +430,8 @@ const PRIVACY_SRC = {
       "Regelmäßige, automatisierte Sicherheits-Updates des Servers.",
     ],
     s6: "6. Verantwortlicher",
-    s6p: (<>Verantwortlicher im Sinne der DSGVO ist <strong>{OPERATOR.name}</strong>,{" "}
-          {OPERATOR.street}, {OPERATOR.zipCity}, {OPERATOR.country} —{" "}
+    s6p: (<>Verantwortlicher im Sinne der DSGVO ist <strong>{controller().name}</strong>,{" "}
+          {controller().city}, {controller().jurisdiction} ({controller().reg}) —{" "}
           <a href={"mailto:" + OPERATOR.email}>{OPERATOR.email}</a>. Vollständige Angaben im{" "}
           <a href="/impressum">Impressum</a>. Interne Nutzung für den Vertrieb; die erzeugten
           Dokumente sind internes Vertriebsmaterial. Sie haben das Recht, sich bei einer
@@ -443,8 +508,8 @@ const PRIVACY_SRC = {
       "Regular, automated security patching of the server.",
     ],
     s6: "6. Controller",
-    s6p: (<>The controller under the GDPR is <strong>{OPERATOR.name}</strong>, {OPERATOR.street},{" "}
-          {OPERATOR.zipCity}, {OPERATOR.country} —{" "}
+    s6p: (<>The controller under the GDPR is <strong>{controller().name}</strong>,{" "}
+          {controller().city}, {controller().jurisdiction} ({controller().reg}) —{" "}
           <a href={"mailto:" + OPERATOR.email}>{OPERATOR.email}</a>. Full details in the{" "}
           <a href="/impressum">legal notice</a>. Use in sales and pre-sales; the generated
           documents are internal sales material. You have the right to lodge a complaint with a data
