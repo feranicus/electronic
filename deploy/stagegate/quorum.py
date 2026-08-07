@@ -56,8 +56,16 @@ reverse proxy, so a bad promotion takes every site down at once.
 Answer ONLY from the evidence below. Never invent a check, a container name, a version or a number
 that is not present. If the evidence does not cover something, say so plainly.
 
+GOVERNANCE — this is the part that saves the operator a dozen round-trips. For every failed check,
+say what you believe the ROOT CAUSE is and name the REPO FILE that should change. Distinguish
+clearly between "the system under test is broken" and "the CHECK ITSELF is broken" — a check whose
+detail contradicts its own verdict is a defect in the check, and saying so is more valuable than
+restating the failure. If a check's evidence is insufficient to tell, say that instead of guessing.
+
 Return STRICT JSON, no prose outside it:
 {"verdict":"go"|"no-go"|"unsure",
+ "diagnosis":"<1-2 sentences: the most likely ROOT CAUSE, or '' if the evidence does not support one>",
+ "proposed_fix":"<the concrete change, naming a file/function where you can, or '' if unsure>",
  "reasons":["<= 3 short factual sentences, each citing a specific check by name>"],
  "risks":["<= 3 concrete risks this change carries into production, or [] if none are evidenced>"]}
 
@@ -75,8 +83,16 @@ proxy, since a fault there takes every domain down together.
 Answer ONLY from the evidence. Do not invent findings — "no gap evidenced" is a valid and useful
 answer, and is much better than a plausible-sounding guess.
 
+GOVERNANCE — this is the part that saves the operator a dozen round-trips. For every failed check,
+say what you believe the ROOT CAUSE is and name the REPO FILE that should change. Distinguish
+clearly between "the system under test is broken" and "the CHECK ITSELF is broken" — a check whose
+detail contradicts its own verdict is a defect in the check, and saying so is more valuable than
+restating the failure. If a check's evidence is insufficient to tell, say that instead of guessing.
+
 Return STRICT JSON, no prose outside it:
 {"verdict":"go"|"no-go"|"unsure",
+ "diagnosis":"<1-2 sentences: the most likely ROOT CAUSE, or '' if the evidence does not support one>",
+ "proposed_fix":"<the concrete change, naming a file/function where you can, or '' if unsure>",
  "reasons":["<= 3 sentences on what the evidence does and does not prove>"],
  "risks":["<= 3 gaps in the CHECKS themselves, or [] if none"]}
 
@@ -101,6 +117,8 @@ def _ask(model, prompt):
         return {"model": model, "verdict": v,
                 "reasons": clip(j.get("reasons") or []),
                 "risks": clip(j.get("risks") or []),
+                "diagnosis": str(j.get("diagnosis") or "")[:500],
+                "proposed_fix": str(j.get("proposed_fix") or "")[:500],
                 "tokens_out": (usage or {}).get("completion_tokens", 0)}
     except Exception as e:
         # A reviewer that 429s or times out is DATA, not a failure of the release. Recorded so the
@@ -135,6 +153,17 @@ def main():
     if failed:
         lines += ["", "FAILED CHECKS:"] + ["  x %s — %s" % (c.get("name"), str(c.get("detail"))[:160])
                                            for c in failed]
+    # THE GOVERNANCE SECTION, FIRST — this is what the operator acts on. Putting the four
+    # diagnoses together makes agreement (and disagreement) visible at a glance, which is worth
+    # far more than four separately-formatted opinions further down.
+    diag = [r for r in answered if r.get("diagnosis")]
+    if failed and diag:
+        lines += ["", "WHAT THE PANEL THINKS IS ACTUALLY WRONG:"]
+        for r in diag:
+            lines.append("  [%s] %s" % (r["model"], r["diagnosis"]))
+            if r.get("proposed_fix"):
+                lines.append("        -> fix: %s" % r["proposed_fix"])
+
     lines += ["", "REVIEW PANEL (%d of 4 answered):" % len(answered)]
     for r in reviews:
         lines.append("  [%s] %-18s %s" % (r["role"][:7], r["model"], r["verdict"].upper()))

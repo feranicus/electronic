@@ -136,9 +136,13 @@ B=$(curl -s -A "curl/8.0" -o /dev/null -w '%{http_code}' --max-time 15 http://12
 # COMMITTED snippet, so a change to deploy/caddy/cybergod.caddy is validated on a real Caddy —
 # and survives a real reboot — before production's shared proxy ever sees it.
 if [ -f /opt/caddyguard/agent.py ] && docker ps --format '{{.Names}}' | grep -qi caddy; then
-  CADDYFILE=/opt/staging-caddy/Caddyfile python3 /opt/caddyguard/agent.py check >/tmp/cg.out 2>&1
-  [ $? -eq 0 ] && chk proxy_config yes "caddyguard: staging proxy config valid + loaded" \
-                || chk proxy_config no "caddyguard: $(grep -v 'telegram' /tmp/cg.out | tail -2 | tr '\n' ' ')"
+  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
+    python3 /opt/caddyguard/agent.py check >/tmp/cg.out 2>&1
+  # NEVER truncate a failure detail to the last 2 lines: the line that names the cause is usually
+  # not the last one. Show the whole diagnosis (minus the alerting noise) — that omission turned a
+  # port mismatch into "FAIL ... structural: ok validate: ok", which reads as a contradiction.
+  [ $? -eq 0 ] && chk proxy_config yes "caddyguard: staging proxy config valid + loaded on :8080" \
+                || chk proxy_config no "caddyguard: $(grep -v -i 'telegram' /tmp/cg.out | tr '\n' ' | ')"
   P=$(curl -s -A "$UA" -o /dev/null -w '%{http_code}' --max-time 15 -H 'Host: cybergod.ai' http://127.0.0.1:8080/api/me)
   [ "$P" = "401" ] && chk proxy_routes yes "proxy -> colt-web -> 401 (the production path)" \
                    || chk proxy_routes no "through the proxy /api/me -> $P (want 401)"

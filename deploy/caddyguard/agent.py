@@ -344,7 +344,12 @@ def cmd_check(heal):
     probs = structural(live)
     vok, vmsg = (True, "") if probs else validate(live, c)
     st = sh(["docker", "inspect", "-f", "{{.State.Status}}", c]).stdout.strip() if c else "missing"
-    bound = ":443" in sh(["bash", "-c", "ss -lnt 2>/dev/null || netstat -lnt"]).stdout
+    # THE PORT IS CONFIGURABLE. Hardcoding :443 made this check FAIL on staging, where the twin's
+    # caddy listens on :8080 — and the failure detail was truncated right before the line that
+    # said so, producing "FAIL ... structural: ok validate: ok". An auditor model caught it:
+    # "the ok field is false both times, indicating a parsing or reporting bug in the check itself".
+    port = os.environ.get("CADDY_PORT", "443")
+    bound = (":%s" % port) in sh(["bash", "-c", "ss -lnt 2>/dev/null || netstat -lnt"]).stdout
 
     healthy = (not probs) and vok and st == "running" and bound
     if healthy:
@@ -354,7 +359,7 @@ def cmd_check(heal):
     detail = ["CADDY GUARD — the shared proxy config is NOT healthy",
               "file:      %s" % LIVE,
               "container: %s (%s)" % (c or "none", st),
-              ":443 bound: %s" % ("yes" if bound else "NO"),
+              ":%s bound: %s" % (port, "yes" if bound else "NO"),
               "structural: %s" % ("; ".join(probs) if probs else "ok"),
               "validate:   %s" % ("ok" if vok else vmsg)]
     print("\n".join(detail))
