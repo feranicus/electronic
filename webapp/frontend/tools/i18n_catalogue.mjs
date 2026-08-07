@@ -72,6 +72,46 @@ for (const code of LOCALES) {
   const orphan = Object.keys(L.byEn || {}).filter((s) => !byEn.has(s) && !byEn.has(s + " ") && !byEn.has(" " + s));
   if (orphan.length) console.log(`      (${orphan.length} orphan by-English entries no longer rendered)`);
 }
+// ---- 5. two defects the operator found on the live site, 7 Aug 2026 ---------------------------
+//
+// (a) HTML ENTITIES. JSX parses entities in LITERAL text (<div>&mdash;</div>), but a string that
+//     reaches the DOM through t()/tx() is a JS string and React ESCAPES it, so "&rsquo;" is
+//     printed verbatim. The live page read "Compliance deadlines live in somebody&rsquo;s inbox."
+//     It was in the source AND in five locale files, because the English source string is the KEY.
+//
+// (b) ONE STRING, ONE KEY SPACE. The three FAQ cards rendered TWICE on the landing page — once
+//     keyed (q3.h + faq.1q..3a) and once again as by-English literals under "Fair questions".
+//     Identical content, two key spaces. That is the exact disease i18n.jsx's single dictionary
+//     exists to prevent, and it is visible to every visitor as a duplicated block.
+const ENTITY = /&(?:[a-zA-Z][a-zA-Z0-9]{1,7}|#\d{2,5}|#[xX][0-9a-fA-F]{2,4});/;
+const entityHits = [];
+for (const [k, v] of Object.entries(out.keyed)) if (ENTITY.test(v)) entityHits.push(`keyed ${k}: ${v}`);
+for (const s0 of out.byEn) if (ENTITY.test(s0)) entityHits.push(`byEn: ${s0}`);
+for (const code of LOCALES) {
+  const L = await load(code);
+  for (const [k, v] of Object.entries(L.keyed || {})) if (typeof v === "string" && ENTITY.test(v)) entityHits.push(`${code} keyed ${k}: ${v}`);
+  for (const [k, v] of Object.entries(L.byEn || {})) {
+    if (ENTITY.test(k)) entityHits.push(`${code} byEn KEY: ${k}`);
+    if (typeof v === "string" && ENTITY.test(v)) entityHits.push(`${code} byEn value: ${v}`);
+  }
+}
+if (entityHits.length) {
+  bad++;
+  console.error(`\n[FAIL] ${entityHits.length} HTML entit(ies) in translated strings — React escapes these, so they reach the screen verbatim. Write the real character:`);
+  for (const h of entityHits.slice(0, 12)) console.error("       " + h);
+}
+
+const keyedValues = new Set(Object.values(out.keyed));
+// Only PROSE. A short label ("Impressum", "Open the app") legitimately exists as a nav key and as
+// literal text elsewhere; that is reuse, not duplication. A sentence in both spaces means the same
+// block is rendered twice — which is what the FAQ cards were doing (100+ char bodies).
+const bothSpaces = out.byEn.filter((s0) => s0.length >= 40 && keyedValues.has(s0));
+if (bothSpaces.length) {
+  bad++;
+  console.error(`\n[FAIL] ${bothSpaces.length} string(s) live in BOTH key spaces — the same content is almost certainly rendered twice on the page:`);
+  for (const h of bothSpaces.slice(0, 8)) console.error("       " + JSON.stringify(h.slice(0, 90)));
+}
+
 if (process.argv.includes("--check") && bad) {
   console.error(`\n[FAIL] ${bad} locale(s) incomplete — see tools/gap.*.json`);
   process.exit(1);

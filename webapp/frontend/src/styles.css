@@ -807,15 +807,17 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .chip{padding:5px 11px;border:1px solid var(--bd);border-radius:999px;font-size:13px;
   background:var(--pnl)}
 
-/* ---- MoreMenu (added 7 Aug 2026, restyled 7 Aug) --------------------------------------------
-   Collapses Who we are / Contact / Impressum / Privacy behind one trigger. On desktop this makes
-   the header row SHORTER than before those links existed; on a phone it is the only route to
-   those pages, since `#hd nav a:not(.btn)` is hidden and the bottom tab bar is full.
+/* ---- MoreMenu (added 7 Aug 2026; portalled 7 Aug after the Android incident) ----------------
+   The PANEL is rendered through a portal to <body>, so it is styled `fixed` and owns its own
+   compositing layer. It used to be `absolute` inside #hd — which is `sticky` WITH `z-index:20`
+   and therefore a STACKING CONTEXT, so the panel's z-index:60 only ever competed with its
+   siblings while the whole header competed at 20. On Android the <video> below the header is
+   promoted to a hardware overlay and painted straight over it: the menu opened and was invisible.
+   Nothing here may reintroduce an ancestor stacking context or an overflow clip.
 
-   IT IS NOT A .btn. The first version reused `.btn sm ghost`, which meant a 1.5px border, a
-   999px radius and a 34px min-height wrapped around a ~6px glyph -> a hollow circle sitting
-   beside the language pill, reading as a broken element rather than a menu. These rules mirror
-   `.lang-trigger` field for field so the two controls are visibly siblings. */
+   The TRIGGER is not a .btn. `.btn.sm.ghost` meant a 999px radius and a 34px min-height wrapped
+   around a ~6px glyph = a hollow circle. It mirrors `.lang-trigger` instead, and it keeps its
+   text label on a phone: the label is what makes it read as a menu rather than a dot. */
 .moremenu{position:relative;display:inline-flex}
 .more-t{display:inline-flex;align-items:center;gap:6px;background:transparent;
   border:1px solid rgba(255,255,255,.18);border-radius:999px;color:inherit;font:inherit;
@@ -826,22 +828,31 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .more-i{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.9;
   stroke-linecap:round;fill:none;opacity:.85}
 .more-t:hover .more-i,.more-t[aria-expanded="true"] .more-i{opacity:1;stroke:var(--teal,#00B2A9)}
-.more-p{position:absolute;top:calc(100% + 6px);right:0;min-width:190px;z-index:60;
-  display:flex;flex-direction:column;padding:5px;border:1px solid rgba(255,255,255,.14);
-  border-radius:12px;background:#0d1a30;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+
+/* Backdrop: a real element receives the outside tap. A document listener attached in an effect
+   races the same gesture that opened the menu and has to be reasoned about per platform. */
+.more-bd{position:fixed;inset:0;z-index:200;background:transparent}
+.more-p{position:fixed;z-index:201;min-width:200px;display:flex;flex-direction:column;padding:5px;
+  border:1px solid rgba(255,255,255,.14);border-radius:12px;background:#0d1a30;
+  box-shadow:0 18px 44px rgba(0,0,0,.5);transform:translateZ(0)}
 .more-p a{padding:8px 10px;border-radius:8px;color:#e8eefb;font-size:13px;white-space:nowrap;
   min-height:38px;display:flex;align-items:center}
 .more-p a:hover{background:rgba(255,255,255,.06);color:var(--teal,#00B2A9)}
 
 @media (max-width:720px){
-  /* Icon only. "More"/"Mehr"/"Więcej" is ~46px of a 360px row that already carries the brand and
-     the language pill — measured, not guessed (tools/header_layout.mjs). The box stays a rounded
-     rectangle the same height as the language pill, never a circle. */
-  .more-t .lg{display:none}
-  .more-t{padding:7px 11px;min-height:34px;gap:0}
-  .more-i{width:17px;height:17px}
-  .more-p{min-width:196px;padding:6px}
-  .more-p a{min-height:44px;font-size:14.5px;padding:10px 12px}   /* >=44px touch target */
+  /* Keep the label. Icon-only at a 999px radius is a circle, which is what kept getting reported
+     as broken; "More" is 4 characters and the row is measured at 360px by header_layout.mjs. */
+  .more-t{padding:7px 12px;min-height:34px;font-size:12.5px}
+  .more-i{width:16px;height:16px}
+  /* A bottom sheet, not a dropdown: thumb-reachable, full width, impossible to clip, and it
+     cannot be mistaken for a stray dot near the top of the screen. */
+  .more-bd{background:rgba(3,7,15,.6);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+  .more-p.sheet{top:auto;right:12px;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));
+    min-width:0;padding:8px;border-radius:18px;gap:2px}
+  .more-p.sheet a{min-height:52px;font-size:15.5px;padding:12px 14px;border-radius:12px;
+    justify-content:center;font-weight:600}
+  .more-grab{width:38px;height:4px;border-radius:999px;background:rgba(255,255,255,.22);
+    margin:2px auto 8px}
 }
 
 /* ---- AI consensus section (added 7 Aug 2026) ------------------------------------------------ */

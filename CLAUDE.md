@@ -2909,3 +2909,69 @@ config, so the archive is repository bytes on every OS.
 Also: the test now DIAGNOSES this case by name ("the pack has CRLF, HEAD has LF — pass
 -c core.autocrlf=false") instead of printing a byte index. A failure message that does not name the
 mechanism costs the next person the same hour it cost me.
+
+## A z-index INSIDE a stacking context is not a z-index on the page (2026-08-07, filmed)
+The operator filmed the phone: eight taps on the More button, no menu, ever. It worked perfectly
+on desktop, which made it look like a touch-event problem. It was not. Measured on the live page:
+    .more-p   z-index 60   trapped: true       <- sealed inside #hd
+    #hd       z-index 20   position: sticky    <- sticky + z-index = a STACKING CONTEXT
+    <video>   top: 123px                       <- exactly where the panel drops
+`.more-p`'s 60 only ordered it against its SIBLINGS; against the page the whole header competed at
+20. And Android promotes a `<video>` to a hardware overlay layer, which paints above
+non-composited content regardless of paint order — so on /demo, where the video starts immediately
+below the header, the panel opened UNDERNEATH it every time. On desktop the video is
+`position:static` and loses to any positioned element, so the identical code was visibly fine. The
+bug needed BOTH a stacking context and a composited overlay, which is why it only ever appeared on
+the one page, on the one platform.
+FIX: the panel renders through a **portal to `<body>`**, `position:fixed`, on its own layer — no
+ancestor stacking context, no ancestor clip. Outside-click is a real `.more-bd` BACKDROP element,
+not a `document` mousedown listener attached in an effect: a listener races the very gesture that
+opened the menu and has to be reasoned about per platform, an element simply receives the tap.
+RULE: a dropdown/popover anchored inside a sticky or transformed ancestor must be portalled. And
+`z-index: 60` means nothing until you know which stacking context it is in.
+
+## MEASURE THE ARTIFACT, NOT YOUR OWN NUMBER (the same button, same day)
+I had "fixed" this button once and asserted `ratio 1.21 — a pill, not a circle`. The video shows a
+circle. A 39x34 box with `border-radius:999px` IS a circle to the eye; I had invented a threshold
+that let my own change pass. The label is what makes it read as a menu, so the label is now shown
+at EVERY breakpoint and `header_layout.mjs` pays for it in the 360px arithmetic (worst locale: pl,
+337px of 360px) instead of hiding it and calling the result a pill.
+Also: three MEASUREMENT errors of mine on the way to the diagnosis, all worth remembering —
+  * reading `aria-expanded` synchronously after `.click()` shows the STALE value (React batches),
+    so my first two probes "proved" the button was dead when it was working;
+  * `resize_window` moved the OS window, not the CSS viewport (`innerWidth` stayed 1280), so the
+    "phone" run measured desktop;
+  * the operator's VIDEO was the decisive evidence and I reached for it fourth instead of first.
+    `ffmpeg -vf fps=2,crop=...,tile=` turns a 5-second clip into a contact sheet you can read.
+
+## An entity in a t()/tx() string reaches the screen verbatim (2026-08-07)
+The live page read "Compliance deadlines live in somebody&rsquo;s inbox." JSX parses entities in
+LITERAL text (`<div>&mdash;</div>`), but a string that arrives through `t()`/`tx()` is a JS string
+and React ESCAPES it. The English source string is also the KEY, so the same broken text sat in
+five locale files. The new gate in `i18n_catalogue.mjs` found **20 more instances nobody had
+reported** — "Swipe the map sideways to explore &rarr;" and the FRA1 hosting line, in every
+language. Fixing only inside `tx("...")` arguments matters: a bare `&mdash;` in JSX literal text is
+correct and a blanket replace would have broken it.
+
+## ONE STRING, ONE KEY SPACE — the duplicated block on the landing page (2026-08-07)
+The three FAQ cards rendered TWICE: once keyed (`q3.h` + `faq.1q..3a`, translated in all six
+locales) and once again as by-English literals under "Fair questions". Identical content, two key
+spaces — the exact disease the single dictionary exists to prevent, and every visitor could see it.
+GATE: a string that is both a keyed VALUE and a by-English KEY now fails the catalogue. Scoped to
+prose (>=40 chars) after the first cut flagged "Impressum" and "Open the app" — a short label
+legitimately appears as a nav key AND as literal text elsewhere; that is reuse, not duplication.
+A gate tuned so tightly that it cries wolf gets switched off, which is worse than not having it.
+
+## A `finally` cannot survive SIGKILL — self-heal instead (2026-08-07)
+`test_deploy_immutability` appends a marker to a REAL tracked file and restores it in a `finally`.
+Two runs were killed on timeout mid-test and left `// TRANSIENT EDIT ...` sitting in Landing.jsx —
+which then made the NEXT run fail for a completely unrelated reason and cost a diagnostic cycle.
+Any harness that mutates real files now also `_heal()`s on import: one file read, and a killed run
+can never contaminate the next one or the deploy. Same family as "a negative test that mutates
+production-shaped state is an outage with a pass/fail label".
+ALSO: that file called `pack()` SIX times (~5s each locally, ~40s on a network mount) on every
+`python ship.py`. Module-scoped fixtures cut it to TWO, and the second pack does double duty — a
+pack of HEAD taken from a DIRTY tree must equal a pack of HEAD taken from a clean one, which
+proves the mid-flight-edit property and the staging==production property with one archive. A test
+suite the operator waits through is a test suite that gets skipped.
+

@@ -374,7 +374,7 @@ export default function Landing() {
             <li>{tx("A findings spreadsheet with no price attached to anything")}</li>
             <li>{tx("Weeks between the question and the answer")}</li>
             <li>{tx("The board asks what it would actually cost. Nobody knows.")}</li>
-            <li className="last">{tx("Compliance deadlines live in somebody&rsquo;s inbox.")}</li></ul></div>
+            <li className="last">{tx("Compliance deadlines live in somebody’s inbox.")}</li></ul></div>
           <div className="vsc good"><h4>{tx("What you get here")}</h4><ul>
             <li>{tx("Your whole internet-facing estate, discovered from public data")}</li>
             <li>{tx("Every exposure modelled in euros, with the method shown")}</li>
@@ -417,16 +417,6 @@ export default function Landing() {
           {[["01",t("earn.01h"),t("earn.01b")],["02",t("earn.02h"),t("earn.02b")],["03",t("earn.03h"),t("earn.03b")],["04",t("earn.04h"),t("earn.04b")],["05",t("earn.05h"),t("earn.05b")],["+",t("earn.06h"),t("earn.06b")]].map(([n, t, b]) => (
             <div className="play" key={n}><span className="pn">{n}</span><b>{t}</b><p>{b}</p></div>
           ))}
-        </div>
-
-        <h3 className="eh">{tx("Fair questions")}</h3>
-        <div className="tri">
-          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>{tx("“Is this legal?”")}</div>
-            <p>{tx("Yes. It uses public sources any researcher could look up, and never interacts with your systems. Nothing is exploited, nothing is logged into.")}</p></div>
-          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>{tx("“How accurate is it?”")}</div>
-            <p>{tx("Every finding carries the evidence behind it. Where a source cannot be reached it says “unknown” rather than inventing a weakness - and it asks you to confirm anything it could not resolve.")}</p></div>
-          <div className="tric"><div className="tt" style={{ fontSize: 19, color: "var(--teal)" }}>{tx("“What do we have to provide?”")}</div>
-            <p>{tx("Your company name. No access, no questionnaire, no NDA to start, and nothing to install. The euro figures are modelled ranges with the assumptions shown.")}</p></div>
         </div>
 
         <div className="pullq">{tx("The question is not whether something of yours is exposed.")}{" "}
@@ -481,7 +471,7 @@ export default function Landing() {
             <g id="edges"></g><g id="nodes"></g>
           </svg>
         </div>
-        <p className="maphint">{tx("Swipe the map sideways to explore &rarr;")}</p>
+        <p className="maphint">{tx("Swipe the map sideways to explore →")}</p>
         <div className="cap" id="cap"></div>
       </div></section>
 
@@ -552,7 +542,7 @@ export default function Landing() {
           <Link to="/impressum">{tx("Impressum")}</Link><span>&middot;</span>
           <Link to="/privacy">{tx("Datenschutz / Privacy")}</Link>
         </div>
-        <p className="foothost">{tx("Betrieben in Deutschland &middot; Server in Frankfurt am Main (FRA1) &middot; Ihre Daten bleiben in der EU.")}</p>
+        <p className="foothost">{tx("Betrieben in Deutschland · Server in Frankfurt am Main (FRA1) · Ihre Daten bleiben in der EU.")}</p>
         <div className="g" style={{ marginTop: 18 }}>» » » » »</div>
       </div></div>
 

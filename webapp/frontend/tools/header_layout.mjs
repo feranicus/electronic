@@ -45,9 +45,14 @@ for (const c of Object.keys(L)) {
 console.log("  all six fit");
 
 console.log("header row width — phone (budget " + PHONE_BUDGET + "px, plain links hidden)");
+// The More trigger keeps its text on a phone (icon 16 + gap 6 + label + 24px padding). Icon-only
+// at a 999px radius is a circle, which is exactly what kept being reported as broken — so the
+// label is load-bearing, and it has to be paid for here rather than discovered on a device.
+const morePhone = (c) => 16 + 6 + t(c, "nav.more").length * 6.5 + 24;
 for (const c of Object.keys(L)) {
-  const w = Math.round(130 + (btn(t(c, "nav.demo")) - 8) + 40 + 46 + 8 * 3);
-  if (w > PHONE_BUDGET) fail(c + " phone header row is " + w + "px");
+  const w = Math.round(130 + (btn(t(c, "nav.demo")) - 8) + morePhone(c) + 46 + 8 * 3);
+  console.log("  " + c + "  " + String(w).padStart(4) + "px  " + (w <= PHONE_BUDGET ? "ok" : "OVERFLOW"));
+  if (w > PHONE_BUDGET) fail(c + " phone header row is " + w + "px, over " + PHONE_BUDGET + "px");
 }
 console.log("  all six fit");
 
@@ -74,13 +79,42 @@ const block = (sel) => {
   // wrapper <div className="moremenu">, so it could never see the button's class and the negative
   // test caught it as a MISS - a check aimed at the wrong element is a check that cannot fail.
   const mm = readFileSync("src/components/MoreMenu.jsx", "utf8");
-  const btn = mm.slice(mm.indexOf("<button"), mm.indexOf(">", mm.indexOf("aria-label")));
+  const bi = mm.indexOf("<button");
+  if (bi < 0) throw new Error("no <button> in MoreMenu.jsx - the geometry check would be vacuous");
+  const btn = mm.slice(bi, mm.indexOf(">", mm.indexOf("className=\"more-t\"", bi)));
   const cls = (btn.match(/className="([^"]*)"/) || [, ""])[1];
   if (!cls) fail("cannot find the More trigger's className - the geometry check would be vacuous");
   else if (/\bbtn\b/.test(cls))
     fail("the More trigger is a .btn again (class=\"" + cls + "\") - that geometry renders as a "
        + "hollow circle around the icon, which is what the operator photographed");
   console.log("  trigger geometry: matches the language pill, not a .btn");
+}
+
+// ============================================================================================
+// THE PANEL MUST LEAVE #hd's STACKING CONTEXT. This is the bug the operator filmed on Android:
+// eight taps, no panel. #hd is `sticky` WITH `z-index:20`, which creates a stacking context, so
+// `.more-p`'s z-index:60 only ordered it against its siblings while the whole header competed at
+// 20 — and Android promotes the <video> below the header to a hardware overlay that paints over
+// non-composited content. The panel opened underneath the video every time. On desktop the video
+// is `position:static` and loses to any positioned element, so the same code looked fine.
+// ============================================================================================
+{
+  const mm = readFileSync("src/components/MoreMenu.jsx", "utf8");
+  if (!/createPortal\(/.test(mm) || !/document\.body/.test(mm))
+    fail("the More panel is not portalled to <body> - it will be trapped in #hd's z-index:20 "
+       + "stacking context and painted under the Android <video> overlay, exactly as filmed");
+  const p = block(".more-p");
+  if (p.position !== "fixed")
+    fail(".more-p is position:" + p.position + " - it must be `fixed`, since a portalled panel has "
+       + "no positioned ancestor to be `absolute` against and no ancestor may ever clip it");
+  if (!/\.more-bd\{/.test(css)) fail("no .more-bd backdrop - outside-click would go back to a "
+       + "document listener that races the gesture that opened the menu");
+  // A label is what stops the trigger reading as a hollow circle. It must survive every breakpoint.
+  if (/\.more-l\s*\{[^}]*display\s*:\s*none/.test(css))
+    fail("the More trigger's label is hidden at some breakpoint - icon-only inside a 999px radius "
+       + "renders as a circle, which is the thing that was reported broken three times");
+  if (!/className="more-l"/.test(mm)) fail("the More trigger lost its text label");
+  console.log("  panel: portalled to <body>, position:fixed, backdrop present, label always shown");
 }
 
 // The menu must reach every page a visitor needs; on a phone it is the ONLY route to them.

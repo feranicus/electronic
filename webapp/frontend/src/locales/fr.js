@@ -396,8 +396,8 @@ export const byEn = {
     "Parce que c'est vous qui affirmez le fait, les règles zéro faux positif restent intactes",
   "Before you ever see the decks, a <b>different model from a different vendor</b> re-reads every finding and challenges anything that looks like it isn't really theirs. A model is never allowed to mark its own homework.":
     "Avant même que vous ne voyiez les présentations, un <b>modèle différent, issu d'un autre éditeur</b>, relit chaque constat et conteste tout ce qui ne semble pas réellement appartenir à l'entreprise. Aucun modèle n'est autorisé à corriger sa propre copie.",
-  "Betrieben in Deutschland &middot; Server in Frankfurt am Main (FRA1) &middot; Ihre Daten bleiben in der EU.":
-    "Exploité en Allemagne &middot; serveurs à Francfort-sur-le-Main (FRA1) &middot; vos données restent dans l'UE.",
+  "Betrieben in Deutschland · Server in Frankfurt am Main (FRA1) · Ihre Daten bleiben in der EU.":
+    "Exploité en Allemagne · serveurs à Francfort-sur-le-Main (FRA1) · vos données restent dans l'UE.",
   "Brains":
     "Intelligence",
   "Brand domains/subdomains: <code>crt.sh</code> + CertSpotter CT logs + DNS probe":
@@ -416,8 +416,8 @@ export const byEn = {
     "Le code décide, les modèles conseillent",
   "Code emailed. Reply /verify <code> (valid 10 min).":
     "Code envoyé par e-mail. Répondez /verify <code> (valable 10 min).",
-  "Compliance deadlines live in somebody&rsquo;s inbox.":
-    "Les échéances de conformité dorment dans la boîte mail de quelqu&rsquo;un.",
+  "Compliance deadlines live in somebody’s inbox.":
+    "Les échéances de conformité dorment dans la boîte mail de quelqu’un.",
   "Compliance: NIS2, CRA, EU AI Act":
     "Conformité\u00a0: NIS2, CRA, EU AI Act",
   "Cost, measured per run":
@@ -462,8 +462,6 @@ export const byEn = {
     "Chaque connexion, analyse, audit, coût et mise à jour écrit une ligne structurée qui alimente <b>votre Grafana existant</b> - aucune seconde pile de supervision.",
   "FOOTPRINT":
     "SURFACE EXPOSÉE",
-  "Fair questions":
-    "Questions légitimes",
   "For boards, CISOs and risk owners":
     "Pour les conseils d'administration, les RSSI et les responsables des risques",
   "Four models. Four vendors. ":
@@ -596,8 +594,8 @@ export const byEn = {
     "La vitesse vient de l'ordre, pas du matériel",
   "Stop tour":
     "Arrêter la visite",
-  "Swipe the map sideways to explore &rarr;":
-    "Faites glisser la carte latéralement pour explorer &rarr;",
+  "Swipe the map sideways to explore →":
+    "Faites glisser la carte latéralement pour explorer →",
   "Tagged safe-points and <code>--rollback</code> to any known-good state":
     "Points de restauration étiquetés et <code>--rollback</code> vers n'importe quel état sain connu",
   "Telegram / one name":
@@ -660,8 +658,6 @@ export const byEn = {
     "Ce que vous obtenez ici",
   "Where it earns its place":
     "Là où cela prend tout son sens",
-  "Yes. It uses public sources any researcher could look up, and never interacts with your systems. Nothing is exploited, nothing is logged into.":
-    "Oui. La plateforme s'appuie sur des sources publiques que n'importe quel chercheur pourrait consulter et n'interagit jamais avec vos systèmes. Rien n'est exploité, aucune connexion n'est établie.",
   "You and bots":
     "Vous et les bots",
   "You need an approved <b>company or partner email</b>, the shared password, <b>and</b> a one-time code emailed to that inbox. Knowing the password isn't enough - you must own the mailbox.":
@@ -670,8 +666,6 @@ export const byEn = {
     "Vous ne saisissez jamais d'adresse IP, de réseau ni de certificat. Le robot détermine lui-même ",
   "Your answers are the ONE sanctioned way scope changes after a run":
     "Vos réponses sont le SEUL moyen autorisé de modifier le périmètre après une exécution",
-  "Your company name. No access, no questionnaire, no NDA to start, and nothing to install. The euro figures are modelled ranges with the assumptions shown.":
-    "Le nom de votre entreprise. Aucun accès, aucun questionnaire, aucun NDA pour commencer et rien à installer. Les montants en euros sont des fourchettes modélisées, dont les hypothèses sont affichées.",
   "Your whole internet-facing estate, discovered from public data":
     "L'intégralité de votre parc exposé sur Internet, découvert à partir de données publiques",
   "ZERO-TRUST":
