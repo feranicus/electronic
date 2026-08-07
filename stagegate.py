@@ -183,7 +183,12 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
   docker exec "$CT" wget -qO- http://localhost:2019/config/ 2>/dev/null \
     | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/running
   D=$(cat /tmp/ondisk 2>/dev/null); R=$(cat /tmp/running 2>/dev/null)
-  if [ -z "$R" ] || [ "$R" = "d41d8cd98f00b204" ]; then
+  # EMPTY = md5 of the empty string, TRUNCATED TO THE SAME 12 CHARS the hashes use. The first
+  # version compared 16 chars against a 12-char value, so this guard never fired and an
+  # unanswerable query was reported as "the process is serving a DIFFERENT config" — a confident,
+  # wrong diagnosis. An auditor model spotted it from the hash alone. Derive it, never retype it.
+  EMPTY=$(printf '' | md5sum | cut -c1-12)
+  if [ -z "$R" ] || [ "$R" = "$EMPTY" ]; then
     # No admin API on this instance. Say so honestly instead of scoring a pass we cannot justify.
     chk config_reread no "cannot query the admin API — cannot PROVE the running config came from disk"
   elif [ "$D" = "$R" ]; then
@@ -350,7 +355,12 @@ def deploy_to_staging(say):
         "cat >/opt/staging-caddy/cybergod.caddy <<'CADEOF'\n%s\nCADEOF\n"
         # Minimal base: no TLS (staging has no domain), auto_https off, plain :8080. The SITE
         # BLOCK itself is the committed one, which is the part worth testing.
-        "{\n  printf '{\\n\\tauto_https off\\n\\tadmin off\\n}\\n\\n'\n"
+        # ADMIN API ON (localhost, inside the container). I originally wrote `admin off` here, which
+        # made the config_reread check unpassable BY CONSTRUCTION: it asks the running process what
+        # config it is serving, and with the admin API disabled there is nobody to ask. A check that
+        # cannot succeed is not a check — the same disease as the ruff gate that silently skipped.
+        # Production already runs with the admin API enabled (deploy_web_direct POSTs to /load).
+        "{\n  printf '{\\n\\tauto_https off\\n\\tadmin localhost:2019\\n}\\n\\n'\n"
         "  printf ':8080 {\\n\\treverse_proxy colt-web:8000\\n}\\n\\n'\n"
         "  cat /opt/staging-caddy/cybergod.caddy\n"
         "} > /opt/staging-caddy/Caddyfile\n"
