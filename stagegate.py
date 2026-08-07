@@ -254,6 +254,44 @@ BAD=$(grep -cv '^401$' /tmp/burst 2>/dev/null || echo 0)
 [ "${OK4:-0}" -ge 38 ] && chk concurrency yes "40 parallel requests -> ${OK4}x401, ${BAD} other" \
   || chk concurrency no "40 parallel requests -> only ${OK4}x401, ${BAD} other (5xx under load?)"
 
+# ---- KIMI'S "CONFIG DRIFT UNDETECTED", now a real check --------------------------------------
+# Her point: caddy reads config only at start, so an edit AFTER startup is silently unapplied and
+# nothing notices until the next restart. That is precisely the 2026-08-07 mechanism. With the
+# admin API enabled we can now ask the RUNNING process what it serves and compare it to the file.
+if docker ps --format '{{.Names}}' | grep -qi caddy; then
+  CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
+  DISK=$(docker exec "$CT" caddy adapt --config /etc/caddy/Caddyfile 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12)
+  RUN=$(docker exec "$CT" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12)
+  EMPTY2=$(printf '' | md5sum | cut -c1-12)
+  if [ -z "$RUN" ] || [ "$RUN" = "$EMPTY2" ]; then
+    chk config_drift no "admin API unreachable — cannot compare running config to disk"
+  elif [ "$DISK" = "$RUN" ]; then
+    chk config_drift yes "running config == file on disk ($DISK) — no silent drift"
+  else
+    chk config_drift no "DRIFT: disk=$DISK running=$RUN — an edit was never applied (the 6 Aug shape)"
+  fi
+
+  # ---- KIMI'S "ONE BAD BLOCK TAKES EVERY DOMAIN DOWN", now proven by a NEGATIVE test -----------
+  # The strongest possible evidence is not "the good config loads" but "a BAD one is refused and
+  # the live config is untouched". Write deliberately broken syntax into a scratch fragment and
+  # confirm caddyguard rejects it AND the running config is byte-identical afterwards.
+  BEFORE=$(md5sum /opt/staging-caddy/Caddyfile | cut -c1-12)
+  printf '# zz:broken BEGIN\nbroken.example {\n\tthis-is-not-a-directive\n# zz:broken END\n' \
+    > /opt/caddyguard/blocks/zz__broken.caddy 2>/dev/null
+  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
+    python3 /opt/caddyguard/agent.py assemble --apply >/tmp/neg.out 2>&1
+  NEG=$?
+  rm -f /opt/caddyguard/blocks/zz__broken.caddy
+  AFTER=$(md5sum /opt/staging-caddy/Caddyfile | cut -c1-12)
+  if [ "$NEG" -ne 0 ] && [ "$BEFORE" = "$AFTER" ]; then
+    chk bad_block_refused yes "a broken fragment was REFUSED and the live config is unchanged ($BEFORE)"
+  else
+    chk bad_block_refused no "a broken fragment was ACCEPTED (rc=$NEG) or the live file changed ($BEFORE->$AFTER)"
+  fi
+  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
+    python3 /opt/caddyguard/agent.py assemble --apply >/dev/null 2>&1
+fi
+
 M=$(free -m | awk '/Mem:/{print $7}')
 [ "${M:-0}" -gt 300 ] && chk memory yes "${M}MB available" || chk memory no "only ${M}MB available"
 D=$(df --output=pcent / | tail -1 | tr -dc '0-9')

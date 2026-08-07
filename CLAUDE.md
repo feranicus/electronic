@@ -2508,6 +2508,29 @@ LEFT DELIBERATELY: `ALLOWED_EMAIL_DOMAIN=colt.net` still lets Colt AEs LOG IN, a
 docker names (`colt-web`, `colt-net`, `colt_auth.py`). Removing the login domain would lock out
 current users and is a business decision, not a rebrand.
 
+## STANDING RULE — the audit panel's findings get ACTED ON, every run (operator's instruction)
+When the staging panel raises something and I AGREE it is correct, it becomes a check or a fix in
+the SAME change — not a note, not a "known gap". The operator asked for this explicitly, and the
+record justifies it: the panel has already caught defects I would have chased for another cycle.
+  * kimi-k2.6 diagnosed `d41d8cd98f00` as the md5 of the EMPTY STRING, which identified a disabled
+    admin API from the hash alone. Best single catch of the incident.
+  * deepseek + gemma twice spotted that a check's DETAIL contradicted its own VERDICT — the tell
+    for "the check is broken, not the system". Both times they were right.
+  * kimi's "engine_runs proves invocation, not correctness" produced the artifact-content check.
+  * kimi's "config drift is undetected" and "one bad block takes every domain down" produced
+    `config_drift` (running config vs disk, via the admin API) and `bad_block_refused` (a NEGATIVE
+    test: write a deliberately broken fragment, prove it is REFUSED and the live file is unchanged).
+AGREEING IS THE OPERATIVE WORD — the panel is advisory and it is wrong often enough to matter:
+  * kimi inverted config_reread ("started AFTER the write means stale") — the opposite of the truth.
+  * kimi invented an engine job queue, an ENGINE_MODE env var and a k8s manifest, none of which
+    exist in this system.
+  * llama-4-maverick repeatedly restates the failure as its own diagnosis ("the engine is not
+    running correctly") without adding information.
+PATTERN WORTH KEEPING: the panel is strong reasoning FROM evidence in front of it and unreliable
+when extrapolating to architecture it cannot see. So: feed it more evidence, never more authority.
+Implement what is right, say plainly what is wrong and why, and never let a NO-GO from a model
+override a deterministic check — in either direction.
+
 ## caddyguard is a BUILDING BLOCK of ship.py — and the argv length limit that hid as "ssh missing"
 I shipped `python caddyguard.py` as a SECOND command. That is operating principle 7, broken again:
 the operator runs `python ship.py`, full stop. caddyguard is now invoked BY ship.py after verify,
