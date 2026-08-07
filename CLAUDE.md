@@ -2779,3 +2779,48 @@ row width in all six languages at three breakpoints against the budget READ FROM
 asserts exactly one language toggle exists. Proven by reintroducing both defects and watching each
 fail. RULE, now enforced rather than written down: adding anything to the header means running the
 measurement, and the measurement is part of the build.
+
+## THE ARCHITECTURE MAP, THE CONSENSUS SECTION, AND ONE CLAIM I WOULD NOT WRITE (2026-08-07)
+The landing map predated half the system. Added five nodes and nine edges: SCOPE GUARDS (the
+ownership gate / PSL / co-tenant / per-domain budget — the accuracy story and the hardest-won code
+in the product), AI CONSENSUS, STAGING TWIN, PROXY GUARD, COST LEDGER; COMPLIANCE relabelled
+"EU + Canada regimes"; viewBox 700 -> 790 so the new row is inside the canvas. A diagram that omits
+half the system is not neutral — it is a claim about the architecture that is no longer true.
+
+New landing section `#consensus`, six defensible advantages: no shared failure domain (four
+vendors, not four hats on one), the auditor is never the author and never the same vendor, code
+decides and models advise, no identifier reaches a slide without evidence, cost counted per run in
+a ledger, and chain order set by measurement on the REAL prompt (rankings invert between a toy
+prompt and a 13k-character one). Deliberately NOT added to the nav: the header row is at budget and
+`header_layout.mjs` would have failed the build — the discipline working as intended.
+
+**THE OPERATOR ASKED FOR "our consensus works better than Claude, you can't argue with that" ON THE
+SITE. I DID NOT WRITE IT, AND SAID SO.** Three reasons, in order of weight: (1) it has not been
+measured against anything — there is no benchmark in this repo comparing the panel to any named
+competitor, and the product's entire credibility rests on "absence of evidence is never a finding"
+and "no invented identifiers"; a marketing page that violates the discipline the engine enforces
+poisons the engine's own claims. (2) Comparative advertising naming a competitor needs
+substantiation under UWG s.6 and the UCP Directive — an unmeasured superiority claim against a
+named product is the kind of thing a bank's counsel notices. (3) It is not needed: multi-vendor
+adversarial review with a deterministic gate IS the differentiator, and every sentence of it is
+true and evidenced. If a comparison is wanted later, the honest route is `compare_models.py`
+extended to a published methodology and a dated result — that would be worth far more than the
+assertion.
+
+KIMI'S PANEL FEEDBACK, ACTED ON (the standing rule):
+  * AGREED — `config_reread` asserted ORDERING ("started 1s after the file was written") and its
+    own detail quoted "caddy reads config only at start", describing the hazard while claiming
+    success. Now that `mount_fresh` proves hop 1 and the semantic `config_drift` proves hops 2-3,
+    the timing-only PASS was redundant and misleading; it now names the checks that actually prove
+    content instead of implying it proves it itself.
+  * AGREED, AND IT WAS A REAL GAP — nothing asserted WHICH domains are served. `config_drift`
+    compares disk to running, so a deploy that rewrites the file AND reloads leaves both sides
+    agreeing on an estate missing a customer's domain: the 6 Aug shape one level up. New
+    `agent.py roster` checks the running config against a COMMITTED list of expected vhosts,
+    wired into caddyguard (prod) and stagegate (`vhost_roster`, scoped by CADDY_EXPECT so staging's
+    single vhost does not fail against production's six). Verified against the real shape: removing
+    the jobhuntwow block is caught by name.
+  * DISAGREED — "config_drift uses an unstable hash comparison / '2 hosts, 1 handler' is too
+    coarse". It compares SETS of hostnames and terminal handlers, not counts and not hashes; the
+    counts are only the printed summary. The hash comparison Kimi is remembering was removed
+    earlier the same day, for exactly the reason it gives.

@@ -229,14 +229,14 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
     elif [ -n "$R" ] && [ "$R" != "$EMPTY" ]; then
       chk config_reread no "started after the write, but admin says disk=$D running=$R — a RELOAD lost it"
     else
-      chk config_reread yes "started ${AGE}s AFTER the file was written (caddy reads config only at start)"
+      chk config_reread yes "started ${AGE}s after the write; WHAT it read is proven by mount_fresh + config_drift, not by this timing"
     fi
   elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ] && [ "$STARTED" -eq "$WRITTEN" ]; then
     # Same-second tie. The deploy writes the file and then starts the container, so the order IS
     # correct — but one-second timestamp resolution cannot PROVE it. Say exactly that rather than
     # asserting a fault. (The `sleep 1` in deploy_to_staging should make this branch unreachable;
     # it stays because a tie must never be reported as staleness again.)
-    chk config_reread yes "written and started in the SAME second — ordering correct by construction, unprovable by mtime"
+    chk config_reread yes "written and started in the same second; content proven by mount_fresh + config_drift"
   elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ]; then
     chk config_reread no "the process started $((WRITTEN - STARTED))s BEFORE the config was written — it is serving something else"
   else
@@ -292,6 +292,13 @@ fi
 
 if docker ps --format '{{.Names}}' | grep -qi caddy; then
   D=$(python3 /opt/caddyguard/agent.py drift 2>&1 | tr '\n|' '  ' | cut -c1-200)
+  # Staging serves ONE vhost, so the production roster does not apply here; CADDY_EXPECT scopes it.
+  RO=$(CADDY_EXPECT="" python3 /opt/caddyguard/agent.py roster 2>&1 | tr '\n|' '  ' | cut -c1-160)
+  case "$RO" in
+    OK*|SKIP*) chk vhost_roster yes "${RO}" ;;
+    *)         chk vhost_roster no  "$RO" ;;
+  esac
+
   case "$D" in
     OK*)    chk config_drift yes "${D#OK }" ;;
     SKIP*)  chk config_drift yes "${D#SKIP } (nothing to compare - not a fault)" ;;

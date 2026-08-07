@@ -830,3 +830,9 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .more-p{right:0;min-width:200px}
   .more-p a{padding:12px 14px;font-size:15px}   /* >=44px touch target */
 }
+
+/* ---- AI consensus section (added 7 Aug 2026) ------------------------------------------------ */
+.cons-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:18px}
+.cons{padding:16px 18px;border:1px solid var(--bd);border-radius:14px;background:var(--pnl)}
+.cons-k{display:block;font-weight:650;font-size:15px;margin-bottom:6px;color:var(--teal)}
+.cons p{color:var(--mut);line-height:1.6;margin:0;font-size:14.5px}

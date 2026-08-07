@@ -183,6 +183,10 @@ echo "#### DRIFT"
 # and the process was serving something else; `caddy reload` reported success. Compares WHAT IS
 # SERVED, not bytes - see agent.py::cmd_drift for why a hash comparison is always a false positive.
 python3 /opt/caddyguard/agent.py drift
+# THE ROSTER. config_drift compares disk to running - so a deploy that rewrites the file AND
+# reloads leaves both sides agreeing on an estate that is missing a customer's domain. Only a
+# committed list of expected vhosts catches that, and it is the 6 Aug shape one level up.
+python3 /opt/caddyguard/agent.py roster
 if python3 /opt/caddyguard/agent.py drift 2>/dev/null | grep -q '^DRIFT'; then
   echo "-> forcing a full admin-API load so the process matches the file"
   CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)

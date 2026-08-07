@@ -336,6 +336,8 @@ export const byEn = {
     "4 présentations",
   "4 decks + live report":
     "4 présentations + rapport animé",
+  "4 models, 4 vendors":
+    "4 modèles, 4 éditeurs",
   "5 - A multi-vendor AI chain writes the prose; templates lock the numbers into the decks.":
     "5 - Une chaîne d'IA multi-éditeurs rédige le texte\u00a0; les gabarits verrouillent les chiffres dans les présentations.",
   "6 - A SECOND AI, from a different vendor, audits the findings for false positives before you ever see them.":
@@ -362,6 +364,8 @@ export const byEn = {
     "Un tableur de constats où rien n'est chiffré",
   "A number the board can actually make a decision on":
     "Un chiffre sur lequel le conseil peut réellement décider",
+  "A rate limit, an outage or a blind spot is provider-wide. A chain of four models from one vendor is one model wearing four hats. Ours are deepseek, Meta, Google and Moonshot — when one refuses, the next answers.":
+    "Une limite de débit, une panne ou un angle mort concernent l'éditeur tout entier. Une chaîne de quatre modèles issus d'un seul éditeur, c'est un seul modèle avec quatre casquettes. Les nôtres viennent de deepseek, Meta, Google et Moonshot — quand l'un refuse, le suivant répond.",
   "A real approved email address + the shared password ":
     "Une adresse e-mail agréée réelle + le mot de passe partagé ",
   "A second AI audits the first":
@@ -370,6 +374,8 @@ export const byEn = {
     "Un serveur que personne ne met à jour finit compromis. Tous les 3 jours, il <b>se sauvegarde</b> vers Spaces, met à jour l'OS et Docker, et une IA rédige une synthèse des risques. Les redémarrages ont lieu à 4 h du matin.",
   "AI AUDIT":
     "AUDIT IA",
+  "AI CONSENSUS":
+    "CONSENSUS IA",
   "AI MODELS":
     "MODÈLES IA",
   "AI digest to Telegram + Grafana":
@@ -402,14 +408,20 @@ export const byEn = {
     "CLARIFICATION",
   "COMPLIANCE":
     "CONFORMITÉ",
+  "COST LEDGER":
+    "REGISTRE COÛTS",
   "Change the code, run one thing, it's live - and it <b>proves</b> the running container actually holds the new code before it reports success.":
     "Modifiez le code, lancez une seule commande, c'est en ligne - et il <b>prouve</b> que le conteneur en service contient bien le nouveau code avant d'annoncer la réussite.",
+  "Code decides, models advise":
+    "Le code décide, les modèles conseillent",
   "Code emailed. Reply /verify <code> (valid 10 min).":
     "Code envoyé par e-mail. Répondez /verify <code> (valable 10 min).",
   "Compliance deadlines live in somebody&rsquo;s inbox.":
     "Les échéances de conformité dorment dans la boîte mail de quelqu&rsquo;un.",
   "Compliance: NIS2, CRA, EU AI Act":
     "Conformité\u00a0: NIS2, CRA, EU AI Act",
+  "Cost, measured per run":
+    "Coût, mesuré à chaque exécution",
   "Cyber Resilience Act":
     "Cyber Resilience Act",
   "Cybergod LLC / S4Biz Group - external cyber-risk and EU compliance assessment / one company name in, four boardroom documents out.":
@@ -432,6 +444,8 @@ export const byEn = {
     "Terminé en 2 min 10 s. 4 présentations prêtes.",
   "ENGINE":
     "MOTEUR",
+  "EU + Canada regimes":
+    "Régimes UE + Canada",
   "EU AI Act":
     "EU AI Act",
   "Engine-hash check: sha256 inside the container vs the repo - a stale container fails the ship":
@@ -442,6 +456,8 @@ export const byEn = {
     "Chaque exposition modélisée en euros, avec la méthode affichée",
   "Every finding carries the evidence behind it. Where a source cannot be reached it says “unknown” rather than inventing a weakness - and it asks you to confirm anything it could not resolve.":
     "Chaque constat s'accompagne de la preuve qui le fonde. Lorsqu'une source est inaccessible, il indique «\u00a0inconnu\u00a0» plutôt que d'inventer une faiblesse - et il vous demande de confirmer tout ce qu'il n'a pas pu établir.",
+  "Every identifier the model writes is cross-checked against the scan evidence before it reaches a slide. A CVE that is not in the raw findings is stripped, the prose is kept, and the removal is logged.":
+    "Chaque identifiant écrit par le modèle est recoupé avec les preuves du scan avant d'atteindre une diapositive. Une CVE absente des constats bruts est retirée, le texte est conservé, et le retrait est journalisé.",
   "Every login, assessment, audit, cost and patch prints a structured line that flows into <b>your existing Grafana</b> - no second monitoring stack.":
     "Chaque connexion, analyse, audit, coût et mise à jour écrit une ligne structurée qui alimente <b>votre Grafana existant</b> - aucune seconde pile de supervision.",
   "FOOTPRINT":
@@ -450,6 +466,8 @@ export const byEn = {
     "Questions légitimes",
   "For boards, CISOs and risk owners":
     "Pour les conseils d'administration, les RSSI et les responsables des risques",
+  "Four models. Four vendors. ":
+    "Quatre modèles. Quatre éditeurs. ",
   "From just the name the engine finds the company's <b>networks, domains and certificates</b> - then hunts, scores and writes. You never hand it an IP.":
     "À partir du seul nom, le moteur trouve les <b>réseaux, domaines et certificats</b> de l'entreprise - puis il traque, évalue et rédige. Vous ne lui fournissez jamais d'adresse IP.",
   "GITHUB CI/CD":
@@ -490,6 +508,8 @@ export const byEn = {
     "Verrouillé ",
   "Minutes, not weeks - and repeatable whenever you want":
     "Des minutes, pas des semaines - et reproductible quand vous le voulez",
+  "Most AI products call one model and print whatever comes back. This one runs a panel — two models produce, two independent models attack the result, each from a different vendor — and then lets deterministic code, not the models, make the call.":
+    "La plupart des produits d'IA appellent un seul modèle et impriment ce qui revient. Celui-ci fait travailler un collège — deux modèles produisent le résultat, deux modèles indépendants l'attaquent, chacun d'un éditeur différent — puis laisse trancher du code déterministe, pas les modèles.",
   "Multi-VENDOR chain with failover - a 429 is provider-wide, so the backup must be another vendor":
     "Chaîne multi-ÉDITEURS avec bascule - un 429 touche tout le fournisseur, la solution de secours doit donc venir d'un autre éditeur",
   "NIS2 / CRA / AI Act":
@@ -498,10 +518,14 @@ export const byEn = {
     "NIS2 — Allemagne",
   "Never breaks the neighbours":
     "Ne perturbe jamais les voisins",
+  "No shared failure domain":
+    "Aucun domaine de panne commun",
   "Nobody walks in":
     "Personne n'entre par hasard",
   "Not legal advice - and every deck says so":
     "Ne constitue pas un conseil juridique - et chaque présentation le rappelle",
+  "Nothing is asserted that cannot be evidenced":
+    "Rien n'est affirmé qui ne puisse être prouvé",
   "Nothing of yours is touched":
     "Rien de ce qui vous appartient n'est touché",
   "OTP delivered via <b>Gmail API over HTTPS</b> (droplet blocks SMTP ports)":
@@ -512,6 +536,8 @@ export const byEn = {
     "Un contrôle d'accès unique partagé par les bots ET l'application web - ils ne peuvent jamais diverger",
   "One input. Zero flags.":
     "Une seule saisie. Aucun paramètre.",
+  "One verdict.":
+    "Un seul verdict.",
   "Open the app":
     "Ouvrir l'application",
   "Outside services":
@@ -520,6 +546,8 @@ export const byEn = {
     "Contrôle de propriété\u00a0: un domaine découvert est un CANDIDAT, jamais une preuve",
   "PATCHWATCH":
     "PATCHWATCH",
+  "PROXY GUARD":
+    "GARDE PROXY",
   "Paid facets: <code>has_vuln</code>, <code>vuln:CVE</code>, <code>tag:ics</code>, <code>ssl.jarm</code>":
     "Facettes payantes\u00a0: <code>has_vuln</code>, <code>vuln:CVE</code>, <code>tag:ics</code>, <code>ssl.jarm</code>",
   "Per-run cost ledger in SQLite - true lifetime spend, survives log retention":
@@ -532,12 +560,18 @@ export const byEn = {
     "Espace React\u00a0: Analyse / Conformité / Assistant / Historique",
   "Request an assessment":
     "Demander une analyse",
+  "Roughly half a cent of inference per assessment, recorded in a ledger that survives redeploys — not estimated, counted. The panel costs a fraction of the analyst hour it replaces.":
+    "Environ un demi-centime d'inférence par analyse, consigné dans un registre qui survit aux redéploiements — non pas estimé, mais compté. Le collège coûte une fraction de l'heure d'analyste qu'il remplace.",
   "SALES":
     "COMMERCIAL",
+  "SCOPE GUARDS":
+    "CONTRÔLE PÉRIMÈTRE",
   "SHODAN":
     "SHODAN",
   "SPACES":
     "SPACES",
+  "STAGING TWIN":
+    "JUMEAU STAGING",
   "Safety nets":
     "Filets de sécurité",
   "Scanned before ship":
@@ -558,6 +592,8 @@ export const byEn = {
     "Shodan (payant)",
   "Shodan - what's exposed":
     "Shodan - ce qui est exposé",
+  "Speed comes from the order, not the hardware":
+    "La vitesse vient de l'ordre, pas du matériel",
   "Stop tour":
     "Arrêter la visite",
   "Swipe the map sideways to explore &rarr;":
@@ -570,8 +606,12 @@ export const byEn = {
     "L'IA rédige - vous recevez cinq livrables",
   "The LLM can FLAG, but a finding is only dropped when deterministic ownership data agrees":
     "Le LLM peut SIGNALER, mais un constat n'est écarté que si les données déterministes de propriété le confirment",
+  "The auditor is never the author":
+    "L'auditeur n'est jamais l'auteur",
   "The board asks what it would actually cost. Nobody knows.":
     "Le conseil demande ce que cela coûterait réellement. Personne ne le sait.",
+  "The chain order is set by measurement on the real workload, not by benchmarks — model rankings invert between a toy prompt and a 13,000-character one. Every call is sized so it can finish inside the time it was given.":
+    "L'ordre de la chaîne est fixé par la mesure sur la charge réelle, pas par des benchmarks — le classement des modèles s'inverse entre une invite jouet et une invite de 13\u00a0000 caractères. Chaque appel est dimensionné pour tenir dans le temps qui lui est accordé.",
   "The chat loops - watch the four .pptx files land.":
     "La conversation tourne en boucle - regardez arriver les quatre fichiers .pptx.",
   "The clocks are ":
@@ -582,10 +622,14 @@ export const byEn = {
     "Le moteur + la découverte automatique",
   "The model infers sector/size/product/AI profile and STATES it - you confirm and it rebuilds":
     "Le modèle déduit le secteur, la taille, les produits et le profil IA, et l'ÉNONCE - vous confirmez et il régénère",
+  "The model that writes a finding is never the model that checks it, and the checker must be from a different vendor. A model reviewing its own work agrees with itself.":
+    "Le modèle qui rédige un constat n'est jamais celui qui le vérifie, et le vérificateur doit venir d'un autre éditeur. Un modèle qui relit son propre travail se donne raison.",
   "The question is not whether something of yours is exposed.":
     "La question n'est pas de savoir si quelque chose vous appartenant est exposé.",
   "The regulatory clock, on one slide.":
     "Le calendrier réglementaire, sur une seule diapositive.",
+  "The release gate is deterministic. A model cannot block a good change because it hit a rate limit, and an agreeable model cannot wave a broken one through. When all four dissent against a green gate, the run halts for a human — because that has twice meant a check was lying.":
+    "La porte de mise en production est déterministe. Un modèle ne peut pas bloquer une bonne modification parce qu'il a atteint une limite de débit, et un modèle complaisant ne peut pas en laisser passer une mauvaise. Lorsque les quatre s'opposent à une porte au vert, l'exécution s'arrête et appelle un humain — car cela a déjà signifié deux fois qu'un contrôle mentait.",
   "The run is owned by the SERVER - lock your phone, it keeps going":
     "L'exécution appartient au SERVEUR - verrouillez votre téléphone, elle continue",
   "The same one input, pointed at regulation. It grades the company against the three horizontal EU digital laws and writes <b>three regime decks, a roadmap deck and an animated report</b> - applicability, duties, gaps, deadlines and the maximum fine.":
@@ -598,6 +642,8 @@ export const byEn = {
     "Trivy (dépendances et image), CodeQL SAST, ruff, pytest - chaque modification est contrôlée avant d'atteindre le serveur.",
   "Two front doors, one input":
     "Deux portes d'entrée, une seule saisie",
+  "Two produce. Two attack. Code decides. A human is asked when they all disagree.":
+    "Deux produisent. Deux attaquent. Le code décide. Un humain est sollicité quand tous sont en désaccord.",
   "Type a company name - in <b>Telegram</b>, or in the <b>cybergod.ai web app</b>. Same engine, same decks. Two bots live on the server: the <b>assessment bot</b> runs the scan, <b>cassandra</b> answers questions about the findings.":
     "Saisissez un nom d'entreprise - dans <b>Telegram</b> ou dans l'<b>application web cybergod.ai</b>. Même moteur, mêmes présentations. Deux bots vivent sur le serveur\u00a0: le <b>bot d'analyse</b> exécute la recherche, <b>cassandra</b> répond aux questions sur les constats.",
   "Under the hood - for the engineer":
@@ -650,8 +696,12 @@ export const byEn = {
     "bot / en ligne",
   "build/scan/ship":
     "build / scan / livraison",
+  "built, rebooted, checked":
+    "construit, redémarré, testé",
   "cassandra":
     "cassandra",
+  "config cannot break":
+    "config qui ne casse pas",
   "cybergod.ai cabinet":
     "espace cybergod.ai",
   "deliver, then refine":
@@ -666,6 +716,8 @@ export const byEn = {
     "toute",
   "events.log to <code>promtail</code> to Loki to Grafana (<code>godeyes.ai/observe</code>)":
     "events.log vers <code>promtail</code> vers Loki vers Grafana (<code>godeyes.ai/observe</code>)",
+  "every run, priced":
+    "chaque exécution, chiffrée",
   "godeyes.ai/observe":
     "godeyes.ai/observe",
   "live":
@@ -674,6 +726,8 @@ export const byEn = {
     "machine",
   "multi-vendor chain":
     "chaîne multi-éditeurs",
+  "ownership, not guesswork":
+    "propriété, pas suppositions",
   "paid / 30+ filters":
     "payant / plus de 30 filtres",
   "portfolio ALE EUR 11M-29M":

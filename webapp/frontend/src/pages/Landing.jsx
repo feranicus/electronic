@@ -176,7 +176,7 @@ export default function Landing() {
       { id: "cass",   x: 355,  y: 262, ico: "compass",t: tx("cassandra"),    s: tx("research assistant"),    c: C.teal,   n: "1",  dd: "d1" },
       { id: "auth",   x: 355,  y: 412, ico: "lock",   t: tx("ZERO-TRUST"),   s: tx("email+pw+code"),         c: C.purple, n: "2",  dd: "d2" },
       { id: "eng",    x: 600,  y: 252, ico: "gear",   t: tx("ENGINE"),       s: tx("recon to decks"),        c: C.teal,   n: "3",  dd: "d3", big: true },
-      { id: "comp",   x: 600,  y: 422, ico: "scroll", t: tx("COMPLIANCE"),   s: tx("NIS2 / CRA / AI Act"),   c: C.teal,   n: "8",  dd: "d8", big: true },
+      { id: "comp",   x: 600,  y: 422, ico: "scroll", t: tx("COMPLIANCE"),   s: tx("EU + Canada regimes"),   c: C.teal,   n: "8",  dd: "d8", big: true },
       { id: "clar",   x: 600,  y: 582, ico: "chat",   t: tx("CLARIFY"),      s: tx("deliver, then refine"),  c: C.teal,   n: "7",  dd: "d7" },
       { id: "foot",   x: 850,  y: 95,  ico: "globe",  t: tx("FOOTPRINT"),    s: tx("bgpview/RIPE/crt.sh"),   c: C.gold,   n: "3",  dd: "d3" },
       { id: "shodan", x: 850,  y: 235, ico: "scope",  t: tx("SHODAN"),       s: tx("paid / 30+ filters"),    c: C.gold,   n: "4",  dd: "d4" },
@@ -186,8 +186,17 @@ export default function Landing() {
       { id: "decks",  x: 1095, y: 252, ico: "decks",  t: tx("DELIVERABLES"), s: tx("4 decks + live report"), c: C.green,  n: "5",  dd: "d5", big: true },
       { id: "graf",   x: 1095, y: 420, ico: "chart",  t: tx("GRAFANA"),      s: tx("godeyes.ai/observe"),    c: C.cyan,   n: "9",  dd: "d9" },
       { id: "spaces", x: 1095, y: 580, ico: "disk",   t: tx("SPACES"),       s: tx("backups"),               c: C.gold,   n: "10", dd: "d10" },
+      // ---- added 7 Aug 2026: the parts of the system the first map predates ------------------
+      // SCOPE GUARDS is the accuracy story and the hardest-won code in the product: ownership
+      // gate, public-suffix rule, co-tenant guard, per-domain and per-pivot budgets.
+      { id: "scope",  x: 600,  y: 95,  ico: "filter", t: tx("SCOPE GUARDS"), s: tx("ownership, not guesswork"), c: C.cyan, n: "3", dd: "d3", big: true },
+      // The consensus panel: 2 soldiers + 2 auditors, one per vendor, deterministic gate.
+      { id: "quorum", x: 850,  y: 655, ico: "panel",  t: tx("AI CONSENSUS"), s: tx("4 models, 4 vendors"),   c: C.purple, n: "6", dd: "dq", big: true },
+      { id: "stage",  x: 355,  y: 562, ico: "twin",   t: tx("STAGING TWIN"), s: tx("built, rebooted, checked"), c: C.purple, n: "11", dd: "d11" },
+      { id: "guard",  x: 355,  y: 702, ico: "wall",   t: tx("PROXY GUARD"),  s: tx("config cannot break"),   c: C.purple, n: "11", dd: "d11" },
+      { id: "cost",   x: 1095, y: 700, ico: "coin",   t: tx("COST LEDGER"),  s: tx("every run, priced"),     c: C.cyan,   n: "9",  dd: "d9" },
     ];
-    const ICO = { phone: "\ud83d\udcf1", screen: "\ud83d\udda5\ufe0f", shield: "\ud83d\udee1\ufe0f", compass: "\ud83e\udded", lock: "\ud83d\udd10", gear: "\u2699\ufe0f", scroll: "\ud83d\udcdc", chat: "\ud83d\udcac", mail: "\u2709\ufe0f", globe: "\ud83c\udf10", scope: "\ud83d\udd2d", bot: "\ud83e\udd16", scale: "\u2696\ufe0f", decks: "\ud83d\udcd1", disk: "\ud83d\udcbe", chart: "\ud83d\udcc8", octo: "\ud83d\udc19", patch: "\ud83e\ude79" };
+    const ICO = { phone: "\ud83d\udcf1", screen: "\ud83d\udda5\ufe0f", shield: "\ud83d\udee1\ufe0f", compass: "\ud83e\udded", lock: "\ud83d\udd10", gear: "\u2699\ufe0f", scroll: "\ud83d\udcdc", chat: "\ud83d\udcac", mail: "\u2709\ufe0f", globe: "\ud83c\udf10", scope: "\ud83d\udd2d", bot: "\ud83e\udd16", scale: "\u2696\ufe0f", decks: "\ud83d\udcd1", disk: "\ud83d\udcbe", chart: "\ud83d\udcc8", octo: "\ud83d\udc19", patch: "\ud83e\ude79", filter: "\ud83e\udded", panel: "\u2696\ufe0f", twin: "\ud83e\uddea", wall: "\ud83e\uddf1", coin: "\ud83d\udcb0" };
     const EDGES = [
       { a: "you", b: "bot", c: C.green }, { a: "you", b: "cass", c: C.green },
       { a: "web", b: "auth", c: C.green }, { a: "web", b: "comp", c: C.green, bow: -40 },
@@ -202,6 +211,14 @@ export default function Landing() {
       { a: "eng", b: "graf", c: C.cyan }, { a: "bot", b: "graf", c: C.cyan, bow: 120 },
       { a: "patch", b: "spaces", c: C.purple, bow: -60 }, { a: "patch", b: "eng", c: C.purple },
       { a: "gh", b: "eng", c: C.teal, bow: 60 },
+      // ---- added 7 Aug 2026 -------------------------------------------------------------------
+      { a: "eng", b: "scope", c: C.cyan, two: true },
+      { a: "scope", b: "shodan", c: C.cyan },
+      { a: "gh", b: "stage", c: C.purple }, { a: "stage", b: "quorum", c: C.purple, two: true },
+      { a: "quorum", b: "eng", c: C.purple, bow: -140 },
+      { a: "stage", b: "guard", c: C.purple }, { a: "guard", b: "web", c: C.purple, bow: -70 },
+      { a: "deep", b: "cost", c: C.cyan, bow: 60 }, { a: "cost", b: "graf", c: C.cyan },
+      { a: "audit", b: "quorum", c: C.purple },
     ];
     const NS = "http://www.w3.org/2000/svg";
     const byId = Object.fromEntries(NODES.map((n) => [n.id, n]));
@@ -457,7 +474,7 @@ export default function Landing() {
           <span><b style={{ background: "#38e1ff" }}></b>{tx("Observability")}</span>
         </div>
         <div className="mapbox">
-          <svg id="svg" viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
+          <svg id="svg" viewBox="0 0 1200 790" xmlns="http://www.w3.org/2000/svg">
             <defs><filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
               <feGaussianBlur stdDeviation="3.2" result="b" />
               <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>
@@ -466,6 +483,47 @@ export default function Landing() {
         </div>
         <p className="maphint">{tx("Swipe the map sideways to explore &rarr;")}</p>
         <div className="cap" id="cap"></div>
+      </div></section>
+
+      {/* ---- AI CONSENSUS -------------------------------------------------------------------
+          EVERY CLAIM IN THIS SECTION IS MEASURED AND LIVES IN THE REPO. Deliberately NOT here:
+          any comparison against a named competitor. The product's whole credibility rests on
+          "absence of evidence is never a finding" and "no invented identifiers" — putting an
+          unmeasured superiority claim on the marketing page would break the exact discipline that
+          makes the findings trustworthy, and comparative advertising needs substantiation under
+          UWG s.6 / the UCP Directive. The architecture is differentiated enough on facts. */}
+      <section id="consensus" className="lp"><div className="wrap reveal">
+        <h2>{tx("Four models. Four vendors. ")}<span className="g">{tx("One verdict.")}</span></h2>
+        <p className="lede">{tx("Most AI products call one model and print whatever comes back. This one runs a panel \u2014 two models produce, two independent models attack the result, each from a different vendor \u2014 and then lets deterministic code, not the models, make the call.")}</p>
+
+        <div className="cons-grid">
+          <div className="cons">
+            <span className="cons-k">{tx("No shared failure domain")}</span>
+            <p>{tx("A rate limit, an outage or a blind spot is provider-wide. A chain of four models from one vendor is one model wearing four hats. Ours are deepseek, Meta, Google and Moonshot \u2014 when one refuses, the next answers.")}</p>
+          </div>
+          <div className="cons">
+            <span className="cons-k">{tx("The auditor is never the author")}</span>
+            <p>{tx("The model that writes a finding is never the model that checks it, and the checker must be from a different vendor. A model reviewing its own work agrees with itself.")}</p>
+          </div>
+          <div className="cons">
+            <span className="cons-k">{tx("Code decides, models advise")}</span>
+            <p>{tx("The release gate is deterministic. A model cannot block a good change because it hit a rate limit, and an agreeable model cannot wave a broken one through. When all four dissent against a green gate, the run halts for a human \u2014 because that has twice meant a check was lying.")}</p>
+          </div>
+          <div className="cons">
+            <span className="cons-k">{tx("Nothing is asserted that cannot be evidenced")}</span>
+            <p>{tx("Every identifier the model writes is cross-checked against the scan evidence before it reaches a slide. A CVE that is not in the raw findings is stripped, the prose is kept, and the removal is logged.")}</p>
+          </div>
+          <div className="cons">
+            <span className="cons-k">{tx("Cost, measured per run")}</span>
+            <p>{tx("Roughly half a cent of inference per assessment, recorded in a ledger that survives redeploys \u2014 not estimated, counted. The panel costs a fraction of the analyst hour it replaces.")}</p>
+          </div>
+          <div className="cons">
+            <span className="cons-k">{tx("Speed comes from the order, not the hardware")}</span>
+            <p>{tx("The chain order is set by measurement on the real workload, not by benchmarks \u2014 model rankings invert between a toy prompt and a 13,000-character one. Every call is sized so it can finish inside the time it was given.")}</p>
+          </div>
+        </div>
+
+        <p className="maphint" style={{ marginTop: 14 }}>{tx("Two produce. Two attack. Code decides. A human is asked when they all disagree.")}</p>
       </div></section>
 
       <section id="deep" className="lp"><div className="wrap reveal">

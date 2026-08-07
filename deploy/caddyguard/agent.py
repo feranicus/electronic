@@ -544,6 +544,39 @@ def _served(cfg):
     return hosts, handlers
 
 
+# The domains this proxy is EXPECTED to serve. Committed, so a vhost silently disappearing is a
+# failure rather than a quiet 404 nobody notices for twelve hours. Kimi flagged the gap on
+# 2026-08-07: config_drift compares disk to running, so a deploy that rewrites the file AND reloads
+# leaves both sides agreeing on an estate that is missing a customer's domain.
+# Override per-host with CADDY_EXPECT="a.com,b.com"; empty disables the check rather than failing
+# a box that legitimately serves something else (staging serves one vhost, production eleven).
+EXPECT = [d for d in os.environ.get(
+    "CADDY_EXPECT",
+    "cybergod.ai,www.cybergod.ai,godeyes.ai,jobhuntwow.com,www.jobhuntwow.com,klimaanlage-preise.de"
+).split(",") if d.strip()]
+
+
+def cmd_roster():
+    """Is every domain we are supposed to serve actually in the RUNNING config?"""
+    c = container()
+    if not c or not EXPECT:
+        print("SKIP no container or no expected roster configured"); return 0
+    raw = sh(["docker", "exec", c, "wget", "-qO-", "http://127.0.0.1:2019/config/"]).stdout
+    if not (raw or "").strip():
+        print("SKIP admin API unreachable - cannot read the running roster"); return 0
+    try:
+        hosts, _ = _served(json.loads(raw))
+    except Exception as e:
+        print("SKIP could not parse the running config (%s)" % e); return 0
+    missing = [d for d in EXPECT if d.strip() and d.strip() not in hosts]
+    if missing:
+        print("MISSING the running proxy does not serve: %s" % ", ".join(missing))
+        print("   serving: %s" % ", ".join(sorted(hosts)))
+        return 1
+    print("OK all %d expected domain(s) are served (%d host(s) total)" % (len(EXPECT), len(hosts)))
+    return 0
+
+
 def cmd_drift():
     c = container()
     if not c:
@@ -602,6 +635,8 @@ def main(argv):
         return cmd_check("--heal" in rest)
     if cmd == "drift":
         return cmd_drift()
+    if cmd == "roster":
+        return cmd_roster()
     if cmd == "show":
         return cmd_show()
     print(__doc__)
