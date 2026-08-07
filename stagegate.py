@@ -110,7 +110,10 @@ C=colt-web
 # 404 the gate is designed to return, and recorded it as a broken app. The check has to look like
 # the client it claims to be testing.
 UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36'
-chk() { printf 'CHECK|%s|%s|%s\n' "$1" "$2" "$3"; }
+# ONE CHECK = ONE LINE, ALWAYS. The parser splits on newlines, so a stray newline inside a detail
+# does not just look untidy — it truncates the record and the rest is silently lost. Squash any
+# embedded newline/pipe here rather than trusting every call site to be careful.
+chk() { printf 'CHECK|%s|%s|%s\n' "$1" "$2" "$(printf '%s' "$3" | tr '\n|' '  ' | cut -c1-200)"; }
 echo "#### HEALTH"
 
 S=$(docker inspect -f '{{.State.Status}}' "$C" 2>/dev/null)
@@ -165,7 +168,12 @@ if [ $RC -ne 0 ]; then
 else
   N=$(docker exec "$C" sh -c 'ls -1 /data/demo/*.pptx 2>/dev/null | wc -l')
   H=$(docker exec "$C" sh -c 'ls -1 /data/demo/*.html 2>/dev/null | head -1')
-  BAD=$(docker exec "$C" sh -c "grep -c -E 'undefined|NaN|\\[object Object\\]|<h1></h1>' '$H' 2>/dev/null || echo 0")
+  # `grep -c` prints "0" AND exits 1 when nothing matches, so `|| echo 0` produced TWO lines.
+  # `[ "0\n0" -eq 0 ]` is a syntax error -> the whole condition failed -> a passing artifact was
+  # reported as broken, and the embedded newline also split the CHECK| line so the detail was
+  # truncated. head -1 makes the value single-valued whatever grep decides to do.
+  BAD=$(docker exec "$C" sh -c "grep -c -E 'undefined|NaN|\\[object Object\\]|<h1></h1>' '$H' 2>/dev/null" | head -1)
+  BAD=${BAD:-0}
   SZ=$(docker exec "$C" sh -c "stat -c %s '$H' 2>/dev/null || echo 0")
   if [ "${N:-0}" -ge 3 ] && [ "${SZ:-0}" -gt 20000 ] && [ "${BAD:-1}" -eq 0 ]; then
     chk engine_runs yes "${N} decks + ${SZ}b html, zero undefined/NaN leaks (output CHECKED, not just exit 0)"
