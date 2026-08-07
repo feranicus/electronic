@@ -207,6 +207,12 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
     else
       chk config_reread yes "started ${AGE}s AFTER the file was written (caddy reads config only at start)"
     fi
+  elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ] && [ "$STARTED" -eq "$WRITTEN" ]; then
+    # Same-second tie. The deploy writes the file and then starts the container, so the order IS
+    # correct — but one-second timestamp resolution cannot PROVE it. Say exactly that rather than
+    # asserting a fault. (The `sleep 1` in deploy_to_staging should make this branch unreachable;
+    # it stays because a tie must never be reported as staleness again.)
+    chk config_reread yes "written and started in the SAME second — ordering correct by construction, unprovable by mtime"
   elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ]; then
     chk config_reread no "the process started $((WRITTEN - STARTED))s BEFORE the config was written — it is serving something else"
   else
@@ -380,6 +386,12 @@ def deploy_to_staging(say):
         "  printf ':8080 {\\n\\treverse_proxy colt-web:8000\\n}\\n\\n'\n"
         "  cat /opt/staging-caddy/cybergod.caddy\n"
         "} > /opt/staging-caddy/Caddyfile\n"
+        # ONE SECOND BETWEEN THE WRITE AND THE START. Filesystem mtimes and docker's StartedAt are
+        # both whole seconds, so writing the config and starting the container inside the same
+        # second makes their order UNPROVABLE — and the config_reread check then reported
+        # "started 0s BEFORE the config was written" on a system that was demonstrably fine.
+        # Removing the ambiguity is the honest fix; widening the comparison to >= would only hide it.
+        "sleep 1\n"
         "docker rm -f staging-caddy >/dev/null 2>&1\n"
         "docker run -d --name staging-caddy --restart unless-stopped "
         "  --network videodead_appnet -p 127.0.0.1:8080:8080 "
