@@ -42,16 +42,38 @@ STAGING = os.environ.get("STAGING_HOST", "165.245.244.174")
 PROD = os.environ.get("DROPLET_HOST", "64.225.108.200")
 
 
-def ssh_script(script, host=STAGING, timeout=900):
-    """One session, LF bytes over stdin, explicit UTF-8 out. See recover.ssh_script for the two
-    bugs this shape exists to avoid (argv length limit, and Windows CRLF translation)."""
-    try:
-        r = subprocess.run(SSH + ["%s@%s" % (USER, host), "bash -s"],
-                           input=script.encode("utf-8"), capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return "", "TIMEOUT after %ds" % timeout, 124
-    dec = lambda b: (b or b"").decode("utf-8", "replace")   # noqa: E731
-    return dec(r.stdout), dec(r.stderr), r.returncode
+def ssh_script(script, host=STAGING, timeout=900, retries=2):
+    """One session, LF bytes over stdin, explicit UTF-8 out, and BACK OFF when sshd says no.
+
+    See recover.ssh_script for the two bugs this shape exists to avoid (argv length limit, Windows
+    CRLF translation). The retry is the third lesson, learned the hard way:
+
+    OpenSSH 9.8 turns on PerSourcePenalties BY DEFAULT, penalties ACCRUE with repetition, and
+    MaxStartups compounds it. This gate used to open ~30 short-lived sessions per run (one per
+    reboot poll), which is precisely the shape sshd is designed to refuse — and the NEXT run then
+    hung on its very first connection, long after the polling had stopped.
+    So: fewer sessions (see run()), spaced further apart, and an exponential back-off here instead
+    of hammering a host that is already penalising us.
+    """
+    delay = 15
+    for attempt in range(retries + 1):
+        try:
+            r = subprocess.run(SSH + ["%s@%s" % (USER, host), "bash -s"],
+                               input=script.encode("utf-8"), capture_output=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            if attempt < retries:
+                time.sleep(delay); delay *= 2
+                continue
+            return "", "TIMEOUT after %ds (sshd throttling? penalties decay on their own)" % timeout, 124
+        dec = lambda b: (b or b"").decode("utf-8", "replace")   # noqa: E731
+        out, err = dec(r.stdout), dec(r.stderr)
+        # A refused/reset connection with no output is the throttle signature. Real command
+        # failures still produce output and must NOT be retried.
+        if r.returncode == 255 and not out and attempt < retries:
+            time.sleep(delay); delay *= 2
+            continue
+        return out, err, r.returncode
+    return "", "unreachable", 255
 
 
 # --------------------------------------------------------------------------- provisioning
@@ -169,8 +191,10 @@ def parse_checks(text):
     return out
 
 
-def boot_id(host=STAGING):
-    out, _, rc = ssh_script(BOOTID, host=host, timeout=25)
+def boot_id(host=STAGING, quiet=False):
+    # retries=0 while polling a rebooting box: a refusal there is EXPECTED (that is the signal we
+    # are waiting for), and retrying it would triple the handshake count for no information.
+    out, _, rc = ssh_script(BOOTID, host=host, timeout=25, retries=0 if quiet else 1)
     lines = (sections(out).get("BOOTID") or "").splitlines()
     return (lines + ["", "", ""])[:3] if rc == 0 else None
 
@@ -182,18 +206,22 @@ def wait_for_reboot(host, was, timeout=420):
     still up and answers instantly, which is exactly how the first version reported a 1-second
     reboot and called it a pass. We wait for the identity of the running kernel instance to change.
     """
+    # SLEEP FIRST, AND SLEEP LONG. A DO droplet takes ~25-40s to come back, so polling every 8s
+    # bought nothing but ~30 extra ssh handshakes per run — enough to trip PerSourcePenalties and
+    # make the NEXT run hang on its first connection. 30s spacing costs at most 30s of wall clock
+    # and cuts the handshake count by ~4x.
     t0 = time.time()
     seen_down = False
+    time.sleep(25)                    # it is definitely not back yet; do not even ask
     while time.time() - t0 < timeout:
-        time.sleep(8)
-        now = boot_id(host)
+        now = boot_id(host, quiet=True)
         if now is None:
             seen_down = True          # ssh refused: it really is going down
-            continue
-        if was and now[0] and now[0] != was[0]:
+        elif was and now[0] and now[0] != was[0]:
             return int(time.time() - t0), now
-        if not seen_down and time.time() - t0 < 45:
-            continue                  # same boot_id this early just means it has not gone down yet
+        elif seen_down or time.time() - t0 > 60:
+            pass                      # back up but same boot_id -> keep waiting (or it never went)
+        time.sleep(30)
     return None, None
 
 
@@ -234,13 +262,22 @@ def deploy_to_staging(say):
     out, _, _ = ssh_script("set +e\necho '#### ENV'\ncat /opt/colt-stack/assess-bot/.env 2>/dev/null "
                            "| base64 -w0\n", host=PROD, timeout=90)
     blob = (sections(out).get("ENV") or "").strip()
+
+    # ONE SESSION for provision + env. Every extra handshake feeds PerSourcePenalties, and this
+    # gate was opening four before the build had even started.
+    setup = PROVISION
     if blob:
-        ssh_script("set -e\nmkdir -p /opt/colt-stack/assess-bot\n"
-                   "echo '%s' | base64 -d > /opt/colt-stack/assess-bot/.env\n"
-                   "chmod 600 /opt/colt-stack/assess-bot/.env\necho ok\n" % blob, timeout=90)
-        say("  env file placed on staging (chmod 600)")
+        setup += ("\nmkdir -p /opt/colt-stack/assess-bot\n"
+                  "echo '%s' | base64 -d > /opt/colt-stack/assess-bot/.env\n"
+                  "chmod 600 /opt/colt-stack/assess-bot/.env\n"
+                  "echo 'env file placed (chmod 600)'\n" % blob)
     else:
-        say("  [!] production env file unreadable — the engine checks on staging will fail honestly")
+        setup += "\necho '[!] production env unreadable - engine checks will fail honestly'\n"
+    out, err, rc = ssh_script(setup, timeout=600)
+    if rc != 0 and not out:
+        say("  staging unreachable: %s" % (err or "")[:200])
+        return False
+    say((sections(out).get("PROVISION") or "").replace("\n", "\n  "))
 
     say("building colt-web on staging (same sources, same Dockerfile, no proxy wiring)...")
     env = dict(os.environ, DROPLET_HOST=STAGING)
@@ -284,10 +321,6 @@ def run(reboot_test=True, quiet=False):
     say = (lambda *a: None) if quiet else (lambda *a: print("  " + " ".join(str(x) for x in a)))
 
     say("staging: %s   (synthetic data only, never production personal data)" % STAGING)
-    out, err, rc = ssh_script(PROVISION, timeout=600)
-    if rc != 0 and not out:
-        return "NO-GO", "staging unreachable: %s" % (err or "")[:300]
-    say((sections(out).get("PROVISION") or "").replace("\n", "\n  "))
 
     # ---- DEPLOY THE STACK TO STAGING -------------------------------------------------------
     # The first version of this gate provisioned Docker and then health-checked a colt-web that
@@ -297,13 +330,14 @@ def run(reboot_test=True, quiet=False):
         return "NO-GO", ("Could not deploy the stack to staging (%s). Nothing was changed on "
                          "production." % STAGING)
 
-    # Ship the quorum reviewer to staging (it runs INSIDE the container, where the key is).
+    # Ship the quorum reviewer AND run the health checks in ONE session (it runs INSIDE the
+    # container, where the inference key is). Two calls here used to be two handshakes.
     q = open(os.path.join(HERE, "deploy", "stagegate", "quorum.py"), encoding="utf-8").read()
-    ssh_script("mkdir -p /opt/stagegate\ncat >/opt/stagegate/quorum.py <<'PYEOF'\n%s\nPYEOF\n"
-               "docker cp /opt/stagegate/quorum.py colt-web:/opt/stagegate/quorum.py 2>/dev/null "
-               "|| true\necho ok\n" % q, timeout=120)
-
-    out, _, _ = ssh_script(HEALTH, timeout=600)
+    ship_q = ("mkdir -p /opt/stagegate\ncat >/opt/stagegate/quorum.py <<'PYEOF'\n%s\nPYEOF\n"
+              "docker exec colt-web mkdir -p /opt/stagegate 2>/dev/null || true\n"
+              "docker cp /opt/stagegate/quorum.py colt-web:/opt/stagegate/quorum.py "
+              "2>/dev/null || true\n" % q)
+    out, _, _ = ssh_script(ship_q + HEALTH, timeout=600)
     checks = parse_checks(out)
     kernel_before = (sections(out).get("KERNEL") or "").splitlines()[:1]
     for c in checks:
