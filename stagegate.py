@@ -271,25 +271,6 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
     chk config_drift no "DRIFT: disk=$DISK running=$RUN — an edit was never applied (the 6 Aug shape)"
   fi
 
-  # ---- KIMI'S "ONE BAD BLOCK TAKES EVERY DOMAIN DOWN", now proven by a NEGATIVE test -----------
-  # The strongest possible evidence is not "the good config loads" but "a BAD one is refused and
-  # the live config is untouched". Write deliberately broken syntax into a scratch fragment and
-  # confirm caddyguard rejects it AND the running config is byte-identical afterwards.
-  BEFORE=$(md5sum /opt/staging-caddy/Caddyfile | cut -c1-12)
-  printf '# zz:broken BEGIN\nbroken.example {\n\tthis-is-not-a-directive\n# zz:broken END\n' \
-    > /opt/caddyguard/blocks/zz__broken.caddy 2>/dev/null
-  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
-    python3 /opt/caddyguard/agent.py assemble --apply >/tmp/neg.out 2>&1
-  NEG=$?
-  rm -f /opt/caddyguard/blocks/zz__broken.caddy
-  AFTER=$(md5sum /opt/staging-caddy/Caddyfile | cut -c1-12)
-  if [ "$NEG" -ne 0 ] && [ "$BEFORE" = "$AFTER" ]; then
-    chk bad_block_refused yes "a broken fragment was REFUSED and the live config is unchanged ($BEFORE)"
-  else
-    chk bad_block_refused no "a broken fragment was ACCEPTED (rc=$NEG) or the live file changed ($BEFORE->$AFTER)"
-  fi
-  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
-    python3 /opt/caddyguard/agent.py assemble --apply >/dev/null 2>&1
 fi
 
 M=$(free -m | awk '/Mem:/{print $7}')

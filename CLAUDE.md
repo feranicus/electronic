@@ -2558,3 +2558,45 @@ disk, memory, who is bound to 80/443, running/stopped/RESTARTING containers, `do
 every crash-looping container, published-port collisions, and a `caddy validate` of the live
 config. It states the verdict in words, and it REFUSES to restart anything when a crash loop is
 present — blind restarts there just hide the cause.
+
+## jobhuntwow.com — I fixed the WRONG LAYER, twice, and the header said so (2026-08-07)
+The site returned `HTTP/1.1 200 OK`, `Server: Caddy`, **`Content-Length: 0`**. I wrote a Caddy block
+that served `/srv/jobhuntwow` with `file_server`, shipped it, and claimed success. Twice.
+**THE TELL I WALKED PAST: my block contained `-Server` (strip the header) and the response still
+carried `Server: Caddy`.** A header that should have been removed and was not means the block you
+are looking at is NOT the block serving the request. That single line disproved my diagnosis before
+I ever deployed it.
+ROOT CAUSE OF THE WRONG FIX: two sources described jobhuntwow and I picked the older one.
+`deploy_jobhuntwow_caddy.py` (July) provisions a STATIC one-pager — real, but superseded.
+`jobhuntwow-app/docs/CADDY_ARCHITECTURE.md` (dated 2026-08-07) describes what actually runs: a
+FastAPI app with SSE behind `reverse_proxy jhw-web:8000 { flush_interval -1 }`. Serving a FastAPI
+app with `file_server` over an empty directory produces exactly an empty 200. **When two documents
+disagree, the DATED one that describes the running system wins — check which, do not pick the one
+you found first.**
+THE DEEPER FIX — jobhuntwow is a DIFFERENT PROJECT with its own orchestrator (`python jhw.py
+deploy` -> deploy_direct.py -> deploy/fix_caddy.py) and its own committed snippet at
+`jobhuntwow-app/deploy/caddy/jobhuntwow.caddy`. Keeping a second copy in THIS repo and pushing it
+on every ship would make the two projects overwrite each other forever — the "a value with two
+homes" defect (ENRICH_MODELS, four homes) one level up. `caddyguard.jhw_snippet()` therefore reads
+**their** file when the sibling checkout is present; `deploy/caddy/jobhuntwow.caddy` is a
+byte-identical fallback for a machine without it. caddyguard runs `migrate` (re-split the live
+monolith) BEFORE `assemble`, so a jhw deploy that appends to the monolith is captured, never
+reverted.
+THREE CHECKS ADDED, each aimed at a thing that looked green while the site was blank:
+  * **the fragment is compared to the committed block** (`cmp -s`), not probed for a keyword. The
+    old predicate asked "does it contain file_server" — wrong content AND the wrong shape of
+    question.
+  * **the UPSTREAM is checked, not just the config**: jhw-web running · on `videodead_appnet` · on
+    ONE network only (two networks -> Docker DNS hands caddy an unreachable IP -> intermittent
+    502s, per CADDY_ARCHITECTURE.md rule 2) · and caddy's own `wget http://jhw-web:8000/`.
+    A perfect Caddyfile in front of a dead container is an empty 200.
+  * **probes report BYTES, not just the status code.** `200` was the whole problem. Anything under
+    200 bytes on a 2xx/3xx is flagged `EMPTY BODY, the upstream is not answering`.
+  * **production drift**: `caddy adapt` (disk) vs the admin API (running) — the file was right and
+    the process was serving something else, which is the 2026-08-07 mechanism. On a mismatch it
+    force-loads via `POST /load`. kimi raised this for staging; it belonged on prod.
+ALSO REMOVED: stagegate's `bad_block_refused` "negative test" wrote a deliberately broken fragment
+into the LIVE `/opt/caddyguard/blocks/` and re-assembled the running config — it took staging-caddy
+down and reported `post_reboot_proxy_routes 000`. **A negative test that mutates production-shaped
+state is not a test, it is an outage with a pass/fail label.** `config_drift` stays because it only
+reads.

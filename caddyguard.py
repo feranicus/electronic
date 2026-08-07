@@ -56,11 +56,26 @@ def _b64(path):
     return base64.b64encode(open(path, "rb").read()).decode()
 
 
+# JOBHUNTWOW IS A DIFFERENT PROJECT AND OWNS ITS OWN BLOCK.
+# jobhuntwow-app/deploy/caddy/jobhuntwow.caddy is the snippet ITS deploy (`python jhw.py deploy`
+# -> deploy_direct.py -> deploy/fix_caddy.py) writes into the shared Caddyfile. If this repo kept
+# a second copy and pushed it every ship, the two projects would overwrite each other forever —
+# that is the "a value with two homes" defect this file exists to prevent, one level up.
+# So: prefer THEIR file when the sibling checkout is present; the local copy is only a fallback
+# for a machine that does not have it. Same block either way, one authority.
+JHW_APP = os.path.join(HERE, "jobhuntwow-app", "deploy", "caddy", "jobhuntwow.caddy")
+JHW_FALLBACK = os.path.join(HERE, "deploy", "caddy", "jobhuntwow.caddy")
+
+
+def jhw_snippet():
+    return JHW_APP if os.path.exists(JHW_APP) else JHW_FALLBACK
+
+
 def build(restore, check_only):
     agent = _b64(os.path.join(GUARD, "agent.py"))
     svc = _b64(os.path.join(GUARD, "caddyguard.service"))
     tmr = _b64(os.path.join(GUARD, "caddyguard.timer"))
-    jhw = _b64(os.path.join(HERE, "deploy", "caddy", "jobhuntwow.caddy"))
+    jhw = _b64(jhw_snippet())
     return r"""
 set +e
 export LC_ALL=C
@@ -96,21 +111,38 @@ if [ "%s" = "yes" ]; then
   # block is authoritative, exactly as it already is for colt:cybergod. Ship it, then let the
   # routing predicate decide whether the live fragment needs replacing.
   echo '%s' | base64 -d > /tmp/jhw.caddy
-  if ! grep -q 'file_server' /opt/caddyguard/blocks/jhw__jobhuntwow.caddy 2>/dev/null; then
-    echo "jhw fragment does not serve files — installing the COMMITTED block"
+  # COMPARE TO THE COMMITTED BLOCK, do not guess at its contents. The previous version asked
+  # "does it contain file_server" — which was both wrong (jobhuntwow is a reverse proxy) and the
+  # wrong SHAPE of question. The repo is authoritative; if the live fragment differs, replace it.
+  if ! cmp -s /tmp/jhw.caddy /opt/caddyguard/blocks/jhw__jobhuntwow.caddy 2>/dev/null; then
+    echo "jhw fragment differs from the committed block — installing the COMMITTED one"
     cp /tmp/jhw.caddy /opt/caddyguard/blocks/jhw__jobhuntwow.caddy
   else
-    echo "jhw fragment already serves files — leaving it alone"
+    echo "jhw fragment already matches the committed block"
   fi
   python3 /opt/caddyguard/agent.py restore jhw:jobhuntwow
-  # The static site needs its bind mount, or root/file_server serve an empty 200 even with a
-  # perfect config. Checking the config alone would have looked green and stayed blank.
-  echo "-- jobhuntwow static site:"
-  ls -la /opt/jobhuntwow/site/index.html 2>/dev/null || echo "   [!] /opt/jobhuntwow/site/index.html MISSING on the host"
-  docker inspect "$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)" \
-    --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}
-{{end}}' 2>/dev/null | grep -i jobhuntwow \
-    || echo "   [!] the caddy container has NO /srv/jobhuntwow mount — file_server will serve nothing"
+
+  # THE UPSTREAM CONTRACT (CADDY_ARCHITECTURE.md 2). A perfect Caddyfile in front of a missing or
+  # unreachable app container still returns an empty 200 — which is exactly what the operator saw.
+  # Check the thing the config points AT, not only the config.
+  echo "-- jobhuntwow upstream (jhw-web:8000):"
+  if docker ps --format '{{.Names}}' | grep -qx jhw-web; then
+    echo "   jhw-web is running"
+    NETS=$(docker inspect jhw-web --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}')
+    N=$(echo $NETS | wc -w)
+    echo "   networks: $NETS(count=$N)"
+    case "$NETS" in
+      *videodead_appnet*) [ "$N" -eq 1 ] \
+          && echo "   OK: on videodead_appnet and on ONE network only" \
+          || echo "   [!] on $N networks - Docker DNS can hand caddy an unreachable IP (intermittent 502s)" ;;
+      *) echo "   [!] NOT on videodead_appnet - caddy cannot resolve jhw-web at all" ;;
+    esac
+    CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
+    echo "   caddy -> jhw-web:8000 : $(docker exec "$CT" wget -qS -O /dev/null http://jhw-web:8000/ 2>&1 | grep -m1 HTTP/ | tr -d '\r' || echo 'NO ANSWER')"
+  else
+    echo "   [!] jhw-web is NOT running - nothing to reverse_proxy to. Start it from ITS own project."
+    docker ps -a --format '{{.Names}}\t{{.Status}}' | grep -i jhw || true
+  fi
 else
   echo "skipped (--no-restore)"
 fi
@@ -136,6 +168,26 @@ else
   echo "(the guardrail is committed; the droplet copy is refreshed by that provisioner)"
 fi
 
+echo "#### DRIFT"
+# THE RUNNING PROCESS vs THE FILE. jobhuntwow stayed blank for hours because the file was right and
+# the process was serving something else. `caddy reload` reported success. Only comparing the two
+# catches it — this is the 2026-08-07 mechanism, checked on PRODUCTION at last.
+CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
+docker exec "$CT" caddy adapt --config /etc/caddy/Caddyfile 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/d1
+docker exec "$CT" wget -qO- http://localhost:2019/config/ 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/d2
+D=$(cat /tmp/d1); R=$(cat /tmp/d2); EMPTY=$(printf '' | md5sum | cut -c1-12)
+if [ -z "$R" ] || [ "$R" = "$EMPTY" ]; then
+  echo "[!] admin API unreachable - cannot prove the running config came from disk"
+elif [ "$D" = "$R" ]; then
+  echo "running config == file on disk ($D)"
+else
+  echo "[!] DRIFT: disk=$D running=$R - FORCING a full admin-API load"
+  docker exec "$CT" sh -c 'caddy adapt --config /etc/caddy/Caddyfile > /tmp/cfg.json && curl -sS -X POST -H "Content-Type: application/json" --data @/tmp/cfg.json http://localhost:2019/load && echo FORCED_LOAD_OK'
+  sleep 3
+  docker exec "$CT" wget -qO- http://localhost:2019/config/ 2>/dev/null | tr -d ' \n' | md5sum | cut -c1-12 > /tmp/d3
+  echo "after force-load: running=$(cat /tmp/d3) disk=$D"
+fi
+
 echo "#### VERIFY"
 python3 /opt/caddyguard/agent.py show
 echo "-- listeners:"
@@ -154,9 +206,13 @@ for d in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de; do
     printf '   [!] %%-28s no certificate presented\n' "$d"
   fi
 done
-echo "-- local probes:"
+echo "-- local probes (code + BYTES: an empty 200 is what 'the site is dead' looks like):"
 for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.com/ https://jobhuntwow.com/ https://klimaanlage-preise.de/; do
-  printf '   %%-42s %%s\n' "$u" "$(curl -sk -o /dev/null -w '%%{http_code}' --max-time 12 "$u")"
+  R=$(curl -sk -o /tmp/body -w '%%{http_code} %%{size_download}' --max-time 12 "$u")
+  CODE=${R%% *}; BYTES=${R##* }
+  FLAG=""
+  case "$CODE" in 2*|3*|401) [ "$BYTES" -lt 200 ] && [ "$CODE" != "401" ] && FLAG="   <- EMPTY BODY, the upstream is not answering" ;; *) FLAG="   <- FAILED" ;; esac
+  printf '   %%-42s %%s  %%s bytes%%s\n' "$u" "$CODE" "$BYTES" "$FLAG"
 done
 echo "END"
 """ % (agent, svc, tmr, "check" if check_only else "install",
