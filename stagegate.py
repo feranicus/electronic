@@ -83,6 +83,11 @@ echo "disk:   $(df -h / | awk 'NR==2{print $4" free of "$2}')"
 HEALTH = r"""
 set +e
 C=colt-web
+# A BROWSER USER-AGENT IS REQUIRED, and this is not cosmetic: visitors.py serves BOTS a 404 on page
+# routes, and `curl` announces itself as a bot. The first version probed with plain curl, got the
+# 404 the gate is designed to return, and recorded it as a broken app. The check has to look like
+# the client it claims to be testing.
+UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36'
 chk() { printf 'CHECK|%s|%s|%s\n' "$1" "$2" "$3"; }
 echo "#### HEALTH"
 
@@ -96,17 +101,27 @@ R=$(docker inspect -f '{{.RestartCount}}' "$C" 2>/dev/null || echo 99)
 H=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://127.0.0.1:8090/api/me)
 [ "$H" = "401" ] && chk api_auth yes "GET /api/me -> 401 (up + locked)" || chk api_auth no "GET /api/me -> $H (want 401)"
 
-H=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://127.0.0.1:8090/)
-case "$H" in 200|301|302|308) chk app_served yes "GET / -> $H";; *) chk app_served no "GET / -> $H";; esac
+H=$(curl -s -A "$UA" -o /dev/null -w '%{http_code}' --max-time 15 http://127.0.0.1:8090/)
+case "$H" in 200|301|302|308) chk app_served yes "GET / -> $H (browser UA)";; *) chk app_served no "GET / -> $H";; esac
+
+# The bot gate must still BLOCK bots. Testing only the happy path would let a change that disabled
+# the gate sail through, and the gate is what keeps scanners out of the index.
+B=$(curl -s -A "curl/8.0" -o /dev/null -w '%{http_code}' --max-time 15 http://127.0.0.1:8090/)
+[ "$B" = "404" ] && chk bot_gate yes "a bot UA still gets 404" || chk bot_gate no "bot UA got $B (want 404)"
 
 # THE CHECK THAT WOULD HAVE CAUGHT THE OUTAGE: is the proxy config actually loadable, right now,
-# in the image and environment the proxy really runs with?
-if [ -f /opt/caddyguard/agent.py ]; then
-  python3 /opt/caddyguard/agent.py check >/tmp/cg.out 2>&1
-  [ $? -eq 0 ] && chk proxy_config yes "caddyguard: live config valid" \
-                || chk proxy_config no "caddyguard: $(tail -2 /tmp/cg.out | tr '\n' ' ')"
+# in the image and environment the proxy really runs with? Staging runs its OWN caddy from the
+# COMMITTED snippet, so a change to deploy/caddy/cybergod.caddy is validated on a real Caddy —
+# and survives a real reboot — before production's shared proxy ever sees it.
+if [ -f /opt/caddyguard/agent.py ] && docker ps --format '{{.Names}}' | grep -qi caddy; then
+  CADDYFILE=/opt/staging-caddy/Caddyfile python3 /opt/caddyguard/agent.py check >/tmp/cg.out 2>&1
+  [ $? -eq 0 ] && chk proxy_config yes "caddyguard: staging proxy config valid + loaded" \
+                || chk proxy_config no "caddyguard: $(grep -v 'telegram' /tmp/cg.out | tail -2 | tr '\n' ' ')"
+  P=$(curl -s -A "$UA" -o /dev/null -w '%{http_code}' --max-time 15 -H 'Host: cybergod.ai' http://127.0.0.1:8080/api/me)
+  [ "$P" = "401" ] && chk proxy_routes yes "proxy -> colt-web -> 401 (the production path)" \
+                   || chk proxy_routes no "through the proxy /api/me -> $P (want 401)"
 else
-  chk proxy_config no "caddyguard agent not installed on staging"
+  chk proxy_config no "no caddy on staging — the shared-proxy config is NOT covered by this run"
 fi
 
 # The engine in the container must be THIS repo's code. A container that started is not code that shipped.
@@ -235,11 +250,32 @@ def deploy_to_staging(say):
         say("  [!] staging build failed (exit %s)" % r.returncode)
         return False
 
-    # caddyguard on staging, so the proxy_config check is a real check rather than "not installed".
-    say("installing caddyguard on staging...")
+    # A REAL CADDY ON STAGING, from the COMMITTED snippet.
+    # Without this the twin could not test the one thing that actually took production down: a
+    # Caddy config that parses today and is only re-read at the next restart. Staging now runs its
+    # own proxy on :8080 with the same deploy/caddy/cybergod.caddy block, so a bad snippet fails
+    # HERE — and fails again on the reboot check — instead of sitting latent on the shared proxy.
+    say("installing caddyguard + a real caddy on staging (validates the committed snippet)...")
     agent = open(os.path.join(HERE, "deploy", "caddyguard", "agent.py"), encoding="utf-8").read()
-    ssh_script("set +e\nmkdir -p /opt/caddyguard/blocks /opt/caddyguard/backups\n"
-               "cat >/opt/caddyguard/agent.py <<'PYEOF'\n%s\nPYEOF\necho ok\n" % agent, timeout=120)
+    snippet = open(os.path.join(HERE, "deploy", "caddy", "cybergod.caddy"), encoding="utf-8").read()
+    ssh_script(
+        "set +e\nmkdir -p /opt/caddyguard/blocks /opt/caddyguard/backups /opt/staging-caddy\n"
+        "cat >/opt/caddyguard/agent.py <<'PYEOF'\n%s\nPYEOF\n"
+        "cat >/opt/staging-caddy/cybergod.caddy <<'CADEOF'\n%s\nCADEOF\n"
+        # Minimal base: no TLS (staging has no domain), auto_https off, plain :8080. The SITE
+        # BLOCK itself is the committed one, which is the part worth testing.
+        "{\n  printf '{\\n\\tauto_https off\\n\\tadmin off\\n}\\n\\n'\n"
+        "  printf ':8080 {\\n\\treverse_proxy colt-web:8000\\n}\\n\\n'\n"
+        "  cat /opt/staging-caddy/cybergod.caddy\n"
+        "} > /opt/staging-caddy/Caddyfile\n"
+        "docker rm -f staging-caddy >/dev/null 2>&1\n"
+        "docker run -d --name staging-caddy --restart unless-stopped "
+        "  --network videodead_appnet -p 127.0.0.1:8080:8080 "
+        "  -v /opt/staging-caddy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine >/dev/null 2>&1\n"
+        "sleep 4\n"
+        "echo '#### CADDY'\n"
+        "docker ps --filter name=staging-caddy --format '{{.Names}} {{.Status}}'\n"
+        "docker logs staging-caddy --tail 4 2>&1 | tail -4\n" % (agent, snippet), timeout=180)
     return True
 
 
