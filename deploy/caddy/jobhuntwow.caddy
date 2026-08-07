@@ -1,0 +1,31 @@
+# jhw:jobhuntwow BEGIN — managed block. The COMMITTED source of truth for jobhuntwow.com.
+#
+# WHY THIS FILE EXISTS (2026-08-07)
+# On 6 Aug a deploy truncated this block inside the shared /opt/videodead/Caddyfile: the
+# directives and the closing brace were lost. Caddy kept serving from memory for 12 hours, the
+# kernel reboot at 04:22 made it re-read the file, and every domain on the box went down.
+# The brace repair made it PARSE again — but the block was then a site header with no directives,
+# so jobhuntwow.com answered 200 with an EMPTY BODY. A blank page, not an error.
+#
+# It could not be restored from a backup, because every backup on the droplet was taken AFTER the
+# damage. The authoritative content lives in deploy_jobhuntwow_caddy.py, which is where this is
+# copied from — the same relationship colt:cybergod has with deploy/caddy/cybergod.caddy.
+#
+# IT IS A STATIC ONE-PAGER, NOT A REVERSE PROXY. jhw-web exists on the box and is a different
+# service; proxying to it would have been wrong. The site is files on disk, bind-mounted read-only
+# into the caddy container. That mount must exist or root/file_server serve nothing:
+#     /opt/jobhuntwow/site:/srv/jobhuntwow:ro
+jobhuntwow.com, www.jobhuntwow.com {
+	encode gzip zstd
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+	}
+	root * /srv/jobhuntwow
+	try_files {path} /index.html
+	file_server
+}
+# jhw:jobhuntwow END

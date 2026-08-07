@@ -60,6 +60,7 @@ def build(restore, check_only):
     agent = _b64(os.path.join(GUARD, "agent.py"))
     svc = _b64(os.path.join(GUARD, "caddyguard.service"))
     tmr = _b64(os.path.join(GUARD, "caddyguard.timer"))
+    jhw = _b64(os.path.join(HERE, "deploy", "caddy", "jobhuntwow.caddy"))
     return r"""
 set +e
 export LC_ALL=C
@@ -89,7 +90,27 @@ python3 /opt/caddyguard/agent.py migrate
 
 echo "#### RESTORE"
 if [ "%s" = "yes" ]; then
+  # THE REPO IS THE SOURCE OF TRUTH, NOT THE BACKUPS.
+  # Every backup on this droplet was taken AFTER the 6 Aug damage, so "restore from the newest
+  # good backup" could never recover jobhuntwow — there was no good backup left. The committed
+  # block is authoritative, exactly as it already is for colt:cybergod. Ship it, then let the
+  # routing predicate decide whether the live fragment needs replacing.
+  echo '%s' | base64 -d > /tmp/jhw.caddy
+  if ! grep -q 'file_server' /opt/caddyguard/blocks/jhw__jobhuntwow.caddy 2>/dev/null; then
+    echo "jhw fragment does not serve files — installing the COMMITTED block"
+    cp /tmp/jhw.caddy /opt/caddyguard/blocks/jhw__jobhuntwow.caddy
+  else
+    echo "jhw fragment already serves files — leaving it alone"
+  fi
   python3 /opt/caddyguard/agent.py restore jhw:jobhuntwow
+  # The static site needs its bind mount, or root/file_server serve an empty 200 even with a
+  # perfect config. Checking the config alone would have looked green and stayed blank.
+  echo "-- jobhuntwow static site:"
+  ls -la /opt/jobhuntwow/site/index.html 2>/dev/null || echo "   [!] /opt/jobhuntwow/site/index.html MISSING on the host"
+  docker inspect "$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)" \
+    --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}
+{{end}}' 2>/dev/null | grep -i jobhuntwow \
+    || echo "   [!] the caddy container has NO /srv/jobhuntwow mount — file_server will serve nothing"
 else
   echo "skipped (--no-restore)"
 fi
@@ -138,7 +159,8 @@ for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.c
   printf '   %%-42s %%s\n' "$u" "$(curl -sk -o /dev/null -w '%%{http_code}' --max-time 12 "$u")"
 done
 echo "END"
-""" % (agent, svc, tmr, "check" if check_only else "install", "yes" if restore else "no")
+""" % (agent, svc, tmr, "check" if check_only else "install",
+       "yes" if restore else "no", jhw)
 
 
 def _selftest():
