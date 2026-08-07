@@ -387,6 +387,7 @@ def run(reboot_test=True, quiet=False):
         timeout=600)
     try:
         verdict = json.loads(out3[out3.index("{"):out3.rindex("}") + 1])
+        globals()["_LAST_VERDICT"] = verdict     # govern.py reads the full panel output from here
     except Exception:
         # The gate must never depend on the panel answering. Fall back to the deterministic rule.
         failed = [c for c in checks if not c["ok"]]
@@ -411,3 +412,12 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+_LAST_VERDICT = {}
+
+
+def last_verdict():
+    """The full panel output from the most recent run() — read by govern.py so the governance
+    loop shows the SAME diagnoses the digest did, rather than asking the models a second time."""
+    return _LAST_VERDICT

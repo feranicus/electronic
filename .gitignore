@@ -61,3 +61,6 @@ webapp/frontend/ssrtmp/
 
 # Forensic bundles: host inventory, IPs, log excerpts. Diagnostic output, never source.
 forensics-*.txt
+
+# TOTP seed for the governance gate. A shared secret — never in git.
+.govern_totp

@@ -1328,7 +1328,24 @@ def main():
             print("  " + (stagegate.notify("cybergod staging validation: %s" % gate, digest) or ""))
             if gate != "GO":
                 print("\n  [!] REFUSING TO DEPLOY TO PRODUCTION — staging did not validate.")
-                print("      Nothing was changed on %s. Fix the failed checks above and re-run." % HOST)
+                print("      Nothing was changed on %s." % HOST)
+                # GOVERNANCE LOOP: the panel already produced an RCA and a proposal. Rather than
+                # ending here and costing another full round-trip, offer to execute an ALLOWLISTED
+                # action — on STAGING only, behind an explicit approval and a TOTP code — then
+                # re-check and re-review. Production is reachable from there only after a second
+                # approval, a second code, and an automatic backup.
+                try:
+                    import govern
+                    res = govern.run(stagegate.last_verdict(), stagegate.STAGING, HOST,
+                                     stagegate.ssh_script,
+                                     lambda: stagegate.run(reboot_test=False),
+                                     notify=stagegate.notify)
+                    if res in ("fixed-staging", "promote"):
+                        print("\n  Staging is green again. Re-run `python ship.py` to deploy.")
+                except (EOFError, KeyboardInterrupt):
+                    print("\n  (governance skipped — no interactive terminal)")
+                except Exception as _g:
+                    print("  [!] governance loop unavailable (%s)" % type(_g).__name__)
                 print("      Override deliberately with:  python ship.py --no-stage")
                 sys.exit(2)
         except SystemExit:
@@ -1363,7 +1380,26 @@ def main():
                                  capture_output=True, text=True, encoding="utf-8",
                                  errors="replace", timeout=600)
             print("")
-            print((_cg.stdout or "").rstrip() or "  caddyguard: no output")
+            _cgout = (_cg.stdout or "").rstrip()
+            print(_cgout or "  caddyguard: no output")
+
+            # THE REBOOT GATE MUST BE ON THE BOX, NOT JUST IN THE REPO.
+            # caddyguard reports whether the droplet's patchwatch copy carries the gate that
+            # refuses to reboot into an invalid proxy config. It was MISSING for a whole run and
+            # the only remedy printed was "run this other script" — which is operating principle 7
+            # broken, and a live safety hole meanwhile. Install it here, automatically, once.
+            if "reboot gate MISSING" in _cgout:
+                print("\n  Installing the patchwatch reboot gate on the droplet (was missing)...")
+                _pw = subprocess.run([sys.executable,
+                                      os.path.join(HERE, "patchwatch", "provision_patchwatch.py")],
+                                     capture_output=True, text=True, encoding="utf-8",
+                                     errors="replace", timeout=900)
+                _tail = (_pw.stdout or "").rstrip().splitlines()[-12:]
+                print("  " + "\n  ".join(_tail))
+                if _pw.returncode != 0:
+                    print("  [!] patchwatch provisioning failed — the droplet can still reboot")
+                    print("      into a broken proxy config. Not fatal to this deploy, but fix it.")
+
             if _cg.returncode != 0:
                 ok = False
                 print("  [!] caddyguard reported a problem with the shared proxy — see above.")
