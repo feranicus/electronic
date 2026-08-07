@@ -1394,8 +1394,11 @@ def main():
                                       os.path.join(HERE, "patchwatch", "provision_patchwatch.py")],
                                      capture_output=True, text=True, encoding="utf-8",
                                      errors="replace", timeout=900)
-                _tail = (_pw.stdout or "").rstrip().splitlines()[-12:]
-                print("  " + "\n  ".join(_tail))
+                # PRINT STDERR TOO. Last run this failed and showed NOTHING, because only
+                # stdout was echoed — the same "silent skip" class as the ruff gate. A failure
+                # that cannot explain itself is a failure you will keep re-running.
+                _tail = ((_pw.stdout or "") + (_pw.stderr or "")).rstrip().splitlines()[-14:]
+                print("  " + "\n  ".join(_tail) if _tail else "  (no output at all)")
                 if _pw.returncode != 0:
                     print("  [!] patchwatch provisioning failed — the droplet can still reboot")
                     print("      into a broken proxy config. Not fatal to this deploy, but fix it.")

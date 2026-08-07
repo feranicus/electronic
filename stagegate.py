@@ -156,8 +156,23 @@ docker exec "$C" python3 -c "import hashlib,glob,os;print(sum(1 for _ in glob.gl
 
 # Exercise the ENGINE, not just the web server: build the demo artifacts from synthetic fixtures.
 docker exec "$C" python3 /opt/shodan-skill/scripts/demo_build.py >/tmp/demo.out 2>&1
-[ $? -eq 0 ] && chk engine_runs yes "demo artifacts built from RFC 5737 fixtures" \
-             || chk engine_runs no "$(tail -3 /tmp/demo.out | tr '\n' ' ')"
+RC=$?
+# "IT RAN" IS NOT "IT WORKED" — an auditor model was right about this. Check the ARTIFACTS:
+# the deck files must exist with real size, and the HTML must not leak undefined/NaN/empty
+# headings. Same doctrine as the deck-quality gate: read the artifact, not the exit code.
+if [ $RC -ne 0 ]; then
+  chk engine_runs no "$(tail -3 /tmp/demo.out | tr '\n' ' ')"
+else
+  N=$(docker exec "$C" sh -c 'ls -1 /data/demo/*.pptx 2>/dev/null | wc -l')
+  H=$(docker exec "$C" sh -c 'ls -1 /data/demo/*.html 2>/dev/null | head -1')
+  BAD=$(docker exec "$C" sh -c "grep -c -E 'undefined|NaN|\\[object Object\\]|<h1></h1>' '$H' 2>/dev/null || echo 0")
+  SZ=$(docker exec "$C" sh -c "stat -c %s '$H' 2>/dev/null || echo 0")
+  if [ "${N:-0}" -ge 3 ] && [ "${SZ:-0}" -gt 20000 ] && [ "${BAD:-1}" -eq 0 ]; then
+    chk engine_runs yes "${N} decks + ${SZ}b html, zero undefined/NaN leaks (output CHECKED, not just exit 0)"
+  else
+    chk engine_runs no "decks=${N} html=${SZ}b leaks=${BAD} — it ran but the OUTPUT is wrong"
+  fi
+fi
 
 # ---- RAISED BY THE AUDIT PANEL, now checks rather than caveats -----------------------------
 # kimi-k2.6: "engine_runs uses static fixtures... could be stale cached bytecode".

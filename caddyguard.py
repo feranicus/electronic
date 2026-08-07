@@ -121,6 +121,18 @@ echo "-- listeners:"
 (ss -lntp 2>/dev/null || netstat -lntp 2>/dev/null) | grep -E ':(80|443)\s' || echo "NOTHING on 80/443"
 echo "-- proxy:"
 docker ps -a --filter name=caddy --format '{{.Names}}\t{{.Status}}'
+echo "-- TLS certificate expiry (a lapsed cert takes EVERY domain down together):"
+for d in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de; do
+  END=$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null \
+        | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+  if [ -n "$END" ]; then
+    LEFT=$(( ( $(date -d "$END" +%s) - $(date +%s) ) / 86400 ))
+    if [ "$LEFT" -lt 14 ]; then printf '   [!] %-28s %s days left  <- RENEW\n' "$d" "$LEFT"
+    else printf '   %-32s %s days left\n' "$d" "$LEFT"; fi
+  else
+    printf '   [!] %-28s no certificate presented\n' "$d"
+  fi
+done
 echo "-- local probes:"
 for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.com/ https://jobhuntwow.com/ https://klimaanlage-preise.de/; do
   printf '   %%-42s %%s\n' "$u" "$(curl -sk -o /dev/null -w '%%{http_code}' --max-time 12 "$u")"
