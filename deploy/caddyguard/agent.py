@@ -194,6 +194,22 @@ def _sha_host(p):
     return hashlib.sha256(open(p, "rb").read()).hexdigest() if os.path.exists(p) else ""
 
 
+def mount_source(c):
+    """Where does THIS container's /etc/caddy/Caddyfile actually come from on the host?
+
+    NEVER assume LIVE. The default (/opt/videodead/Caddyfile) is production's path; staging's
+    proxy mounts a different file, so hashing LIVE there produced an empty hash and the check
+    reported a stale mount on a healthy box. Docker knows the answer - ask it, and fall back to
+    LIVE only when there is no such mount to inspect.
+    """
+    if not c:
+        return ""
+    out = sh(["docker", "inspect", c, "--format",
+              '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{end}}{{end}}'
+              ]).stdout.strip()
+    return out or ""
+
+
 def _sha_in_container(c):
     o = sh(["docker", "exec", c, "sha256sum", "/etc/caddy/Caddyfile"]).stdout.strip()
     return o.split()[0] if o else ""
@@ -212,13 +228,19 @@ def mount_sync(c, fix=True):
     """
     if not c:
         return True, "no container - nothing to compare"
-    h, k = _sha_host(LIVE), _sha_in_container(c)
+    src = mount_source(c) or LIVE
+    h, k = _sha_host(src), _sha_in_container(c)
     if not k:
         return True, "could not read the file inside the container - skipping"
+    if not h:
+        # A MISSING HOST FILE IS NOT STALENESS. It means this box does not mount a Caddyfile from
+        # the path we looked at - there is nothing to compare, and the honest answer is SKIP.
+        # Reading absence as failure is the mirror of "absence of evidence is never a finding".
+        return True, "no host file at %s - single-file mount not in use here, nothing to compare" % src
     if h == k:
         return True, "container reads the current file (%s)" % h[:12]
     if not fix:
-        return False, "STALE MOUNT: host=%s container=%s" % (h[:12], k[:12])
+        return False, "STALE MOUNT: %s host=%s container=%s" % (src, h[:12], k[:12])
     # A restart is the only way to re-resolve a single-file bind mount. It is a few seconds of
     # blip for EVERY vhost on this box, so it is done only when the hashes actually disagree.
     sh(["docker", "restart", c])
@@ -231,7 +253,7 @@ def mount_sync(c, fix=True):
     if k2 == h:
         return True, "stale mount repaired by restart (now %s)" % h[:12]
     return False, ("STILL STALE after restart: host=%s container=%s - the mount source is not %s"
-                   % (h[:12], k2[:12], LIVE))
+                   % (h[:12], k2[:12], src))
 
 
 def apply(text, why=""):

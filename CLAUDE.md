@@ -2699,3 +2699,48 @@ which is the 6 Aug damage. But my run REPORTED SUCCESS while the site stayed dea
 every check I owned was on the wrong side of the mount. Guarded by test_drift.py (detected ·
 repaired by restart · unfixable reported · read-only never restarts · no-container and unreadable
 both SKIP), proven by disabling the comparison and watching the suite fail.
+
+## THE PANEL SAID NO-GO 4/4 AND IT SHIPPED ANYWAY — three defects, one false green (2026-08-07)
+The operator: *"all consensys models said No-Go but some how it was still passed to the prod? WTF?"*
+He is right, and this time **the panel was correct and the deterministic gate was lying.** The two
+lines that matter, verbatim from the run:
+```
+mount_fresh    OK   container reads the current file (3af610cdeb71) - bind mount is not stale
+config_drift   OK   drift check unavailable: STALE MOUNT STALE MOUNT: host= container=3af610cdeb71
+```
+`host=` is EMPTY. Three separate defects composed into 33/33 GREEN:
+1. **`agent.py::mount_sync` hashed a HARDCODED host path.** `LIVE` defaults to production's
+   `/opt/videodead/Caddyfile`; the staging proxy mounts a different file, so `_sha_host` returned
+   `""` and the check read *"there is no file here"* as *"the mount is stale"*. Absence of evidence
+   became a finding — the oldest rule in this repo, broken by me, in a guard I wrote to enforce it.
+   FIX: `mount_source(c)` asks DOCKER where the container's own mount comes from (which is exactly
+   what stagegate's `mount_fresh` already did correctly — two implementations of one question, one
+   right and one wrong), and a missing host file now returns SKIP.
+2. **A catch-all branch scored an UNRECOGNISED verdict as a PASS.** `*) chk config_drift yes
+   "drift check unavailable: $D"`. The agent printed `STALE MOUNT ...`, which matched none of
+   `OK*`/`SKIP*`/`DRIFT*`, so the fallback turned a failure into a success. **A fallback that
+   converts an unknown answer into a pass is strictly worse than having no check at all** — it is
+   the same disease as an i18n fallback printing the key, one level up and far more dangerous.
+   FIX: the wildcard now FAILS, and `test_gate_integrity.py` greps the bash for the SHAPE
+   `*) chk … yes` so it cannot be reintroduced under another name.
+3. **Nothing noticed that a check reporting PASS contained "STALE MOUNT" in its own detail.**
+   All four models noticed, in four different sentences. deepseek and gemma had made the identical
+   observation about a different check the day before. **A signal the panel produces reliably
+   belongs in the deterministic layer, where it can block.** FIX: `self_contradictory()` demotes
+   any PASS whose detail carries failure language (stale/drift/unavailable/cannot/failed/broken/
+   replaced inode/…), with a `_BENIGN` allow-list so "no silent drift" and "bind mount is not
+   stale" do not flag themselves.
+**GOVERNANCE, CHANGED DELIBERATELY AND NARROWLY.** Models still cannot veto a release — a 429 must
+never block a good deploy and an agreeable model must never wave through a dead container; both
+directions are asserted. What is new: **a UNANIMOUS panel (>=3 reviewers, all NO-GO) against a
+GREEN gate now HALTS**, printing why and requiring `OVERRIDE_PANEL=1`. Rationale: that exact
+pattern has now twice meant *a check is lying*, and it must reach a human BEFORE production rather
+than in a note after it. A split panel still does not block.
+`_decide_from_verdict()` was EXTRACTED from `run()` as a pure function — the decision had been
+buried inside a 90-line routine needing two droplets to exercise, which is precisely how the
+catch-all shipped unverified. Guarded by `tests/test_gate_integrity.py` (12 tests), proven by
+reintroducing all four defects one at a time and watching each be caught.
+FOOTNOTE, in fairness to the deploy: production was never actually broken. `LIVE` exists on prod,
+so the prod DRIFT step correctly printed *"running config serves exactly what the file says
+(11 hosts, 9 handlers)"*. The system was fine; **the gate was not**, and a gate that cannot be
+trusted when it is green is worth nothing when it is red.

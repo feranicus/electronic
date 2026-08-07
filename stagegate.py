@@ -30,6 +30,7 @@ That keeps the /privacy claim true without adding a second location to disclose,
 staging compromise leaks nothing about anyone.
 """
 import json
+import re
 import os
 import subprocess
 import sys
@@ -294,8 +295,12 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
   case "$D" in
     OK*)    chk config_drift yes "${D#OK }" ;;
     SKIP*)  chk config_drift yes "${D#SKIP } (nothing to compare - not a fault)" ;;
-    DRIFT*) chk config_drift no  "$D" ;;
-    *)      chk config_drift yes "drift check unavailable: $D" ;;
+    # AN UNRECOGNISED VERDICT IS NOT A PASS. This branch used to read `chk config_drift yes
+    # "drift check unavailable: $D"` and it is what let a 4-of-4 NO-GO panel be overruled by a
+    # green gate on 2026-08-07: agent.py printed "STALE MOUNT ..." (itself a bug), that matched
+    # none of the three known prefixes, and the catch-all scored the failure as SUCCESS.
+    # A fallback that turns an unknown answer into a pass is strictly worse than no check.
+    *)      chk config_drift no  "unrecognised drift verdict (treated as FAILURE): $D" ;;
   esac
 fi
 
@@ -325,13 +330,72 @@ echo "reboot issued"
 BOOTID = "echo '#### BOOTID'\ncat /proc/sys/kernel/random/boot_id\nuname -r\ncut -d. -f1 /proc/uptime\n"
 
 
+# Words that mean "this went wrong". If they appear in the DETAIL of a check that reported a
+# PASS, the check is contradicting itself and cannot be trusted in either direction.
+_CONTRADICTION = re.compile(
+    r"(?i)\b(stale|drift(?!\s+check\s+(?:ok|passed))|unrecognis|unrecogniz|unavailable|cannot|"
+    r"could not|failed|failure|broken|replaced inode|old bytes|not in force|refus)")
+# Phrases that legitimately contain a scary word while describing a HEALTHY outcome. Without
+# these, "no silent drift" and "bind mount is not stale" would flag themselves.
+_BENIGN = re.compile(r"(?i)(no silent drift|not stale|nothing to compare|no drift|"
+                     r"zero undefined|not just exit 0|single-file mount not in use)")
+
+
+def self_contradictory(c):
+    """A check that says PASS while its detail describes a failure is a BROKEN CHECK."""
+    if not c["ok"]:
+        return ""
+    d = c["detail"]
+    if _BENIGN.search(d):
+        return ""
+    m = _CONTRADICTION.search(d)
+    return m.group(0) if m else ""
+
+
+def _decide_from_verdict(verdict):
+    """(gate, digest) — the FINAL promotion decision. Pure: no ssh, no droplet, fully testable.
+
+    UNANIMOUS PANEL DISSENT AGAINST A GREEN GATE IS ITSELF EVIDENCE.
+    The deterministic checks still DECIDE. Models must never veto a good release over a 429 or a
+    bad mood, and an agreeable model must never wave through a dead container — both directions
+    are asserted in the tests. But on 2026-08-07 all four reviewers said NO-GO, all four named
+    config_drift, all four were RIGHT (the check was scoring a failure as a pass), and the run
+    promoted to production anyway with a one-line note. When EVERY independent reviewer
+    contradicts a green gate, the gate is the thing under suspicion, and that has to reach a human
+    BEFORE production rather than in a paragraph after it. So: halt, and require an explicit
+    override. A quorum is >= 3 reviewers, so a single answer is never enough to stop a release.
+    """
+    gate = verdict.get("gate", "NO-GO")
+    revs = verdict.get("reviews") or []
+    dissent = [r for r in revs if str(r.get("verdict", "")).lower().replace("_", "-") == "no-go"]
+    verdict["unanimous_dissent"] = bool(revs) and len(dissent) == len(revs) and len(revs) >= 3
+    if gate == "GO" and verdict["unanimous_dissent"] and not os.environ.get("OVERRIDE_PANEL"):
+        names = ", ".join(str(r.get("model", "?")) for r in revs)
+        verdict["gate"] = gate = "NO-GO"
+        verdict["digest"] = (
+            "HALTED: every deterministic check passed, but ALL %d reviewers (%s) said NO-GO.\n"
+            "A unanimous panel against a green gate usually means a CHECK is lying, not that the "
+            "system is fine - that is exactly what happened on 2026-08-07.\n"
+            "Read their reasons above. To promote anyway: set OVERRIDE_PANEL=1 and re-run.\n\n"
+            % (len(revs), names)) + verdict.get("digest", "")
+    return gate, verdict.get("digest", "")
+
+
 def parse_checks(text):
     out = []
     for ln in (text or "").splitlines():
         if ln.startswith("CHECK|"):
             p = ln.split("|", 3)
             if len(p) == 4:
-                out.append({"name": p[1], "ok": p[2].strip() == "yes", "detail": p[3].strip()})
+                c = {"name": p[1], "ok": p[2].strip() == "yes", "detail": p[3].strip()}
+                word = self_contradictory(c)
+                if word:
+                    # Demote it. The system may well be fine; the CHECK is not, and a check we
+                    # cannot trust must not be counted as evidence that we may promote.
+                    c["ok"] = False
+                    c["detail"] = ("SELF-CONTRADICTORY CHECK (said PASS, detail says %r) -> "
+                                   "treated as FAILURE: %s" % (word, c["detail"]))
+                out.append(c)
     return out
 
 
@@ -546,7 +610,7 @@ def run(reboot_test=True, quiet=False):
                    "digest": "AI panel unavailable — gate decided by %d deterministic checks (%d failed)."
                              % (len(checks), len(failed)),
                    "answered": 0}
-    return verdict.get("gate", "NO-GO"), verdict.get("digest", "")
+    return _decide_from_verdict(verdict)
 
 
 def main():
