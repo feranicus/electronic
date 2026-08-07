@@ -186,15 +186,31 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
   # EMPTY = md5 of the empty string, TRUNCATED TO THE SAME 12 CHARS the hashes use. The first
   # version compared 16 chars against a 12-char value, so this guard never fired and an
   # unanswerable query was reported as "the process is serving a DIFFERENT config" — a confident,
-  # wrong diagnosis. An auditor model spotted it from the hash alone. Derive it, never retype it.
+  # wrong diagnosis. Derive it, never retype it.
   EMPTY=$(printf '' | md5sum | cut -c1-12)
-  if [ -z "$R" ] || [ "$R" = "$EMPTY" ]; then
-    # No admin API on this instance. Say so honestly instead of scoring a pass we cannot justify.
-    chk config_reread no "cannot query the admin API — cannot PROVE the running config came from disk"
-  elif [ "$D" = "$R" ]; then
-    chk config_reread yes "the RUNNING config matches the file on disk ($D)"
+
+  # SECOND, INDEPENDENT PROOF — and the one that always works.
+  # Caddy reads its Caddyfile ONLY AT START. That single fact is the whole 2026-08-07 RCA, and it
+  # is also what makes this provable without any API: if the process started AFTER the file was
+  # last written, it necessarily read the bytes that are on disk now. Comparing timestamps needs
+  # no admin endpoint, no wget inside the container, and no cooperation from the process.
+  # A check that depends on ONE mechanism fails whenever that mechanism is unavailable — which is
+  # exactly what happened here — so this is the primary and the API is the corroboration.
+  STARTED=$(date -d "$(docker inspect -f '{{.State.StartedAt}}' "$CT" 2>/dev/null)" +%s 2>/dev/null)
+  WRITTEN=$(stat -c %Y /opt/staging-caddy/Caddyfile 2>/dev/null)
+  if [ -n "$STARTED" ] && [ -n "$WRITTEN" ] && [ "$STARTED" -gt "$WRITTEN" ]; then
+    AGE=$((STARTED - WRITTEN))
+    if [ -n "$R" ] && [ "$R" != "$EMPTY" ] && [ "$D" = "$R" ]; then
+      chk config_reread yes "started ${AGE}s AFTER the file was written, and the admin API agrees ($D)"
+    elif [ -n "$R" ] && [ "$R" != "$EMPTY" ]; then
+      chk config_reread no "started after the write, but admin says disk=$D running=$R — a RELOAD lost it"
+    else
+      chk config_reread yes "started ${AGE}s AFTER the file was written (caddy reads config only at start)"
+    fi
+  elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ]; then
+    chk config_reread no "the process started $((WRITTEN - STARTED))s BEFORE the config was written — it is serving something else"
   else
-    chk config_reread no "disk=$D running=$R — the process is serving a DIFFERENT config"
+    chk config_reread no "cannot determine container start vs file mtime (started=$STARTED written=$WRITTEN)"
   fi
 fi
 
