@@ -45,12 +45,32 @@ def pack():
                 tar.add(p, arcname=item, filter=_filter)
     return tf.name
 
-REMOTE = "\n".join([
+def remote(proxy=True):
+    """The droplet-side script. `proxy=False` builds and starts colt-web but does NOT touch any
+    reverse proxy — that is the STAGING shape: the twin has no videodead-caddy to wire into, and
+    the whole point of staging is to exercise the app and the reboot, not to publish a domain."""
+    steps = [
     "set -e",
     "cd /opt/colt-stack",
     "[ -f .env ] || printf 'LOKI_URL=http://videodead-loki-1:3100/loki/api/v1/push\\nLOKI_NETWORK=videodead_appnet\\n' > .env",
+    # docker-compose.web.yml joins videodead_appnet as an EXTERNAL network. On production that
+    # network already exists; on a fresh staging box it does not, and compose fails before it
+    # builds anything. Creating it if absent is idempotent and touches nothing on production.
+    "docker network inspect videodead_appnet >/dev/null 2>&1 || docker network create videodead_appnet",
     "echo '== build + (re)start colt-web (single network, force-recreate) =='",
     "docker compose -p colt-stack -f docker-compose.web.yml up -d --build --force-recreate",
+    ]
+    if not proxy:
+        steps += [
+            "echo '== staging: no shared proxy on this box — skipping the caddy wiring =='",
+            "echo -n 'colt-web image : '; docker inspect colt-web -f '{{.Config.Image}}'",
+            "sleep 4",
+            "curl -s -o /dev/null -w 'local colt-web /api/me = %{http_code}  (401 = LIVE)\\n' "
+            "--max-time 15 http://127.0.0.1:8090/api/me || true",
+            "",
+        ]
+        return "\n".join(steps)
+    return "\n".join(steps + [
     "echo '== wire cybergod.ai into the shared caddy from the committed snippet =='",
     "CADDY_CT=\"$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)\"",
     "CF=\"$(docker inspect \"$CADDY_CT\" --format '{{range .Mounts}}{{if eq .Destination \"/etc/caddy/Caddyfile\"}}{{.Source}}{{end}}{{end}}')\"",
@@ -71,7 +91,10 @@ REMOTE = "\n".join([
     "echo -n 'caddy->colt-web: '; docker exec \"$CADDY_CT\" wget -qO- -T5 http://colt-web:8000/api/me 2>&1 | head -c 60; echo",
     "curl -sk --resolve cybergod.ai:443:127.0.0.1 https://cybergod.ai/api/me -o /dev/null -w 'public via caddy = %{http_code}  (401 = LIVE)\\n'",
     "",
-])
+    ])
+
+
+REMOTE = remote(True)      # kept so existing callers/readers see the production script unchanged
 
 def preflight(tgt):
     """Prove we can reach the droplet BEFORE doing anything slow, and say so out loud."""
@@ -93,7 +116,13 @@ def preflight(tgt):
 
 
 def main():
+    # --no-proxy is the STAGING mode: build and start colt-web, touch no reverse proxy. Selected by
+    # stagegate.py together with DROPLET_HOST=<staging>. Same code path, same build, same image —
+    # only the publishing step differs, because the twin has no shared proxy to publish into.
+    proxy = "--no-proxy" not in sys.argv
     tgt = "%s@%s" % (USER, HOST)
+    if not proxy:
+        print("== STAGING MODE: build + start colt-web only, no proxy wiring ==", flush=True)
     preflight(tgt)
     print("== pack sources ==", flush=True)
     tgz = pack()
@@ -119,7 +148,7 @@ def main():
         "B64EOF",
         "echo '== unpack on droplet =='",
         "tar xzf /tmp/colt-web-src.tgz -C /opt/colt-stack && rm -f /tmp/colt-web-src.tgz",
-        REMOTE,
+        remote(proxy),
         "",
     ])
     print("== upload + build + wire + verify (ONE ssh; the docker build takes 2-4 min) ==", flush=True)

@@ -130,11 +130,18 @@ uname -r
 REBOOT = r"""
 set +e
 echo "#### REBOOT"
-uname -r
-echo "uptime_before: $(cut -d. -f1 /proc/uptime)s"
+# boot_id is a fresh random value on EVERY boot. It is the only cheap proof that the machine
+# actually went down and came back. "ssh answered again" proves nothing: the first run reported
+# "back after 1s" because the box had not finished going down yet, and that was recorded as a
+# successful reboot test. A test that can pass without the event happening is not a test.
+echo "boot_id_before: $(cat /proc/sys/kernel/random/boot_id)"
+echo "kernel_before:  $(uname -r)"
+echo "uptime_before:  $(cut -d. -f1 /proc/uptime)s"
 nohup sh -c 'sleep 2; systemctl reboot' >/dev/null 2>&1 &
 echo "reboot issued"
 """
+
+BOOTID = "echo '#### BOOTID'\ncat /proc/sys/kernel/random/boot_id\nuname -r\ncut -d. -f1 /proc/uptime\n"
 
 
 def parse_checks(text):
@@ -147,15 +154,32 @@ def parse_checks(text):
     return out
 
 
-def wait_for_ssh(host, timeout=300):
-    """Poll until the box answers again after a reboot. Returns seconds waited, or None."""
+def boot_id(host=STAGING):
+    out, _, rc = ssh_script(BOOTID, host=host, timeout=25)
+    lines = (sections(out).get("BOOTID") or "").splitlines()
+    return (lines + ["", "", ""])[:3] if rc == 0 else None
+
+
+def wait_for_reboot(host, was, timeout=420):
+    """Wait for a DIFFERENT boot_id. Returns (seconds, new_boot_info) or (None, None).
+
+    Deliberately not "wait until ssh answers": right after `systemctl reboot` is issued the box is
+    still up and answers instantly, which is exactly how the first version reported a 1-second
+    reboot and called it a pass. We wait for the identity of the running kernel instance to change.
+    """
     t0 = time.time()
+    seen_down = False
     while time.time() - t0 < timeout:
-        out, _, rc = ssh_script("echo UP", host=host, timeout=25)
-        if rc == 0 and "UP" in out:
-            return int(time.time() - t0)
-        time.sleep(10)
-    return None
+        time.sleep(8)
+        now = boot_id(host)
+        if now is None:
+            seen_down = True          # ssh refused: it really is going down
+            continue
+        if was and now[0] and now[0] != was[0]:
+            return int(time.time() - t0), now
+        if not seen_down and time.time() - t0 < 45:
+            continue                  # same boot_id this early just means it has not gone down yet
+    return None, None
 
 
 def notify(subject, body):
@@ -180,6 +204,45 @@ def notify(subject, body):
     return out.strip()
 
 
+def deploy_to_staging(say):
+    """Build and start the SAME colt-web image on staging, from the SAME sources, via the SAME
+    script production uses (deploy_web_direct.py) — only DROPLET_HOST and --no-proxy differ.
+
+    Using a different deploy path for staging would test a different thing than the one that ships.
+
+    SECRETS: colt-web needs a working OPENAI_API_KEY (the quorum runs inside it) and the rest of
+    the runtime env. Those live ONLY in the droplet's env file, never in git, so the file is copied
+    production -> staging through this PC. It is the same operator and the same trust boundary; the
+    alternative is a staging twin whose engine cannot run, which validates nothing.
+    """
+    say("copying the runtime env from production (secrets never enter git)...")
+    out, _, _ = ssh_script("set +e\necho '#### ENV'\ncat /opt/colt-stack/assess-bot/.env 2>/dev/null "
+                           "| base64 -w0\n", host=PROD, timeout=90)
+    blob = (sections(out).get("ENV") or "").strip()
+    if blob:
+        ssh_script("set -e\nmkdir -p /opt/colt-stack/assess-bot\n"
+                   "echo '%s' | base64 -d > /opt/colt-stack/assess-bot/.env\n"
+                   "chmod 600 /opt/colt-stack/assess-bot/.env\necho ok\n" % blob, timeout=90)
+        say("  env file placed on staging (chmod 600)")
+    else:
+        say("  [!] production env file unreadable — the engine checks on staging will fail honestly")
+
+    say("building colt-web on staging (same sources, same Dockerfile, no proxy wiring)...")
+    env = dict(os.environ, DROPLET_HOST=STAGING)
+    r = subprocess.run([sys.executable, os.path.join(HERE, "deploy_web_direct.py"), "--no-proxy"],
+                       env=env, cwd=HERE)
+    if r.returncode != 0:
+        say("  [!] staging build failed (exit %s)" % r.returncode)
+        return False
+
+    # caddyguard on staging, so the proxy_config check is a real check rather than "not installed".
+    say("installing caddyguard on staging...")
+    agent = open(os.path.join(HERE, "deploy", "caddyguard", "agent.py"), encoding="utf-8").read()
+    ssh_script("set +e\nmkdir -p /opt/caddyguard/blocks /opt/caddyguard/backups\n"
+               "cat >/opt/caddyguard/agent.py <<'PYEOF'\n%s\nPYEOF\necho ok\n" % agent, timeout=120)
+    return True
+
+
 def run(reboot_test=True, quiet=False):
     """-> (gate, digest). gate is 'GO' or 'NO-GO'. Never raises."""
     say = (lambda *a: None) if quiet else (lambda *a: print("  " + " ".join(str(x) for x in a)))
@@ -189,6 +252,14 @@ def run(reboot_test=True, quiet=False):
     if rc != 0 and not out:
         return "NO-GO", "staging unreachable: %s" % (err or "")[:300]
     say((sections(out).get("PROVISION") or "").replace("\n", "\n  "))
+
+    # ---- DEPLOY THE STACK TO STAGING -------------------------------------------------------
+    # The first version of this gate provisioned Docker and then health-checked a colt-web that
+    # had never been put there — 14 checks failed and it correctly refused to promote, for entirely
+    # the wrong reason. A gate that fails because the gate is incomplete teaches you to ignore it.
+    if not deploy_to_staging(say):
+        return "NO-GO", ("Could not deploy the stack to staging (%s). Nothing was changed on "
+                         "production." % STAGING)
 
     # Ship the quorum reviewer to staging (it runs INSIDE the container, where the key is).
     q = open(os.path.join(HERE, "deploy", "stagegate", "quorum.py"), encoding="utf-8").read()
@@ -207,20 +278,25 @@ def run(reboot_test=True, quiet=False):
         # THE TEST THAT MATTERS. Everything above proves the change works on a running box; only
         # this proves it survives the thing that actually took production down.
         say("rebooting staging — the one test the production box can never run...")
+        was = boot_id(STAGING)
         ssh_script(REBOOT, timeout=60)
-        time.sleep(20)
-        waited = wait_for_ssh(STAGING, timeout=300)
+        waited, now = wait_for_reboot(STAGING, was, timeout=420)
         if waited is None:
             checks.append({"name": "reboot_recovery", "ok": False,
-                           "detail": "staging did not answer ssh within 300s of a reboot"})
-            reboot = {"came_back": False}
+                           "detail": "staging never came back with a NEW boot_id within 420s "
+                                     "(boot_id before=%s)" % (was[0][:8] if was else "?")})
+            reboot = {"came_back": False, "boot_id_before": was}
         else:
-            say("back after %ds — re-running every health check" % waited)
+            say("rebooted and back after %ds — boot_id %s -> %s (kernel %s)"
+                % (waited, (was[0][:8] if was else "?"), now[0][:8], now[1]))
+            checks.append({"name": "reboot_recovery", "ok": True,
+                           "detail": "new boot_id after %ds, kernel %s, uptime %ss"
+                                     % (waited, now[1], now[2])})
             out2, _, _ = ssh_script(HEALTH, timeout=600)
             post = parse_checks(out2)
             reboot = {"came_back": True, "seconds": waited,
-                      "kernel_before": kernel_before,
-                      "kernel_after": (sections(out2).get("KERNEL") or "").splitlines()[:1]}
+                      "boot_id_before": (was[0] if was else None), "boot_id_after": now[0],
+                      "kernel_before": kernel_before, "kernel_after": now[1]}
             for c in post:
                 c["name"] = "post_reboot_" + c["name"]
                 say("  %-28s %s  %s" % (c["name"], "OK " if c["ok"] else "FAIL", c["detail"][:80]))

@@ -2464,6 +2464,18 @@ deploy to staging -> health -> **reboot it** -> health again -> AI digest -> onl
   `--fast-stage` skips only the reboot (weaker — say so).
 - A broken GATE must never become a broken DEPLOY: an exception in stagegate is reported and the
   ship continues. Same doctrine as the FP auditor — a check is a signal, not an authority.
+FIRST RUN CAUGHT TWO DEFECTS IN THE GATE ITSELF (both fixed; the gate correctly refused to promote):
+1. **It never DEPLOYED to staging.** It installed Docker and then health-checked a `colt-web` that
+   had never been put there — 14 checks failed for entirely the wrong reason. `deploy_to_staging()`
+   now runs the SAME `deploy_web_direct.py` production uses, with `DROPLET_HOST=<staging>` and a new
+   `--no-proxy` flag (the twin has no shared caddy to wire into). Using a different deploy path for
+   staging would test something other than what ships. It also creates the external
+   `videodead_appnet` (compose declares it external; on a fresh box it does not exist) and copies
+   the runtime `.env` prod -> staging, because the engine needs a real OPENAI_API_KEY to run at all.
+2. **The reboot test could pass without a reboot.** It waited for ssh to answer, and right after
+   `systemctl reboot` is issued the box is still up — so it reported "back after 1s" and scored a
+   pass. Now it compares `/proc/sys/kernel/random/boot_id`, which is regenerated on every boot, and
+   requires it to CHANGE. RULE: a test that can pass without the event happening is not a test.
 
 ## SEO — the tags were the SECOND cause; the bot gate was the first (2026-08)
 Google showed "colt — cyber pre-sales" for cybergod.ai months after the rebrand. Editing meta tags
