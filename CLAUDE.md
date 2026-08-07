@@ -2322,3 +2322,143 @@ whitespace do not bypass it, `someone.else@rbc.com` is refused, existing users s
 both front doors are asserted to enforce.
 NOTE: ruff's F821 gate caught a missing `sys` import in the bot path during this change - the gate
 added after the angermann NameError outage, doing exactly its job.
+
+## THE DROPLET IS 4 GB / 2 vCPU / 80 GB — the NAME LIES (remember, 2026-08)
+The droplet is called **`ubuntu-s-1vcpu-1gb-fra1-01`**, which is the size it was CREATED at. It has
+since been resized and is now **4 GB RAM / 2 AMD vCPUs / 80 GB, FRA1, $28/mo**, public IP
+64.225.108.200. I read the NAME off the DigitalOcean page and diagnosed an outage as memory
+pressure on a 1 GB box. That was wrong and the operator corrected it.
+RULE: a resource name is a label somebody typed once, not a fact about the resource. Read the spec
+line ("4 GB / 2 AMD vCPUs / 80 GB"), never the name.
+Consequence for triage: memory is NOT the default explanation on this host. 4 GB with ~54% used is
+comfortable for Amnezia VPN + VideoDead + joplin + the colt stack.
+
+## ALL SITES REFUSED = the SHARED PROXY, and a RESTART LOOP is not fixed by restarting (2026-08)
+cybergod.ai, godeyes.ai and jobhuntwow.com all returned ERR_CONNECTION_REFUSED at the same moment
+while the droplet answered ping. Three facts identify the fault without logging in:
+  * ping replies -> host and networking are alive (ICMP is kernel-side)
+  * CONNECTION REFUSED, not a timeout -> the SYN reached the host and got an RST: nothing is
+    LISTENING on 443. A firewall drop or a dead host gives a timeout instead.
+  * all three domains at once -> they share ONE reverse proxy. videodead-caddy owns :443 and
+    fronts every site on this box, so its death is a total outage and never an application fault.
+THE ACTUAL STATE was a CRASH LOOP, revealed by ship.py rather than by any check we had:
+```
+Error response from daemon: Container aa0e468c... is restarting, wait until the container is running
+ssh OK - containers: colt-web, colt-assessbot, colt-cassandra, polara-web, jhw-web   <- no caddy
+```
+`docker exec` refuses on a restarting container, which is exactly where `deploy_web_direct.py` died
+at the "wire cybergod.ai into the shared caddy" step. **A restart cannot fix a crash loop** — the
+process dies again immediately — so `docker start` is the wrong reflex and it destroys the evidence.
+Only the container's OWN log says why. The two causes that actually occur here:
+  1. **Port conflict** — another container grabbed :80/:443 first, so the proxy cannot bind and
+     exits. Note `polara-web` and `jhw-web` now run on this box; anything publishing 80/443
+     directly collides with the shared proxy. `docker ps -a --format '{{.Names}}\t{{.Ports}}'`
+     makes the collision visible instead of inferred.
+  2. **A Caddyfile it cannot parse** — `deploy_web_direct.py` APPENDS the committed cybergod block
+     into videodead's Caddyfile, so one malformed append takes every site on the box down together.
+     Fix the committed snippet and redeploy; never hand-edit the file on the droplet.
+## THE REPORTED LINE IS NOT THE FAULT — count the braces first (2026-08-07)
+videodead-caddy crash-looped on `Caddyfile:90: unrecognized directive: klimaanlage-preise.de,` and
+line 90 is a perfectly valid site header. The real defect was 11 lines earlier: `jobhuntwow.com {`
+at line 79 had lost its directives AND its closing `}`, so everything below it parsed as that
+block's contents. My own diagnostic had printed the answer — **`braces: open=22 close=21`** — and I
+acted on the line number instead. Commenting out line 90 would have disabled a working site and
+left the cause in place.
+- `fix_unclosed_block()` runs BEFORE any line-number repair: on an imbalance it inserts the missing
+  `}` at the first UNINDENTED `# <marker> END` or next site header reached while still inside a
+  block. Unindented is load-bearing — a nested `log {` legitimately opens a brace at depth > 0.
+- **The validator must be the container's OWN image.** The first version ran `caddy:latest`, pulled
+  a NEWER Caddy, and returned an unrelated complaint (`wrong argument count after 'email', line 3`)
+  that the running version never makes — so no line matched, the repair aborted and restored the
+  backup. A validator on a different version is not a validator. `docker inspect -f
+  '{{.Config.Image}}'` on the live container.
+RULE: when a parser reports a line, first ask whether the file's STRUCTURE is intact. An unbalanced
+delimiter makes every subsequent line a plausible-looking liar.
+
+## A LATENT CONFIG IS A TIME BOMB — the write and the outage are separated by a REBOOT (2026-08-07)
+The operator was right and I was wrong to reason from the crash: the stack was healthy through an
+assessment that finished 18:06 UTC, and every site was refused by 06:00 UTC. `uptime` gave the
+missing event — **`up 3:01` at 07:24 UTC = the droplet rebooted ~04:23 UTC**, every container "Up 3
+hours", and the Telegram alert stream stops at 04:15:08 UTC.
+**Caddy reads its Caddyfile ONCE, at start.** So a Caddyfile damaged at ANY earlier time is
+completely invisible while the process keeps serving from its in-memory config — no error, no
+alert, no symptom — until the next restart detonates it. The reboot did not cause the damage; it
+merely exposed it. Anything that looks for "what changed just before the outage" will therefore
+find nothing, which is exactly how this wasted a diagnostic cycle.
+CONSEQUENCES, all of them structural:
+- `forensics.py` exists to answer WHO WROTE THE FILE AND WHEN, not what the parser is complaining
+  about: mtimes across /etc /opt /root /srv sorted chronologically, systemd timers + units started
+  in the window, patchwatch, apt/unattended-upgrades (an auto-reboot is a prime suspect), ssh
+  logins, disk/inode/OOM, per-container StartedAt/RestartCount, and the proxy's log OLDEST-FIRST
+  (`--tail` only shows the millionth repeat of the loop). It is READ-ONLY.
+- `recover.py --fix-caddy` now captures that timeline BEFORE it repairs anything — a fix overwrites
+  the evidence that explains the fault, and one ssh round-trip is cheap next to losing the RCA.
+- THE REAL GAP THIS EXPOSES: nothing validates the shared Caddyfile at WRITE time. Every project on
+  this box (colt, polara/klima, jhw, jev) appends a managed block into videodead's Caddyfile, so any
+  one of them can silently truncate another's block and nobody learns until a reboot. The fix is a
+  post-write `caddy validate` + brace-balance check in EVERY appender, and a watchdog that validates
+  the live file on a timer instead of waiting for a restart to discover it.
+
+## A VALIDATOR MUST REPRODUCE THE CONTAINER'S ENVIRONMENT, NOT JUST ITS IMAGE (2026-08-07)
+With the image fixed to `caddy:2-alpine` (the container's own), the validator STILL disagreed with
+the running container: it said `wrong argument count after 'email' at /etc/caddy/Caddyfile:3` while
+the container said line 90. Same file, same version. The difference was ENV: line 3 uses a Caddy env
+placeholder (`email {$...}`), the running container has the variable, a bare `docker run` does not,
+so `email` arrives with zero arguments. That phantom error aborted a repair that had ALREADY
+succeeded (`open=20 close=19 -> inserting '}' before line 83`) and restored the backup.
+FIX: `validate()` passes the container's own `.Config.Env` (minus PATH/HOME/HOSTNAME) with `-e`.
+RULE: reproducing a container means image **and** environment (and mounts, and workdir). This is the
+third instance of the same disease — the ruff gate that silently skipped, the esbuild path that was
+"missing" on a machine where esbuild worked, and now a validator that could not see what the process
+sees. A check that does not reproduce its subject is not a check.
+CONSEQUENCE HERE: closing the brace restores cybergod.ai, godeyes.ai and klimaanlage-preise.de.
+jobhuntwow.com comes back as an EMPTY block — its directives were clobbered and must be restored
+from its own deploy; recover.py will not invent routing for another project.
+
+## caddyguard — the shared Caddyfile is now GENERATED, not edited (2026-08-07, `python caddyguard.py`)
+CONFIRMED RCA: a deploy at **16:15:56 UTC 6 Aug** rewrote `/opt/videodead/Caddyfile` and truncated
+jobhuntwow's block (directives + closing `}` gone); `/opt/videodead/Caddyfile.bak.1786032956` is that
+deploy's own backup, taken seconds before. Caddy served from MEMORY for 12h. Patchwatch's
+`apt full-upgrade` at 04:21:14 upgraded the kernel (6.8.0-136 -> 137) and rebooted at **04:22:42**;
+Caddy re-read the file and every domain died together. Last interactive SSH was 15 July — no human.
+FIVE guardrails, all installed by the ONE command `python caddyguard.py`:
+1. **ISOLATION.** `/opt/caddyguard/blocks/<project>.caddy` fragments; the monolith is ASSEMBLED.
+   A project can no longer delete another's bytes because it never touches them. NOT conf.d+import:
+   the container bind-mounts a single FILE, so an import dir needs a new mount = recreating the
+   shared proxy = an outage of every site to fix an outage.
+2. **WRITE-TIME VALIDATION.** `caddy validate` in the container's own image AND env, plus
+   brace-balance + marker-pairing (`# x BEGIN`/`END`) — the structural check alone catches the exact
+   2026-08-07 defect with no container at all. Refuse + rollback on failure.
+3. **RUNTIME WATCHDOG.** `caddyguard.timer` every 10min + `OnBootSec=2min` (a reboot is exactly when
+   latent damage detonates). Alerts to Telegram and self-heals by re-assembling from fragments.
+4. **REBOOT GATE.** `patchwatch.py` now runs `caddyguard check --heal` before `shutdown -r` and
+   REFUSES to reboot on an invalid proxy config. The reboot was the detonator and it was ours.
+5. **EXTERNAL EYES.** `.github/workflows/uptime.yml`, every 10min, OFF-BOX. Grafana/Loki/colt-web
+   alerting all live behind the proxy that died — monitoring inside the failure domain is mute
+   exactly when it matters. Nothing told the operator for ~6h.
+**IN-PLACE WRITES ONLY** (`open(...,"w")`, never `mv`): a single-file bind mount pins the INODE, so
+replacing the file leaves the container reading the old one forever.
+Guarded by a test that replays the real shape: structural rejects it, a klima write leaves the jhw
+fragment byte-identical, restore SKIPS a newer backup whose block is rubble and takes the balanced
+one, and a fragment carrying another project's markers is refused.
+
+## caddyguard is a BUILDING BLOCK of ship.py — and the argv length limit that hid as "ssh missing"
+I shipped `python caddyguard.py` as a SECOND command. That is operating principle 7, broken again:
+the operator runs `python ship.py`, full stop. caddyguard is now invoked BY ship.py after verify,
+and is idempotent so a routine deploy is safe — `restore` only acts when a fragment is missing,
+empty or unbalanced (otherwise a normal ship would silently overwrite a project's live config with
+whatever an old backup held). `--force` overrides; guarded by a test asserting both directions.
+THE BUG THAT MADE IT FAIL: `ssh_script` base64'd the script INTO argv (`echo <b64> | base64 -d |
+bash -s`). Fine for a diagnostic; caddyguard ships three files (~26 KB of base64) and Windows caps
+a command line at ~32 KB. Python surfaces that overflow as **FileNotFoundError**, which the handler
+reported as **"ssh client not found on this machine"** — a perfectly confident, completely wrong
+diagnosis on a machine where ssh works. FIX: the script goes over **stdin** (`ssh host 'bash -s'`,
+`input=script`); no length limit, still ONE session.
+RULE: never put a payload in argv. And when an error names a missing *program*, check whether the
+*command line* is the thing that is wrong.
+
+`recover.py` is the one command: it probes from outside, then in ONE ssh session reads uptime,
+disk, memory, who is bound to 80/443, running/stopped/RESTARTING containers, `docker logs` for
+every crash-looping container, published-port collisions, and a `caddy validate` of the live
+config. It states the verdict in words, and it REFUSES to restart anything when a crash loop is
+present — blind restarts there just hide the cause.

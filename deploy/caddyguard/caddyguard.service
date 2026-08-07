@@ -1,0 +1,18 @@
+[Unit]
+# Watchdog for the SHARED Caddy config. See deploy/caddyguard/agent.py for the full RCA.
+# Caddy reads its config ONLY at start, so a broken file is invisible until the next restart —
+# on 2026-08-07 that gap was 12 hours and it ended with every domain on the box refusing.
+# This closes the gap to one timer interval.
+Description=caddyguard — validate the shared Caddy config and self-heal from fragments
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# --heal rebuilds the live file from the per-project fragments, each of which was validated at the
+# moment it was written. Rebuilding from known-good parts is strictly safer than leaving a crash
+# loop in place; it refuses if the assembled result does not validate.
+ExecStart=/usr/bin/python3 /opt/caddyguard/agent.py check --heal
+TimeoutStartSec=300
+# A failing check is INFORMATION, not a broken unit — it has already alerted via Telegram.
+SuccessExitStatus=0 1

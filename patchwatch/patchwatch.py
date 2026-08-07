@@ -339,8 +339,33 @@ def main():
         snapshot=1 if snap else 0, reboot_required=1 if reboot_needed else 0, changed=1,
         duration_s=round(time.time() - t_run, 1))
 
-    # 6) REBOOT
+    # 6) REBOOT — GATED ON THE SHARED PROXY CONFIG BEING VALID.
+    #
+    # 2026-08-07: a deploy truncated /opt/videodead/Caddyfile at 16:15 UTC. Caddy reads its config
+    # ONLY AT START, so the running process served happily from memory and nothing was visibly
+    # wrong. Patchwatch's kernel reboot at 04:22 made Caddy re-read the file — and every domain on
+    # the box went down together. The reboot did not cause the damage; it DETONATED it.
+    #
+    # So a reboot is only safe while the proxy would come back up. If the config is broken we
+    # refuse to reboot, alert, and leave the box serving from memory — degraded but ONLINE, and
+    # with a human in the loop. `caddyguard check --heal` will normally have repaired it minutes
+    # earlier; this is the last barrier before an unattended outage.
     if reboot_needed and REBOOT_MODE == "auto" and not DRY_RUN:
+        guard = "/opt/caddyguard/agent.py"
+        if os.path.exists(guard):
+            # sh() returns (rc, stdout, stderr) — read the helper, do not assume a
+            # CompletedProcess. Getting that wrong is how a check silently never runs.
+            g_rc, g_out, g_err = sh("python3 %s check --heal" % guard, timeout=300)
+            if g_rc != 0:
+                detail = (g_out + g_err)[-800:]
+                log("reboot_blocked", reason="shared proxy config invalid — rebooting would take "
+                                             "every site down", guard=detail[-400:])
+                notify_telegram("PATCHWATCH: REBOOT BLOCKED\n\nA kernel update needs a reboot, but "
+                                "the shared Caddy config does not validate. Rebooting now would "
+                                "take every site on this host down.\n\nFix it with "
+                                "`python recover.py --fix-caddy`, then reboot.\n\n" + detail)
+                log("run_end", changed=True, reboot_required=True, reboot_action="blocked")
+                return
         log("rebooting", reason="kernel/lib update requires reboot")
         sh("shutdown -r +1 'patchwatch: applying kernel/security update'")
     log("run_end", changed=True, reboot_required=reboot_needed,

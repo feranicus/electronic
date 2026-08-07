@@ -1,0 +1,671 @@
+#### CLOCK
+now_utc:  2026-08-07 07:40:55
+tz:       Etc/UTC / UTC +0000
+window:   2026-08-06 16:00 .. 2026-08-07 08:00 (host local time as journald sees it)
+uptime:   up 3 hours, 18 minutes  (booted 2026-08-07 04:22:42)
+#### WROTE_IN_WINDOW
+2026-08-06 16:15:53.5639977250         99 /root/.docker/buildx/refs/default/default/msw16ann27cepkoo9fj1jdnlo
+2026-08-06 16:15:56.1229883770       3950 /opt/videodead/Caddyfile.bak.1786032956
+2026-08-07 04:21:18.1158200600       4096 /etc/init.d
+2026-08-07 04:21:20.0908045550       4096 /etc/apport
+2026-08-07 04:21:20.0948045240       4096 /etc/apport/report-ignore
+2026-08-07 04:21:20.0978045000       4096 /etc/cron.daily
+2026-08-07 04:21:20.1058044370       4096 /etc/logrotate.d
+2026-08-07 04:22:50.0180000000          0 /etc/skel/.cloud-locale-test.skip
+2026-08-07 04:22:50.0190000000          0 /root/.cloud-locale-test.skip
+2026-08-07 04:22:50.0210000000        682 /etc/default/motd-news
+2026-08-07 04:22:50.0210000000       4096 /etc/default
+2026-08-07 04:22:50.0300000000       4228 /etc/cloud/cloud.cfg.d/90-digitalocean.cfg
+2026-08-07 04:22:50.0340000000        834 /etc/udev/rules.d/99-digitalocean-automount.rules
+2026-08-07 04:23:02.7781530180       4096 /opt/joplin/postgres
+2026-08-07 04:23:03.0328378970         36 /opt/joplin/postgres/postmaster.opts
+2026-08-07 04:23:03.1377153110       4096 /opt/joplin/postgres/pg_stat
+2026-08-07 04:23:03.2825460260         94 /opt/joplin/postgres/postmaster.pid
+2026-08-07 04:23:22.3275535420       4096 /opt/joplin/postgres/global
+2026-08-07 04:23:22.3275535420      28676 /opt/joplin/postgres/global/pg_internal.init
+2026-08-07 04:23:22.3285531990      12288 /opt/joplin/postgres/base/16384
+2026-08-07 04:23:22.3285531990     162312 /opt/joplin/postgres/base/16384/pg_internal.init
+2026-08-07 04:28:03.1823875220       8192 /opt/joplin/postgres/pg_multixact/offsets/0000
+2026-08-07 04:28:03.5843854840       8192 /opt/joplin/postgres/base/16384/16393
+2026-08-07 05:57:53.5176046210   16777216 /opt/joplin/postgres/pg_wal/00000001000000030000008F
+2026-08-07 05:58:13.8404609030       4096 /opt/joplin/postgres/pg_wal
+2026-08-07 06:26:14.9406902180         20 /opt/backups/obsidian/vault-20260807.tar.gz
+2026-08-07 06:26:14.9406902180       4096 /opt/backups/obsidian
+2026-08-07 07:01:35.6462350000      25964 /opt/colt-stack/webapp/frontend/tools/catalogue.json
+2026-08-07 07:01:35.6505460000         29 /opt/colt-stack/webapp/frontend/tools/gap.de.json
+2026-08-07 07:01:35.6505460000         29 /opt/colt-stack/webapp/frontend/tools/gap.es.json
+2026-08-07 07:01:35.6505460000         29 /opt/colt-stack/webapp/frontend/tools/gap.fr.json
+2026-08-07 07:01:35.6505460000         29 /opt/colt-stack/webapp/frontend/tools/gap.it.json
+2026-08-07 07:01:35.6662421000         29 /opt/colt-stack/webapp/frontend/tools/gap.pl.json
+2026-08-07 07:02:00.0499773800       4096 /opt/colt-stack
+2026-08-07 07:02:00.3989747540         62 /root/.docker/buildx/current
+2026-08-07 07:02:00.4019747310       4096 /root/.docker/buildx
+2026-08-07 07:02:00.5039739630         99 /root/.docker/buildx/refs/default/default/ixj4jr9rsimnko4do83ykbydc
+2026-08-07 07:02:00.5069739410      20480 /root/.docker/buildx/refs/default/default
+2026-08-07 07:02:00.9079709240         74 /root/.docker/.token_seed
+2026-08-07 07:02:02.4189595540       3950 /opt/videodead/Caddyfile.bak.1786086122
+2026-08-07 07:02:02.4389594040       3950 /opt/videodead/Caddyfile
+2026-08-07 07:02:02.4389594040      12288 /opt/videodead
+2026-08-07 07:06:01.3591699220        241 /root/.wget-hsts
+2026-08-07 07:17:25.1842850230       3950 /root/Caddyfile.bak.20260807-071725
+2026-08-07 07:24:35.3902689410       3950 /root/Caddyfile.bak.20260807-072435
+2026-08-07 07:28:09.4227419170     163840 /opt/joplin/postgres/pg_subtrans/0048
+2026-08-07 07:33:20.7055043090       8192 /opt/joplin/postgres/base/16384/16734
+2026-08-07 07:35:42.6204799810       4096 /opt/videodead/.git
+2026-08-07 07:36:12.3422652050       3950 /root/Caddyfile.bak.20260807-073612
+2026-08-07 07:36:12.3422652050       4096 /root
+2026-08-07 07:38:09.9104150080          8 /opt/joplin/postgres/pg_logical/replorigin_checkpoint
+2026-08-07 07:38:09.9124149940       4096 /opt/joplin/postgres/pg_logical
+2026-08-07 07:38:09.9134149870     147456 /opt/joplin/postgres/pg_xact/0004
+2026-08-07 07:38:10.0144142560     122880 /opt/joplin/postgres/base/16384/1259
+2026-08-07 07:38:10.2154128010     262144 /opt/joplin/postgres/base/16384/2619
+2026-08-07 07:38:10.3154120780       8192 /opt/joplin/postgres/base/16384/16573
+2026-08-07 07:38:10.4154113540       8192 /opt/joplin/postgres/base/16384/16574
+2026-08-07 07:38:10.5154106300       8192 /opt/joplin/postgres/base/16384/16574_vm
+2026-08-07 07:38:10.6164098990      16384 /opt/joplin/postgres/base/16384/16580
+2026-08-07 07:38:10.7164091750      16384 /opt/joplin/postgres/base/16384/16582
+2026-08-07 07:38:10.8164084520       8192 /opt/joplin/postgres/base/16384/16660
+2026-08-07 07:38:11.0164070050  136298496 /opt/joplin/postgres/base/16384/16661
+2026-08-07 07:38:11.3174048260   44498944 /opt/joplin/postgres/base/16384/16666
+2026-08-07 07:38:19.8403431450   17678336 /opt/joplin/postgres/base/16384/16670
+2026-08-07 07:38:20.1413409670   17866752 /opt/joplin/postgres/base/16384/16671
+2026-08-07 07:38:20.2413402430       8192 /opt/joplin/postgres/base/16384/16719
+2026-08-07 07:38:20.5413380720      24576 /opt/joplin/postgres/base/16384/16719_fsm
+2026-08-07 07:38:20.6423373410       8192 /opt/joplin/postgres/base/16384/16719_vm
+2026-08-07 07:38:20.7473365810       8192 /opt/joplin/postgres/global/pg_control
+2026-08-07 07:39:43.7457357680   79159296 /opt/joplin/postgres/base/16384/16668
+2026-08-07 07:40:53.7472287080   16777216 /opt/joplin/postgres/pg_wal/00000001000000030000008E
+2026-08-07 07:40:55.6032152600   15230865 /opt/jevbest/logs/caddy.jsonl
+-- total files touched:
+72
+#### CADDYFILE_PROVENANCE
+container: videodead-caddy-1
+-- mounts (where the file really lives on the host):
+bind /opt/videodead/Caddyfile -> /etc/caddy/Caddyfile rw=false
+bind /opt/jobhuntwow/site -> /srv/jobhuntwow rw=false
+bind /opt/videodead/frontend/dist -> /srv/www rw=false
+volume /var/lib/docker/volumes/videodead_caddy_config/_data -> /config rw=true
+volume /var/lib/docker/volumes/videodead_caddy_data/_data -> /data rw=true
+
+-- image: caddy:2-alpine
+-- host source: /opt/videodead/Caddyfile
+-rw-r--r-- 1 root root 3950 2026-08-07 07:02:02.438959404 +0000 /opt/videodead/Caddyfile
+-- siblings / backups in /opt/videodead:
+total 772
+drwxr-xr-x 10 root root 12288 2026-08-07 07:02:02.438959404 +0000 .
+drwxr-xr-x 13 root root  4096 2026-07-25 23:33:23.066640889 +0000 ..
+-rw-r--r--  1 root root  1025 2026-06-21 11:21:39.754394353 +0000 .env
+-rw-r--r--  1 root root  1627 2026-06-21 14:08:28.070920042 +0000 .env.example
+drwxr-xr-x  8 root root  4096 2026-08-07 07:35:42.620479981 +0000 .git
+drwxr-xr-x  3 root root  4096 2026-06-21 01:19:23.990416921 +0000 .github
+-rw-r--r--  1 root root   432 2026-06-21 10:32:51.057468354 +0000 .gitignore
+-rw-r--r--  1 root root  1034 2026-06-21 01:19:23.990416921 +0000 ACCEPTABLE_USE.md
+-rw-r--r--  1 root root  3950 2026-08-07 07:02:02.438959404 +0000 Caddyfile
+-rw-r--r--  1 root root     0 2026-07-12 07:36:16.875116953 +0000 Caddyfile
+
+-rw-r--r--  1 root root  2203 2026-07-11 05:07:43.603533227 +0000 Caddyfile.bak.1783746463
+-rw-r--r--  1 root root  2244 2026-07-11 05:18:24.269659657 +0000 Caddyfile.bak.1783747104
+-rw-r--r--  1 root root  2244 2026-07-12 07:39:21.535792355 +0000 Caddyfile.bak.1783841961
+-rw-r--r--  1 root root  2329 2026-07-12 08:10:05.151950780 +0000 Caddyfile.bak.1783843805
+-rw-r--r--  1 root root  2329 2026-07-12 08:24:43.762695513 +0000 Caddyfile.bak.1783844683
+-rw-r--r--  1 root root  2329 2026-07-12 08:36:46.319541257 +0000 Caddyfile.bak.1783845406
+-rw-r--r--  1 root root  2329 2026-07-12 08:49:45.461285427 +0000 Caddyfile.bak.1783846185
+-rw-r--r--  1 root root  2329 2026-07-12 09:37:12.555679441 +0000 Caddyfile.bak.1783849032
+-rw-r--r--  1 root root  2329 2026-07-15 07:15:36.387017778 +0000 Caddyfile.bak.1784099736
+-rw-r--r--  1 root root  2329 2026-07-15 07:50:26.906341080 +0000 Caddyfile.bak.1784101826
+-rw-r--r--  1 root root  2329 2026-07-15 10:42:39.968551207 +0000 Caddyfile.bak.1784112159
+-rw-r--r--  1 root root  2329 2026-07-15 21:21:02.997296988 +0000 Caddyfile.bak.1784150462
+-rw-r--r--  1 root root  2329 2026-07-15 22:02:44.739534447 +0000 Caddyfile.bak.1784152964
+-rw-r--r--  1 root root  2329 2026-07-16 10:57:52.671780505 +0000 Caddyfile.bak.1784199472
+-rw-r--r--  1 root root  2329 2026-07-16 11:40:56.861809395 +0000 Caddyfile.bak.1784202056
+-rw-r--r--  1 root root  2329 2026-07-16 12:23:22.958811833 +0000 Caddyfile.bak.1784204602
+-rw-r--r--  1 root root  2329 2026-07-16 12:38:32.941456253 +0000 Caddyfile.bak.1784205512
+-rw-r--r--  1 root root  2329 2026-07-16 13:32:52.810494663 +0000 Caddyfile.bak.1784208772
+-rw-r--r--  1 root root  2329 2026-07-16 13:50:31.950608764 +0000 Caddyfile.bak.1784209831
+-- git?
+5213e54 Raise job timeout, log durations, Downloads and Errors dashboard
+3449f06 Multilingual marketing landing + embedded ad video; audit logging; CSP fix
+d0ecfa5 Audit logging + Grafana security dashboard + alerts; scope CSP off /observe
+8345cdb Add observability stack; ad video; mobile fix
+5f51169 Docs: full README + HLD update; pin yt-dlp to working version
+fbd21ca Enable yt-dlp EJS remote solver for YouTube n-challenge
+e2444ac Delete file from server after download; add Deno for YouTube
+3bdce42 Install Node.js so yt-dlp can solve YouTube's n-challenge
+ M Caddyfile
+ M docker-compose.yml
+?? "Caddyfile\r\r"
+?? Caddyfile.bak.1783746463
+?? Caddyfile.bak.1783747104
+?? Caddyfile.bak.1783841961
+?? Caddyfile.bak.1783843805
+?? Caddyfile.bak.1783844683
+?? Caddyfile.bak.1783845406
+?? Caddyfile.bak.1783846185
+-- any Caddyfile anywhere on the host, with mtimes:
+2026-06-03 17:55:16.0000000000        769 /var/lib/docker/overlay2/5fb11467e0884733c2bdaef787896deb79614221b79561d2cb89ffdf298c1a7a/diff/etc/caddy/Caddyfile
+2026-06-21 11:50:24.5693360180       1345 /opt/videodead/Caddyfile.bak.20260706-090528
+2026-06-21 11:50:24.5693360180       1345 /opt/videodead/Caddyfile.bak.20260706-091054
+2026-06-22 20:09:03.0000000000        769 /var/lib/docker/overlay2/44b6c45a7845e4375894e995613b90f19a4ef3b5794832516a07019cffe3bf75/diff/etc/caddy/Caddyfile
+2026-07-06 09:10:54.8588154570       2033 /opt/videodead/Caddyfile.bak.20260706-092344
+2026-07-11 05:07:43.6035332270       2203 /opt/videodead/Caddyfile.bak.1783746463
+2026-07-11 05:18:24.2696596570       2244 /opt/videodead/Caddyfile.bak.1783747104
+2026-07-12 07:19:32.1197543000        145 /opt/colt-stack/webapp/Caddyfile
+2026-07-12 07:36:16.8751169530          0 /opt/videodead/Caddyfile
+
+2026-07-12 07:39:21.5357923550       2244 /opt/videodead/Caddyfile.bak.1783841961
+2026-07-12 08:10:05.1519507800       2329 /opt/videodead/Caddyfile.bak.1783843805
+2026-07-12 08:24:43.7626955130       2329 /opt/videodead/Caddyfile.bak.1783844683
+2026-07-12 08:36:46.3195412570       2329 /opt/videodead/Caddyfile.bak.1783845406
+2026-07-12 08:49:45.4612854270       2329 /opt/videodead/Caddyfile.bak.1783846185
+2026-07-12 09:37:12.5556794410       2329 /opt/videodead/Caddyfile.bak.1783849032
+2026-07-15 07:15:36.3870177780       2329 /opt/videodead/Caddyfile.bak.1784099736
+2026-07-15 07:50:26.9063410800       2329 /opt/videodead/Caddyfile.bak.1784101826
+2026-07-15 10:42:39.9685512070       2329 /opt/videodead/Caddyfile.bak.1784112159
+2026-07-15 21:21:02.9972969880       2329 /opt/videodead/Caddyfile.bak.1784150462
+2026-07-15 22:02:44.7395344470       2329 /opt/videodead/Caddyfile.bak.1784152964
+2026-07-16 10:57:52.6717805050       2329 /opt/videodead/Caddyfile.bak.1784199472
+2026-07-16 11:40:56.8618093950       2329 /opt/videodead/Caddyfile.bak.1784202056
+2026-07-16 12:23:22.9588118330       2329 /opt/videodead/Caddyfile.bak.1784204602
+2026-07-16 12:38:32.9414562530       2329 /opt/videodead/Caddyfile.bak.1784205512
+2026-07-16 13:32:52.8104946630       2329 /opt/videodead/Caddyfile.bak.1784208772
+#### TIMERS_AND_CRON
+NEXT                             LEFT LAST                              PASSED UNIT                           ACTIVATES
+Fri 2026-08-07 07:50:00 UTC      9min Fri 2026-08-07 07:40:01 UTC      58s ago sysstat-collect.timer          sysstat-collect.service
+Fri 2026-08-07 08:00:19 UTC     19min Fri 2026-08-07 07:06:01 UTC    34min ago droplet-agent-update.timer     droplet-agent-update.service
+Fri 2026-08-07 08:27:36 UTC     46min Fri 2026-08-07 07:28:48 UTC    12min ago fwupd-refresh.timer            fwupd-refresh.service
+Fri 2026-08-07 22:14:34 UTC       14h Fri 2026-08-07 04:57:05 UTC 2h 43min ago motd-news.timer                motd-news.service
+Sat 2026-08-08 00:00:00 UTC       16h Fri 2026-08-07 00:00:29 UTC            - dpkg-db-backup.timer           dpkg-db-backup.service
+Sat 2026-08-08 00:00:00 UTC       16h Fri 2026-08-07 00:00:29 UTC            - logrotate.timer                logrotate.service
+Sat 2026-08-08 00:00:58 UTC       16h Fri 2026-08-07 04:21:18 UTC            - man-db.timer                   man-db.service
+Sat 2026-08-08 00:07:00 UTC       16h -                                      - sysstat-summary.timer          sysstat-summary.service
+Sat 2026-08-08 04:27:54 UTC       20h Fri 2026-08-07 04:27:54 UTC 3h 13min ago update-notifier-download.timer update-notifier-download.service
+Sat 2026-08-08 04:28:38 UTC       20h Fri 2026-08-07 06:27:13 UTC 1h 13min ago apt-daily.timer                apt-daily.service
+Sat 2026-08-08 04:37:48 UTC       20h Fri 2026-08-07 04:37:48 UTC  3h 3min ago systemd-tmpfiles-clean.timer   systemd-tmpfiles-clean.service
+Sat 2026-08-08 06:08:19 UTC       22h Fri 2026-08-07 06:19:32 UTC 1h 21min ago apt-daily-upgrade.timer        apt-daily-upgrade.service
+Sun 2026-08-09 03:10:26 UTC 1 day 19h Sun 2026-08-02 03:10:43 UTC            - e2scrub_all.timer              e2scrub_all.service
+Sun 2026-08-09 13:42:24 UTC    2 days Mon 2026-08-03 00:53:22 UTC            - update-notifier-motd.timer     update-notifier-motd.service
+Mon 2026-08-10 01:29:05 UTC    2 days Mon 2026-08-03 00:53:25 UTC            - fstrim.timer                   fstrim.service
+Mon 2026-08-10 04:20:23 UTC    2 days Fri 2026-08-07 04:18:09 UTC            - patchwatch.timer               patchwatch.service
+-                                   - -                                      - apport-autoreport.timer        apport-autoreport.service
+-                                   - -                                      - snapd.snap-repair.timer        snapd.snap-repair.service
+-                                   - -                                      - ua-timer.timer                 ua-timer.service
+
+19 timers listed.
+-- units that RAN in the window:
+2026-08-06T16:00:24+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T16:02:50+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting droplet-agent-update.service - DigitalOcean Droplet Agent update check...
+2026-08-06T16:10:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T16:15:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting user-runtime-dir@0.service - User Runtime Directory /run/user/0...
+2026-08-06T16:15:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting user@0.service - User Manager for UID 0...
+2026-08-06T16:15:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Started launchpadlib-cache-clean.timer - Clean up old files in the Launchpadlib cache.
+2026-08-06T16:15:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Starting dbus.socket - D-Bus User Message Bus Socket...
+2026-08-06T16:15:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Starting gpg-agent-ssh.socket - GnuPG cryptographic agent (ssh-agent emulation)...
+2026-08-06T16:15:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Started user@0.service - User Manager for UID 0.
+2026-08-06T16:15:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Started session-2458.scope - Session 2458 of User root.
+2026-08-06T16:15:42+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Started session-2460.scope - Session 2460 of User root.
+2026-08-06T16:15:54+00:00 ubuntu-s-1vcpu-1gb-fra1-01 networkd-dispatcher[853]: WARNING:Unknown index 498 seen, reloading interface list
+2026-08-06T16:15:54+00:00 ubuntu-s-1vcpu-1gb-fra1-01 networkd-dispatcher[853]: WARNING:Unknown index 498 seen, reloading interface list
+2026-08-06T16:15:55+00:00 ubuntu-s-1vcpu-1gb-fra1-01 networkd-dispatcher[853]: WARNING:Unknown index 500 seen, reloading interface list
+2026-08-06T16:15:55+00:00 ubuntu-s-1vcpu-1gb-fra1-01 networkd-dispatcher[853]: WARNING:Unknown index 500 seen, reloading interface list
+2026-08-06T16:15:55+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Started docker-99bc88f6cc82612bf7bc39cae7c86607eb6454b937eca92bcdd6dfdd96a478d4.scope - libcontainer container 99bc88f6cc82612bf7bc39cae7c86607eb6454b937eca92bcdd6dfdd96a478d4.
+2026-08-06T16:15:55+00:00 ubuntu-s-1vcpu-1gb-fra1-01 networkd-dispatcher[853]: WARNING:Unknown index 501 seen, reloading interface list
+2026-08-06T16:16:00+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Started session-2461.scope - Session 2461 of User root.
+2026-08-06T16:16:02+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Started session-2462.scope - Session 2462 of User root.
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Stopping user@0.service - User Manager for UID 0...
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Stopped target default.target - Main User Target.
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Stopped target basic.target - Basic System.
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Stopped target paths.target - Paths.
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Stopped target sockets.target - Sockets.
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Stopped target timers.target - Timers.
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Stopped launchpadlib-cache-clean.timer - Clean up old files in the Launchpadlib cache.
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[2885582]: Stopping gpg-agent-ssh.socket - GnuPG cryptographic agent (ssh-agent emulation)...
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Stopped user@0.service - User Manager for UID 0.
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Stopping user-runtime-dir@0.service - User Runtime Directory /run/user/0...
+2026-08-06T16:16:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Stopped user-runtime-dir@0.service - User Runtime Directory /run/user/0.
+2026-08-06T16:20:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T16:30:31+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T16:33:49+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting fwupd-refresh.service - Refresh fwupd metadata and update motd...
+2026-08-06T16:40:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T16:50:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T17:00:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T17:10:14+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting droplet-agent-update.service - DigitalOcean Droplet Agent update check...
+2026-08-06T17:10:14+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T17:20:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T17:30:16+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T17:34:50+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting fwupd-refresh.service - Refresh fwupd metadata and update motd...
+2026-08-06T17:40:40+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T17:50:03+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T18:00:02+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T18:03:39+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting fwupd-refresh.service - Refresh fwupd metadata and update motd...
+2026-08-06T18:04:21+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting droplet-agent-update.service - DigitalOcean Droplet Agent update check...
+2026-08-06T18:10:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T18:20:12+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T18:30:14+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T18:40:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T18:50:14+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T19:00:19+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T19:10:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T19:14:19+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting droplet-agent-update.service - DigitalOcean Droplet Agent update check...
+2026-08-06T19:20:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T19:30:39+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T19:40:00+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T19:50:14+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+2026-08-06T19:56:39+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting fwupd-refresh.service - Refresh fwupd metadata and update motd...
+2026-08-06T20:00:07+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting sysstat-collect.service - system activity accounting tool...
+-- cron:
+/etc/cron.d:
+total 28
+drwxr-xr-x   2 root root  4096 Aug  5  2025 .
+drwxr-xr-x 121 root root 12288 Jul 31 04:29 ..
+-rw-r--r--   1 root root   102 Mar 31  2024 .placeholder
+-rw-r--r--   1 root root   201 Apr  8  2024 e2scrub_all
+-rw-r--r--   1 root root   396 Jan  9  2024 sysstat
+
+/etc/cron.daily:
+total 60
+drwxr-xr-x   2 root root  4096 Aug  7 04:21 .
+drwxr-xr-x 121 root root 12288 Jul 31 04:29 ..
+-rw-r--r--   1 root root   102 Mar 31  2024 .placeholder
+-rwxr-xr-x   1 root root   268 Dec 10  2022 00logwatch
+-rwxr-xr-x   1 root root   376 Jul  8  2025 apport
+-rwxr-xr-x   1 root root  1478 Mar 22  2024 apt-compat
+-rwxr-xr-x   1 root root   207 May 14 16:28 backup-obsidian
+-rwxr-xr-x   1 root root    81 May 15 06:38 do-agent
+-rwxr-xr-x   1 root root   123 Feb  5  2024 dpkg
+-rwxr-xr-x   1 root root   377 Apr  8  2024 logrotate
+-rwxr-xr-x   1 root root  1395 Mar 29  2024 man-db
+-rwxr-xr-x   1 root root   902 May 14 15:34 security-report
+-rwxr-xr-x   1 root root   518 Jan  9  2024 sysstat
+-- at jobs:
+#### PATCHWATCH
+2026-08-07T04:18:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Starting patchwatch.service - patchwatch — backup-first, LLM-assisted auto-patcher...
+2026-08-07T04:18:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: /opt/patchwatch/patchwatch.py:67: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+2026-08-07T04:18:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]:   rec = {"ts": int(time.time()), "iso": datetime.datetime.utcnow().isoformat() + "Z",
+2026-08-07T04:18:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076289, "iso": "2026-08-07T04:18:09.804127Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "run_start", "dry_run": false, "upgrade_mode": "full", "reboot_mode": "auto"}
+2026-08-07T04:18:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076289, "iso": "2026-08-07T04:18:09.804429Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "inventory", "state": "start"}
+2026-08-07T04:18:21+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076301, "iso": "2026-08-07T04:18:21.029007Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "inventory", "state": "done", "dur_s": 11.2}
+2026-08-07T04:18:21+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076301, "iso": "2026-08-07T04:18:21.029436Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "inventory", "upgradable_count": 5, "kernel_update_count": 0, "upgradable": ["python3-problem-report", "python3-apport", "apport-core-dump-handler", "apport", "tailscale"], "kernel_updates": [], "kernel_running": "6.8.0-136-generic", "docker": "Docker version 29.1.3, build 29.1.3-0ubuntu3~24.04.2", "reboot_required_before": true, "disk_root": "45% used, 43G free"}
+2026-08-07T04:18:21+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076301, "iso": "2026-08-07T04:18:21.029705Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "backup_spaces", "state": "start", "volumes_project": "colt-stack"}
+2026-08-07T04:18:21+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: /opt/patchwatch/patchwatch.py:127: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+2026-08-07T04:18:21+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]:   stamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+2026-08-07T04:19:07+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: /opt/patchwatch/patchwatch.py:67: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+2026-08-07T04:19:07+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]:   rec = {"ts": int(time.time()), "iso": datetime.datetime.utcnow().isoformat() + "Z",
+2026-08-07T04:19:07+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076347, "iso": "2026-08-07T04:19:07.969843Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "backup_uploaded", "key": "patchwatch/ubuntu-s-1vcpu-1gb-fra1-01/pre-upgrade-20260807-041821.tar.gz", "bytes": 148020633, "volumes": ["colt-stack_colt_events", "colt-stack_colt_webdata", "colt-stack_promtail-data"]}
+2026-08-07T04:19:08+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076348, "iso": "2026-08-07T04:19:08.010259Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "backup_pruned", "key": "patchwatch/ubuntu-s-1vcpu-1gb-fra1-01/pre-upgrade-20260716-041815.tar.gz"}
+2026-08-07T04:19:08+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076348, "iso": "2026-08-07T04:19:08.010527Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "backup_spaces", "state": "done", "dur_s": 47.0}
+2026-08-07T04:19:08+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076348, "iso": "2026-08-07T04:19:08.010654Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "snapshot_droplet", "state": "start"}
+2026-08-07T04:19:08+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: /opt/patchwatch/patchwatch.py:176: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+2026-08-07T04:19:08+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]:   stamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+2026-08-07T04:19:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076349, "iso": "2026-08-07T04:19:09.485469Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "snapshot_started", "action_id": 3334827559, "name": "patchwatch-pre-20260807-041908"}
+2026-08-07T04:21:11+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076471, "iso": "2026-08-07T04:21:11.975448Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "snapshot_completed", "action_id": 3334827559}
+2026-08-07T04:21:12+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076472, "iso": "2026-08-07T04:21:12.479469Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "snapshot_pruned", "id": 238801172}
+2026-08-07T04:21:12+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076472, "iso": "2026-08-07T04:21:12.479837Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "snapshot_droplet", "state": "done", "dur_s": 124.5}
+2026-08-07T04:21:12+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076472, "iso": "2026-08-07T04:21:12.480209Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "upgrade", "state": "start", "upgrade_mode": "full"}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.284844Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "upgrade", "state": "done", "dur_s": 12.8}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.285644Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "upgrade_done", "apt": "ok", "upgraded_count": 5, "colt_images": "refreshed via /opt/colt-stack/docker-compose.ghcr.yml", "reboot_required": true}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.285819Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "digest", "state": "start"}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.285916Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "digest", "state": "done", "dur_s": 0.0}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.286047Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "notify", "state": "start"}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.315361Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "notify_telegram", "result": "err", "err": "HTTP Error 404: Not Found"}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.315930Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "phase", "phase": "notify", "state": "done", "dur_s": 0.0}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.316123Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "metrics", "upgradable_count": 5, "kernel_update_count": 0, "upgraded_count": 5, "backup_bytes": 148020633, "snapshot": 1, "reboot_required": 1, "changed": 1, "duration_s": 195.5}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.316259Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "rebooting", "reason": "kernel/lib update requires reboot"}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 python3[3252901]: {"ts": 1786076485, "iso": "2026-08-07T04:21:25.326491Z", "bot": "patchwatch", "host": "ubuntu-s-1vcpu-1gb-fra1-01", "run_id": "8f81e2ebb3cc", "evt": "run_end", "changed": true, "reboot_required": true, "reboot_action": "auto"}
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: patchwatch.service: Deactivated successfully.
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Finished patchwatch.service - patchwatch — backup-first, LLM-assisted auto-patcher.
+2026-08-07T04:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: patchwatch.service: Consumed 56.177s CPU time, 749.8M memory peak, 0B memory swap peak.
+2026-08-07T04:22:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: patchwatch.timer: Deactivated successfully.
+2026-08-07T04:22:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Stopped patchwatch.timer - Run patchwatch every ~3 days in a low-traffic window.
+-- Boot fe48dd6a37614af4bf21b5230e3419c6 --
+2026-08-07T04:22:50+00:00 ubuntu-s-1vcpu-1gb-fra1-01 systemd[1]: Started patchwatch.timer - Run patchwatch every ~3 days in a low-traffic window.
+/opt/patchwatch:
+total 28
+drwxr-xr-x  2 root root  4096 Jul  9 14:51 .
+drwxr-xr-x 13 root root  4096 Jul 25 23:33 ..
+-rw-r--r--  1 root root 18908 Jul  9 16:24 patchwatch.py
+2026-08-07 04:18:09.7140990000 /var/lib/systemd/timers/stamp-patchwatch.timer
+#### APT_AND_UPGRADES
+Start-Date: 2026-08-07  04:21:14
+Commandline: apt-get -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef full-upgrade
+Upgrade: tailscale:amd64 (1.102.1, 1.102.2), python3-apport:amd64 (2.28.2-0ubuntu0.1, 2.28.3-0ubuntu0.1), apport-core-dump-handler:amd64 (2.28.2-0ubuntu0.1, 2.28.3-0ubuntu0.1), python3-problem-report:amd64 (2.28.2-0ubuntu0.1, 2.28.3-0ubuntu0.1), apport:amd64 (2.28.2-0ubuntu0.1, 2.28.3-0ubuntu0.1)
+End-Date: 2026-08-07  04:21:21
+-- unattended-upgrades:
+2026-08-04 02:22:18,488 INFO Starting unattended upgrades script
+2026-08-04 02:22:18,489 INFO Allowed origins are: o=Ubuntu,a=noble, o=Ubuntu,a=noble-security, o=UbuntuESMApps,a=noble-apps-security, o=UbuntuESM,a=noble-infra-security
+2026-08-04 02:22:18,489 INFO Initial blacklist: 
+2026-08-04 02:22:18,489 INFO Initial whitelist (not strict): 
+2026-08-04 06:19:07,987 INFO Starting unattended upgrades script
+2026-08-04 06:19:07,989 INFO Allowed origins are: o=Ubuntu,a=noble, o=Ubuntu,a=noble-security, o=UbuntuESMApps,a=noble-apps-security, o=UbuntuESM,a=noble-infra-security
+2026-08-04 06:19:07,989 INFO Initial blacklist: 
+2026-08-04 06:19:07,989 INFO Initial whitelist (not strict): 
+2026-08-04 06:19:09,232 INFO No packages found that can be upgraded unattended and no pending auto-removals
+2026-08-05 06:59:14,428 INFO Starting unattended upgrades script
+2026-08-05 06:59:14,429 INFO Allowed origins are: o=Ubuntu,a=noble, o=Ubuntu,a=noble-security, o=UbuntuESMApps,a=noble-apps-security, o=UbuntuESM,a=noble-infra-security
+2026-08-05 06:59:14,429 INFO Initial blacklist: 
+2026-08-05 06:59:14,429 INFO Initial whitelist (not strict): 
+2026-08-05 06:59:15,707 INFO No packages found that can be upgraded unattended and no pending auto-removals
+2026-08-05 10:38:28,840 INFO Starting unattended upgrades script
+2026-08-05 10:38:28,841 INFO Allowed origins are: o=Ubuntu,a=noble, o=Ubuntu,a=noble-security, o=UbuntuESMApps,a=noble-apps-security, o=UbuntuESM,a=noble-infra-security
+2026-08-05 10:38:28,841 INFO Initial blacklist: 
+2026-08-05 10:38:28,841 INFO Initial whitelist (not strict): 
+2026-08-06 06:36:45,589 INFO Starting unattended upgrades script
+2026-08-06 06:36:45,590 INFO Allowed origins are: o=Ubuntu,a=noble, o=Ubuntu,a=noble-security, o=UbuntuESMApps,a=noble-apps-security, o=UbuntuESM,a=noble-infra-security
+2026-08-06 06:36:45,590 INFO Initial blacklist: 
+2026-08-06 06:36:45,590 INFO Initial whitelist (not strict): 
+2026-08-06 06:36:50,462 INFO Packages that will be upgraded: linux-headers-generic linux-headers-virtual linux-image-virtual linux-libc-dev linux-tools-common linux-virtual
+2026-08-06 06:36:50,463 INFO Writing dpkg log to /var/log/unattended-upgrades/unattended-upgrades-dpkg.log
+2026-08-06 06:37:21,502 INFO All upgrades installed
+2026-08-06 06:37:46,110 INFO Packages that were successfully auto-removed: linux-headers-6.8.0-134 linux-headers-6.8.0-134-generic linux-image-6.8.0-134-generic linux-modules-6.8.0-134-generic linux-tools-6.8.0-134 linux-tools-6.8.0-134-generic
+2026-08-06 06:37:46,110 INFO Packages that are kept back: 
+2026-08-06 15:16:59,423 INFO Starting unattended upgrades script
+2026-08-06 15:16:59,424 INFO Allowed origins are: o=Ubuntu,a=noble, o=Ubuntu,a=noble-security, o=UbuntuESMApps,a=noble-apps-security, o=UbuntuESM,a=noble-infra-security
+2026-08-06 15:16:59,424 INFO Initial blacklist: 
+2026-08-06 15:16:59,424 INFO Initial whitelist (not strict): 
+2026-08-07 06:19:32,852 INFO Starting unattended upgrades script
+2026-08-07 06:19:32,853 INFO Allowed origins are: o=Ubuntu,a=noble, o=Ubuntu,a=noble-security, o=UbuntuESMApps,a=noble-apps-security, o=UbuntuESM,a=noble-infra-security
+2026-08-07 06:19:32,853 INFO Initial blacklist: 
+2026-08-07 06:19:32,853 INFO Initial whitelist (not strict): 
+2026-08-07 06:19:34,085 INFO No packages found that can be upgraded unattended and no pending auto-removals
+2026-08-07 06:27:17,286 INFO Starting unattended upgrades script
+2026-08-07 06:27:17,287 INFO Allowed origins are: o=Ubuntu,a=noble, o=Ubuntu,a=noble-security, o=UbuntuESMApps,a=noble-apps-security, o=UbuntuESM,a=noble-infra-security
+2026-08-07 06:27:17,288 INFO Initial blacklist: 
+2026-08-07 06:27:17,288 INFO Initial whitelist (not strict): 
+-- reboot required: no
+#### WHO_CONNECTED
+reboot   system boot  6.8.0-137-generi Fri Aug  7 04:22:44 2026   still running
+reboot   system boot  6.8.0-136-generi Tue Jul 28 04:33:01 2026 - Fri Aug  7 04:22:37 2026 (9+23:49)
+reboot   system boot  6.8.0-136-generi Wed Jul 22 04:28:39 2026 - Tue Jul 28 04:32:54 2026 (6+00:04)
+root     pts/0        162.243.190.66   Wed Jul 15 21:57:52 2026 - Wed Jul 15 22:16:18 2026  (00:18)
+root     pts/0        162.243.188.66   Sun Jul 12 07:52:13 2026 - Sun Jul 12 07:56:49 2026  (00:04)
+reboot   system boot  6.8.0-134-generi Fri Jul 10 04:24:06 2026 - Wed Jul 22 04:28:31 2026 (12+00:04)
+root     pts/0        93.249.140.89    Thu Jul  9 17:11:10 2026 - Thu Jul  9 17:14:22 2026  (00:03)
+root     pts/0        93.249.140.89    Mon Jul  6 08:13:34 2026 - Mon Jul  6 23:39:37 2026  (15:26)
+root     pts/1        46.117.122.8     Sun Jun 21 13:31:46 2026 - Sun Jun 21 16:20:57 2026  (02:49)
+root     pts/0        79.181.153.19    Sun Jun 21 11:20:48 2026 - Sun Jun 21 14:02:47 2026  (02:41)
+reboot   system boot  6.8.0-124-generi Sun Jun 21 11:17:02 2026 - Fri Jul 10 04:23:59 2026 (18+17:06)
+root     pts/0        79.181.153.19    Sun Jun 21 11:11:35 2026 - down                      (00:02)
+reboot   system boot  6.8.0-124-generi Sun Jun 21 11:11:07 2026 - Sun Jun 21 11:14:04 2026  (00:02)
+root     pts/1        79.181.153.19    Sun Jun 21 10:57:47 2026 - crash                     (00:13)
+root     pts/0        37.169.2.234     Sun Jun 21 10:56:38 2026 - crash                     (00:14)
+root     pts/0        37.169.2.234     Sun Jun 21 10:32:05 2026 - Sun Jun 21 10:41:39 2026  (00:09)
+root     pts/2        46.117.122.8     Sun Jun 21 02:49:41 2026 - Sun Jun 21 04:29:47 2026  (01:40)
+root     pts/1        64.225.108.200   Sun Jun 21 02:47:53 2026 - Sun Jun 21 05:01:22 2026  (02:13)
+root     pts/0        46.117.122.8     Sun Jun 21 01:18:58 2026 - Sun Jun 21 05:01:22 2026  (03:42)
+root     pts/2        87.178.154.226   Sun Jun  7 22:35:03 2026 - Mon Jun  8 21:27:39 2026  (22:52)
+root     pts/1        87.178.154.226   Sun Jun  7 21:49:31 2026 - Mon Jun  8 21:27:41 2026  (23:38)
+root     pts/0        87.178.154.226   Sun Jun  7 20:29:19 2026 - Mon Jun  8 22:09:37 2026 (1+01:40)
+root     pts/1        87.178.154.226   Sun Jun  7 16:17:53 2026 - Sun Jun  7 20:24:05 2026  (04:06)
+root     pts/0        87.178.154.226   Sun Jun  7 16:04:40 2026 - Sun Jun  7 16:57:15 2026  (00:52)
+root     pts/4        37.168.58.50     Thu May 14 16:48:42 2026 - Thu May 14 19:27:10 2026  (02:38)
+-- sshd in window:
+2026-08-06T16:00:22+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2877765]: Failed password for root from 103.82.132.16 port 45232 ssh2
+2026-08-06T16:01:17+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2878251]: Failed password for root from 92.118.39.78 port 51804 ssh2
+2026-08-06T16:04:20+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2879828]: Failed password for root from 45.148.10.157 port 2428 ssh2
+2026-08-06T16:04:23+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2879828]: Failed password for root from 45.148.10.157 port 2428 ssh2
+2026-08-06T16:04:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2879828]: Failed password for root from 45.148.10.157 port 2428 ssh2
+2026-08-06T16:04:26+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2879828]: Disconnecting authenticating user root 45.148.10.157 port 2428: Too many authentication failures [preauth]
+2026-08-06T16:06:58+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2881145]: Failed password for root from 92.118.39.78 port 53830 ssh2
+2026-08-06T16:09:54+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2882646]: Failed password for root from 101.99.6.114 port 5793 ssh2
+2026-08-06T16:12:36+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2884025]: Invalid user ubuntu from 92.118.39.78 port 42848
+2026-08-06T16:13:30+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2884468]: Failed password for root from 45.148.10.147 port 24868 ssh2
+2026-08-06T16:13:33+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2884468]: Failed password for root from 45.148.10.147 port 24868 ssh2
+2026-08-06T16:13:37+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2884468]: Failed password for root from 45.148.10.147 port 24868 ssh2
+2026-08-06T16:13:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2884468]: Disconnecting authenticating user root 45.148.10.147 port 24868: Too many authentication failures [preauth]
+2026-08-06T16:15:08+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2885308]: Failed password for root from 62.133.62.83 port 54480 ssh2
+2026-08-06T16:15:14+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2885381]: Failed password for root from 131.186.50.157 port 57152 ssh2
+2026-08-06T16:15:21+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2885431]: Failed password for root from 103.82.20.28 port 58352 ssh2
+2026-08-06T16:15:23+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2885436]: Failed password for root from 131.186.50.157 port 57154 ssh2
+2026-08-06T16:15:28+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2885470]: Failed password for root from 131.186.50.157 port 56004 ssh2
+2026-08-06T16:15:38+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2885576]: Accepted publickey for root from 212.58.119.138 port 4706 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-06T16:15:42+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2885764]: Accepted publickey for root from 212.58.119.138 port 4708 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-06T16:16:00+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2886347]: Accepted publickey for root from 212.58.119.138 port 4716 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-06T16:16:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2886347]: Received disconnect from 212.58.119.138 port 4716:11: disconnected by user
+2026-08-06T16:16:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2886347]: Disconnected from user root 212.58.119.138 port 4716
+2026-08-06T16:16:02+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2886471]: Accepted publickey for root from 212.58.119.138 port 4717 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-06T16:19:39+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2888355]: Failed password for root from 211.57.200.119 port 55316 ssh2
+2026-08-06T16:20:11+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2888617]: Failed password for root from 103.98.149.87 port 51222 ssh2
+2026-08-06T16:21:16+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2889182]: Failed password for root from 45.148.10.152 port 36588 ssh2
+2026-08-06T16:21:20+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2889182]: Failed password for root from 45.148.10.152 port 36588 ssh2
+2026-08-06T16:21:23+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2889182]: Failed password for root from 45.148.10.152 port 36588 ssh2
+2026-08-06T16:21:23+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2889182]: Disconnecting authenticating user root 45.148.10.152 port 36588: Too many authentication failures [preauth]
+2026-08-06T16:21:25+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2889279]: Failed password for root from 45.148.10.152 port 21684 ssh2
+2026-08-06T16:23:17+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2890223]: Failed password for root from 185.253.160.18 port 52468 ssh2
+2026-08-06T16:23:17+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2890223]: Received disconnect from 185.253.160.18 port 52468:11: Client disconnecting normally [preauth]
+2026-08-06T16:23:17+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2890223]: Disconnected from authenticating user root 185.253.160.18 port 52468 [preauth]
+2026-08-06T16:23:58+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2890559]: Failed password for root from 103.15.222.183 port 57922 ssh2
+2026-08-06T16:29:05+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2893156]: Failed password for root from 103.77.175.15 port 39500 ssh2
+2026-08-06T16:29:19+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2893309]: Invalid user mailer from 113.172.122.112 port 43748
+2026-08-06T16:29:21+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2893309]: Failed password for invalid user mailer from 113.172.122.112 port 43748 ssh2
+2026-08-06T16:29:22+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2893309]: Received disconnect from 113.172.122.112 port 43748:11: Bye Bye [preauth]
+2026-08-06T16:29:22+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2893309]: Disconnected from invalid user mailer 113.172.122.112 port 43748 [preauth]
+2026-08-06T16:30:31+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2893893]: Failed password for root from 143.198.117.123 port 60432 ssh2
+2026-08-06T16:31:52+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2894578]: Failed password for root from 113.172.122.112 port 35214 ssh2
+2026-08-06T16:32:18+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2894792]: Failed password for root from 103.153.68.219 port 44188 ssh2
+2026-08-06T16:33:53+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2895611]: Failed password for root from 103.27.238.114 port 55698 ssh2
+2026-08-06T16:37:07+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2897249]: Failed password for root from 147.45.199.80 port 58458 ssh2
+2026-08-06T16:37:35+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2897479]: Failed password for root from 80.94.92.55 port 60144 ssh2
+2026-08-06T16:41:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2899191]: Failed password for root from 80.94.92.55 port 35268 ssh2
+2026-08-06T16:44:15+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2900871]: Failed password for root from 80.94.92.55 port 38584 ssh2
+2026-08-06T16:47:44+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2902631]: Failed password for root from 87.251.79.125 port 35942 ssh2
+2026-08-06T16:48:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[2903125]: Invalid user ubnt from 45.154.244.193 port 46299
+-- auth.log:
+2026-08-07T07:09:42.960240+00:00 ubuntu-s-1vcpu-1gb-fra1-01 (systemd): pam_unix(systemd-user:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:15:01.820923+00:00 ubuntu-s-1vcpu-1gb-fra1-01 CRON[125669]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:17:01.830957+00:00 ubuntu-s-1vcpu-1gb-fra1-01 CRON[127058]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:17:15.932387+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[127366]: Accepted publickey for root from 37.168.15.70 port 50947 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:17:15.934272+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[127366]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:17:15.975835+00:00 ubuntu-s-1vcpu-1gb-fra1-01 (systemd): pam_unix(systemd-user:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:17:23.289854+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[127725]: Accepted publickey for root from 37.168.15.70 port 50951 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:17:23.291745+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[127725]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:24:28.499207+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[132868]: Accepted publickey for root from 37.168.15.70 port 51200 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:24:28.501651+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[132868]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:24:28.552178+00:00 ubuntu-s-1vcpu-1gb-fra1-01 (systemd): pam_unix(systemd-user:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:24:34.410326+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[133230]: Accepted publickey for root from 37.168.15.70 port 51205 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:24:34.412014+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[133230]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:25:01.841430+00:00 ubuntu-s-1vcpu-1gb-fra1-01 CRON[133894]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:32:18.933385+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[139023]: Accepted publickey for root from 37.168.15.70 port 51373 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:32:18.936040+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[139023]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:32:18.985422+00:00 ubuntu-s-1vcpu-1gb-fra1-01 (systemd): pam_unix(systemd-user:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:35:01.853189+00:00 ubuntu-s-1vcpu-1gb-fra1-01 CRON[141416]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:35:37.189564+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[141872]: Accepted publickey for root from 37.168.15.70 port 51448 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:35:37.192255+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[141872]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:35:37.248498+00:00 ubuntu-s-1vcpu-1gb-fra1-01 (systemd): pam_unix(systemd-user:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:35:41.649883+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[142193]: Accepted publickey for root from 37.168.15.70 port 51449 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:35:41.652339+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[142193]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:36:10.732428+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[143068]: Accepted publickey for root from 37.168.15.70 port 51462 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:36:10.734459+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[143068]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:40:49.910437+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[148362]: Accepted publickey for root from 37.168.15.70 port 50598 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:40:49.913332+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[148362]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:40:49.961545+00:00 ubuntu-s-1vcpu-1gb-fra1-01 (systemd): pam_unix(systemd-user:session): session opened for user root(uid=0) by root(uid=0)
+2026-08-07T07:40:55.146950+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[148719]: Accepted publickey for root from 37.168.15.70 port 50601 ssh2: ED25519 SHA256:CLtPgNS1zp64+T1dZrIYpkV7oNiz0Zg+t7oCg8AGxGg
+2026-08-07T07:40:55.148810+00:00 ubuntu-s-1vcpu-1gb-fra1-01 sshd[148719]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+-- root shell history (timestamps only meaningful if HISTTIMEFORMAT was set):
+-rw------- 1 root root 25743 2026-07-12 07:56:49.282881280 +0000 /root/.bash_history
+# C) the caddy service block in compose (to see its volumes)
+sudo grep -n -A 20 'caddy' /opt/videodead/docker-compose.yml | head -40
+clear
+mkdir -p /opt/jobhuntwow/site
+curl -fsSL https://raw.githubusercontent.com/feranicus/jobhuntwow.com/main/index.html -o /opt/jobhuntwow/site/index.html
+ls -la /opt/jobhuntwow/site/     # should show index.html ~254 KB
+clear
+python3 /root/deploy_jobhuntwow_caddy.py --dry-run
+clear
+python3 /root/deploy_jobhuntwow_caddy.py
+clear
+python3 /root/deploy_jobhuntwow_caddy.py
+clear
+docker logs -f videodead-caddy-1
+clear
+# promtail: как он собирает логи (монты + конфиг)
+docker inspect videodead-promtail-1 --format '{{range .Mounts}}{{.Source}} => {{.Destination}}{{"\n"}}{{end}}'
+PROMTAIL=$(docker inspect videodead-promtail-1 --format '{{range .Mounts}}{{if eq .Destination "/etc/promtail/config.yml"}}{{.Source}}{{end}}{{end}}')
+echo "--- promtail config ($PROMTAIL) ---"; sudo sed -n '1,120p' "$PROMTAIL" 2>/dev/null
+# prometheus: scrape-конфиг
+PROM=$(docker inspect videodead-prometheus-1 --format '{{range .Mounts}}{{if eq .Destination "/etc/prometheus/prometheus.yml"}}{{.Source}}{{end}}{{end}}')
+echo "--- prometheus.yml ($PROM) ---"; sudo cat "$PROM" 2>/dev/null
+# grafana: как подключены дашборды/датасорсы (provisioning?)
+echo "--- grafana mounts ---"; docker inspect videodead-grafana-1 --format '{{range .Mounts}}{{.Source}} => {{.Destination}}{{"\n"}}{{end}}'
+# сети: prometheus должен доставать caddy по имени
+echo "--- networks ---"
+docker inspect videodead-prometheus-1 --format 'prometheus: {{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+docker inspect videodead-caddy-1      --format 'caddy:      {{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+# уже ли caddy что-то пишет по запросам? (сейчас, скорее всего, нет)
+echo "--- caddy last log lines ---"; docker logs --tail 3 videodead-caddy-1
+clear
+sudo cat /opt/videodead/observability/promtail-config.yml
+clear
+python3 /root/deploy_jobhuntwow_obs.py          # можно сначала --dry-run
+clear
+curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --auth-key=tskey-auth-kiYPJcaAi621CNTRL-mmzmo8SA9gMhX83pdVZAgMtEshab8U3T7
+clear
+exit
+[200~fail2ban-client status sshd
+~fail2ban-client status sshd
+#### RESOURCES
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda1        77G   35G   43G  45% /
+/dev/vda1        77G   35G   43G  45% /
+-- inodes:
+Filesystem       Inodes   IUsed   IFree IUse% Mounted on
+/dev/vda1      10354688 1199238 9155450   12% /
+/dev/vda1      10354688 1199238 9155450   12% /
+               total        used        free      shared  buff/cache   available
+Mem:            3915        1803         156          37        2283        2112
+Swap:           2047         437        1610
+-- docker disk:
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          32        22        14.7GB    11.38GB (77%)
+Containers      23        23        247.9MB   0B (0%)
+Local Volumes   19        16        1.259GB   48.57MB (3%)
+Build Cache     1133      0         12.75GB   9.385GB
+-- OOM / ENOSPC / IO errors in window:
+#### DOCKER_TIMELINE
+NAME|STATE|RESTARTS|STARTED|FINISHED|EXIT|OOMKILLED
+videodead-node-exporter-1|running|0|2026-08-07T04:22:56.561264278Z|2026-08-07T04:22:28.710521082Z|0|false
+videodead-promtail-1|running|0|2026-08-07T04:22:56.573668724Z|2026-08-07T04:22:27.199483755Z|0|false
+jev-api|running|0|2026-08-07T04:22:56.580103586Z|2026-08-07T04:22:28.950017895Z|0|false
+jev-web|running|0|2026-08-07T04:22:56.593913502Z|2026-08-07T04:22:27.675183868Z|0|false
+polara-web|running|0|2026-08-07T04:22:56.741368136Z|2026-08-07T04:22:28.657774062Z|0|false
+colt-cassandra|running|0|2026-08-07T04:22:56.74947218Z|2026-08-07T04:22:26.978430874Z|0|false
+videodead-cadvisor-1|running|0|2026-08-07T04:22:56.75011014Z|2026-08-07T04:22:37.235369745Z|0|false
+videodead-grafana-1|running|0|2026-08-07T04:22:56.754283202Z|2026-08-07T04:22:27.544563707Z|0|false
+videodead-redis-1|running|0|2026-08-07T04:22:56.764431806Z|2026-08-07T04:22:27.09761439Z|0|false
+amnezia-awg2|running|0|2026-08-07T04:22:56.88810018Z|2026-08-07T04:22:27.69127802Z|0|false
+colt-assessbot|running|0|2026-08-07T04:22:56.898735145Z|2026-08-07T04:22:27.605850022Z|0|false
+joplin-server|running|0|2026-08-07T04:22:56.93418842Z|2026-08-07T04:22:27.670530452Z|0|false
+videodead-api-1|running|0|2026-08-07T04:22:56.962131342Z|2026-08-07T04:22:29.175582423Z|0|false
+joplin-db|running|0|2026-08-07T04:22:57.059003444Z|2026-08-07T04:22:27.350734053Z|0|false
+videodead-browser-1|running|0|2026-08-07T04:22:57.069714439Z|2026-08-07T04:22:32.084626515Z|0|false
+colt-promtail|running|0|2026-08-07T04:22:57.093004109Z|2026-08-07T04:22:27.622657417Z|0|false
+videodead-loki-1|running|0|2026-08-07T04:22:57.093515399Z|2026-08-07T04:22:28.541626644Z|0|false
+jhw-web|running|0|2026-08-07T04:22:57.099072122Z|2026-08-07T04:22:29.118423818Z|0|false
+videodead-worker-1|running|0|2026-08-07T04:22:57.316533276Z|2026-08-07T04:22:29.96774969Z|0|false
+videodead-prometheus-1|running|0|2026-08-07T04:22:57.322782559Z|2026-08-07T04:22:27.506266731Z|0|false
+videodead-cookie-exporter-1|running|0|2026-08-07T04:23:01.539274831Z|2026-08-07T04:22:37.702987189Z|0|false
+colt-web|running|0|2026-08-07T07:02:02.010638713Z|0001-01-01T00:00:00Z|0|false
+videodead-caddy-1|restarting|14|2026-08-07T07:41:01.728904878Z|2026-08-07T07:41:02.408102081Z|1|false
+-- dockerd in window:
+2026-08-07T07:36:17+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:17.684919091Z" level=info msg="sbJoin: gwep4 ''->'d0533299c6de', gwep6 ''->''" eid=d0533299c6de ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:36:17+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:17.833146814Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:36:19+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:19.467520871Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:36:19+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:19.637427417Z" level=info msg="sbJoin: gwep4 ''->'867092d95145', gwep6 ''->''" eid=867092d95145 ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:36:19+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:19.780185667Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:36:23+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:23.007859640Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:36:23+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:23.193896306Z" level=info msg="sbJoin: gwep4 ''->'f70085d21791', gwep6 ''->''" eid=f70085d21791 ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:36:23+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:23.388782283Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:36:28+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:28.076508384Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:36:29+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:29.818554788Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:36:29+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:29.967536976Z" level=info msg="sbJoin: gwep4 ''->'bf97f91bc31b', gwep6 ''->''" eid=bf97f91bc31b ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:36:30+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:30.154582546Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:36:42+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:42.981925172Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:36:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:43.077033596Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:36:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:43.147428277Z" level=info msg="sbJoin: gwep4 ''->'617b71cc576b', gwep6 ''->''" eid=617b71cc576b ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:36:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:43.327265125Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:36:58+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:36:58.076741820Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:37:08+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:37:08.967362590Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:37:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:37:09.136297302Z" level=info msg="sbJoin: gwep4 ''->'6e135af4240a', gwep6 ''->''" eid=6e135af4240a ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:37:09+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:37:09.288715396Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:37:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:37:13.076455475Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:37:28+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:37:28.078072515Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:37:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:37:43.075861657Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:37:58+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:37:58.078089155Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:38:00+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:38:00.514999102Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:38:00+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:38:00.701880030Z" level=info msg="sbJoin: gwep4 ''->'1beda587fd10', gwep6 ''->''" eid=1beda587fd10 ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:38:00+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:38:00.857253763Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:38:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:38:13.075759896Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:38:28+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:38:28.077839814Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:38:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:38:43.075720519Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:38:58+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:38:58.075677803Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:39:00+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:39:00.890360752Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:39:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:39:01.045494756Z" level=info msg="sbJoin: gwep4 ''->'98efa2ef21f5', gwep6 ''->''" eid=98efa2ef21f5 ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:39:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:39:01.214932084Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:39:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:39:13.077687775Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:39:28+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:39:28.075656557Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:39:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:39:43.075784808Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:39:58+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:39:58.075722305Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:40:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:01.243664162Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:40:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:01.449070233Z" level=info msg="sbJoin: gwep4 ''->'fe4b1add638c', gwep6 ''->''" eid=fe4b1add638c ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:40:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:01.675282653Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:40:13+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:13.078111409Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:40:28+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:28.076489943Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:40:43+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:43.076944328Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:40:51+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:51.798627320Z" level=info msg="sbJoin: gwep4 ''->'b27c836468f9', gwep6 ''->''" eid=b27c836468f9 ep=adoring_jones net=bridge nid=77b5e9f73e54
+2026-08-07T07:40:51+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:51.903677735Z" level=info msg="ignoring event" container=d18fcbe91cce49f2ca336aece5c372df975d07c33674cecff0f6f8700d624b69 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+2026-08-07T07:40:58+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:40:58.078656089Z" level=error msg="Handler for GET /v1.44/containers/966376fa4d4c7edbef788cece71e0f96e5fbe765ab9a0cd24af32a7bceed3eb3/logs returned error: configured logging driver does not support reading"
+2026-08-07T07:41:01+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:41:01.719475852Z" level=warning msg="Security options with `:` as a separator are deprecated and will be completely unsupported in 17.04, use `=` instead."
+2026-08-07T07:41:02+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:41:02.000617617Z" level=info msg="sbJoin: gwep4 ''->'200acdcf1343', gwep6 ''->''" eid=200acdcf1343 ep=videodead-caddy-1 net=videodead_appnet nid=a2b7d88bd129
+2026-08-07T07:41:02+00:00 ubuntu-s-1vcpu-1gb-fra1-01 dockerd[1312]: time="2026-08-07T07:41:02.229373418Z" level=info msg="ignoring event" container=aa0e468c359038677c7b3770d949fa6f9b5e95f0c206603c4aa234ab62f5d977 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"
+#### PROXY_LOGS_OLDEST_FIRST
+invalid value for "since": parsing time "2026-08-06 16:00": extra text: " 16:00"
+-- ... and the current loop:
+{"level":"info","ts":1786088341.182026,"msg":"maxprocs: Leaving GOMAXPROCS=2: CPU quota undefined"}
+{"level":"info","ts":1786088341.1820557,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":3695498035,"previous":9223372036854775807}
+{"level":"info","ts":1786088341.1820612,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+Error: adapting config using caddyfile: /etc/caddy/Caddyfile:90: unrecognized directive: klimaanlage-preise.de,
+{"level":"info","ts":1786088401.638249,"msg":"maxprocs: Leaving GOMAXPROCS=2: CPU quota undefined"}
+{"level":"info","ts":1786088401.6382873,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":3695498035,"previous":9223372036854775807}
+{"level":"info","ts":1786088401.6382942,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+Error: adapting config using caddyfile: /etc/caddy/Caddyfile:90: unrecognized directive: klimaanlage-preise.de,
+{"level":"info","ts":1786088462.184969,"msg":"maxprocs: Leaving GOMAXPROCS=2: CPU quota undefined"}
+{"level":"info","ts":1786088462.1852503,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":3695498035,"previous":9223372036854775807}
+{"level":"info","ts":1786088462.185418,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+Error: adapting config using caddyfile: /etc/caddy/Caddyfile:90: unrecognized directive: klimaanlage-preise.de,
+#### OTHER_CONTAINER_LOGS
+#### TRAFFIC_AND_ALERTS
+events log: /events.log  ()
+#### FIREWALL_AND_LISTENERS
+LISTEN 0      4096                       0.0.0.0:22         0.0.0.0:*    users:(("sshd",pid=6485,fd=3),("systemd",pid=1,fd=96))
+LISTEN 0      4096                          [::]:22            [::]:*    users:(("sshd",pid=6485,fd=4),("systemd",pid=1,fd=97))
+Status: active
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW       Anywhere                   # SSH
+44610/udp                  ALLOW       Anywhere                   # Amnezia VPN
+51821/udp                  ALLOW       Anywhere                   # WG brain link
+80/tcp                     ALLOW       Anywhere                  
+443/tcp                    ALLOW       Anywhere                  
+Anywhere on tailscale0     ALLOW       Anywhere                  
+22/tcp (v6)                ALLOW       Anywhere (v6)              # SSH
+44610/udp (v6)             ALLOW       Anywhere (v6)              # Amnezia VPN
+-P INPUT DROP
+-P FORWARD DROP
+-P OUTPUT ACCEPT
+-N DOCKER
+-N DOCKER-BRIDGE
+-N DOCKER-CT
+-N DOCKER-FORWARD
+-N DOCKER-INTERNAL
+-N DOCKER-USER
+-N ts-forward
+-N ts-input
+-N ufw-after-forward
+-N ufw-after-input
+-N ufw-after-logging-forward
+-N ufw-after-logging-input
+-N ufw-after-logging-output
+-N ufw-after-output
+-N ufw-before-forward
+-N ufw-before-input
+-N ufw-before-logging-forward
+END

@@ -1,0 +1,13 @@
+[Unit]
+Description=Run caddyguard every 10 minutes (and shortly after boot)
+
+[Timer]
+# 2 minutes after boot: a reboot is exactly when latent config damage detonates, so the first
+# check should happen immediately after one — not up to 10 minutes later.
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=30s
+Unit=caddyguard.service
+
+[Install]
+WantedBy=timers.target

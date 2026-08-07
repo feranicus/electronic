@@ -1,0 +1,80 @@
+# EXTERNAL uptime monitoring — deliberately NOT on the droplet.
+#
+# 2026-08-07: every domain on the host was refused for ~6 hours and nothing told the operator; he
+# found it himself. The box's own observability (Grafana, Loki, the alerting in colt-web) all runs
+# ON the box, behind the same reverse proxy that died — so when it matters most, it is mute.
+# Monitoring that shares a failure domain with its subject is not monitoring.
+#
+# GitHub Actions is free, off-box, and already holds the deploy credentials, so it is the natural
+# place. A failed run also emails the repo owner without any secret being configured at all.
+name: uptime
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe every public endpoint
+        id: probe
+        shell: bash
+        run: |
+          set +e
+          # host|url|expected-regex.  cybergod.ai/api/me answering 401 is HEALTHY: it proves the
+          # backend is reachable AND that auth is enforced. Probing only "/" would go green on a
+          # cached shell served by the PWA service worker.
+          TARGETS=(
+            "cybergod.ai|https://cybergod.ai/api/me|^(401)$"
+            "www.cybergod.ai|https://www.cybergod.ai/|^(200|301|302|308|404)$"
+            "godeyes.ai|https://godeyes.ai/|^(200|301|302|308)$"
+            "jobhuntwow.com|https://jobhuntwow.com/|^(200|301|302|308)$"
+            "www.jobhuntwow.com|https://www.jobhuntwow.com/|^(200|301|302|308)$"
+            "klimaanlage-preise.de|https://klimaanlage-preise.de/|^(200|301|302|308)$"
+          )
+          FAIL=""
+          for t in "${TARGETS[@]}"; do
+            IFS='|' read -r name url want <<< "$t"
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 5 "$url")
+            if [[ "$code" =~ $want ]]; then
+              echo "OK    $name  -> $code"
+            else
+              echo "FAIL  $name  -> $code (expected $want)"
+              FAIL="$FAIL\n• $name -> HTTP $code (expected $want)"
+            fi
+          done
+          if [ -n "$FAIL" ]; then
+            {
+              echo "failed<<EOF"
+              echo -e "$FAIL"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Alert Telegram
+        # Runs only when the probe failed. Secrets are optional: without them the job still fails
+        # and GitHub emails the owner, so the alert path degrades instead of disappearing.
+        if: failure()
+        continue-on-error: true
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.PATCH_TG_CHAT }}
+        shell: bash
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "no telegram secrets configured — the failed run itself is the alert"; exit 0
+          fi
+          MSG=$(printf 'UPTIME: an endpoint is down\n%b\n\nAll sites share ONE reverse proxy on the droplet, so several failing together usually means the proxy, not an app.\nRun: python recover.py --fix-caddy\n\n%s' \
+                "${{ steps.probe.outputs.failed }}" \
+                "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+               --data-urlencode "chat_id=${TG_CHAT}" \
+               --data-urlencode "text=${MSG}" \
+               --data-urlencode "disable_web_page_preview=true" >/dev/null

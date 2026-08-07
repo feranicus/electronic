@@ -1311,7 +1311,31 @@ def main():
 
     ok = do_verify(web, bots)
 
-    # ---- FINAL STEP: has DigitalOcean shipped anything new, and does it answer fast? ----------
+    # ---- SHARED-PROXY GUARDRAILS (2026-08-07 outage) -----------------------------------------
+    #      Every project on this box appends a MARKED block into ONE shared /opt/videodead/
+    #      Caddyfile. On 6 Aug a deploy truncated jobhuntwow's block; Caddy reads its config only
+    #      at start, so the damage sat invisible for 12 hours until patchwatch's kernel reboot made
+    #      it re-read the file — and every domain died together.
+    #
+    #      caddyguard.py is a BUILDING BLOCK, not a second command (operating principle 7). It is
+    #      idempotent: it re-splits the live file into per-project fragments, restores a fragment
+    #      ONLY if it is missing/empty/unbalanced, re-assembles, validates and ensures the watchdog
+    #      timer is enabled. Non-blocking on install problems, but a FAILED HEALTH CHECK is a real
+    #      warning — a shared proxy that would not survive a restart is the definition of fragile.
+    if not DRY:
+        try:
+            _cg = subprocess.run([sys.executable, os.path.join(HERE, "caddyguard.py")],
+                                 capture_output=True, text=True, encoding="utf-8",
+                                 errors="replace", timeout=600)
+            print("")
+            print((_cg.stdout or "").rstrip() or "  caddyguard: no output")
+            if _cg.returncode != 0:
+                ok = False
+                print("  [!] caddyguard reported a problem with the shared proxy — see above.")
+        except Exception as _e:
+            print("  [!] caddyguard skipped (%s)" % type(_e).__name__)
+
+    # ---- has DigitalOcean shipped anything new, and does it answer fast? ----------------------
     #      Runs after verify so it can never delay the deploy, and is NON-BLOCKING by design: a
     #      new model is information, not a broken build. It exists because the enrichment chain is
     #      chosen from evidence that goes stale SILENTLY - gemma sat at the head of the chain
