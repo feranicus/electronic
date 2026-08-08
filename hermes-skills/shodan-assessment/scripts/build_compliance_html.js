@@ -34,8 +34,21 @@ const T = {
   countries: { en: "Countries", de: "Länder" }, yes: { en: "Yes", de: "Ja" }, no: { en: "No", de: "Nein" }, unknown: { en: "unknown", de: "unklar" },
   sources: { en: "Source: EU primary legal texts (NIS2 Dir. 2022/2555, CRA Reg. 2024/2847, AI Act Reg. 2024/1689). Educational summary, not legal advice.", de: "Quelle: EU-Primärrecht (NIS2 RL 2022/2555, CRA VO 2024/2847, KI-VO 2024/1689). Bildungszusammenfassung, keine Rechtsberatung." },
 };
-const L = (k) => (T[k] || {})[LANG] || (T[k] || {}).en || k;
-const REG = { nis2: "NIS2", cra: "Cyber Resilience Act", aiact: "EU AI Act" };
+const L = (k) => {
+  // Jurisdiction-carried strings win over the static EN/DE table. Both the hero eyebrow and the
+  // source citation named the EU on a Canadian report; they are DATA now, not labels.
+  if (k === "sources" && D.citation) return D.citation;
+  if (k === "eyebrow" && D.eyebrow) return D.eyebrow;
+  return (T[k] || {})[LANG] || (T[k] || {}).en || k;
+};
+// Regime ORDER and NAMES come from compliance.json, exactly as the pptx builder reads them. This
+// file was fixed AFTER the deck builder and had been missed: it hardcoded the three EU regimes in
+// four places and titled itself "EU Compliance", so a Canadian run produced an EU report. The
+// test only asserted the HTML RENDERED cleanly, never that it named the right regimes — a check
+// that cannot see the thing it checks.
+const ORDER = Array.isArray(D.order) && D.order.length ? D.order : ["nis2", "cra", "aiact"];
+const REG_FALLBACK = { nis2: "NIS2", cra: "Cyber Resilience Act", aiact: "EU AI Act" };
+const REG = new Proxy({}, { get: (_, k) => ((D.regimes || {})[k] || {}).name || REG_FALLBACK[k] || String(k).toUpperCase() });
 const yn = (v) => v === true ? L("yes") : v === false ? L("no") : L("unknown");
 
 function statusClass(applies) { return applies === true ? "on" : applies === false ? "off" : "maybe"; }
@@ -80,17 +93,17 @@ function regimeSection(k) {
 
 // merged deadline calendar
 const allDl = [];
-["nis2", "cra", "aiact"].forEach((k) => (regs[k] || {}).deadlines?.forEach((d) => allDl.push({ ...d, regime: REG[k] })));
+ORDER.forEach((k) => (regs[k] || {}).deadlines?.forEach((d) => allDl.push({ ...d, regime: REG[k] })));
 allDl.sort((x, y) => String(x.date).localeCompare(String(y.date)));
 
-const chips = ["nis2", "cra", "aiact"].map((k) => {
+const chips = ORDER.map((k) => {
   const r = regs[k] || {};
   return `<a href="#${k}" class="hchip ${statusClass(r.applies)}"><span>${esc(REG[k])}</span><b>${esc(statusText(r.applies))}</b></a>`;
 }).join("");
 
 const html = `<!DOCTYPE html>
 <html lang="${LANG}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(company)} — EU Compliance</title>
+<title>${esc(company)} — ${esc(D.jurisdiction_title || "Compliance")}</title>
 <style>
 :root{--teal:#00D7BD;--tealD:#0C544E;--ink:#eaf1fb;--mut:#9fb2cc;--bg:#070d15;--card:#0e1a2c;--line:#1c3050;--crit:#F20C36;--high:#FF7900;--med:#FFC33C;--gold:#F7C844}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.55}
@@ -158,7 +171,7 @@ footer{padding:34px 0;color:var(--mut);font-size:12.5px}
 <div class="hero"><div class="wrap">
   <div class="eyebrow">${esc(L("eyebrow"))}</div>
   <h1>${esc(company)}</h1>
-  <div class="sub">NIS2 &nbsp;·&nbsp; Cyber Resilience Act &nbsp;·&nbsp; EU AI Act</div>
+  <div class="sub">${ORDER.map((k) => esc(REG[k])).join(" &nbsp;·&nbsp; ")}</div>
   <div class="hchips">${chips}</div>
   <div class="assume">
     <div class="a"><b>${esc(L("sector"))}:</b> ${esc(a.sector || "—")}</div>
@@ -171,7 +184,7 @@ footer{padding:34px 0;color:var(--mut);font-size:12.5px}
 </div></div>
 
 <div class="wrap">
-  ${["nis2", "cra", "aiact"].map(regimeSection).join("")}
+  ${ORDER.map(regimeSection).join("")}
 
   <section class="reveal"><h2 class="sec">${esc(L("timeline"))}</h2>
     <div class="tl">${allDl.slice(0, 14).map((d) => `<div class="ev"><div class="d">${esc(fmtDate(d.date))} <span class="r">${esc(d.regime)}</span></div><div class="l">${esc(d.label || "")}</div></div>`).join("") || `<div class="ev"><div class="l muted">—</div></div>`}</div>

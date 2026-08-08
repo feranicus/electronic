@@ -248,6 +248,20 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 
 /* language selector sits next to the company field; keep it narrow so the row still breathes */
 .assess-row .fld-lang { flex: 0 0 210px; }
+
+/* A HINT UNDER A FIELD MUST NOT CHANGE THAT FIELD'S HEIGHT.
+   `.assess-row` is `align-items:flex-end`, so every control lines up by its BOTTOM edge. The
+   jurisdiction field carries a hint ("3 regimes graded · 4 decks") underneath its select, which
+   made that field taller — so its bottom sat lower and its LABEL rode up above the other two.
+   That is what the misalignment on desktop was: not the select, the hint below it.
+   Taking the hint out of flow gives every field the same intrinsic height, and the row reserves
+   the space once so nothing below is pushed into. */
+@media (min-width: 721px) {
+  .assess-row { padding-bottom: 20px; }
+  .assess-row .fld { position: relative; }
+  .assess-row .fld .hint { position: absolute; top: 100%; left: 0; right: 0; margin-top: 5px;
+                           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
 .assess-row .fld-lang .input { appearance: none; cursor: pointer;
   background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
                     linear-gradient(135deg, currentColor 50%, transparent 50%);

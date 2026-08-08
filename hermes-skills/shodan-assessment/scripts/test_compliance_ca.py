@@ -171,6 +171,23 @@ for key in list(CA["decks"]) + ["roadmap"]:
 check(built == len(CA["decks"]) + 1,
       "all %d Canadian decks render (%d built)" % (len(CA["decks"]) + 1, built))
 
+# The TITLE SLIDE is a different code path from the content slides — fixing the eyebrow in
+# content() did NOT fix it, and the roadmap cover read "EU DIGITAL & CYBER COMPLIANCE" over
+# "NIS2 · CRA · EU AI Act" on a Canadian bank's deck. Read the rendered text, not the source.
+try:
+    from pptx import Presentation as _P
+    _rd = os.path.join(tmp, "roadmap.pptx")
+    _txt = " ".join(r.text for _s in _P(_rd).slides for _sh in _s.shapes
+                    if _sh.has_text_frame for _p in _sh.text_frame.paragraphs for r in _p.runs)
+    _leak = [n for n in ("EU DIGITAL", "NIS2", "Cyber Resilience Act", "EU AI Act",
+                         "EU primary law") if n in _txt]
+    check(not _leak, "no EU chrome on the Canadian roadmap deck%s"
+          % ((" [found: %s]" % ", ".join(_leak)) if _leak else ""))
+    check("CANADIAN DIGITAL" in _txt and "OSFI" in _txt,
+          "the Canadian roadmap cover names Canada and OSFI")
+except ImportError:
+    print("        (python-pptx unavailable - deck text check skipped)")
+
 html = os.path.join(tmp, "report.html")
 r = subprocess.run(["node", os.path.join(HERE, "build_compliance_html.js"), cpath, html],
                    capture_output=True, text=True)
@@ -178,6 +195,17 @@ ok_html = r.returncode == 0 and os.path.exists(html)
 check(ok_html, "the animated compliance report renders for Canada")
 if ok_html:
     h = open(html, encoding="utf-8").read()
+    # THE CHECK THAT WAS MISSING. The old version asserted the report RENDERED and carried no
+    # undefined/Colt — never that it named the right regimes. So build_compliance_html.js kept its
+    # four hardcoded ["nis2","cra","aiact"] arrays and its "EU Compliance" title, and a Canadian
+    # bank received an EU report. A check that cannot see the thing it checks is not a check.
+    eu_leak = [n for n in ("NIS2", "Cyber Resilience Act", "EU AI Act", "EU Compliance") if n in h]
+    check(not eu_leak,
+          "the Canadian report names NO EU regime%s"
+          % ((" [found: %s]" % ", ".join(eu_leak)) if eu_leak else ""))
+    check(all(n in h for n in ("OSFI", "PIPEDA", "CCSPA")),
+          "the Canadian report names OSFI, PIPEDA and the CCSPA")
+    check("Canadian Compliance" in h, "the report TITLE follows the jurisdiction")
     check(not re.search(r"undefined|NaN|\[object Object\]", h),
           "no undefined/NaN/[object Object] leaks into the Canadian report")
     check("Colt" not in h, "no carrier brand in the rendered Canadian report")

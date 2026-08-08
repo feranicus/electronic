@@ -193,7 +193,7 @@ function titleSlide(bigTitle, subline, classText, applies) {
   const s = pres.addSlide();
   s.background = { color: C.teal };
   corner(s, C.black, 22);
-  s.addText(L("eyebrow"), { x: 0.5, y: 1.10, w: 8.5, h: 0.3, fontSize: 11, fontFace: FA, color: C.black, bold: true, charSpacing: 3, margin: 0 });
+  s.addText(EYEBROW(), { x: 0.5, y: 1.10, w: 8.5, h: 0.3, fontSize: 11, fontFace: FA, color: C.black, bold: true, charSpacing: 3, margin: 0 });
   s.addText(bigTitle, { x: 0.46, y: 1.52, w: 9.0, h: 1.4, fontSize: bigTitle.length > 16 ? 44 : 62, fontFace: FD, color: C.black, bold: true, margin: 0 });
   s.addShape(pres.shapes.RECTANGLE, { x: 0.54, y: 3.05, w: 0.22, h: 0.22, fill: { color: C.navy }, line: { type: "none" } });
   s.addText(company + "  " + MIDDOT + "  " + subline, { x: 0.9, y: 3.0, w: 8.4, h: 0.32, fontSize: 14, fontFace: FA, color: C.black, bold: true, margin: 0 });
@@ -204,7 +204,12 @@ function titleSlide(bigTitle, subline, classText, applies) {
   CREED.draw(pres, s, { y: 4.06, w: 7.9, color: C.black, fontFace: FB, rule: false, lang: LANG,
                         size1: 8.5, size2: 9.5, h2: 0.32, dy2: 0.28 });
   s.addShape(pres.shapes.RECTANGLE, { x: 0, y: 4.75, w: 10, h: 0.875, fill: { color: C.black }, line: { type: "none" } });
-  const meta = [["PREPARED", L("prepared")], ["FOR", company], ["SOURCE", "EU primary law (see appendix)"], ["STATUS", L("status")]];
+  // The SOURCE line is data, not a constant: "EU primary law" on a Canadian bank's title slide is
+  // the same error as the eyebrow, and the title slide is a SEPARATE code path from content(),
+  // which is why fixing the eyebrow once did not fix this one.
+  const meta = [["PREPARED", L("prepared")], ["FOR", company],
+                ["SOURCE", D.source_line || "primary legal texts (see appendix)"],
+                ["STATUS", L("status")]];
   let mx = 0.5;
   meta.forEach(([k, v], i) => {
     const w = (i === 1 || i === 2) ? 3.1 : 1.6;
@@ -333,8 +338,11 @@ function roadmapDeck() {
   const regs = D.regimes || {};
   TOTAL = 1 /*title*/ + 1 /*exec*/ + 1 /*overview*/ + 1 /*calendar*/ + 1 /*penalty*/ + 1 /*roadmap*/ + ((rm.priorities || []).length ? 1 : 0);
 
+  // Compose the subline from the regimes ACTUALLY graded. It read "NIS2 · CRA · EU AI Act" on a
+  // Canadian roadmap — three regimes the deck does not contain.
   titleSlide((REGIME_TITLE.roadmap || {})[LANG] || "Compliance Roadmap",
-    "NIS2 " + MIDDOT + " CRA " + MIDDOT + " EU AI Act", "", "unclear");
+    ORDER.map((k) => (REGIME_TITLE[k] || {})[LANG] || (REGIME_TITLE[k] || {}).en || k.toUpperCase())
+         .slice(0, 4).join(" " + MIDDOT + " "), "", "unclear");
 
   // -- exec summary + assumptions
   (function () {

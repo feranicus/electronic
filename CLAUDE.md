@@ -3039,3 +3039,41 @@ start AND refine and holds no hardcoded regime list. Proven by five mutations, i
 defect the operator found. RULE, restated because writing it down once was not enough: **follow the
 VALUE end-to-end — UI -> API -> persistence -> engine — and assert it at each hop.**
 
+## ONE JURISDICTION, FOUR HARDCODED HOMES — and the check that could not see them (2026-08-08)
+The Canadian regime set shipped, the four OSFI/PIPEDA decks built correctly, and the operator
+opened `Royal_Bank_of_Canada_Compliance_Report.html` to find **NIS2, the Cyber Resilience Act and
+the EU AI Act** on a Canadian bank's report. I had fixed `build_compliance_deck.js` and never
+audited `build_compliance_html.js` at all.
+FOUR SEPARATE HOMES, each a different code path, each needing its own fix:
+  1. `build_compliance_html.js` — `["nis2","cra","aiact"]` in FOUR arrays, `REG` name map, and
+     `<title>… — EU Compliance</title>`;
+  2. its HERO block — a second hardcoded eyebrow and a `<div class="sub">NIS2 · CRA · EU AI Act`,
+     which survived fixing the four arrays;
+  3. the deck's TITLE SLIDE — `L("eyebrow")` and `["SOURCE", "EU primary law (see appendix)"]`,
+     a different function from `content()`, so fixing the content eyebrow did not touch it;
+  4. the roadmap cover subline, literally `"NIS2 " + MIDDOT + " CRA " + MIDDOT + " EU AI Act"`.
+All four are now DATA carried by compliance.json (`order`, regime `name`, `eyebrow`,
+`source_line`, `citation`), so a jurisdiction is one registry entry and no builder holds a regime
+constant.
+**WHY THE TEST DID NOT CATCH IT.** `test_compliance_ca.py` §6 asserted the report RENDERED and
+carried no `undefined`/`NaN`/Colt — never that it named the right regimes. It is the recurring
+disease in this repo: a check that cannot see the thing it checks. It now greps the RENDERED html
+and the RENDERED deck text for EU regime names and fails on any of them.
+**AND TWO BAD MEASUREMENTS OF MINE, in five minutes.** After the first fix I grepped the output and
+declared it clean — twice wrongly: once because `| head -8` on a count-sorted list truncated the
+NIS2 rows off the bottom, once because `grep -o ".\{70\}NIS2.\{70\}"` needs 70 characters of
+context ON THE SAME LINE and the string sat near a line end. **For a presence check use a plain
+substring, never a padded regex, and never truncate the output you are judging.** The test found
+what my greps missed, which is the entire argument for having it.
+
+## A HINT UNDER A FIELD CHANGES THAT FIELD'S HEIGHT (2026-08-08)
+`/app/compliance` looked misaligned on desktop: the JURISDICTION label sat visibly higher than
+COMPANY NAME and DOCUMENT LANGUAGE. Nothing was wrong with the select. `.assess-row` is
+`align-items:flex-end`, so controls line up by their BOTTOM edge — and the jurisdiction field
+carries a hint ("8 regimes graded · 5 decks") underneath, which made that field taller, pushed its
+bottom down and its label up. FIX: on desktop the hint is `position:absolute; top:100%`, so every
+field has the same intrinsic height, with `padding-bottom` on the row reserving the space once.
+Mobile keeps the stacked flow, where the hint belongs in the layout — which is why the phone
+screenshot looked correct while the desktop one did not.
+RULE: in a `flex-end` row, anything appended BELOW a control silently moves that control up.
+

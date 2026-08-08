@@ -39,6 +39,9 @@ JURISDICTIONS = {
         "label": "EU",
         "title": "EU Compliance",
         "eyebrow": "EU DIGITAL & CYBER COMPLIANCE",
+        "source_line": "EU primary law (see appendix)",
+        "citation": "Source: EU primary legal texts (NIS2 Dir. 2022/2555, CRA Reg. 2024/2847, "
+                    "AI Act Reg. 2024/1689). Educational summary, not legal advice.",
         "reference": "EU_COMPLIANCE_REFERENCE.md",
         "compiled": "20 Jul 2026",
         "regimes": ["nis2", "cra", "aiact"],
@@ -49,6 +52,11 @@ JURISDICTIONS = {
         "label": "Canada",
         "title": "Canadian Compliance",
         "eyebrow": "CANADIAN DIGITAL & CYBER COMPLIANCE",
+        "source_line": "OSFI guidelines, PIPEDA, CCSPA, Quebec Law 25 (primary texts)",
+        "citation": "Source: OSFI Guidelines B-13, E-21, B-10 and Integrity & Security; the OSFI "
+                    "Technology and Cyber Security Incident Reporting Advisory; PIPEDA "
+                    "(R.S.C. 1985 c. P-8.6); CCSPA (S.C. 2026 c. 9, Part 2 not in force); Quebec "
+                    "Law 25 (CQLR c. P-39.1). Educational summary, not legal advice.",
         "reference": "CA_COMPLIANCE_REFERENCE.md",
         "compiled": "1 Aug 2026",
         "regimes": ["osfi_b13", "osfi_e21", "osfi_b10", "osfi_integrity", "osfi_incident",
@@ -407,6 +415,8 @@ def _skeleton(company, lang, assumptions=None, juris=DEFAULT_JURISDICTION):
         "jurisdiction_label": J["label"],
         "jurisdiction_title": J["title"],
         "eyebrow": J.get("eyebrow", ""),
+        "source_line": J.get("source_line", ""),
+        "citation": J.get("citation", ""),
         "order": list(J["regimes"]),
         "decks": list(J["decks"]),
         "assumptions": {
