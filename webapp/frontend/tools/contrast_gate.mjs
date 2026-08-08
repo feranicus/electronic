@@ -136,7 +136,10 @@ console.log(`  reserved: solid --cta appears on ${fills.length} selector(s), all
 // and entirely correct on a light theme. A near-opaque white IS a surface. It is the FAINT white
 // (a tint meant to lighten something dark beneath it) that becomes invisible when the thing
 // beneath it is already white. So: only alpha below 0.5 is suspect.
-const DARK_OK = /iam-brand|iam-steps|iam-tag|loglist|mapbox|shine|prog-fill|cass|tgh|d-canvas|wa-fab/;
+// `topbar` joined this list when the phone header became the brand gradient: a white overlay on
+// a saturated surface is correct, it is only on a LIGHT surface that it vanishes. The list is
+// the set of surfaces that are still dark or saturated, and it has to be kept honest by hand.
+const DARK_OK = /iam-brand|iam-steps|iam-tag|loglist|mapbox|shine|prog-fill|cass|tgh|d-canvas|wa-fab|topbar/;
 for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
   const sel = m[1].split("\n").pop().trim();
   for (const w of m[2].matchAll(/rgba\(255,\s*255,\s*255,\s*(\.\d+|0?\.\d+|[01])\s*\)/g)) {
@@ -154,6 +157,46 @@ const COLT = /#00[Bb]2[Aa]9|#0[Aa]1526|#0[Cc]544[Ee]|#132546|#22385[Ff]/g;
 const strip = CSS.replace(/\/\*[\s\S]*?\*\//g, "");   // the header comment quotes them deliberately
 const hits = [...new Set(strip.match(COLT) || [])];
 if (hits.length) bad(`the previous (Colt) palette is still in styles.css: ${hits.join(", ")}`);
+
+// ---- 7. THE APP'S OWN CHROME -----------------------------------------------------------------
+// The defect this exists for, photographed on a phone: the SITE went light and the INSTALLED APP
+// did not. `manifest.webmanifest`'s theme_color still held the previous brand's dark teal, which is
+// the colour Android paints the status bar, and `background_color` was the dark splash screen. The
+// icons were the same story. None of that is in styles.css, so nothing I had written could see it.
+//
+// theme-color ALSO lives in index.html, which is a value with two homes: the classic way for the
+// two to drift apart. Assert they agree, and that both match the palette.
+{
+  const mf = JSON.parse(fs.readFileSync(path.join(HERE, "..", "public", "manifest.webmanifest"), "utf8"));
+  const html = fs.readFileSync(path.join(HERE, "..", "index.html"), "utf8");
+  const meta = (html.match(/<meta\s+name="theme-color"\s+content="(#[0-9A-Fa-f]{3,8})"/) || [])[1];
+
+  if (!meta) bad("index.html has no theme-color meta: the browser paints its chrome grey");
+  else if (meta.toUpperCase() !== String(mf.theme_color).toUpperCase()) {
+    bad(`theme-color disagrees between its two homes: index.html says ${meta}, `
+      + `manifest.webmanifest says ${mf.theme_color}. One value, two files, guaranteed to drift.`);
+  }
+  if (String(mf.theme_color).toUpperCase() !== V.cta.toUpperCase()) {
+    bad(`manifest theme_color is ${mf.theme_color}, not the brand ${V.cta}. That is the colour `
+      + `Android paints the status bar of the installed app.`);
+  }
+  if (String(mf.background_color).toUpperCase() !== V.navy.toUpperCase()) {
+    bad(`manifest background_color is ${mf.background_color}, not the page canvas ${V.navy}. `
+      + `That is the PWA splash screen, so it flashes the wrong colour on every cold start.`);
+  }
+  // iOS forces WHITE status text under black-translucent, which is invisible on a light bar.
+  if (/apple-mobile-web-app-status-bar-style"\s+content="black-translucent"/.test(html)) {
+    bad("apple-mobile-web-app-status-bar-style is black-translucent, which forces white status "
+      + "text over what is now a light surface. Use \"default\".");
+  }
+  for (const f of ["icon.svg", "icon-maskable.svg"]) {
+    const svg = fs.readFileSync(path.join(HERE, "..", "public", f), "utf8");
+    const h = [...new Set(svg.match(COLT) || [])];
+    if (h.length) bad(`${f} still uses the previous brand (${h.join(", ")}). That is the tile on `
+                    + `the home screen. Regenerate: python tools/make_icons.py`);
+  }
+  console.log(`  app chrome: status bar ${mf.theme_color}, splash ${mf.background_color}, icons on brand`);
+}
 
 console.log(`contrast gate: ${Object.keys(V).length} palette entries, ${SURFACES.length * TEXT.length + 6} pairs measured`);
 if (fail) { console.error(`\n[FAIL] contrast gate: ${fail} problem(s)`); process.exit(1); }

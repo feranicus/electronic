@@ -399,9 +399,19 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;
     position:sticky;top:0;z-index:40;padding:10px 14px;
     padding-top:calc(10px + env(safe-area-inset-top));
-    background:rgba(13,20,38,.92);backdrop-filter:blur(10px);
-    border-bottom:1px solid var(--line)}
-  .topbar .brand{font-size:18px;margin:0}
+    background:var(--grad);border-bottom:0;color:#fff;
+    box-shadow:0 1px 0 rgba(12,20,40,.06)}
+  .topbar .brand{font-size:18px;margin:0;color:#fff}
+  /* On the gradient the chevron must not be indigo-on-indigo. Cyan is the deck's own accent and
+     the only one of our colours that stays legible on a saturated violet field. */
+  .topbar .chev{color:var(--cyan-br)}
+  /* Log out is a secondary action ON a coloured bar, so it is a translucent white pill rather than
+     the ghost button used on light surfaces: a white-bordered button on a gradient reads correctly,
+     a --line border disappears into it. */
+  .topbar .btn,.topbar .btn.ghost{background:rgba(255,255,255,.16);color:#fff;
+    border:1px solid rgba(255,255,255,.42);box-shadow:none}
+  .topbar .btn:hover,.topbar .btn.ghost:hover{background:rgba(255,255,255,.26);
+    border-color:rgba(255,255,255,.6);color:#fff;transform:none}
 
   /* sidebar -> bottom tab bar */
   /* NOTE: the desktop rule sets `height:100vh` (a full-height sidebar). It MUST be reset here.
@@ -411,12 +421,21 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .side{position:fixed;left:0;right:0;bottom:0;top:auto;height:auto;min-height:0;z-index:50;
     flex-direction:row;align-items:center;border-right:0;border-top:1px solid var(--line);
     padding:6px 8px;padding-bottom:calc(6px + env(safe-area-inset-bottom));
-    background:rgba(13,20,38,.96);backdrop-filter:blur(12px)}
+    background:rgba(255,255,255,.97);backdrop-filter:blur(12px);
+    box-shadow:0 -1px 0 var(--line)}
   .side .brand,.side .who{display:none}          /* they live in .topbar on a phone */
   .side .nav{display:flex;flex-direction:row;width:100%;gap:2px}
   .nav a{flex:1;flex-direction:column;gap:3px;padding:8px 4px;min-height:52px;
     justify-content:center;font-size:11px;border-radius:12px}
-  .nav a.active{background:transparent;color:var(--teal)}
+  /* MATERIAL 3 ACTIVE INDICATOR: a pill behind the icon, not a coloured label alone. It is the
+     single strongest "you are here" signal on a small screen, and it does not rely on colour
+     perception alone, which matters for the roughly one man in twelve who cannot separate some
+     hues reliably. */
+  .nav a{position:relative;color:var(--mut)}
+  .nav a .nav-ico{position:relative;z-index:1;padding:3px 16px;border-radius:999px;transition:.18s}
+  .nav a.active{background:transparent;color:var(--cta);font-weight:700}
+  .nav a.active .nav-ico{background:var(--cta-l)}
+  .nav a:active .nav-ico{background:var(--cta-l)}
   .nav-ico{display:block;line-height:0}
 
   .main{padding:16px 14px calc(78px + env(safe-area-inset-bottom));max-width:100%}
@@ -624,7 +643,7 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
     position:fixed;left:0;right:0;bottom:0;z-index:60;
     height:calc(var(--tabbar) + var(--sab));padding-bottom:var(--sab);
     display:grid;grid-template-columns:repeat(6,1fr);
-    background:rgba(8,16,32,.88);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    background:rgba(255,255,255,.94);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
     border-top:1px solid var(--line);
   }
   .tb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
@@ -633,13 +652,20 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
     color:var(--mut);transition:color .2s var(--ease);position:relative;-webkit-tap-highlight-color:transparent}
   .tb svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;
     stroke-linecap:round;stroke-linejoin:round}
-  .tb.on{color:var(--teal)}
-  .tb.on::after{content:'';position:absolute;top:0;left:22%;right:22%;height:2px;
-    background:var(--teal);box-shadow:0 0 12px var(--teal)}
+  .tb.on{color:var(--cta)}
+  /* was a glowing 2px line at the top of the bar, which is a dark-theme device: a glow needs
+     darkness to read against and on white it is simply a grey smudge. Material 3's pill behind
+     the icon is the light-surface equivalent and it is a bigger target for the eye. */
+  .tb svg{position:relative;z-index:1}
+  .tb.on::before{content:'';position:absolute;top:8px;width:46px;height:26px;border-radius:999px;
+    background:var(--cta-l)}
   .tb:active{transform:scale(.94)}
   /* the last tab is the CTA — make it read as the primary action */
+  /* the last tab is the call to action; amber against the indigo family makes it the one warm
+     item in the row, which is exactly the "one distinct element" the palette is arranged around */
   .tb:last-child{color:var(--gold)}
   .tb:last-child.on{color:var(--gold)}
+  .tb:last-child.on::before{background:var(--gold-l)}
 
   /* keep the docked bar from covering the end of the page */
   .foot{padding-bottom:calc(var(--tabbar) + var(--sab) + 24px) !important}
@@ -652,8 +678,8 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 
 /* ---------- the creed: the Cassandra line, the centrepiece of the page ---------- */
 .creed{padding:74px 0;text-align:center;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
-  background:radial-gradient(900px 320px at 50% 50%,rgba(0,178,169,.10),transparent 70%)}
-.creed-kick{color:var(--gold);font-weight:800;letter-spacing:3px;text-transform:uppercase;
+  background:radial-gradient(900px 320px at 50% 50%,rgba(79,70,229,.07),transparent 70%)}
+.creed-kick{color:var(--teal);font-weight:800;letter-spacing:3px;text-transform:uppercase;
   font-size:11.5px;margin-bottom:22px}
 .creed-q{margin:0 auto;max-width:960px;border:0;padding:0;display:flex;flex-direction:column;gap:18px}
 .creed-q .l1{font-family:'Space Grotesk','Segoe UI',sans-serif;font-size:clamp(20px,3vw,32px);

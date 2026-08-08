@@ -3231,3 +3231,47 @@ Proven with a stand-in upstream: GET reached it, POST and DELETE returned 405 lo
    directory per platform with a random suffix, so the name I looked for is not the name there. It
    would have wiped a healthy node_modules on every run. `toolchain_runs()` now executes
    `vite --version` and reinstalls only if that actually fails.
+
+## THE PHONE'S OWN CHROME IS NOT THE WEBSITE (2026-08-08, photographed on an Android)
+The site went light and the INSTALLED APP did not. The operator's screenshot showed a light page
+framed by a dark bar top and bottom. Five things were still on the old palette, and NONE of them is
+in the part of styles.css a "make the site light" pass naturally touches:
+  1. `.topbar` (the phone-only cabinet header)        `rgba(13,20,38,.92)`
+  2. `.side` as the cabinet's bottom navigation       `rgba(13,20,38,.96)`
+  3. `.tabbar` (the landing page's six-item bar)      `rgba(8,16,32,.88)`
+  4. **`manifest.webmanifest` `theme_color: #0C544E`** — the previous brand's teal. This is the
+     colour ANDROID PAINTS THE STATUS BAR of the installed app, and `background_color` was the dark
+     splash screen, so every cold start flashed the old brand.
+  5. **The icons.** `icon.svg` / `icon-maskable.svg` were `#0C544E` with a `#00B2A9` chevron: the
+     tile on the home screen, the single most visible brand asset, months after the rebrand.
+
+**THE SHAPE IS MATERIAL DESIGN 3's NAVIGATION BAR**, because that is what an Android user's eye
+expects: a SURFACE-coloured bar rather than a black one, no elevation shadow, and the active
+destination marked by a PILL BEHIND THE ICON in a contrasting container colour, not by a glowing
+line. https://m3.material.io/components/navigation-bar/overview  A glow is a dark-theme device: it
+needs darkness to read against and on white it is a grey smudge. The pill is also a bigger target
+for the eye and does not depend on colour perception alone.
+
+**ONE COLOURED SURFACE, AND IT IS THE TOP BAR.** ~56px, no reading, on screen the whole session:
+that is the app's identity, so it takes the brand gradient with a cyan chevron. The BOTTOM bar
+stays light because that is where every tap lands and legibility beats decoration. Buttons ON the
+gradient are translucent-white pills, not `.btn.ghost` — a `--line` border vanishes into a
+saturated field.
+
+**`tools/make_icons.py` is now the one command for all seven icon files.** Two SVG sources plus
+five PNGs that Android and iOS actually install. Regenerating by hand is how five of them stayed on
+the old brand. The apple-touch PNGs are FLATTENED to opaque, because iOS composites alpha to BLACK
+(already recorded once; regenerating is exactly when that gets forgotten).
+
+**contrast_gate.mjs now covers the app chrome too**, and it is the part I would have missed again:
+manifest `theme_color` must equal the brand and must AGREE with the `theme-color` meta in
+index.html (one value, two files, guaranteed to drift); `background_color` must be the page canvas;
+`apple-mobile-web-app-status-bar-style` must not be `black-translucent` (it forces WHITE status
+text over a now-light bar); and the icon SVGs must carry no retired brand colour. Four negative
+tests, all caught.
+
+**A CHECK POINTED AT THE WRONG RULE, FOR THE THIRD TIME THIS SESSION.** Verifying the phone styles,
+I sliced the file to `@media (max-width: 720px)` and searched it — but there is an EARLIER media
+query of the same width, so the slice swept up the BASE rule `.topbar{display:none}` and reported
+the gradient missing while it sat ten lines below. A selector legitimately has several rules. The
+right question is "does ANY rule for this selector set this property", never "does the first one".

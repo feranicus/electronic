@@ -80,7 +80,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- PWA: installable on Android (Chrome install prompt) and iOS (Share -> Add to Home Screen) -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#0C544E" />
+    <!-- The colour Android paints the status bar, and the browser paints its chrome. It was still
+         #0C544E, the previous brand's dark teal, which is why the very top of the installed app
+         stayed dark after the site went light. It now matches the top bar's gradient start. -->
+    <meta name="theme-color" content="#4F46E5" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <!-- iOS ignores the manifest icons: it needs apple-touch-icon (PNG, no transparency) -->
@@ -88,7 +91,9 @@
     <link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167.png" />
     <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- black-translucent shows the page through the status bar AND forces white status text,
+         which is invisible over a light surface. "default" is dark text on the system bar. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="cybergod" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="format-detection" content="telephone=no" />
