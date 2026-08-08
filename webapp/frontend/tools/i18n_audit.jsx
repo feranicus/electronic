@@ -20,6 +20,7 @@ import { setLang, LANGS } from "../src/legal.jsx";
 import { tr } from "../src/i18n.jsx";
 import Landing from "../src/pages/Landing.jsx";
 import Demo from "../src/pages/Demo.jsx";
+import Partners from "../src/pages/Partners.jsx";
 import Contact from "../src/pages/Contact.jsx";
 import Experience from "../src/pages/Experience.jsx";
 import Privacy from "../src/pages/Privacy.jsx";
@@ -35,7 +36,7 @@ import Assistant from "../src/pages/Assistant.jsx";
 import History from "../src/pages/History.jsx";
 import Sidebar from "../src/components/Sidebar.jsx";
 
-const PAGES = { Landing, Demo, Contact, Experience, Privacy, Impressum, Login,
+const PAGES = { Landing, Demo, Partners, Contact, Experience, Privacy, Impressum, Login,
                 NewAssessment, Compliance, Assistant, History, Sidebar };
 const CODES = LANGS.map((l) => l.code);
 let fail = 0;
@@ -57,7 +58,7 @@ const text = (html) => html.replace(/<[^>]*>/g, " ").replace(/&[a-z]+;|&#\d+;/gi
 
 // A raw key looks exactly like content, which is why it survived to production. Match the namespaces
 // we actually use, not a generic dotted pattern — "cybergod.ai" and "crt.sh" are legitimate text.
-const KEYLIKE = /\b(nav|tab|hero|creed|demo|login|lede|q3|clocks|touch|earn|faq|foot|contact|impressum|privacy|assess|comp|assist|hist|side)\.[a-z0-9]+\b/i;
+const KEYLIKE = /\b(nav|tab|hero|creed|demo|login|lede|q3|clocks|touch|earn|faq|foot|contact|impressum|privacy|assess|comp|assist|hist|side|prt)\.[a-z0-9]+\b/i;
 
 // Function words that are English and are NOT also words in de/it/fr/es/pl. "in", "la", "no", "a",
 // "the" (no), "son"… were pruned deliberately: a false positive here trains you to ignore the gate.

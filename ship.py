@@ -821,6 +821,17 @@ def do_tests():
             i18n_ok = False
             print("    !! the header row overflows, or a duplicate language control is back")
 
+        # PARTNERS. /partners renders a DATA OBJECT from partners-locales/<lang>.js, so a translator
+        # can drop a bullet, delete a column or reorder the page without touching any markup and
+        # without breaking the build. Only comparing every locale against the English reference can
+        # catch that. It also enforces the operator's standing content rules in every language: NO
+        # PRICES on a public page, no long dashes, no unexpanded abbreviations, no sentence over 30
+        # words, and no HTML entity (React escapes those, so they reach the screen verbatim).
+        # Pure Node, no npm dependencies, so it runs on Windows and inside the image alike.
+        if run(["node", "tools/partners_gate.mjs"], check=False, cwd=_fe) != 0:
+            i18n_ok = False
+            print("    !! /partners: a locale drifted from the English structure, or a content rule broke")
+
         # `run()` here STREAMS and returns an int returncode; it does not capture. The audit prints
         # its own per-language table, so streaming is what we want.
         if run(["node", "tools/i18n_catalogue.mjs", "--check"], check=False, cwd=_fe) != 0:

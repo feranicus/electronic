@@ -91,6 +91,9 @@ export default function MoreMenu() {
   }, [open, place]);
 
   const items = [
+    // "Who it is for" leads: it is the only commercial page in this menu, and it is the one a
+    // partner arriving from LinkedIn is looking for. The rest are company and legal pages.
+    { to: "/partners", label: t("nav.partners") },
     { to: "/experience", label: t("nav.about") },
     { to: "/contact", label: t("nav.contact") },
     { to: "/impressum", label: "Impressum" },

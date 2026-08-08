@@ -3077,3 +3077,70 @@ Mobile keeps the stacked flow, where the hint belongs in the layout — which is
 screenshot looked correct while the desktop one did not.
 RULE: in a `flex-end` row, anything appended BELOW a control silently moves that control up.
 
+
+## /partners — long-form prose is DATA, and adding a page touches four layers (2026-08)
+"Who it is for": fourteen one-page arguments (managed service providers, resellers, systems
+integrators, cybersecurity vendors, consulting firms, telecoms operators, small and mid-sized
+companies, large enterprises, law firms, insurers, regulators, white-label, embedded/OEM, contact),
+in all six interface languages, reachable from the More menu.
+
+**IT IS DATA, NOT MARKUP.** `Partners.jsx` holds ZERO copy; it renders an object from
+`partners-locales/<lang>.js`. So the layout exists once and a translation can only change words. A
+translator cannot move a box, drop a column or reorder the page, because none of those things are
+in the file they edit. Same doctrine as `build_geopol_html.js` (fixed shell, text injected) and the
+reason `legal-locales/` exists. `partners-locales/index.js` falls back WHOLE-ARRAY, never per index:
+`sections` is an array whose order is the page order, so an index-wise merge would silently pair the
+German "For resellers" with the English "For law firms" the moment one locale gained a section.
+`tools/partners_gate.mjs` is what makes that safe, by proving the arrays are parallel.
+
+**NOT in the shared string catalogue.** ~450 sentences that appear on one page would triple
+`gap.*.json` and bury a genuinely missing nav label under four hundred marketing sentences. Only
+CHROME goes in the shared keyed space: `nav.partners` and `prt.situation/complication/answer`.
+
+**STRUCTURE, RESEARCHED RATHER THAN ASSERTED.** The first draft claimed "consulting-grade" with
+nothing behind it, and the operator called it: *"did you really went to the internet and checked all
+the consulting companies that I mentioned and made a consensus...? I do not think so right?"* He was
+correct. The rebuild is on the published method: the Minto Pyramid (lead with one governing thought,
+three or four grouped supports, evidence under each), Situation / Complication / Answer as the
+executive-summary spine, ACTION TITLES (a heading states a conclusion, it does not name a topic),
+and the "so what" test, which cut ~30% of the copy. The `.pscr` block IS that spine and the gate
+fails a section that has no Answer, because a page without a governing thought is a list of features.
+RULE: do not describe your own output with a quality adjective you have not checked. Look up the
+method, then say which one you used.
+
+**FOUR LAYERS, and three of them fail SILENTLY** (now `tests/test_routes.py`, blocking):
+  1. `App.jsx` registers the route.
+  2. `MoreMenu.jsx` is the ONLY way to reach it on a phone (`#hd nav a:not(.btn){display:none}` and
+     the tab bar is full at six).
+  3. `main.py::_APP_ROUTES` — omit it and `_is_probe` classifies the page as a SCANNER PROBE: 404 to
+     some clients, visits logged as suppressed.
+  4. `public/sitemap.xml` — omit it and Google is never told the page exists.
+CLAUDE.md already said "_APP_ROUTES must list every App.jsx route (it was already stale)" and it went
+stale again, because writing a rule down is not enforcing it.
+
+**THE HEADER'S MENU CHECK WAS VACUOUS AND THIS CAUGHT IT.** `header_layout.mjs` looped over a
+HARDCODED list of four routes and then printed that same literal as if it were a finding:
+`console.log("  menu reaches: /experience /contact /impressum /privacy")`. Adding a fifth item
+changed nothing and it still said OK. It now reads the routes App.jsx registers and the items
+MoreMenu renders, asserts every public route is reachable and every menu link is a real route, and
+prints what it FOUND. Nth instance of the same disease: a check that restates its own expectation
+instead of reading its subject.
+
+**THE GATE'S FIRST RUN FAILED ON THE GATE.** `partners_gate.mjs` reported a 36-word sentence that
+is really two: `"…finding.** An address…"` ends the first sentence with `.**`, so a split on "full
+stop then whitespace" never fires. Strip the emphasis markers before splitting — measure what the
+READER sees, not what the source file looks like. Six negative tests (translated lookup key, a price
+in German copy, a dropped bullet, an HTML entity, a long dash, a locale copied from English) were
+each verified to FAIL the gate and the tree restored.
+
+**CONTENT RULES, enforced in every language rather than remembered:** no prices/discounts/seat
+counts anywhere (a price on a public page is a negotiating position given away for free and goes
+stale the day a tier changes); no long dashes; no unexpanded abbreviation in the English source; no
+sentence over 30 words; no HTML entity (React escapes a string that arrives as data, so `&rsquo;`
+reaches the screen verbatim — that already shipped once from five locale files at the same time); no
+named customer. A "translated" locale must also DIFFER from English on >90% of its long strings,
+because a copy passes every structural check perfectly.
+
+**`.p-main{min-width:0}` is load-bearing.** A grid item defaults to `min-width:auto`, so one long
+German compound noun or a URL forces the column wider than its `1fr` track and the whole page gains
+a horizontal scrollbar. German and Polish surface it first.

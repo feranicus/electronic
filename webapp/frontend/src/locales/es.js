@@ -28,6 +28,10 @@ export const keyed = {
   "login.prog2": "Verificaci\u00f3n",
   // ---- qui\u00e9nes somos / experiencia (a\u00f1adido el 7 ago 2026) -------------------------------
   "nav.about": "Qui\u00e9nes somos",
+  "nav.partners": "Para quién es",
+  "prt.situation": "Situación",
+  "prt.complication": "Complicación",
+  "prt.answer": "Respuesta",
   "tab.about": "Empresa",
   "exp.h1": "Qui\u00e9nes somos",
   "exp.sub": "Cuatro registros mercantiles, dos continentes, una contraparte responsable \u2014 y el historial de entrega que lo respalda.",

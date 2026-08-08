@@ -24,6 +24,10 @@ export const keyed = {
   "login.prog2": "Verifica",
   // ---- chi siamo / esperienza (added 7 Aug 2026) -----------------------------------------
   "nav.about": "Chi siamo",
+  "nav.partners": "Per chi è",
+  "prt.situation": "Situazione",
+  "prt.complication": "Complicazione",
+  "prt.answer": "Risposta",
   "tab.about": "Azienda",
   "exp.h1": "Chi siamo",
   "exp.sub": "Quattro società registrate, due continenti, un'unica controparte responsabile — e i progetti effettivamente realizzati alle spalle.",

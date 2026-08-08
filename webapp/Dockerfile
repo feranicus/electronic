@@ -13,10 +13,14 @@ COPY webapp/frontend/ ./
 # construction and no operator setup exists to drift. A failure here fails the image, which fails
 # the deploy: nothing broken can ship, and there is still exactly ONE command.
 #
-# `--check` fails if any of the six locales is incomplete; run_i18n_audit.mjs renders 11 pages x 6
+# `--check` fails if any of the six locales is incomplete; run_i18n_audit.mjs renders 13 pages x 6
 # languages and fails on a raw dotted key in the DOM, a leaked undefined, an over-length tab label,
 # or English function-word residue above 6% (i.e. sentences silently falling back).
+# partners_gate.mjs compares all six /partners locales against the English reference (a translator
+# can drop a column without breaking the build) and enforces the content rules, including the
+# standing NO PRICES ON A PUBLIC PAGE rule, in every language.
 RUN node tools/api_contract.mjs && node tools/header_layout.mjs \
+    && node tools/partners_gate.mjs \
     && node tools/i18n_catalogue.mjs --check && node tools/run_i18n_audit.mjs
 RUN npm run build
 

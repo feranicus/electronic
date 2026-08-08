@@ -17,6 +17,10 @@ export const keyed = {
   "login.prog2": "Verify",
   // ---- who we are / experience (added 7 Aug 2026) ---------------------------------------
   "nav.about": "Who we are",
+  "nav.partners": "Who it is for",
+  "prt.situation": "Situation",
+  "prt.complication": "Complication",
+  "prt.answer": "Answer",
   "tab.about": "About",
   "exp.h1": "Who we are",
   "exp.sub": "Four registrations, two continents, one accountable counterparty \u2014 and the delivery record behind them.",

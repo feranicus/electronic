@@ -37,6 +37,10 @@ export const keyed = {
   "login.prog2": "Weryfikacja",
   // ---- kim jesteśmy / doświadczenie (dodane 7 sierpnia 2026) ------------------------------
   "nav.about": "Kim jesteśmy",
+  "nav.partners": "Dla kogo to jest",
+  "prt.situation": "Sytuacja",
+  "prt.complication": "Problem",
+  "prt.answer": "Odpowiedź",
   "tab.about": "O nas",
   "exp.h1": "Kim jesteśmy",
   "exp.sub": "Cztery rejestracje, dwa kontynenty, jeden odpowiedzialny kontrahent — i stojący za nimi dorobek wdrożeniowy.",

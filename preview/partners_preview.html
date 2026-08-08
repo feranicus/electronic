@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PREVIEW v3, cybergod.ai · Who it is for</title>
+<!--
+  ============================================================================================
+  PREVIEW v3. NOT DEPLOYED, NOT LINKED FROM THE LIVE SITE.
+
+  WHAT CHANGED IN v3, all from operator review:
+
+  1. LANGUAGE
+     · Every long dash removed. Commas, colons, full stops and brackets only.
+     · "diff" removed. It is jargon, not a word. Now "change report" and "what changed".
+     · Every abbreviation is spelled out at first use: due diligence, systems integrator,
+       Small and Medium-sized Enterprises, quarterly business review, security monitoring
+       platform, purchase agreement, managing general agent.
+     · No non-English words. "Mittelstand" removed throughout.
+     · SME defined explicitly at the top of its page, because the letters alone are ambiguous.
+     · Written to plain professional English (roughly CEFR C1, readable at B2). Short sentences.
+       No sentence over 30 words, enforced by a check.
+
+  2. THE QUOTE IS ANONYMISED
+     Sector, size and session detail removed. It now says only what is needed for the argument
+     to work: a large regulated enterprise, an engineer, an address he could not account for.
+
+  3. STRUCTURE, REBUILT ON THE PUBLISHED CONSULTING METHOD (this was the real gap)
+     Researched, not assumed:
+       · Minto Pyramid Principle: lead with the single governing thought, support it with three
+         or four grouped arguments, back each with evidence.
+         https://strategycase.com/the-pyramid-principle-case-interview/
+       · Situation / Complication / Answer, the standard executive-summary spine.
+         https://deckary.com/blog/executive-summary-slides
+       · Action titles: a heading states a conclusion as a complete sentence, it does not name
+         a topic.  https://slidescience.co/action-titles/
+       · The "so what" test: every element must connect to the governing thought or be cut.
+         https://highbridgeacademy.com/what-is-the-pyramid-principle-and-how-to-use-it-at-work/
+     Applied to all fourteen pages: each one now opens with Situation, Complication and a single
+     bold Answer sentence, then three grouped supports, then evidence, then the next step.
+     Roughly 30 per cent of the previous copy was cut for failing the "so what" test.
+
+  UNCHANGED RULE: no prices, discounts, seat counts or commitments anywhere.
+  ============================================================================================
+-->
+<style>
+:root{--navy:#0a1526;--navy2:#0f1e39;--card:#132546;--line:#22385f;
+  --teal:#00B2A9;--gold:#F7C844;--green:#10B981;--cyan:#38e1ff;
+  --purple:#8b6cff;--red:#F20C36;--ink:#eaf1fb;--mut:#93a9ce;}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--navy);color:var(--ink);
+  font:16px/1.62 'Manrope','Segoe UI',system-ui,Arial,sans-serif}
+h1,h2,h3,.brand{font-family:'Space Grotesk','Segoe UI',sans-serif;letter-spacing:-.01em}
+a{color:var(--teal);text-decoration:none}
+.chev{color:var(--teal);font-weight:800}
+.pv{background:var(--gold);color:#0a1526;padding:9px 18px;font-weight:800;font-size:13px;position:sticky;top:0;z-index:50}
+.pv span{font-weight:600;opacity:.85}
+.hd{border-bottom:1px solid var(--line);background:rgba(8,16,32,.92);position:sticky;top:36px;z-index:40}
+.hd .wrap{max-width:1180px;margin:0 auto;padding:0 22px;height:58px;display:flex;align-items:center;gap:16px}
+.brand{font-weight:800;font-size:20px}
+.hd nav{margin-left:auto;display:flex;gap:14px;font-size:13.5px;color:var(--mut);align-items:center}
+.pill{border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600}
+.shell{max-width:1180px;margin:0 auto;padding:0 22px;display:grid;grid-template-columns:250px 1fr;gap:34px;align-items:start}
+.rail{position:sticky;top:118px;padding:26px 0 40px}
+.rail .rt{font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--teal);margin:0 0 12px}
+.rail a{display:block;padding:7px 11px;border-radius:9px;color:var(--mut);font-size:13.5px}
+.rail a:hover{background:rgba(255,255,255,.05);color:var(--ink)}
+.rail a.sep{margin-top:14px;pointer-events:none;color:var(--teal);font:600 10px/1 ui-monospace,monospace;letter-spacing:.16em;text-transform:uppercase;padding-left:11px}
+.intro{padding:44px 0 6px}
+.kick{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);margin-bottom:14px}
+.intro h1{font-size:clamp(30px,4vw,46px);line-height:1.08;margin:0 0 16px}
+.intro h1 .g{color:var(--teal)}
+.lede{color:var(--mut);font-size:17px;max-width:800px;margin:0 0 24px}
+.arts{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:0 0 14px}
+.art{border:1px solid var(--line);background:var(--navy2);border-radius:13px;padding:15px 16px}
+.art b{display:block;color:var(--teal);font-size:14px;margin-bottom:5px}
+.art span{font-size:13px;color:var(--mut);line-height:1.5}
+.artnote{font-size:13.5px;color:var(--mut);margin:0 0 22px}
+.op{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px 32px;margin:22px 0 30px;scroll-margin-top:130px}
+.op .eyebrow{font:600 10.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--teal);margin-bottom:9px}
+.op h2{font-size:27px;margin:0 0 18px}
+/* Situation / Complication / Answer */
+.scr{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:0 0 22px;background:var(--navy2)}
+.scr .r{display:grid;grid-template-columns:118px 1fr;gap:0;border-bottom:1px solid var(--line)}
+.scr .r:last-child{border-bottom:0}
+.scr .k{padding:13px 14px;font:600 10px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.13em;text-transform:uppercase;color:var(--mut);background:rgba(0,0,0,.16);display:flex;align-items:center}
+.scr .v{padding:13px 17px;font-size:15px}
+.scr .r.s .k{color:var(--mut)}
+.scr .r.c .k{color:var(--gold)}
+.scr .r.a{background:rgba(0,178,169,.09)}
+.scr .r.a .k{color:var(--teal)}
+.scr .r.a .v{font-size:16.5px;font-weight:700;line-height:1.48}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.cols.three{grid-template-columns:1fr 1fr 1fr}
+.col h3{font-size:12px;text-transform:uppercase;letter-spacing:.13em;color:var(--teal);margin:0 0 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600}
+.col ul{margin:0;padding:0;list-style:none}
+.col li{position:relative;padding-left:18px;margin-bottom:9px;font-size:14.5px}
+.col li:before{content:"";position:absolute;left:0;top:8px;width:7px;height:7px;border-radius:2px;background:var(--teal)}
+.win{margin-top:20px;border:1px solid var(--line);border-radius:12px;padding:15px 18px;background:rgba(0,178,169,.06)}
+.win .h{font:600 10.5px/1 ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--green);margin-bottom:7px}
+.win p{margin:0;font-size:15px}
+.rev{margin-top:18px;border:1px dashed var(--line);border-radius:12px;padding:15px 18px;background:rgba(139,108,255,.06)}
+.rev .h{font:600 10.5px/1 ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--purple);margin-bottom:10px}
+.rev ol{margin:0;padding-left:20px}
+.rev li{font-size:14.5px;margin-bottom:7px}
+.rev li b{color:var(--ink)}
+.chan{margin-top:18px;border-left:3px solid var(--cyan);background:rgba(56,225,255,.07);padding:12px 16px;border-radius:0 10px 10px 0;font-size:14.5px}
+.chan b{color:var(--cyan)}
+.steps{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.step{flex:1 1 170px;border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--navy2)}
+.step b{display:block;color:var(--teal);font:600 10px/1 ui-monospace,monospace;letter-spacing:.13em;margin-bottom:6px}
+.step span{font-size:13.5px}
+.cta{margin-top:20px;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.cta .txt{font-size:13.5px;color:var(--mut)}
+.btn{display:inline-block;background:var(--teal);color:#04201e;font-weight:700;font-size:14px;padding:10px 20px;border-radius:999px}
+.btn.ghost{background:transparent;color:var(--teal);border:1px solid var(--teal)}
+.op.model{border-color:rgba(139,108,255,.5)}
+.op.model .eyebrow,.op.model .col h3{color:var(--purple)}
+.op.model .col li:before{background:var(--purple)}
+.op.model .scr .r.a{background:rgba(139,108,255,.1)}
+.op.model .scr .r.a .k{color:var(--purple)}
+.vs{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:20px 0 0}
+.vs>div{padding:15px 18px}
+.vs>div:first-child{border-right:1px solid var(--line)}
+.vs h4{margin:0 0 8px;font-size:13px;color:var(--purple);font-family:ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.vs p{margin:0;font-size:14px}
+.diff{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+.dcell{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--navy2)}
+.dcell .t{font:700 11px/1 ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
+.dcell.n .t{color:var(--red)}.dcell.f .t{color:var(--green)}.dcell.o .t{color:var(--gold)}
+.dcell p{margin:0;font-size:13.5px;color:var(--mut)}
+.dcell p b{color:var(--ink)}
+.quote{margin:0 0 20px;border-left:3px solid var(--gold);padding:12px 18px;font-size:16px;font-style:italic;background:rgba(247,200,68,.07);border-radius:0 10px 10px 0}
+.quote span{display:block;font-style:normal;font-size:13px;color:var(--mut);margin-top:8px}
+.foot{border-top:1px solid var(--line);margin-top:40px;padding:26px 0 60px;color:var(--mut);font-size:12.5px}
+@media (max-width:980px){.arts{grid-template-columns:1fr 1fr}.diff,.cols.three{grid-template-columns:1fr}}
+@media (max-width:920px){
+  .shell{grid-template-columns:1fr;gap:0}
+  .rail{position:static;padding:18px 0 0;display:flex;flex-wrap:wrap;gap:5px}
+  .rail .rt{width:100%}.rail a{border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12.5px}
+  .rail a.sep{display:none}
+  .cols,.vs,.arts{grid-template-columns:1fr}
+  .vs>div:first-child{border-right:0;border-bottom:1px solid var(--line)}
+  .scr .r{grid-template-columns:1fr}
+  .scr .k{padding:9px 14px 0;background:transparent}
+  .op{padding:22px 20px}
+}
+@media print{
+  .pv,.hd,.rail,.intro{display:none}
+  body{background:#fff;color:#111}.shell{display:block;max-width:none;padding:0}
+  .op{page-break-after:always;break-after:page;border:0;background:#fff;padding:0;margin:0 0 18px}
+  .scr,.step,.art,.dcell{background:#fafafa}
+  .scr .r.a{background:#f2fbfa}.win{background:#f2fbfa}.rev{background:#f7f5ff}
+  .chan{background:#f0fbff}.quote{background:#fdf8ec}a{color:#000}
+}
+</style>
+</head>
+<body>
+
+<div class="pv">PREVIEW v3, not published. <span>Rebuilt on the Minto pyramid and Situation / Complication / Answer. No prices anywhere.</span></div>
+
+<header class="hd"><div class="wrap">
+  <div class="brand"><span class="chev">&#10095;</span> cybergod.ai</div>
+  <nav><span>Why it matters</span><span>The machine</span><span>Security</span>
+    <span class="pill">Demo</span><span class="pill">&#9776; More</span><span class="pill">EN</span></nav>
+</div></header>
+
+<div class="shell">
+  <aside class="rail">
+    <p class="rt">Who it is for</p>
+    <a class="sep">Partners</a>
+    <a href="#msp">Managed service providers</a><a href="#var">Resellers</a><a href="#gsi">Systems integrators</a>
+    <a href="#vendors">Cybersecurity vendors</a><a href="#consulting">Consulting firms</a><a href="#telco">Telecoms operators</a>
+    <a class="sep">Buyers</a>
+    <a href="#sme">Small and mid-sized companies</a><a href="#enterprise">Large enterprises</a>
+    <a href="#law">Law firms</a><a href="#insurance">Insurers</a><a href="#regulator">Regulators</a>
+    <a class="sep">How to engage</a>
+    <a href="#whitelabel">White-label</a><a href="#oem">Embedded (OEM)</a><a href="#contact">Talk to us</a>
+  </aside>
+
+  <main>
+
+    <section class="intro">
+      <div class="kick">One name in. Four board-ready documents out. Eleven audiences.</div>
+      <h1>Type a company name.<br>Get the <span class="g">whole risk picture</span> in minutes.</h1>
+      <p class="lede">Not one packet is sent to the company being assessed. Everything is built from
+        sources any researcher may lawfully consult. So there is nothing to install, nobody to ask
+        for permission, and no questionnaire to wait for. Four documents come back every time.</p>
+
+      <div class="arts">
+        <div class="art"><b>1. Findings</b><span>Every exposure facing the internet, ranked Critical
+          to Low. Each one states what it is, why it matters, how to fix it, and the exact address
+          and port it was seen on.</span></div>
+        <div class="art"><b>2. Risk in money</b><span>The same findings expressed in currency, using
+          the recognised Factor Analysis of Information Risk method. Cost of one incident, worst
+          case per year, and a curve that falls as findings close. Written for the finance
+          director.</span></div>
+        <div class="art"><b>3. Threat actors</b><span>Which attackers are actually relevant to this
+          industry and these countries, and how they operate. The answer to the board asking who
+          would come for us.</span></div>
+        <div class="art"><b>4. Compliance</b><span>Findings mapped to the clauses of the laws that
+          apply where the company operates, with the real deadlines. European Union and Canada
+          today.</span></div>
+      </div>
+      <p class="artnote">There is also a fifth document: a single self-contained web report that
+        combines all four and opens in any browser. That is the one people forward internally.
+        Every document is available in English, German or Russian.</p>
+    </section>
+
+    <!-- ==================================================== MANAGED SERVICE PROVIDERS -->
+    <article class="op" id="msp">
+      <div class="eyebrow">Partner</div>
+      <h2>For managed service providers</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You run security for many
+          customers at once, with a team that cannot grow as fast as your customer list.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">Reviewing one customer's
+          exposure by hand costs about a day of analyst time. At scale that does not happen, so the
+          quarterly business review becomes a status update nobody sets a budget against.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Assess every customer in your book
+          on the same schedule, at a cost that does not rise with the number of customers. Then sell
+          the fix at four separate price points.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. What you sell</h3><ul>
+          <li>The assessment itself, priced, under your own name.</li>
+          <li>A monthly or quarterly repeat with a report of what changed. That report is the managed service.</li>
+          <li>Licences, sold in packs or on an unlimited basis, which you earn on in their own right.</li>
+        </ul></div>
+        <div class="col"><h3>2. Why the cost works</h3><ul>
+          <li>One analyst covers your whole book instead of one account.</li>
+          <li>Starting a customer needs nothing from them: no software to install, no access, no form.</li>
+          <li>The compliance document answers the auditor in the same run, so there is no second engagement to sell or staff.</li>
+        </ul></div>
+        <div class="col"><h3>3. Where the margin is</h3><ul>
+          <li>Not in the report. In the four ways to close a finding, set out below.</li>
+          <li>Your account managers gain a reason to call every customer, every month, with news.</li>
+          <li>A closed finding proves the retainer works, which is the hardest thing in security to demonstrate.</li>
+        </ul></div>
+      </div>
+      <div class="rev"><div class="h">The four ways to close a finding, cheapest first</div><ol>
+        <li><b>Advice.</b> A workshop that walks every finding against what the customer already owns.</li>
+        <li><b>No new spend, using their own equipment.</b> Most findings close through configuration,
+          placement and process changes on products they already pay for. You deliver a list of
+          actions, each mapped to the tool that closes it.</li>
+        <li><b>Open source.</b> Where existing equipment cannot close the gap, a design built on open
+          source instead of a purchase. There is no licence to buy. The cost moves to skills and
+          operation, which the customer either hires or buys from you.</li>
+        <li><b>A commercial product.</b> Only where neither of the above works. Selection stays inside
+          the customer's approved supplier list. You advise on fit, sequence and integration.</li>
+      </ol></div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>A single report is a project. A monthly report of what changed is a subscription. You are
+          selling the finding and the route to fixing it, at four price points, to a customer who
+          already trusts you.</p></div>
+      <div class="steps">
+        <div class="step"><b>Week 1</b><span>Run your ten largest accounts and read what comes back.</span></div>
+        <div class="step"><b>Week 2</b><span>Send one finding to each. See the method below.</span></div>
+        <div class="step"><b>Week 3</b><span>Put your brand on it and price it into your managed tier.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Licence packs, unlimited plans, tiers and terms are commercial. Please ask.</span></div>
+    </article>
+
+    <!-- ==================================================== RESELLERS -->
+    <article class="op" id="var">
+      <div class="eyebrow">Partner</div>
+      <h2>For resellers</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You sell technology, and you
+          win on relationship, timing and the quality of the conversation you can start.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">The first technical meeting
+          is the hardest thing to get. The usual substitute is a discount, which costs you margin
+          and teaches the customer to wait for the next one.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Walk in already knowing what is
+          exposed on their perimeter. Charge properly for the assessment, then credit its value
+          against the work it uncovers.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. How it is priced</h3><ul>
+          <li>The assessment is a paid, fixed-scope engagement. It is not a giveaway.</li>
+          <li>Its value is then credited against the advice or remediation work that follows.</li>
+          <li>The customer therefore risks nothing, and you are paid either way.</li>
+        </ul></div>
+        <div class="col"><h3>2. What else you earn on</h3><ul>
+          <li>Licences, in packs or on an unlimited basis, as a second and recurring line.</li>
+          <li>All four ways to close a finding: advice, their own equipment, open source, or an approved product.</li>
+          <li>Repeat runs, which show what changed and reopen the conversation on a schedule.</li>
+        </ul></div>
+        <div class="col"><h3>3. What your sales team gains</h3><ul>
+          <li>A reason to call anyone, with something specific to say.</li>
+          <li>New logos: you need no permission and no access, so you can do the work before you are invited.</li>
+          <li>Renewal defence: run it before a competitor's renewal date and show what changed.</li>
+        </ul></div>
+      </div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>A discount buys one deal. Knowing more about their perimeter than they do buys the
+          relationship, and this time you are paid for the work that got you in.</p></div>
+      <div class="steps">
+        <div class="step"><b>Day 1</b><span>Pick five prospects you cannot get a meeting with.</span></div>
+        <div class="step"><b>Day 2</b><span>Send one finding to each. Never the report.</span></div>
+        <div class="step"><b>Day 5</b><span>Take the meeting. Price the assessment. Credit it forward.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Referral, resale, licence and white-label routes all exist. Terms on request.</span></div>
+    </article>
+
+    <!-- ==================================================== THE METHOD -->
+    <article class="op" id="play" style="border-color:rgba(247,200,68,.45)">
+      <div class="eyebrow" style="color:var(--gold)">Every partner uses this</div>
+      <h2>Send one finding. Hold the report back.</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You have run the assessment and
+          you are holding a document with everything in it.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">A prospect who did not ask
+          for a report reads it as a sales document and puts it aside. A full report also asks for a
+          meeting slot nobody has this quarter.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Send exactly one finding, with its
+          evidence and how to fix it. The single finding is what wins you the meeting. The report is
+          what you sell inside it.</div></div>
+      </div>
+      <p class="quote">"I do not see this address in our asset system at all."
+        <span>A network security engineer at a large regulated enterprise, watching a live run. The
+        platform had surfaced an address attributed to his own organisation. He could not find it in
+        the internal asset register. Company, sector and details withheld.</span></p>
+      <div class="cols">
+        <div class="col"><h3>How to run it</h3><ul>
+          <li>Run the assessment, read the findings, and pick exactly one.</li>
+          <li>Send that finding, with the evidence and the advice on fixing it.</li>
+          <li>Do not attach the report. Remove identifying detail if the approach is cold.</li>
+          <li>Ask for thirty minutes to walk through the rest.</li>
+        </ul></div>
+        <div class="col"><h3>Why one finding beats a report</h3><ul>
+          <li><b>An unknown asset is the strongest kind of finding.</b> An address outside the asset
+            register is outside patching, scanning and reporting, and asset inventory sits at the
+            base of every security standard they are audited against.</li>
+          <li><b>It survives scepticism.</b> A known finding gets "another team handles that". An
+            address nobody can account for cannot be answered that way.</li>
+          <li><b>It fits the room.</b> It lands with the team you are already talking to, not a
+            department nobody in the meeting controls.</li>
+          <li><b>It prices itself.</b> One unmanaged host facing the internet is cheap to argue about
+            and expensive to ignore.</li>
+        </ul></div>
+      </div>
+      <div class="win"><div class="h">What partners report</div>
+        <p>Partners in Germany and Switzerland using this method report six to ten new first meetings
+          per sales person per week. It clearly depends on the individual seller's ability to turn a
+          fact into a conversation, so we would rather you heard it from them. We will arrange the
+          call.</p></div>
+      <div class="cta"><a class="btn ghost" href="#contact">Ask for a reference call</a>
+        <span class="txt">Reference partners available in the German-speaking market.</span></div>
+    </article>
+
+    <!-- ==================================================== SYSTEMS INTEGRATORS -->
+    <article class="op" id="gsi">
+      <div class="eyebrow">Partner</div>
+      <h2>For systems integrators</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">Discovery is the first phase of
+          every security and transformation programme you run.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">It is billed at consultant
+          rates, done by hand, different on every engagement, and it is the invoice clients argue
+          about. Yet nothing after it is valid without it.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Make discovery a fixed, fast,
+          identical step on every engagement, so your margin moves to architecture and remediation,
+          where it belongs.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. Where it goes in the method</h3><ul>
+          <li>Discovery becomes an input to your methodology, not a replacement for it.</li>
+          <li>A baseline at the start of the programme, then a repeat at each stage gate.</li>
+          <li>Progress is evidenced by what closed, rather than asserted in a status report.</li>
+        </ul></div>
+        <div class="col"><h3>2. Where else it applies</h3><ul>
+          <li>Assessing a supplier without waiting for the supplier to cooperate.</li>
+          <li>Scoping a newly acquired business before its network is joined to the parent.</li>
+          <li>Any country or subsidiary where you have no local team.</li>
+        </ul></div>
+        <div class="col"><h3>3. What it changes commercially</h3><ul>
+          <li>You stop selling weeks of fact-finding and start selling the outcome it was blocking.</li>
+          <li>The money document prices the programme in the finance director's language on day one.</li>
+          <li>Every finding carries its evidence, so it survives the client's own technical review.</li>
+        </ul></div>
+      </div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>The first invoice stops being the one your client disputes, because it now buys an answer
+          instead of an activity.</p></div>
+      <div class="steps">
+        <div class="step"><b>Step 1</b><span>Run it on a live engagement and compare with what your team found by hand.</span></div>
+        <div class="step"><b>Step 2</b><span>Fold it into your standard discovery deliverable.</span></div>
+        <div class="step"><b>Step 3</b><span>Put your brand on it, or embed it. See the two models at the end.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Volume, regional and embedded terms are commercial. Please ask.</span></div>
+    </article>
+
+    <!-- ==================================================== VENDORS -->
+    <article class="op" id="vendors">
+      <div class="eyebrow">Partner</div>
+      <h2>For cybersecurity vendors</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You have a product that solves
+          a real problem, and a demonstration that shows it working.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">Your demonstration proves
+          the product works in general. It does not prove this customer has the problem today, so
+          the evaluation collapses into a comparison of features against a competitor.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Show the prospect what is open on
+          their own perimeter before you show them your product. Then run it again after deployment
+          and show, in money, what your product closed.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. In your own sales team</h3><ul>
+          <li>Every account manager carries an exposure picture specific to that customer.</li>
+          <li>It opens doors at companies that have never heard of you, with no access required.</li>
+          <li>The money document turns a technical exposure into a budget line.</li>
+        </ul></div>
+        <div class="col"><h3>2. Inside your product</h3><ul>
+          <li>External exposure becomes a feature of your platform, delivered over our programming interface.</li>
+          <li>Your interface, your brand, no second product for the customer to evaluate.</li>
+          <li>It adds an outside-in view to a product that mostly looks inward, which is a genuine gap in most security stacks.</li>
+        </ul></div>
+        <div class="col"><h3>3. Alongside your product</h3><ul>
+          <li>Run it before and after deployment. The difference is your case study.</li>
+          <li>It gives renewals a number rather than a feeling.</li>
+          <li>You can also resell licences next to your own products.</li>
+        </ul></div>
+      </div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>Nobody argues with their own attack surface. It is the shortest route from a
+          demonstration to a budget.</p></div>
+      <div class="steps">
+        <div class="step"><b>Evaluate</b><span>Run it against three of your own open opportunities.</span></div>
+        <div class="step"><b>Decide</b><span>Sales tool, resale line, or a feature of your platform.</span></div>
+        <div class="step"><b>Integrate</b><span>Findings arrive in your product through the programming interface.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Embedded and licence terms depend on volume and depth of integration. Please ask.</span></div>
+    </article>
+
+    <!-- ==================================================== CONSULTING -->
+    <article class="op" id="consulting">
+      <div class="eyebrow">Partner</div>
+      <h2>For consulting firms</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You sell judgement and
+          independence. Clients pay for the advice and the name on the cover.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">Fact-finding consumes most
+          of the engagement and is the part clients least want to pay for. You bill juniors to
+          gather facts and partners to interpret them, and only the second is valued.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Compress fact-finding from weeks
+          to days, put your own brand on the output, and sell the interpretation.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. What you can sell</h3><ul>
+          <li>A paid first engagement, delivered in days, that opens the larger one.</li>
+          <li>An independent second opinion on a security programme already under way.</li>
+          <li>Licences for the client to keep using it, on which you earn.</li>
+        </ul></div>
+        <div class="col"><h3>2. What you leave behind</h3><ul>
+          <li>Findings for the security director.</li>
+          <li>Risk in money for the finance director.</li>
+          <li>Threat actors for the board, and compliance for the audit committee.</li>
+        </ul></div>
+        <div class="col"><h3>3. Why it is safe to sign</h3><ul>
+          <li>Where a source could not be reached, findings say "unknown" instead of inventing a weakness.</li>
+          <li>Every finding carries the evidence it rests on, and the date it was seen.</li>
+          <li>It is repeatable, so the follow-on engagement has a measured starting point.</li>
+        </ul></div>
+      </div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>Your name goes on the document. That is exactly why a method that refuses to guess is
+          worth more to you than one that always produces a number.</p></div>
+      <div class="steps">
+        <div class="step"><b>Pilot</b><span>One client, one run, your own analysis on top.</span></div>
+        <div class="step"><b>Package</b><span>A named offering with a fixed scope and a fixed price.</span></div>
+        <div class="step"><b>Brand</b><span>Your identity on the platform and every document.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">White-label, licence and volume terms on request.</span></div>
+    </article>
+
+    <!-- ==================================================== TELCO -->
+    <article class="op" id="telco">
+      <div class="eyebrow">Partner</div>
+      <h2>For telecoms operators</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You sell connectivity to
+          thousands of business customers and you want to attach security before connectivity
+          becomes a pure commodity.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">A managed security practice
+          needs analysts you cannot recruit, at a margin the market will not pay, for a customer base
+          far too large to serve one at a time.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Sell a security service whose cost
+          does not rise with the number of customers, delivered by the account managers you already
+          employ.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. What you sell</h3><ul>
+          <li>A branded assessment service: your portal, your invoice, your price.</li>
+          <li>Licences as a recurring line, in packs or on an unlimited basis.</li>
+          <li>A recurring review that makes the connectivity contract harder to switch than price alone.</li>
+        </ul></div>
+        <div class="col"><h3>2. How it reaches the base</h3><ul>
+          <li>Attach it at the point of sale, while the connectivity order is being signed.</li>
+          <li>No new sales motion: your existing account managers are the channel.</li>
+          <li>It reaches the long tail of small customers you can never serve with people.</li>
+        </ul></div>
+        <div class="col"><h3>3. Where it runs</h3><ul>
+          <li>In your own environment, or in a national cloud where regulation requires it.</li>
+          <li>In the country your regulator names, including the licensing server.</li>
+          <li>In the languages your market actually reads.</li>
+        </ul></div>
+      </div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>This is the rare security offer a customer base your size can actually consume, because
+          nothing about it needs one analyst per customer.</p></div>
+      <div class="steps">
+        <div class="step"><b>Prove</b><span>Run it across a sample of your own base.</span></div>
+        <div class="step"><b>Brand</b><span>Style the platform and every document as yours.</span></div>
+        <div class="step"><b>Attach</b><span>Put it on the connectivity order form.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">White-label, embedded, licence and volume terms on request.</span></div>
+    </article>
+
+    <!-- ==================================================== SME -->
+    <article class="op" id="sme">
+      <div class="eyebrow">Buyer</div>
+      <h2>For small and mid-sized companies</h2>
+      <p style="margin:-8px 0 18px;color:var(--mut);font-size:14.5px">A small or mid-sized company
+        here means a business of roughly ten to two hundred and fifty employees, where one person
+        looks after information technology alongside another job. This page is written for that
+        company itself: the owner, the managing director, or that one person.</p>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You are told your company needs
+          to take cyber security seriously, and you agree.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">The advice is to buy a
+          penetration test, a consultant and a set of policies. All three cost more than the risk
+          anyone has quantified for you, and none of them answers the only question you actually
+          have.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Find out what a stranger can see
+          of your company from the outside, this week, without installing anything or letting anyone
+          into your network.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. What you receive</h3><ul>
+          <li>Everything of yours that faces the internet, including the things nobody remembered.</li>
+          <li>What it would cost you if it went wrong, in money, with the method shown.</li>
+          <li>Which laws apply to you and by when, in plain language.</li>
+        </ul></div>
+        <div class="col"><h3>2. Why it fits a company your size</h3><ul>
+          <li>Nothing to install. No software, no access, nobody visiting your office.</li>
+          <li>You give a company name. That is the whole of the setup.</li>
+          <li>Run it again whenever something changes, instead of once a year when you can afford it.</li>
+        </ul></div>
+        <div class="col"><h3>3. What you can do with it</h3><ul>
+          <li>Forward it to a customer who is auditing you, as it is.</li>
+          <li>Give it to your bank or your insurer without translation.</li>
+          <li>Hand it to your information technology supplier as a list of work.</li>
+        </ul></div>
+      </div>
+      <div class="chan"><b>How you buy it.</b> Through a partner, not from us directly. Either choose
+        one of our certified partners in your region, or introduce us to the information technology
+        company you already trust and we will bring them on board. You keep the relationship you
+        have. They gain the capability. The choice is yours.</div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>Most companies your size find at least one thing they did not know was visible from the
+          internet. Finding it costs you an afternoon instead of a project.</p></div>
+      <div class="steps">
+        <div class="step"><b>Now</b><span>Look at the public demonstration. Real documents, invented company.</span></div>
+        <div class="step"><b>Then</b><span>Ask us, or your own supplier, for a run on your own name.</span></div>
+        <div class="step"><b>After</b><span>Fix what matters, then run it again to prove it is closed.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Find a partner</a>
+        <span class="txt">Prices and terms come from your partner. Tell us your region and we will introduce you, or bring your own.</span></div>
+    </article>
+
+    <!-- ==================================================== ENTERPRISE -->
+    <article class="op" id="enterprise">
+      <div class="eyebrow">Buyer</div>
+      <h2>For large enterprises</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You have security teams, mature
+          tooling and a real budget. Every one of those teams owns part of the picture.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">Nobody can state what the
+          whole group looks like from the outside and prove it. Subsidiaries and acquisitions leave
+          assets no team claims. Supplier risk is assessed with a form the supplier fills in about
+          itself. And a single assessment cannot tell you whether anything is improving.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">One external view of the entire
+          group, priced in money, repeated on a schedule, with a report of exactly what changed
+          since the last run.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. Coverage your tools do not have</h3><ul>
+          <li>The whole group, including subsidiaries and brands that do not carry the parent name.</li>
+          <li>Suppliers assessed the same way, with no access and no questionnaire.</li>
+          <li>Newly acquired businesses, before their network is joined to yours.</li>
+        </ul></div>
+        <div class="col"><h3>2. Output shaped like your organisation</h3><ul>
+          <li>Findings for network security. Risk in money for the finance director and the risk committee.</li>
+          <li>Threat actors for the board. Compliance for internal audit.</li>
+          <li>No team has to agree with another team before it can use its own document.</li>
+        </ul></div>
+        <div class="col"><h3>3. Built to survive challenge</h3><ul>
+          <li>Every finding carries the address, the port, the evidence and the date.</li>
+          <li>Scoping is deliberately conservative: another company's server on shared infrastructure is never reported as yours.</li>
+          <li>Where a source could not be reached it reports "unknown" rather than inferring a weakness.</li>
+        </ul></div>
+      </div>
+
+      <div class="rev" style="border-style:solid;border-color:var(--line);background:rgba(0,178,169,.05)">
+        <div class="h" style="color:var(--teal)">The change report, which is the part that matters</div>
+        <p style="margin:0 0 6px;font-size:15px">A single assessment tells you where you stand. It
+          cannot tell you whether anything is getting better. Run it again and the platform compares
+          the two runs and reports only what moved.</p>
+        <div class="diff">
+          <div class="dcell n"><div class="t">New</div><p>Exposures that <b>did not exist last
+            time</b>: a service somebody published, a certificate that expired, a server an
+            acquisition brought with it.</p></div>
+          <div class="dcell f"><div class="t">Closed</div><p>Findings that are <b>gone</b>. This is
+            the evidence that a remediation budget produced a result, which is the hardest thing in
+            security to demonstrate.</p></div>
+          <div class="dcell o"><div class="t">Still open</div><p>Findings raised previously that
+            <b>have not moved</b>, with how long they have been open. This is the escalation list,
+            and it writes itself.</p></div>
+        </div>
+        <p style="margin:12px 0 0;font-size:15px">Your compliance process does not want a report. It
+          wants a dated, evidenced answer to one question: <b>what changed, and did anyone fix what
+          we raised?</b> That is what turns this from a project into a control, and it is the reason
+          to run it on a schedule rather than once.</p>
+      </div>
+
+      <div class="chan"><b>How you buy it.</b> Through the channel. Either choose one of our
+        certified partners, or nominate the systems integrator you already work with and we will
+        bring them on board. Your procurement process, your contracts and your existing supplier
+        relationships stay as they are.</div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>Your teams keep every tool they have. This answers the one question none of those tools is
+          pointed at: what the outside world can see across everything you own. It then proves,
+          month after month, whether that is shrinking.</p></div>
+      <div class="steps">
+        <div class="step"><b>Prove</b><span>One business unit. Compare it with what you believed you had.</span></div>
+        <div class="step"><b>Extend</b><span>Add subsidiaries and your most critical suppliers.</span></div>
+        <div class="step"><b>Operate</b><span>Put it on a schedule and manage the change report.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Enterprise agreements, programming interface access and security documentation come through your partner or ours.</span></div>
+    </article>
+
+    <!-- ==================================================== LAW -->
+    <article class="op" id="law">
+      <div class="eyebrow">Buyer</div>
+      <h2>For law firms</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You advise on data protection,
+          cyber incidents, mergers and acquisitions, and regulatory exposure.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">You routinely need technical
+          facts about a company you have no authority to touch. Testing another party's systems
+          without authorisation creates exactly the liability you exist to prevent.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Technical evidence obtained
+          without doing anything to anybody, which is precisely what makes it usable in your
+          work.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. Where it applies</h3><ul>
+          <li><b>Due diligence in a transaction:</b> the target's real external estate, and its
+            priced risk, before the purchase agreement is signed.</li>
+          <li><b>After an incident:</b> an independent, dated picture of what was publicly visible.</li>
+          <li><b>Disputes:</b> a technical exhibit that another expert can reproduce.</li>
+        </ul></div>
+        <div class="col"><h3>2. Why it is lawful to use</h3><ul>
+          <li>Entirely passive. Not one packet reaches the company being assessed.</li>
+          <li>Nothing is exploited and nothing is logged into.</li>
+          <li>Built only from sources any researcher may lawfully consult, so no authorisation is required from anyone.</li>
+        </ul></div>
+        <div class="col"><h3>3. What you can put in front of a client</h3><ul>
+          <li>Each finding with its evidence and the date it was retrieved.</li>
+          <li>Which regulations apply, with obligations and deadlines quoted from the primary texts.</li>
+          <li>The exposure converted into an amount your client's board understands.</li>
+        </ul></div>
+      </div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>It produces technical facts with the one property your work demands: they were obtained
+          without doing anything to anybody. That is what makes them usable.</p></div>
+      <div class="steps">
+        <div class="step"><b>Assess</b><span>Run it on a matter you already advise on.</span></div>
+        <div class="step"><b>Verify</b><span>Test the evidence trail against your own standard.</span></div>
+        <div class="step"><b>Adopt</b><span>Make it a standard step in transaction due diligence and incident work.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Terms per matter or firm-wide, through the channel. The output is not legal advice and does not replace counsel.</span></div>
+    </article>
+
+    <!-- ==================================================== INSURANCE -->
+    <article class="op" id="insurance">
+      <div class="eyebrow">Buyer</div>
+      <h2>For insurers, agents and brokers</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You write cyber insurance, and
+          you price it from what the applicant tells you about themselves.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">The proposal form is
+          self-reported, optimistic and out of date the day it is signed. At renewal you cannot tell
+          whether anything the insured promised to fix was fixed. After a loss you cannot show what
+          was visible.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Underwrite what is observable
+          instead of what is declared, on every risk, at a cost that does not rise with the number of
+          risks.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. What premium should this risk carry?</h3><ul>
+          <li>An expected loss and a worst case per year, produced by the recognised Factor Analysis
+            of Information Risk method.</li>
+          <li>The workings are shown, so it is a technical input to your rating decision and not a
+            score from a black box.</li>
+          <li>Available before the applicant has chosen you, because it needs no cooperation.</li>
+        </ul></div>
+        <div class="col"><h3>2. What is actually on their estate?</h3><ul>
+          <li>Every exposure facing the internet, ranked, with the address and the port.</li>
+          <li>Independent of the proposal form, so the two can be compared.</li>
+          <li>Delivered in minutes, so it fits inside a quotation process.</li>
+        </ul></div>
+        <div class="col"><h3>3. Are they compliant?</h3><ul>
+          <li>Their standing against the cyber laws that apply to them, with deadlines.</li>
+          <li>Non-compliance is both a driver of loss and a question of coverage.</li>
+          <li>European Union and Canadian regimes are live today.</li>
+        </ul></div>
+      </div>
+      <div class="rev"><div class="h">Across the life of the policy</div><ol>
+        <li><b>At quotation.</b> Minutes, no cooperation needed.</li>
+        <li><b>At renewal.</b> The change report shows remediation, or its absence. Price the difference.</li>
+        <li><b>Across the portfolio.</b> Re-run the whole book when a new widely exploited
+          vulnerability appears, and know your accumulated exposure the same day.</li>
+        <li><b>At claim.</b> A dated record of what was externally visible.</li>
+      </ol></div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>You move from underwriting what the applicant says to underwriting what can be observed,
+          consistently, on every risk. That is an argument about loss ratio, not about
+          technology.</p></div>
+      <div class="steps">
+        <div class="step"><b>Calibrate</b><span>Run it against risks you have already written, including ones that produced losses.</span></div>
+        <div class="step"><b>Compare</b><span>Set the results beside the proposal forms and look at the gaps.</span></div>
+        <div class="step"><b>Embed</b><span>Into the quotation process, or your broker portal.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Portfolio, programming interface and embedded terms on request.</span></div>
+    </article>
+
+    <!-- ==================================================== REGULATOR -->
+    <article class="op" id="regulator">
+      <div class="eyebrow">Buyer</div>
+      <h2>For regulators and supervisory authorities</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You supervise a population of
+          entities under a cyber security or operational resilience mandate.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">The law is written and the
+          deadlines are real. Your technical capacity is not. In practice you inspect a handful of
+          entities a year, chosen without a technical basis. You cannot know whether the ones you
+          did not inspect are the ones that matter.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Supervise the entire population
+          from public evidence, without visiting anyone, and turn each breach into a prepared case
+          file your officer reviews and signs.</div></div>
+      </div>
+      <div class="cols three">
+        <div class="col"><h3>1. Coverage instead of sampling</h3><ul>
+          <li>Every supervised entity, assessed by the same method on the same day.</li>
+          <li>Results are comparable across the sector, because nothing is measured differently.</li>
+          <li>Repeatable on a schedule, so you can measure the sector's direction of travel.</li>
+        </ul></div>
+        <div class="col"><h3>2. Evidence that survives challenge</h3><ul>
+          <li>Per entity: the address, the port, the evidence and the date it was observed.</li>
+          <li>Mapped to the specific clause it engages.</li>
+          <li>Where a source cannot be reached it reports "unknown" and asserts no breach.</li>
+        </ul></div>
+        <div class="col"><h3>3. Lawful by construction</h3><ul>
+          <li>Entirely passive. No entity is touched, so no notice or authorisation arises.</li>
+          <li>Reproducible, so it withstands review by the entity's own experts.</li>
+          <li>Deployable inside your own or a national environment where the mandate requires it.</li>
+        </ul></div>
+      </div>
+      <div class="rev"><div class="h">The enforcement pipeline, run across the whole population</div>
+        <ol>
+          <li><b>Detect.</b> A non-compliant condition on a supervised entity, with the address, the
+            port and the date it was observed.</li>
+          <li><b>Map.</b> The specific clause it engages, whether in European law or your own national
+            instrument.</li>
+          <li><b>Corroborate.</b> Four independent artificial intelligence models, from four
+            different suppliers, review the case. Two build it and two try to break it. Fixed rules
+            in code make the decision, not the models, and a case none of them can corroborate never
+            leaves the queue.</li>
+          <li><b>Draft.</b> The evidenced case file and the enforcement notice are prepared
+            automatically.</li>
+          <li><b>Decide.</b> Your officer reviews and signs. The machine builds the case and the
+            authority issues it, which is what keeps every notice reviewable and open to
+            appeal.</li>
+        </ol>
+      </div>
+      <div class="win"><div class="h">The claim, stated plainly</div>
+        <p>You stop choosing who to inspect by reputation. You start supervising the whole sector by
+          evidence, without sending an inspector to a single building, and without a single packet
+          reaching a supervised entity.</p></div>
+      <div class="steps">
+        <div class="step"><b>Pilot</b><span>One sector, one group of entities. Rank them.</span></div>
+        <div class="step"><b>Compare</b><span>Set the ranking against your own supervisory knowledge.</span></div>
+        <div class="step"><b>Scale</b><span>The full population, on a schedule, with the enforcement queue.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Public sector procurement, hosting location and terms on request.</span></div>
+    </article>
+
+    <!-- ==================================================== WHITE-LABEL -->
+    <article class="op model" id="whitelabel">
+      <div class="eyebrow">How to engage, model 1 of 2</div>
+      <h2>White-label</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You want a security service to
+          sell under your own name.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">Building the engine takes
+          years. Reselling somebody else's brand means the customer's relationship is with them and
+          not with you.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Your brand on the front, our
+          engine underneath. Your customer, your contract, your price, and they never see us.</div></div>
+      </div>
+      <div class="cols">
+        <div class="col"><h3>What becomes yours</h3><ul>
+          <li>The brand on every screen and on all four documents.</li>
+          <li>The customer relationship, the contract and the invoice.</li>
+          <li>Your own pricing, set by you, for your market.</li>
+          <li>Where it runs: your cloud, your region, or a national environment. The licensing server
+            can sit in whichever country or region you require.</li>
+        </ul></div>
+        <div class="col"><h3>What does not become yours</h3><ul>
+          <li>The source code, and ownership of the platform. You receive a licence to use it and
+            present it, not to own it.</li>
+          <li>The right to license the software itself onward to a third party.</li>
+          <li>The engine's development and its correctness guarantees. Those stay with us, and they
+            are what you are relying on.</li>
+        </ul></div>
+      </div>
+      <div class="win"><div class="h">Choose this if</div>
+        <p>You want a product to sell: something your customer logs into with your name on it. It is
+          the right model for managed service providers, telecoms operators, consulting firms and
+          resellers building a security practice.</p></div>
+      <div class="steps">
+        <div class="step"><b>Scope</b><span>Brand, hosting region, languages, which modules.</span></div>
+        <div class="step"><b>Build</b><span>We style and deploy it. You accept it against agreed criteria.</span></div>
+        <div class="step"><b>Sell</b><span>Under your name, at your price.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Commitments, setup scope and pricing are commercial and confidential. Please ask.</span></div>
+    </article>
+
+    <!-- ==================================================== OEM -->
+    <article class="op model" id="oem">
+      <div class="eyebrow">How to engage, model 2 of 2</div>
+      <h2>Embedded, also called OEM</h2>
+      <div class="scr">
+        <div class="r s"><div class="k">Situation</div><div class="v">You already have a product your
+          customers log into every day.</div></div>
+        <div class="r c"><div class="k">Complication</div><div class="v">Selling a separate product
+          alongside it creates friction: another login, another contract, another thing to explain.
+          It also dilutes the product you spent years building.</div></div>
+        <div class="r a"><div class="k">Answer</div><div class="v">Our engine inside your product, so
+          your customer sees a new feature rather than a new product to evaluate.</div></div>
+      </div>
+      <div class="cols">
+        <div class="col"><h3>How it works</h3><ul>
+          <li>You call our programming interface. Findings, priced risk, threat actor context,
+            compliance gradings and finished documents come back as data.</li>
+          <li>You display them in your own interface, in your own structure.</li>
+          <li>Critical findings are pushed to your platform or your security monitoring system as
+            they occur, so there is nothing to poll.</li>
+          <li>Deployable in your environment, in the region your architecture or your regulator
+            requires.</li>
+        </ul></div>
+        <div class="col"><h3>What it gives you</h3><ul>
+          <li>A new capability in an existing product, with no new item for the customer to approve.</li>
+          <li>No second login, no second contract, no second support route.</li>
+          <li>Full control of the experience, its place on your roadmap and how you price it.</li>
+          <li>You can still resell licences as a separate line where an account calls for it.</li>
+        </ul></div>
+      </div>
+      <div class="vs">
+        <div><h4>White-label is</h4><p>A <b>product</b> that looks like yours. Your customer logs into
+          something carrying your brand. Best when you are building a service practice and need
+          something to sell.</p></div>
+        <div><h4>Embedded is</h4><p>A <b>capability</b> inside your product. Your customer sees a new
+          feature, not a new product. Best when you already own the screen your customer looks at and
+          do not want to add a second one.</p></div>
+      </div>
+      <div class="win"><div class="h">Choose this if</div>
+        <p>You are a software or security vendor, an insurer with a portal, or a platform business.
+          The test is simple. If your customer already logs into something of yours, choose embedded.
+          If they do not, choose white-label.</p></div>
+      <div class="steps">
+        <div class="step"><b>Design</b><span>Which calls, which data, where it appears.</span></div>
+        <div class="step"><b>Integrate</b><span>Scoped keys, signed callbacks, a versioned specification.</span></div>
+        <div class="step"><b>Ship</b><span>It becomes a feature of your platform.</span></div>
+      </div>
+      <div class="cta"><a class="btn" href="#contact">Talk to us</a>
+        <span class="txt">Depth of integration, volume and terms are commercial. Please ask.</span></div>
+    </article>
+
+    <!-- ==================================================== CONTACT -->
+    <article class="op" id="contact">
+      <div class="eyebrow">Next step</div>
+      <h2>Talk to us</h2>
+      <p style="margin:-8px 0 20px;color:var(--mut);font-size:15px">Prices, tiers, licence models,
+        commitments and contract terms are commercial and are agreed directly. They are deliberately
+        not published here.</p>
+      <div class="cols">
+        <div class="col"><h3>What we can do this week</h3><ul>
+          <li>A live run on a company name you choose, so you judge the output rather than the pitch.</li>
+          <li>A reference call with a partner already selling this in the German-speaking market.</li>
+          <li>The legal pack: partner agreement, white-label and embedded supplement, non-disclosure
+            agreement, service level agreement, terms of use, data processing agreement and a
+            hosting factsheet.</li>
+          <li>The security architecture documentation your security officer or procurement team will
+            ask for.</li>
+        </ul></div>
+        <div class="col"><h3>What we will ask you</h3><ul>
+          <li>Which of the audiences above you are. It changes the answer materially.</li>
+          <li>Whether you want to resell it, brand it, or embed it in your own product.</li>
+          <li>Whether you sell licences, services, or both.</li>
+          <li>Where the data, and the licensing server, has to be located.</li>
+        </ul></div>
+      </div>
+      <div class="cta">
+        <a class="btn" href="mailto:feranicus@s4biz.io">Email us</a>
+        <a class="btn ghost" href="https://cybergod.ai/demo">See the public demonstration first</a>
+        <span class="txt">Cybergod LLC, part of the S4Biz Group</span>
+      </div>
+    </article>
+
+    <div class="foot">
+      PREVIEW v3. Not published and not linked from cybergod.ai. Content is drawn from the partner
+      and regulator briefing material, the customer meeting records and the signed legal pack. No
+      prices, discounts, seat counts or commitments appear anywhere, by design. Partner meeting
+      volumes are as reported by those partners and depend on the individual sales person.
+      Assessment output is not legal advice. All references to identified customers have been
+      removed.
+    </div>
+
+  </main>
+</div>
+</body>
+</html>

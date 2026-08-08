@@ -117,11 +117,41 @@ const block = (sel) => {
   console.log("  panel: portalled to <body>, position:fixed, backdrop present, label always shown");
 }
 
-// The menu must reach every page a visitor needs; on a phone it is the ONLY route to them.
+// ============================================================================================
+// THE MENU MUST REACH EVERY PUBLIC PAGE. On a phone it is the ONLY route to most of them, because
+// `#hd nav a:not(.btn){display:none}` hides plain links and the bottom tab bar is full at six.
+//
+// THIS CHECK USED TO BE VACUOUS AND IT WAS CAUGHT ADDING /partners (8 Aug 2026). It looped over a
+// HARDCODED list of four routes and then printed that same literal list as if it were a finding.
+// So it could never notice a new page, and its output was a claim about the menu that was not
+// derived from the menu. Adding a fifth item changed nothing and the gate still said "OK".
+// Same family as `console.log("menu reaches: ...")` everywhere else in this repo: a check that
+// restates its own expectation instead of reading its subject is not a check.
+//
+// NOW: read the routes App.jsx actually registers, read the items MoreMenu actually renders, and
+// assert every public route is reachable from the header, by one path or the other.
+// ============================================================================================
 const mm = readFileSync("src/components/MoreMenu.jsx", "utf8");
-for (const r of ["/experience", "/contact", "/impressum", "/privacy"])
-  if (!mm.includes('to: "' + r + '"')) fail("MoreMenu does not link to " + r);
-console.log("  menu reaches: /experience /contact /impressum /privacy");
+const app = readFileSync("src/App.jsx", "utf8");
+
+const routes = [...app.matchAll(/<Route\s+path="([^"]+)"/g)].map((m) => m[1]);
+const menu = [...mm.matchAll(/\{\s*to:\s*"([^"]+)"/g)].map((m) => m[1]);
+if (!menu.length) fail("MoreMenu renders no items at all");
+
+// Reachable without the menu: the landing page is the brand, and these three are header buttons
+// or the tab bar's own entries. Everything else has to be in the menu or it is orphaned.
+const ELSEWHERE = new Set(["/", "/demo", "/login", "/app/*"]);
+for (const r of routes) {
+  if (ELSEWHERE.has(r)) continue;
+  if (!menu.includes(r)) {
+    fail(`route ${r} is registered in App.jsx but no header control reaches it. On a phone it `
+       + `would be unreachable: plain nav links are hidden and the tab bar is full.`);
+  }
+}
+for (const r of menu) {
+  if (!routes.includes(r)) fail(`MoreMenu links to ${r}, which App.jsx does not register. Dead link.`);
+}
+console.log(`  menu reaches: ${menu.join(" ")}  (${routes.length} routes registered, all covered)`);
 
 // EXACTLY ONE language control on the site: the header's.
 const pages = readdirSync("src/pages").filter((f) => f.endsWith(".jsx"));

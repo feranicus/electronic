@@ -15,6 +15,10 @@ export const keyed = {
   "login.prog2": "Best\u00e4tigen",
   // ---- wer wir sind / Erfahrung (added 7 Aug 2026) ---------------------------------------
   "nav.about": "Wer wir sind",
+  "nav.partners": "Für wen es ist",
+  "prt.situation": "Ausgangslage",
+  "prt.complication": "Problem",
+  "prt.answer": "Antwort",
   "tab.about": "\u00dcber uns",
   "exp.h1": "Wer wir sind",
   "exp.sub": "Vier Registrierungen, zwei Kontinente, ein verantwortlicher Vertragspartner \u2014 und die Projektbilanz dahinter.",

@@ -22,6 +22,10 @@ export const keyed = {
   "login.prog2": "V\u00e9rification",
   // ---- qui nous sommes / exp\u00e9rience (added 7 Aug 2026) -----------------------------------
   "nav.about": "Qui nous sommes",
+  "nav.partners": "À qui cela s'adresse",
+  "prt.situation": "Situation",
+  "prt.complication": "Complication",
+  "prt.answer": "Réponse",
   "tab.about": "\u00c0 propos",
   "exp.h1": "Qui nous sommes",
   "exp.sub": "Quatre immatriculations, deux continents, un interlocuteur responsable \u2014 et les r\u00e9alisations qui les attestent.",
