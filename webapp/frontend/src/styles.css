@@ -496,7 +496,29 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .wrap{padding:0 16px}
   #hd .wrap{height:auto;min-height:54px;gap:10px;padding-top:calc(6px + env(safe-area-inset-top));
     padding-bottom:6px}
-  #hd{background:rgba(8,16,32,.86);backdrop-filter:blur(10px)}
+  /* ==========================================================================================
+     THE PHONE HEADER IS THE BRAND GRADIENT, matching the cabinet's .topbar.
+     This rule is why the landing page still had a dark bar after the site went light: #hd has TWO
+     rules, a desktop one and this phone override, and I changed only the first. A selector
+     legitimately has several rules; "does the first one say X" is never the right question.
+     On a phone the header is APP CHROME, so it gets the identity treatment. Desktop keeps the
+     light glass bar, because a full-bleed saturated band across 1400px above a light hero is
+     heavy, and there the header is navigation rather than chrome.
+     ========================================================================================== */
+  #hd,#hd.s{background:var(--grad);border-bottom:0;box-shadow:0 1px 0 rgba(12,20,40,.06)}
+  #hd .brand{color:#fff}
+  #hd .chev{color:var(--cyan-br)}
+  #hd nav{color:rgba(255,255,255,.86)}
+  #hd nav a{color:#fff}
+  /* Every control in the bar has to be re-treated for a saturated field: a --line border and
+     --ink text are invisible on it. Translucent white is the same pattern .topbar already uses. */
+  #hd .btn.ghost,#hd .lang-trigger,#hd .more-t{background:rgba(255,255,255,.16);color:#fff;
+    border:1px solid rgba(255,255,255,.42);box-shadow:none}
+  #hd .btn{background:#fff;color:var(--cta);box-shadow:0 2px 8px rgba(12,20,40,.16)}
+  #hd .btn:hover{background:#fff;color:var(--cta-d);transform:none}
+  #hd .lang-trigger .code,#hd .more-t .more-l{color:#fff}
+  #hd .lang-trigger .car{opacity:.8}
+  #hd .more-i{stroke:#fff}
   #hd nav{margin-left:auto;gap:0}
   #hd nav a:not(.btn){display:none}          /* section anchors: noise on a phone */
   #hd nav .btn.sm{min-height:38px;padding:8px 16px;font-size:13px;white-space:nowrap}
@@ -831,7 +853,7 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   /* phone: the trigger collapses to the 2-letter code, so the header row stays ~46px lighter.
      The menu itself opens full-width-ish so six targets stay comfortably tappable. */
   .lang-trigger .lg{display:none}
-  .lang-trigger{padding:7px 9px;min-height:34px;font-size:12.5px;font-weight:700;gap:4px}
+  .lang-trigger{padding:7px 11px;min-height:34px;font-size:12.5px;font-weight:700;gap:4px}
   .lang-list{min-width:150px;right:0}
   .lang-list button{min-height:42px;font-size:14px}
   #hd nav .btn.sm{min-height:34px;padding:7px 11px;font-size:12.5px;white-space:nowrap}
@@ -945,7 +967,7 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 @media (max-width:720px){
   /* Keep the label. Icon-only at a 999px radius is a circle, which is what kept getting reported
      as broken; "More" is 4 characters and the row is measured at 360px by header_layout.mjs. */
-  .more-t{padding:7px 12px;min-height:34px;font-size:12.5px}
+  .more-t{padding:7px 11px;min-height:34px;font-size:12.5px;font-weight:700}
   .more-i{width:16px;height:16px}
   /* A bottom sheet, not a dropdown: thumb-reachable, full width, impossible to clip, and it
      cannot be mistaken for a stray dot near the top of the screen. */

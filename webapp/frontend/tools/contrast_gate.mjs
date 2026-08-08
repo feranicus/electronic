@@ -139,7 +139,14 @@ console.log(`  reserved: solid --cta appears on ${fills.length} selector(s), all
 // `topbar` joined this list when the phone header became the brand gradient: a white overlay on
 // a saturated surface is correct, it is only on a LIGHT surface that it vanishes. The list is
 // the set of surfaces that are still dark or saturated, and it has to be kept honest by hand.
-const DARK_OK = /iam-brand|iam-steps|iam-tag|loglist|mapbox|shine|prog-fill|cass|tgh|d-canvas|wa-fab|topbar/;
+// The allowlist is "selectors that render on a DARK OR SATURATED surface". `topbar` and the
+// `#hd`-scoped controls joined it when the phone chrome became the brand gradient: a translucent
+// white pill on a gradient is correct, it is only on a LIGHT surface that it vanishes.
+// LIMIT WORTH KNOWING: this gate reads selectors, not media context, so it cannot tell that these
+// `#hd` rules exist only inside @media(max-width:720px) where #hd IS a gradient. The exemptions are
+// therefore narrow and named rather than a blanket "#hd" — a broad exemption here would let a real
+// invisible overlay through on the desktop header.
+const DARK_OK = /iam-brand|iam-steps|iam-tag|loglist|mapbox|shine|prog-fill|cass|tgh|d-canvas|wa-fab|topbar|#hd \.btn\.ghost|#hd \.lang-trigger|#hd \.more-t|\.phone|\.more-bd/;
 for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
   const sel = m[1].split("\n").pop().trim();
   for (const w of m[2].matchAll(/rgba\(255,\s*255,\s*255,\s*(\.\d+|0?\.\d+|[01])\s*\)/g)) {
@@ -148,6 +155,50 @@ for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     if (DARK_OK.test(sel) || DARK_OK.test(m[2])) continue;  // still a dark block
     bad(`faint white overlay rgba(255,255,255,${alpha}) on "${sel}". It was there to lighten a dark `
       + `surface; on a light one the element is invisible. Use var(--line) or an ink-tinted rgba.`);
+  }
+}
+
+// ---- 5b. A SURFACE THAT IS STILL DARK -------------------------------------------------------
+// THE CHECK THAT SHOULD HAVE EXISTED FIRST. Converting the site to light was not one edit, it was
+// dozens, and twice I converted the page and left a bar that FRAMES it:
+//   · `.topbar` and the two bottom navigation bars, photographed on a phone;
+//   · then `#hd`, which has a desktop rule AND a phone override, and I changed only the first.
+// Both times everything else was green, because nothing was asking the obvious question: is any
+// surface still dark? So ask it. Any literal dark background outside the deliberately-dark set is
+// a failure, and the message names the selector so the fix is one line.
+//
+// Colours reached through var(--d-canvas) are NOT matched here: using the dark token is the
+// documented way to say "this block is meant to be dark", and those selectors are in DARK_OK.
+{
+  const lumOf = (c) => {
+    let m = c.match(/#([0-9A-Fa-f]{3,6})\b/);
+    if (m) return lum("#" + m[1]);
+    m = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?/);
+    if (!m) return null;
+    // ALPHA IS THE DISCRIMINATOR, for the second time today. A dark colour at low alpha is a TINT
+    // over whatever sits beneath it, not a dark surface: .creed's indigo wash is rgba(79,70,229,.07)
+    // on a light page. The white-overlay check learned this an hour earlier and I did not carry it
+    // across to this one. Anything under half opacity is a wash and is not judged as a surface.
+    if (m[4] !== undefined && parseFloat(m[4]) < 0.5) return null;
+    const [r, g, b] = m.slice(1, 4).map(Number);
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sel = m[1].split("\n").pop().trim();
+    if (DARK_OK.test(sel) || sel.startsWith(":root") || sel.startsWith("@")) continue;
+    for (const d of m[2].matchAll(/background(?:-color)?\s*:\s*([^;}]+)/g)) {
+      const val = d[1];
+      if (val.includes("var(--d-")) continue;              // the dark token, deliberate
+      for (const part of val.split(/,(?![^()]*\))/)) {
+        const L = lumOf(part);
+        if (L !== null && L < 0.16) {
+          bad(`"${sel}" still has a DARK background (${part.trim().slice(0, 34)}). The site is `
+            + `light; a dark surface here frames the page in the old palette. If it is meant to `
+            + `be dark, use var(--d-canvas)/var(--d-surface) and add the selector to DARK_OK.`);
+        }
+      }
+    }
   }
 }
 

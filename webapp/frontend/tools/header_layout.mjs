@@ -61,12 +61,31 @@ console.log("  all six fit");
 // ~6px glyph. On Android that rendered as an empty circle next to the language pill and read as a
 // broken element. These assertions pin the geometry, not the intention.
 const css = readFileSync("src/styles.css", "utf8");
+//
+// READ EVERY RULE FOR THE SELECTOR AND MERGE THEM, in source order, last wins.
+// The first version did `css.indexOf(sel + "{")`, a SUBSTRING match on the first occurrence. When
+// the phone header became a gradient it gained a grouped rule
+// `#hd .btn.ghost,#hd .lang-trigger,#hd .more-t{...}`, which CONTAINS the literal `.more-t{` but
+// not `.lang-trigger{` (that entry is followed by a comma). So one control was read from the
+// mobile rule and the other from the base rule, and the gate reported a mismatch on a pair that
+// renders identically. Third time in one session that "the first rule" was the wrong question.
+//
+// Entries matched: the selector on its own, or scoped under an ancestor (`#hd .more-t`), so both
+// controls are resolved through the same scopes and stay comparable.
 const block = (sel) => {
-  const i = css.indexOf(sel + "{");
-  if (i < 0) throw new Error("selector not found, the check would be vacuous: " + sel);
-  const body = css.slice(i + sel.length + 1, css.indexOf("}", i)).replace(/\s+/g, " ");
-  return Object.fromEntries(body.replace(/;$/, "").split(";").filter((d) => d.includes(":"))
-    .map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()]));
+  const out = {};
+  let found = false;
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const list = m[1].split("\n").pop().split(",").map((x) => x.trim());
+    if (!list.some((e) => e === sel || e.endsWith(" " + sel))) continue;
+    found = true;
+    for (const d of m[2].replace(/\s+/g, " ").split(";")) {
+      if (!d.includes(":")) continue;
+      out[d.slice(0, d.indexOf(":")).trim()] = d.slice(d.indexOf(":") + 1).trim();
+    }
+  }
+  if (!found) throw new Error("selector not found, the check would be vacuous: " + sel);
+  return out;
 };
 {
   const t = block(".more-t"), l = block(".lang-trigger");

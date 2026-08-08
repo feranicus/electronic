@@ -3275,3 +3275,43 @@ I sliced the file to `@media (max-width: 720px)` and searched it — but there i
 query of the same width, so the slice swept up the BASE rule `.topbar{display:none}` and reported
 the gradient missing while it sat ten lines below. A selector legitimately has several rules. The
 right question is "does ANY rule for this selector set this property", never "does the first one".
+
+## THE SAME MISS, TWICE: A SELECTOR HAS MORE THAN ONE RULE (2026-08-08)
+After the phone bars were fixed, the operator photographed the LANDING page: still a dark bar on
+top. `#hd` has TWO rules, a desktop one and a `@media (max-width:720px)` override, and the light
+conversion changed only the first. That is the identical mistake made an hour earlier on `.topbar`,
+and identical to the `@media` slice that made my verification read `.topbar{display:none}`.
+RULE, now enforced rather than written down: the question is **"does ANY rule for this selector set
+this property"**, never "does the first one".
+
+**THE CHECK THAT SHOULD HAVE EXISTED FIRST.** Converting a site to light is dozens of edits, and
+nothing was asking the obvious question: *is any surface still dark?* `contrast_gate.mjs` now walks
+every rule and fails on a literal dark background outside a named allowlist. Verified against both
+real defects: reverting `#hd` or `.side` to their old navy now fails the build by selector name.
+It found four more on its first run, of which two were genuine exemptions (`.phone` is a device
+bezel in an illustration, `.more-bd` is the scrim behind the menu sheet) and two were the check's
+own bug.
+
+**ALPHA IS THE DISCRIMINATOR, FOR THE SECOND TIME IN ONE SESSION.** The new check flagged
+`.creed`'s `rgba(79,70,229,.07)`, which is a 7% indigo wash on a light page, not a dark surface.
+The white-overlay check had learned this exact lesson an hour before and I did not carry it across
+when writing the new one. Anything under half opacity is a tint over what is beneath it and must
+not be judged as a surface.
+
+**PHONE CHROME IS NOW CONSISTENT:** the landing header and the cabinet top bar are both the brand
+gradient on a phone, because there the header is app chrome. Desktop keeps the light glass bar: a
+full-bleed saturated band across 1400px above a light hero is heavy, and there it is navigation.
+Every control inside a gradient bar needs re-treating (translucent white, not `--line` borders,
+which vanish into a saturated field).
+
+**AND THE SAME BUG A FOURTH TIME, IN header_layout.mjs.** Its `block(sel)` did
+`css.indexOf(sel + "{")`: a SUBSTRING match on the FIRST occurrence. When the phone header became a
+gradient it gained `#hd .btn.ghost,#hd .lang-trigger,#hd .more-t{...}`, which contains the literal
+`.more-t{` but NOT `.lang-trigger{` (that entry is followed by a comma), so one control was read
+from the mobile rule and the other from the base rule and it reported a mismatch on a pair that
+renders identically. `block()` now merges EVERY rule for the selector in source order.
+Fixing it surfaced a mismatch that had been shipping all along: `.more-t` was `7px 12px` / weight
+600 and `.lang-trigger` `7px 9px` / weight 700, and the old extractor could not see it because it
+only ever compared the FIRST rule of each, and those two happened to agree. Both are now `7px 11px`
+/ weight 700. **A check that reads one rule of a multi-rule selector is not just wrong when it
+fails; it is wrong when it passes.**
