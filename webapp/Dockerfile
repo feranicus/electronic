@@ -20,7 +20,7 @@ COPY webapp/frontend/ ./
 # can drop a column without breaking the build) and enforces the content rules, including the
 # standing NO PRICES ON A PUBLIC PAGE rule, in every language.
 RUN node tools/api_contract.mjs && node tools/header_layout.mjs \
-    && node tools/partners_gate.mjs \
+    && node tools/contrast_gate.mjs && node tools/partners_gate.mjs \
     && node tools/i18n_catalogue.mjs --check && node tools/run_i18n_audit.mjs
 RUN npm run build
 

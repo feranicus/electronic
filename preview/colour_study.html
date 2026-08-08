@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Colour study, cybergod.ai</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<!--
+  ================================================================================================
+  COLOUR STUDY. Not deployed. A single self-contained file so it can be opened offline, printed,
+  or forwarded as one attachment.
+
+  THE BRIEF: the site is too dark, it looks like Colt, and it should feel closer to the S4biz deck
+  but brighter. Plus: what actually converts, on phone and on desktop.
+
+  THE S4BIZ PALETTE IS NOT GUESSED. It was extracted from the XML of
+  S4biz_Sovereign_Cyber_Cloud_Capability_Brief.pptx by counting every explicit srgbClr in every
+  slide. The five most used, in order: #C7CDDA (89), #22D3EE (77), #FFFFFF (69), #8B5CF6 (62),
+  #2B3042 (57), then #4F46E5 (41). So the deck is cyan + violet + indigo. That is the family this
+  proposal keeps.
+
+  EVERY CONTRAST NUMBER ON THIS PAGE IS COMPUTED IN THE BROWSER at load, from the actual hex
+  values, using the WCAG 2.x relative-luminance formula. Nothing is typed in by hand. If a pair
+  fails it says FAIL in red. A palette that claims accessibility without measuring it is the same
+  defect as a check that cannot see its subject.
+  ================================================================================================
+-->
+<style>
+:root{
+  /* ---------- PROPOSED LIGHT (primary surface of the site) ---------- */
+  --canvas:#F6F8FC; --surface:#FFFFFF; --raise:#FBFCFE;
+  --line:#E3E9F2; --line2:#D3DCEA;
+  --ink:#0C1428; --body:#3A4863; --mut:#5C6B85;
+  /* ---------- BRAND, from the S4biz deck ---------- */
+  --indigo:#4F46E5; --indigo-d:#4338CA; --indigo-l:#EEF0FE;
+  --violet:#7C3AED; --violet-l:#F3EEFE;
+  --cyan:#0E7490;  --cyan-br:#22D3EE; --cyan-l:#E6F7FB;
+  /* ---------- SEMANTIC ---------- */
+  --amber:#B45309; --amber-f:#F59E0B; --amber-l:#FEF6E7;
+  --emerald:#047857; --emerald-f:#10B981; --emerald-l:#E7F7F1;
+  --rose:#BE123C; --rose-f:#F43F5E; --rose-l:#FEECF0;
+  /* ---------- PROPOSED DARK (used only for hero + evidence blocks) ---------- */
+  --d-canvas:#0E1230; --d-surface:#171B3D; --d-line:#2C3168;
+  --d-ink:#EEF1FF; --d-mut:#A6ADD8;
+  --grad:linear-gradient(135deg,#4F46E5 0%,#7C3AED 55%,#C026D3 100%);
+  --shadow:0 1px 2px rgba(12,20,40,.05),0 8px 24px rgba(12,20,40,.06);
+  --shadow-l:0 2px 4px rgba(12,20,40,.06),0 18px 44px rgba(79,70,229,.10);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--canvas);color:var(--body);
+  font:16px/1.65 Manrope,'Segoe UI',system-ui,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:'Space Grotesk',Manrope,sans-serif;color:var(--ink);letter-spacing:-.015em;margin:0}
+code,.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+a{color:var(--indigo)}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+
+/* study chrome */
+.top{background:var(--grad);color:#fff;padding:34px 0 30px}
+.top h1{color:#fff;font-size:clamp(26px,3.6vw,40px);line-height:1.1}
+.top p{margin:12px 0 0;max-width:760px;color:rgba(255,255,255,.9);font-size:17px}
+.tag{display:inline-block;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
+  border-radius:999px;padding:5px 13px;font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.14em;
+  text-transform:uppercase;margin-bottom:14px}
+section{padding:44px 0 8px}
+.eyebrow{font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--indigo);margin-bottom:10px}
+h2.sh{font-size:26px;margin-bottom:8px}
+.sub{color:var(--mut);max-width:820px;margin:0 0 22px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 24px;box-shadow:var(--shadow)}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+
+/* findings */
+.find{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--indigo);
+  border-radius:0 14px 14px 0;padding:18px 22px}
+.find h3{font-size:17px;margin-bottom:6px}
+.find p{margin:0;font-size:14.5px}
+.find .sw{display:block;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);
+  font-size:14px;color:var(--ink)}
+.find .sw b{color:var(--indigo)}
+.find.warn{border-left-color:var(--amber-f)}
+.find.warn .sw b{color:var(--amber)}
+
+/* swatches */
+.sw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.swatch{border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--surface)}
+.swatch .chip{height:66px;display:flex;align-items:flex-end;padding:8px 10px}
+.swatch .meta{padding:9px 11px 11px}
+.swatch .nm{font:700 13px/1.3 Manrope;color:var(--ink)}
+.swatch .hx{font:500 12px/1.4 'JetBrains Mono',monospace;color:var(--mut)}
+.swatch .use{font-size:11.5px;color:var(--mut);margin-top:5px;line-height:1.45}
+
+/* contrast table */
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--surface);
+  border:1px solid var(--line);border-radius:14px;overflow:hidden}
+th{text-align:left;font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--mut);padding:11px 14px;background:var(--raise);border-bottom:1px solid var(--line)}
+td{padding:10px 14px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+.dot{display:inline-block;width:13px;height:13px;border-radius:4px;vertical-align:-2px;margin-right:7px;border:1px solid rgba(0,0,0,.12)}
+.pass{color:var(--emerald);font-weight:700}
+.fail{color:var(--rose);font-weight:700}
+.aaa{color:var(--indigo);font-weight:700}
+
+/* mockups */
+.mock-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.tabbtn{border:1px solid var(--line2);background:var(--surface);color:var(--body);border-radius:999px;
+  padding:8px 15px;font:600 13px Manrope;cursor:pointer;transition:.15s}
+.tabbtn:hover{border-color:var(--indigo);color:var(--indigo)}
+.tabbtn.on{background:var(--indigo);border-color:var(--indigo);color:#fff}
+.frames{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start}
+.frame{border:1px solid var(--line2);border-radius:14px;overflow:hidden;background:#fff;box-shadow:var(--shadow-l)}
+.frame .bar{height:30px;background:var(--raise);border-bottom:1px solid var(--line);display:flex;
+  align-items:center;gap:6px;padding:0 11px}
+.frame .bar i{width:9px;height:9px;border-radius:50%;background:#D3DCEA;display:block}
+.frame .bar span{margin-left:8px;font:500 11px 'JetBrains Mono',monospace;color:var(--mut)}
+.phone{border:9px solid #1B2136;border-radius:30px;overflow:hidden;background:#fff;box-shadow:var(--shadow-l)}
+.phone .notch{height:20px;background:#1B2136;display:flex;justify-content:center}
+.phone .notch b{width:74px;height:11px;background:#0B0F1C;border-radius:0 0 9px 9px;display:block}
+.vp{height:520px;overflow-y:auto;overflow-x:hidden}
+.phone .vp{height:520px}
+
+/* ------- the mockup itself. Themed by [data-t] on the .vp ------- */
+.m{--m-bg:var(--canvas);--m-sf:#fff;--m-ln:var(--line);--m-ink:var(--ink);--m-bd:var(--body);
+   --m-mut:var(--mut);--m-acc:var(--indigo);--m-acc2:var(--violet);--m-hi:var(--cyan);
+   background:var(--m-bg);color:var(--m-bd);font-size:13px}
+.m[data-t="dark"]{--m-bg:var(--d-canvas);--m-sf:var(--d-surface);--m-ln:var(--d-line);
+   --m-ink:var(--d-ink);--m-bd:#C9CFF2;--m-mut:var(--d-mut);--m-hi:var(--cyan-br)}
+.m[data-t="colt"]{--m-bg:#0a1526;--m-sf:#132546;--m-ln:#22385f;--m-ink:#eaf1fb;--m-bd:#c3d0e6;
+   --m-mut:#93a9ce;--m-acc:#00B2A9;--m-acc2:#00B2A9;--m-hi:#00B2A9}
+.m .hd{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--m-ln);
+  background:var(--m-sf);position:sticky;top:0;z-index:3}
+.m .bd{font:800 15px 'Space Grotesk';color:var(--m-ink)}
+.m .bd i{color:var(--m-acc);font-style:normal}
+.m .nv{margin-left:auto;display:flex;gap:11px;font-size:11.5px;color:var(--m-mut);align-items:center}
+.m .cta{background:var(--m-acc);color:#fff;border-radius:999px;padding:6px 13px;font-weight:700;font-size:11.5px}
+.m[data-t="colt"] .cta{color:#04211f}
+.m .hero{padding:26px 16px 20px}
+.m[data-t="light"] .hero{background:linear-gradient(160deg,#EEF0FE 0%,#F6F8FC 55%,#F6F8FC 100%)}
+.m[data-t="dark"] .hero,.m[data-t="colt"] .hero{background:transparent}
+.m .kk{font:600 9.5px 'JetBrains Mono',monospace;letter-spacing:.15em;text-transform:uppercase;color:var(--m-acc);margin-bottom:9px}
+.m[data-t="colt"] .kk{color:#F7C844}
+.m h3{font-size:23px;line-height:1.13;color:var(--m-ink);margin:0 0 9px;font-family:'Space Grotesk'}
+.m h3 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.m[data-t="colt"] h3 em{background:none;color:#00B2A9}
+.m[data-t="dark"] h3 em{background:linear-gradient(90deg,#22D3EE,#A78BFA);-webkit-background-clip:text;background-clip:text;color:transparent}
+.m .lead{color:var(--m-mut);margin:0 0 14px;font-size:12.5px;line-height:1.6}
+.m .btns{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.m .b1{background:var(--m-acc);color:#fff;border-radius:999px;padding:9px 17px;font-weight:700;font-size:12.5px;
+  box-shadow:0 6px 18px color-mix(in srgb,var(--m-acc) 32%,transparent)}
+.m[data-t="colt"] .b1{color:#04211f}
+.m .b2{border:1.5px solid var(--m-ln);color:var(--m-ink);border-radius:999px;padding:8px 15px;font-weight:600;font-size:12.5px}
+.m .body{padding:4px 16px 22px}
+.m .cards{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:14px 0}
+.m .c{background:var(--m-sf);border:1px solid var(--m-ln);border-radius:11px;padding:11px 12px}
+.m .c b{display:block;color:var(--m-acc);font-size:11.5px;margin-bottom:3px}
+.m[data-t="dark"] .c b,.m[data-t="light"] .c b{color:var(--m-acc)}
+.m .c span{font-size:11px;color:var(--m-mut);line-height:1.5}
+.m .scr{border:1px solid var(--m-ln);border-radius:11px;overflow:hidden;background:var(--m-sf);margin:14px 0}
+.m .scr .r{display:grid;grid-template-columns:88px 1fr;border-bottom:1px solid var(--m-ln)}
+.m .scr .r:last-child{border-bottom:0}
+.m .scr .k{padding:9px 10px;font:600 9px 'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--m-mut);background:color-mix(in srgb,var(--m-ln) 30%,transparent);display:flex;align-items:center}
+.m .scr .v{padding:9px 12px;font-size:11.5px;line-height:1.55}
+.m .scr .r.c .k{color:var(--amber-f)}
+.m .scr .r.a{background:color-mix(in srgb,var(--m-acc) 8%,transparent)}
+.m .scr .r.a .k{color:var(--m-acc)}
+.m .scr .r.a .v{font-weight:700;color:var(--m-ink);font-size:12.5px}
+.m .sev{display:flex;gap:7px;margin:12px 0}
+.m .s{flex:1;border:1px solid var(--m-ln);border-radius:9px;padding:8px 9px;background:var(--m-sf)}
+.m .s u{display:block;text-decoration:none;font:700 9px 'JetBrains Mono',monospace;letter-spacing:.09em;margin-bottom:3px}
+.m .s strong{font-size:17px;color:var(--m-ink);font-family:'Space Grotesk'}
+.m .s.cr u{color:var(--rose-f)}.m .s.hi u{color:var(--amber-f)}.m .s.md u{color:var(--m-hi)}.m .s.lo u{color:var(--emerald-f)}
+.m .quote{border-left:3px solid var(--amber-f);background:color-mix(in srgb,var(--amber-f) 9%,transparent);
+  padding:10px 13px;border-radius:0 9px 9px 0;font-style:italic;font-size:12px;color:var(--m-ink);margin:12px 0}
+.m .foot{padding:12px 16px 20px;border-top:1px solid var(--m-ln);color:var(--m-mut);font-size:10.5px}
+
+.note{background:var(--indigo-l);border:1px solid #D5D9FB;border-radius:14px;padding:16px 20px;font-size:14.5px}
+.note b{color:var(--indigo)}
+.warnbox{background:var(--amber-l);border:1px solid #F5DFB4;border-radius:14px;padding:16px 20px;font-size:14.5px}
+.warnbox b{color:var(--amber)}
+.codebox{background:var(--d-canvas);color:#D5DAFF;border-radius:14px;padding:18px 20px;overflow-x:auto;
+  font:500 12.5px/1.75 'JetBrains Mono',monospace}
+.codebox .c1{color:#7E86C9}.codebox .c2{color:#22D3EE}.codebox .c3{color:#C4B5FD}
+.foot-study{border-top:1px solid var(--line);margin-top:44px;padding:24px 0 60px;color:var(--mut);font-size:13px}
+@media(max-width:1000px){.g4,.g3{grid-template-columns:1fr 1fr}.frames{grid-template-columns:1fr}}
+@media(max-width:760px){.g4,.g3,.g2{grid-template-columns:1fr}.m .cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="top"><div class="wrap">
+  <span class="tag">Colour study, not deployed</span>
+  <h1>Brighter, in the S4biz family, and built on what actually converts.</h1>
+  <p>Five findings from the research, one proposed system, and the same three screens rendered in
+     the current colours and the proposed ones so they can be compared side by side. Every contrast
+     ratio on this page is measured in your browser, not asserted.</p>
+</div></div>
+
+<!-- ============================================ 1. RESEARCH -->
+<section><div class="wrap">
+  <div class="eyebrow">1. What the research says</div>
+  <h2 class="sh">Five findings, and what each one means for this site</h2>
+  <p class="sub">The popular advice ("orange buttons convert best") is mostly folklore. The evidence
+     points somewhere less exciting and more useful.</p>
+
+  <div class="grid g2">
+    <div class="find">
+      <h3>Contrast decides clicks, not hue</h3>
+      <p>There is no universally best button colour. What matters is how far the button stands out
+         from everything around it. The famous "red beat green by 21%" test is quoted constantly,
+         but the page was already green, so red won because it was the contrasting colour, not
+         because it was red.</p>
+      <span class="sw"><b>So what:</b> pick one colour, use it for actions and for nothing else.
+         The moment links, headings and buttons share a colour, the button stops being the loudest
+         thing on the page and the effect disappears.</span>
+    </div>
+
+    <div class="find">
+      <h3>Blue is the trust default in this category</h3>
+      <p>Blue and indigo dominate finance, security and business software because buyers read them
+         as reliable and competent. That is a convention rather than a law of nature, but a
+         convention your buyer already carries: a security product in an unexpected colour spends
+         some of its credibility on the colour.</p>
+      <span class="sw"><b>So what:</b> indigo stays the spine. It is also already the S4biz brand
+         colour, so this costs nothing and buys continuity.</span>
+    </div>
+
+    <div class="find warn">
+      <h3>Dark backgrounds punish long reading, and this site is long reading</h3>
+      <p>Light text on a dark background makes the eye shift toward low-light vision, where fine
+         detail is weaker. Readers with astigmatism see halation, a glow around letters that makes
+         sustained reading tiring. The /partners page is roughly five thousand words.</p>
+      <span class="sw"><b>So what:</b> light for anything a person reads for more than a minute.
+         Dark stays, but as a deliberate accent for the hero and evidence blocks, not the default.</span>
+    </div>
+
+    <div class="find warn">
+      <h3>On a phone, in daylight, a dark screen loses</h3>
+      <p>A typical phone screen measured in a dark room shows roughly 300:1 contrast. In direct
+         sunlight the same screen falls below 2:1. A dark page has very little contrast left to
+         give; a light page keeps far more of it.</p>
+      <span class="sw"><b>So what:</b> your partners and their sellers read this on a phone,
+         between meetings, often outdoors. That alone settles the default.</span>
+    </div>
+
+    <div class="find">
+      <h3>Never pure black or pure white</h3>
+      <p>Pure white backgrounds cause glare and pure black causes the strongest halation. The
+         recommended practice is off-white on soft dark, and soft off-white rather than #FFFFFF as
+         a page canvas.</p>
+      <span class="sw"><b>So what:</b> the canvas below is #F6F8FC, a barely blue off-white, and
+         the darkest text is #0C1428 rather than black.</span>
+    </div>
+
+    <div class="find">
+      <h3>There is a live counter-movement to dark techno-futurism</h3>
+      <p>The dark-first, neon-accent look is now the default for developer products. A visible
+         group of companies has moved the other way, to light, warm, calmer pages, specifically to
+         read as trustworthy rather than futuristic.</p>
+      <span class="sw"><b>So what:</b> you sell to security officers, insurers, banks and
+         regulators. Trust beats futurism with that audience, and going light also stops the site
+         looking like every other security vendor.</span>
+    </div>
+  </div>
+
+  <div class="warnbox" style="margin-top:18px">
+    <b>The honest caveat.</b> None of this predicts your numbers. These are strong priors from
+    published work, not a measurement of your traffic. The proposal below is safe by construction
+    (higher contrast, clearer hierarchy, one reserved action colour), but if this page ever carries
+    real volume, the way to settle it is an A/B test on your own visitors.
+  </div>
+</div></section>
+
+<!-- ============================================ 2. WHY CHANGE -->
+<section><div class="wrap">
+  <div class="eyebrow">2. The two problems with what is live now</div>
+  <h2 class="sh">It reads as Colt, and it is dark in the places that need to be readable</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="font-size:17px;margin-bottom:8px">The palette is Colt's palette</h3>
+      <p style="font-size:14.5px;margin:0 0 12px">Teal on near-black navy is exactly the scheme the
+         decks were originally built in. The wordmark changed, the colours did not, so the site
+         still looks like the company you no longer present as.</p>
+      <div style="display:flex;gap:8px">
+        <span style="flex:1;height:44px;border-radius:9px;background:#0a1526;border:1px solid var(--line)"></span>
+        <span style="flex:1;height:44px;border-radius:9px;background:#132546;border:1px solid var(--line)"></span>
+        <span style="flex:1;height:44px;border-radius:9px;background:#00B2A9"></span>
+        <span style="flex:1;height:44px;border-radius:9px;background:#F7C844"></span>
+      </div>
+      <p style="font-size:12.5px;color:var(--mut);margin:8px 0 0">Current: #0a1526 · #132546 · #00B2A9 · #F7C844</p>
+    </div>
+    <div class="card">
+      <h3 style="font-size:17px;margin-bottom:8px">S4biz is a different, brighter family</h3>
+      <p style="font-size:14.5px;margin:0 0 12px">Counted from the deck's own XML: cyan #22D3EE and
+         violet #8B5CF6 are the two most used brand colours, with indigo #4F46E5 behind them. That
+         is a saturated, energetic family, and it is already yours.</p>
+      <div style="display:flex;gap:8px">
+        <span style="flex:1;height:44px;border-radius:9px;background:#4F46E5"></span>
+        <span style="flex:1;height:44px;border-radius:9px;background:#8B5CF6"></span>
+        <span style="flex:1;height:44px;border-radius:9px;background:#22D3EE"></span>
+        <span style="flex:1;height:44px;border-radius:9px;background:#C7CDDA;border:1px solid var(--line)"></span>
+      </div>
+      <p style="font-size:12.5px;color:var(--mut);margin:8px 0 0">S4biz deck: #4F46E5 · #8B5CF6 · #22D3EE · #C7CDDA</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============================================ 3. PALETTE -->
+<section><div class="wrap">
+  <div class="eyebrow">3. The proposed system</div>
+  <h2 class="sh">Light canvas, S4biz brand, one colour reserved for actions</h2>
+  <p class="sub">Two of these are darkened versions of the deck colours. #22D3EE is beautiful on a
+     dark slide and unreadable as text on white, so it keeps its brightness on dark surfaces and
+     has a darker twin for light ones. That is the single most common mistake when a deck palette
+     is moved to a website.</p>
+
+  <h3 style="font-size:14px;margin:22px 0 10px;color:var(--mut);font-family:'JetBrains Mono';letter-spacing:.1em;text-transform:uppercase">Surfaces</h3>
+  <div class="sw-grid" id="sw-surface"></div>
+
+  <h3 style="font-size:14px;margin:26px 0 10px;color:var(--mut);font-family:'JetBrains Mono';letter-spacing:.1em;text-transform:uppercase">Brand</h3>
+  <div class="sw-grid" id="sw-brand"></div>
+
+  <h3 style="font-size:14px;margin:26px 0 10px;color:var(--mut);font-family:'JetBrains Mono';letter-spacing:.1em;text-transform:uppercase">Meaning</h3>
+  <div class="sw-grid" id="sw-sem"></div>
+
+  <h3 style="font-size:14px;margin:26px 0 10px;color:var(--mut);font-family:'JetBrains Mono';letter-spacing:.1em;text-transform:uppercase">Dark, for the hero and evidence blocks only</h3>
+  <div class="sw-grid" id="sw-dark"></div>
+
+  <div class="note" style="margin-top:22px">
+    <b>The one rule that does the work.</b> Indigo #4F46E5 is used for buttons and nothing else.
+    Links are ink-coloured with an underline, headings are ink, highlights are cyan or violet. That
+    way the only indigo on any screen is the thing you want clicked, which is precisely the
+    mechanism the contrast research describes.
+  </div>
+</div></section>
+
+<!-- ============================================ 4. CONTRAST -->
+<section><div class="wrap">
+  <div class="eyebrow">4. Measured, not claimed</div>
+  <h2 class="sh">Every pair, computed live in this page</h2>
+  <p class="sub">WCAG 2.x needs 4.5:1 for body text, 3:1 for large text and for the edges of
+     interface components. AAA is 7:1. These numbers are calculated from the hex values when this
+     page loads, so they cannot drift from the palette above.</p>
+  <table><thead><tr><th>Foreground</th><th>On background</th><th>Ratio</th><th>Body 4.5:1</th><th>Large 3:1</th><th>Used for</th></tr></thead>
+  <tbody id="ct"></tbody></table>
+  <div class="warnbox" style="margin-top:16px"><b>This table already earned its keep.</b> My first
+     draft used #6B7A94 for muted text and #0891B2 for the cyan accent. Measured, they came out at
+     4.08:1 and 3.68:1, both below the 4.5:1 body-text minimum. They are now #5C6B85 and #0E7490.
+     Two failing colours would have shipped if the ratios had been asserted instead of computed.</div>
+  <p style="font-size:13px;color:var(--mut);margin-top:12px">Deliberate: bright cyan #22D3EE fails
+     on white and is therefore never used as text on a light surface. It appears only on dark
+     surfaces and as a solid fill behind dark text. The table proves it rather than trusting me.</p>
+</div></section>
+
+<!-- ============================================ 5. MOCKUPS -->
+<section><div class="wrap">
+  <div class="eyebrow">5. The same screen, three ways</div>
+  <h2 class="sh">Desktop and phone, side by side</h2>
+  <p class="sub">Real content from the site: the hero, the four documents, the Situation /
+     Complication / Answer block from /partners, and a findings summary. Switch between the
+     proposed light theme, the proposed dark accent theme, and what is live today.</p>
+
+  <div class="mock-bar">
+    <button class="tabbtn on" data-set="light">Proposed, light</button>
+    <button class="tabbtn" data-set="dark">Proposed, dark accent</button>
+    <button class="tabbtn" data-set="colt">Live today</button>
+    <span style="font-size:13px;color:var(--mut);margin-left:6px">Both frames change together. Both scroll.</span>
+  </div>
+
+  <div class="frames">
+    <div class="frame">
+      <div class="bar"><i></i><i></i><i></i><span>cybergod.ai</span></div>
+      <div class="vp"><div class="m" id="mock-d" data-t="light"></div></div>
+    </div>
+    <div class="phone">
+      <div class="notch"><b></b></div>
+      <div class="vp"><div class="m" id="mock-m" data-t="light"></div></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============================================ 6. MOBILE vs PC -->
+<section><div class="wrap">
+  <div class="eyebrow">6. Phone against desktop</div>
+  <h2 class="sh">The same palette, four rules that only apply on a phone</h2>
+  <div class="grid g4">
+    <div class="card"><h3 style="font-size:15px;margin-bottom:7px">Raise the contrast, do not lower it</h3>
+      <p style="font-size:13.5px;margin:0">Sunlight eats contrast. Body text on a phone uses #0C1428
+      on #FFFFFF rather than the softer grey that is comfortable on a monitor.</p></div>
+    <div class="card"><h3 style="font-size:15px;margin-bottom:7px">Drop the tinted backgrounds</h3>
+      <p style="font-size:13.5px;margin:0">The pale indigo hero wash reads beautifully indoors and
+      turns into flat grey outdoors. On a phone the hero is plain canvas with a coloured rule.</p></div>
+    <div class="card"><h3 style="font-size:15px;margin-bottom:7px">One button, full width</h3>
+      <p style="font-size:13.5px;margin:0">A single indigo action at least 48 pixels tall. Two
+      buttons of equal weight on a small screen halves the click rate of each.</p></div>
+    <div class="card"><h3 style="font-size:15px;margin-bottom:7px">Colour is never the only signal</h3>
+      <p style="font-size:13.5px;margin:0">Severity carries a word as well as a colour. Roughly one
+      man in twelve cannot separate the red from the green reliably.</p></div>
+  </div>
+</div></section>
+
+<!-- ============================================ 7. CSS -->
+<section><div class="wrap">
+  <div class="eyebrow">7. If you approve</div>
+  <h2 class="sh">This is the whole change</h2>
+  <p class="sub">The site already reads every colour from CSS variables in one <code>:root</code>
+     block, so the switch is a replacement of that block plus a light-surface pass on the cards.
+     No component logic changes.</p>
+  <div class="codebox"><span class="c1">/* webapp/frontend/src/styles.css, replacing the current :root */</span>
+:root{
+  <span class="c1">/* surfaces, light first */</span>
+  <span class="c3">--canvas</span>:#F6F8FC; <span class="c3">--surface</span>:#FFFFFF; <span class="c3">--raise</span>:#FBFCFE;
+  <span class="c3">--line</span>:#E3E9F2;  <span class="c3">--line2</span>:#D3DCEA;
+  <span class="c3">--ink</span>:#0C1428;   <span class="c3">--body</span>:#3A4863;   <span class="c3">--mut</span>:#5C6B85;
+
+  <span class="c1">/* brand, from the S4biz deck */</span>
+  <span class="c3">--indigo</span>:<span class="c2">#4F46E5</span>;  <span class="c1">/* ACTIONS ONLY, never a link or a heading */</span>
+  <span class="c3">--violet</span>:<span class="c2">#7C3AED</span>;  <span class="c3">--cyan</span>:<span class="c2">#0E7490</span>;  <span class="c3">--cyan-br</span>:<span class="c2">#22D3EE</span>; <span class="c1">/* bright: dark surfaces only */</span>
+
+  <span class="c1">/* meaning */</span>
+  <span class="c3">--amber</span>:#B45309; <span class="c3">--emerald</span>:#047857; <span class="c3">--rose</span>:#BE123C;
+
+  <span class="c1">/* dark, for the hero and evidence blocks */</span>
+  <span class="c3">--d-canvas</span>:#0E1230; <span class="c3">--d-surface</span>:#171B3D; <span class="c3">--d-line</span>:#2C3168;
+  <span class="c3">--d-ink</span>:#EEF1FF;    <span class="c3">--d-mut</span>:#A6ADD8;
+
+  <span class="c3">--grad</span>:linear-gradient(135deg,#4F46E5 0%,#7C3AED 55%,#C026D3 100%);
+}</div>
+</div></section>
+
+<div class="foot-study"><div class="wrap">
+  Colour study for cybergod.ai. Nothing here is deployed. S4biz colours were counted from the XML of
+  the capability brief, not sampled by eye. Contrast ratios are computed in this page from the hex
+  values using the WCAG 2.x relative-luminance formula. Research sources are listed in the
+  accompanying message.
+</div></div>
+
+<script>
+/* ---------- WCAG relative luminance and contrast. Computed, never typed. ---------- */
+const hex2rgb = h => { h = h.replace('#',''); return [0,2,4].map(i => parseInt(h.slice(i,i+2),16)); };
+const lum = h => { const [r,g,b] = hex2rgb(h).map(v => { v/=255; return v <= .03928 ? v/12.92 : Math.pow((v+.055)/1.055, 2.4); });
+  return .2126*r + .7152*g + .0722*b; };
+const ratio = (a,b) => { const [l1,l2] = [lum(a),lum(b)].sort((x,y)=>y-x); return (l1+.05)/(l2+.05); };
+
+/* ---------- swatches ---------- */
+const SETS = {
+  'sw-surface': [
+    ['Canvas','#F6F8FC','The page. A barely blue off-white, not #FFFFFF, so it does not glare.'],
+    ['Surface','#FFFFFF','Cards and panels. White lifts off the canvas without a shadow.'],
+    ['Line','#E3E9F2','Borders. Light enough to separate, quiet enough to disappear.'],
+    ['Ink','#0C1428','Headings and phone body text. Near-black navy, never pure black.'],
+    ['Body','#3A4863','Paragraphs on desktop.'],
+    ['Muted','#5C6B85','Captions, labels, secondary lines. Darkened from #6B7A94, which measured 4.08:1 and failed.'],
+  ],
+  'sw-brand': [
+    ['Indigo','#4F46E5','Buttons. Nothing else, ever. This is the rule that makes it work.'],
+    ['Indigo dark','#4338CA','Button hover and pressed.'],
+    ['Indigo wash','#EEF0FE','Hero tint and the Answer row background.'],
+    ['Violet','#7C3AED','Second brand colour. Gradients, the embedded and white-label pages.'],
+    ['Cyan','#0E7490','Evidence accents on LIGHT surfaces. Darkened from #0891B2, which measured 3.68:1 and failed.'],
+    ['Cyan bright','#22D3EE','The deck cyan. Dark surfaces only. Fails as text on white.'],
+  ],
+  'sw-sem': [
+    ['Amber','#B45309','Attention text: the Complication row, deadlines, still-open items.'],
+    ['Amber fill','#F59E0B','The same meaning as a fill, with dark text on top.'],
+    ['Emerald','#047857','Closed, fixed, compliant.'],
+    ['Rose','#BE123C','Critical severity, new exposures.'],
+    ['Rose fill','#F43F5E','Critical as a fill or a bar.'],
+  ],
+  'sw-dark': [
+    ['Dark canvas','#0E1230','Indigo-tinted, deliberately not the current navy.'],
+    ['Dark surface','#171B3D','Cards inside a dark block.'],
+    ['Dark line','#2C3168','Borders on dark.'],
+    ['Dark ink','#EEF1FF','Text on dark. Off-white, to limit halation.'],
+    ['Dark muted','#A6ADD8','Secondary text on dark.'],
+  ],
+};
+for (const [id, rows] of Object.entries(SETS)) {
+  document.getElementById(id).innerHTML = rows.map(([n,h,u]) => {
+    const onW = ratio(h,'#FFFFFF'), light = lum(h) > .45;
+    return `<div class="swatch"><div class="chip" style="background:${h}">
+      <span style="font:600 10px 'JetBrains Mono',monospace;color:${light?'#0C1428':'#fff'};opacity:.9">${onW.toFixed(1)}:1 on white</span></div>
+      <div class="meta"><div class="nm">${n}</div><div class="hx">${h}</div><div class="use">${u}</div></div></div>`;
+  }).join('');
+}
+
+/* ---------- contrast table ---------- */
+const PAIRS = [
+  ['Ink','#0C1428','Canvas','#F6F8FC','Headings, and all body text on a phone'],
+  ['Body','#3A4863','Canvas','#F6F8FC','Paragraphs on desktop'],
+  ['Muted','#5C6B85','Canvas','#F6F8FC','Captions and labels'],
+  ['Body','#3A4863','Surface','#FFFFFF','Paragraphs inside a card'],
+  ['White','#FFFFFF','Indigo','#4F46E5','Button label on the primary action'],
+  ['Indigo','#4F46E5','Canvas','#F6F8FC','The button edge against the page'],
+  ['Violet','#7C3AED','Surface','#FFFFFF','Second brand colour as text'],
+  ['Cyan','#0E7490','Surface','#FFFFFF','Evidence accents on light'],
+  ['Cyan bright','#22D3EE','Surface','#FFFFFF','NEVER used this way, shown to prove it'],
+  ['Ink','#0C1428','Cyan bright','#22D3EE','Dark text on a bright cyan fill'],
+  ['Amber','#B45309','Amber wash','#FEF6E7','Attention text on its own tint'],
+  ['Emerald','#047857','Surface','#FFFFFF','Closed and compliant'],
+  ['Rose','#BE123C','Surface','#FFFFFF','Critical severity'],
+  ['Dark ink','#EEF1FF','Dark canvas','#0E1230','Text inside a dark block'],
+  ['Dark muted','#A6ADD8','Dark canvas','#0E1230','Secondary text on dark'],
+  ['Cyan bright','#22D3EE','Dark canvas','#0E1230','The deck cyan where it belongs'],
+];
+document.getElementById('ct').innerHTML = PAIRS.map(([fn,f,bn,b,use]) => {
+  const r = ratio(f,b), ok = r >= 4.5, okL = r >= 3, aaa = r >= 7;
+  return `<tr>
+    <td><span class="dot" style="background:${f}"></span>${fn} <span class="mono" style="color:var(--mut);font-size:12px">${f}</span></td>
+    <td><span class="dot" style="background:${b}"></span>${bn} <span class="mono" style="color:var(--mut);font-size:12px">${b}</span></td>
+    <td class="mono"><b>${r.toFixed(2)}:1</b></td>
+    <td class="${ok?(aaa?'aaa':'pass'):'fail'}">${ok?(aaa?'AAA':'PASS'):'FAIL'}</td>
+    <td class="${okL?'pass':'fail'}">${okL?'PASS':'FAIL'}</td>
+    <td style="color:var(--mut);font-size:13px">${use}</td></tr>`;
+}).join('');
+
+/* ---------- the mockup, one markup string themed by a data attribute ---------- */
+const MOCK = `
+<div class="hd"><span class="bd"><i>&#10095;</i> cybergod.ai</span>
+  <span class="nv"><span>Why it matters</span><span>Who it is for</span><span>Security</span><span class="cta">Open the app</span></span></div>
+<div class="hero">
+  <div class="kk">One name in. Four documents out.</div>
+  <h3>Type a company name.<br>Get the <em>whole risk picture</em> in minutes.</h3>
+  <p class="lead">Not one packet is sent to the company being assessed. Nothing to install, nobody
+     to ask for permission, no questionnaire to wait for.</p>
+  <div class="btns"><span class="b1">See the demonstration</span><span class="b2">Who it is for</span></div>
+</div>
+<div class="body">
+  <div class="cards">
+    <div class="c"><b>1. Findings</b><span>Every exposure facing the internet, ranked, with the address and port.</span></div>
+    <div class="c"><b>2. Risk in money</b><span>Expected loss and worst case per year, written for the finance director.</span></div>
+    <div class="c"><b>3. Threat actors</b><span>Who is actually relevant to this industry and these countries.</span></div>
+    <div class="c"><b>4. Compliance</b><span>Findings mapped to the clauses that apply, with the real deadlines.</span></div>
+  </div>
+  <div class="sev">
+    <div class="s cr"><u>CRITICAL</u><strong>2</strong></div>
+    <div class="s hi"><u>HIGH</u><strong>5</strong></div>
+    <div class="s md"><u>MEDIUM</u><strong>9</strong></div>
+    <div class="s lo"><u>LOW</u><strong>14</strong></div>
+  </div>
+  <div class="scr">
+    <div class="r s"><div class="k">Situation</div><div class="v">You sell technology, and you win on relationship and timing.</div></div>
+    <div class="r c"><div class="k">Complication</div><div class="v">The first technical meeting is the hardest thing to get, and the usual substitute is a discount.</div></div>
+    <div class="r a"><div class="k">Answer</div><div class="v">Walk in already knowing what is exposed on their perimeter.</div></div>
+  </div>
+  <div class="quote">"I do not see this address in our asset system at all."</div>
+  <div class="btns"><span class="b1">Talk to us</span></div>
+</div>
+<div class="foot">Cybergod LLC, part of the S4Biz Group</div>`;
+document.getElementById('mock-d').innerHTML = MOCK;
+document.getElementById('mock-m').innerHTML = MOCK;
+document.querySelectorAll('.tabbtn').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabbtn').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  document.getElementById('mock-d').dataset.t = b.dataset.set;
+  document.getElementById('mock-m').dataset.t = b.dataset.set;
+}));
+</script>
+</body>
+</html>

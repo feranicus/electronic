@@ -5,6 +5,19 @@ import WhatsAppFab from "../components/WhatsAppFab.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
 import { useT, useTx } from "../i18n";
 
+// The architecture map's five categories. ONE definition, used by the SVG and by the legend
+// beneath it. They used to be two hardcoded lists of the same five hexes, so a palette change had
+// to be made twice and nothing would have complained if only one was edited. The map is drawn on a
+// dark panel deliberately (a schematic reads better dark, and it is the one place the deck's full
+// -strength cyan belongs), so these are the BRIGHT variants of the light theme's accents.
+const MAP_C = {
+  green:  "#34D399",  // you and the bots
+  teal:   "#A78BFA",  // the models
+  gold:   "#FBBF24",  // outside services
+  purple: "#FB7185",  // safety nets
+  cyan:   "#22D3EE",  // observability
+};
+
 export default function Landing() {
   const [lang, , t] = useT();
   const tx = useTx();
@@ -166,7 +179,7 @@ export default function Landing() {
     const cdTimer = setInterval(tickCd, 1000);
     cleanups.push(() => clearInterval(cdTimer));
 
-    const C = { green: "#10B981", teal: "#00B2A9", gold: "#F7C844", purple: "#8b6cff", cyan: "#38e1ff" };
+    const C = MAP_C;
     const NODES = [
       { id: "you",    x: 105,  y: 110, ico: "phone",  t: tx("SALES"),        s: tx("Telegram / one name"),   c: C.green,  n: "1",  dd: "d1" },
       { id: "web",    x: 105,  y: 262, ico: "screen", t: tx("WEB APP"),      s: tx("cybergod.ai cabinet"),   c: C.green,  n: "1",  dd: "d1" },
@@ -248,12 +261,12 @@ export default function Landing() {
         const w = n.big ? 176 : 150, h = n.big ? 92 : 84, x = n.x - w / 2, y = n.y - h / 2;
         const g = el("g", { class: "node" });
         g.appendChild(el("rect", { x: x - 1, y: y - 1, width: w + 2, height: h + 2, rx: 18, fill: "none", stroke: n.c, "stroke-opacity": 0.5, "stroke-width": 1.5 }));
-        g.appendChild(el("rect", { class: "box", x, y, width: w, height: h, rx: 17, fill: "#101f3b", stroke: n.c, "stroke-opacity": 0.4, "stroke-width": 1.2 }));
+        g.appendChild(el("rect", { class: "box", x, y, width: w, height: h, rx: 17, fill: "#1B2154", stroke: n.c, "stroke-opacity": 0.4, "stroke-width": 1.2 }));
         const ic = el("text", { x: n.x, y: y + 34, "text-anchor": "middle", "font-size": n.big ? 32 : 26 }); ic.textContent = ICO[n.ico] || ""; g.appendChild(ic);
-        const t = el("text", { x: n.x, y: y + (n.big ? 62 : 56), "text-anchor": "middle", "font-size": 13.5, "font-weight": 800, fill: "#eaf1fb" }); t.textContent = n.t; g.appendChild(t);
-        const s = el("text", { x: n.x, y: y + (n.big ? 79 : 73), "text-anchor": "middle", "font-size": 10.5, fill: "#93a9ce" }); s.textContent = n.s; g.appendChild(s);
+        const t = el("text", { x: n.x, y: y + (n.big ? 62 : 56), "text-anchor": "middle", "font-size": 13.5, "font-weight": 800, fill: "#EEF1FF" }); t.textContent = n.t; g.appendChild(t);
+        const s = el("text", { x: n.x, y: y + (n.big ? 79 : 73), "text-anchor": "middle", "font-size": 10.5, fill: "#A6ADD8" }); s.textContent = n.s; g.appendChild(s);
         const bx = x + 15; g.appendChild(el("circle", { cx: bx, cy: y, r: 13, fill: n.c, filter: "url(#glow)" }));
-        const num = el("text", { x: bx, y: y + 5, "text-anchor": "middle", "font-size": 13, "font-weight": 900, fill: "#04211f" }); num.textContent = n.n; g.appendChild(num);
+        const num = el("text", { x: bx, y: y + 5, "text-anchor": "middle", "font-size": 13, "font-weight": 900, fill: "#0B1030" }); num.textContent = n.n; g.appendChild(num);
         g.addEventListener("click", () => flash(n.dd));
         g.addEventListener("mouseenter", () => { if (!touring) hl([n.id]); });
         g.addEventListener("mouseleave", () => { if (!touring) hl(null); });
@@ -457,11 +470,11 @@ export default function Landing() {
           <button className="tour" id="tour">{tx("Guided tour")}</button>
         </div>
         <div className="legend" style={{ margin: "6px 0 12px" }}>
-          <span><b style={{ background: "#10B981" }}></b>{tx("You and bots")}</span>
-          <span><b style={{ background: "#00B2A9" }}></b>{tx("Brains")}</span>
-          <span><b style={{ background: "#F7C844" }}></b>{tx("Outside services")}</span>
-          <span><b style={{ background: "#8b6cff" }}></b>{tx("Safety nets")}</span>
-          <span><b style={{ background: "#38e1ff" }}></b>{tx("Observability")}</span>
+          <span><b style={{ background: MAP_C.green }}></b>{tx("You and bots")}</span>
+          <span><b style={{ background: MAP_C.teal }}></b>{tx("Brains")}</span>
+          <span><b style={{ background: MAP_C.gold }}></b>{tx("Outside services")}</span>
+          <span><b style={{ background: MAP_C.purple }}></b>{tx("Safety nets")}</span>
+          <span><b style={{ background: MAP_C.cyan }}></b>{tx("Observability")}</span>
         </div>
         <div className="mapbox">
           <svg id="svg" viewBox="0 0 1200 790" xmlns="http://www.w3.org/2000/svg">

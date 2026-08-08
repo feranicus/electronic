@@ -3144,3 +3144,90 @@ because a copy passes every structural check perfectly.
 **`.p-main{min-width:0}` is load-bearing.** A grid item defaults to `min-width:auto`, so one long
 German compound noun or a URL forces the column wider than its `1fr` track and the whole page gains
 a horizontal scrollbar. German and Polish surface it first.
+
+## LIGHT THEME — the site stopped looking like Colt (2026-08-08, approved from a study)
+The palette was still `#0a1526 + #00B2A9`: Colt's. The wordmark had been rebranded months earlier
+and the colours never were, so the site kept reading as the company we no longer present as.
+
+**THE S4BIZ COLOURS WERE COUNTED, NOT SAMPLED.** Unzipped the capability brief and tallied every
+`srgbClr` across every slide: `#22D3EE` cyan (77), `#8B5CF6` violet (62), `#4F46E5` indigo (41).
+That is the family the site now uses. Reading a palette out of the source file takes a minute and
+removes the whole argument about whether it "feels" like the deck.
+
+**LIGHT, and the two reasons that are not taste:**
+  * `/partners` is ~5,000 words. Light text on dark pushes the eye toward scotopic vision and gives
+    readers with astigmatism halation (a glow around letters). Long-form reading belongs on light.
+  * A phone at 300:1 indoors falls **below 2:1 in direct sunlight**. A dark page has almost no
+    contrast budget left; a light one keeps most of it. Partner sellers read this outdoors.
+Dark is KEPT, deliberately, for three things that are not prose: the log stream (machine output you
+scan for a changing line), the architecture map (a schematic, and the one place the deck's
+full-strength cyan belongs) and the login brand panel (a first impression, no reading).
+
+**THE VARIABLE NAMES DID NOT CHANGE.** `--navy` is now the light canvas and `--teal` is cyan. There
+are ~250 `var()` references; renaming them would be a 250-site edit for zero user benefit and every
+chance of missing one. Same doctrine as the `COLT` remediation tag and the severity enums: a lookup
+key is not a label, and the rendered colour is what the customer sees.
+
+**ONE RULE CARRIES THE CONVERSION ARGUMENT: a solid `--cta` rectangle means "click this".**
+The research is unanimous that no hue converts better in the abstract; what converts is being the
+single most distinct element on screen. Share the colour with links and headings and the effect is
+gone. As TEXT or inside a gradient indigo is fine (it never reads as a clickable block); as a large
+FILL it is buttons only. **I broke this myself within the hour**, on a chat bubble and a progress
+bar, and only the gate caught it. Those moved to violet.
+
+**`tools/contrast_gate.mjs` (BLOCKING, in ship.py and the image build)** measures the SHIPPED
+stylesheet, not a design document: 33 pairs against WCAG 2.x, the reserved-colour rule, the
+old-brand-creeps-back rule, and faint white overlays. It earned its keep four times:
+  1. It **rejected two of my own colours before they shipped** — `#6B7A94` muted (4.08:1) and
+     `#0891B2` cyan (3.68:1), both under the 4.5:1 body minimum. Now `#5C6B85` and `#0E7490`.
+  2. `rgba(255,255,255,.04)` LIGHTENS a dark surface and is INVISIBLE on a light one. 18 of them
+     were in the sheet. **Alpha is the discriminator**: the gate's own first run flagged
+     `#hd.s{background:rgba(255,255,255,.92)}`, which is the header's white surface and entirely
+     correct. Only alpha < 0.5 is suspect.
+  3. Its first reserved-colour check asked "does ANYTHING use `background:var(--cta)`" rather than
+     "does **`.btn`** use it". A negative test blanked the button and the gate passed a site whose
+     primary call to action was white on white. **A check has to name its subject.**
+  4. Five negative tests, each verified to fail and then restored.
+
+**TWO HARDCODED LISTS OF THE SAME FIVE COLOURS.** The architecture map's categories were written
+once in the SVG builder and again in the legend beneath it. Changing the palette meant editing both
+and nothing would have complained if only one was edited. Now one exported `MAP_C`.
+
+HONEST LIMIT: I could not screenshot. Playwright's and puppeteer's browser downloads are both
+blocked from the sandbox, so the visual judgement is the operator's, from
+`preview/theme_light_all.html` (every public page, real component, real production CSS). Everything
+I *could* verify mechanically is in the gate. Do not mistake a passing gate for "it looks good".
+
+## `python preview.py` — see it on YOUR machine before it ships (2026-08-08)
+A SECOND verb, not a second deploy command. `python ship.py` still deploys; preview.py never
+touches the droplet, never builds an image, never pushes. Operating principle 7 is about there
+being ONE way to deploy, and this is not a deploy.
+
+  python preview.py            dev server, live reload, opens the browser
+  python preview.py --build    build and serve the BUILT files, exactly what would ship
+  python preview.py --offline  no API at all
+  python preview.py --port N
+
+**IT ALSO LISTENS ON THE LAN AND PRINTS THE PHONE ADDRESS.** The whole argument for the light
+theme was a phone in daylight. Judging it on a monitor indoors tests the one condition it was not
+chosen for.
+
+**THE /api PROXY IS READ-ONLY, AND THAT IS A SAFETY RAIL NOT A NICETY.** The public pages need
+real data (/api/demo, /api/langs, /api/jurisdictions), so the dev server proxies /api to the LIVE
+site. The browser may still hold a live session cookie, so one click on "Run assessment" would
+start a REAL job, burn Shodan credits and inference tokens and consume an evaluation account's
+quota, from what the operator believes is a local colour preview. GET and HEAD pass; everything
+else is refused IN vite.config.js before it leaves the machine, with a message saying why.
+Proven with a stand-in upstream: GET reached it, POST and DELETE returned 405 locally.
+
+**TWO PLATFORM TRAPS, BOTH ALREADY IN THIS FILE, BOTH HIT AGAIN:**
+1. **Never `npm run dev`.** `npm run` resolves through `node_modules/.bin/vite`, a PLATFORM SHIM:
+   a symlink on Linux, a `.cmd` on Windows, and absent entirely if an install was interrupted. It
+   failed here with `sh: 1: vite: not found` on a machine where vite itself loaded perfectly.
+   preview.py calls `node node_modules/vite/bin/vite.js` directly. One path, every platform.
+2. **Detect a broken toolchain by RUNNING it, not by looking for a file.** My first version checked
+   for a directory named `@esbuild/<platform>` and reported "installed for a different platform" on
+   Linux, where esbuild demonstrably worked: after an install `@esbuild/` holds one TEMPORARY
+   directory per platform with a random suffix, so the name I looked for is not the name there. It
+   would have wiped a healthy node_modules on every run. `toolchain_runs()` now executes
+   `vite --version` and reinstalls only if that actually fails.

@@ -821,6 +821,16 @@ def do_tests():
             i18n_ok = False
             print("    !! the header row overflows, or a duplicate language control is back")
 
+        # CONTRAST. The site went from dark to light on 8 Aug 2026, and every way a colour change
+        # goes wrong is silent: a 4.1:1 text colour looks fine on the chooser's monitor and is
+        # unreadable on a phone in daylight; a faint white overlay that lightened a dark surface
+        # becomes an invisible element on a light one; and the reserved action colour erodes the
+        # moment it is used for something that is not a button. Measured against the SHIPPED
+        # styles.css, not a design document. It has already rejected two of my own colours.
+        if run(["node", "tools/contrast_gate.mjs"], check=False, cwd=_fe) != 0:
+            i18n_ok = False
+            print("    !! a colour fails WCAG, is invisible on light, or the action colour leaked")
+
         # PARTNERS. /partners renders a DATA OBJECT from partners-locales/<lang>.js, so a translator
         # can drop a bullet, delete a column or reorder the page without touching any markup and
         # without breaking the build. Only comparing every locale against the English reference can
