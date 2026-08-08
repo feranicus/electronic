@@ -101,13 +101,17 @@ class RefineReq(BaseModel):
 
 class ComplianceReq(BaseModel):
     company: str
-    lang: str = "en"          # "en" | "de" — language of the 4 compliance decks + HTML
+    lang: str = "en"          # language of the compliance decks + HTML
+    jurisdiction: str = ""    # "EU" | "CA" — WHICH REGIME SET is graded. Resolved through the
+                              # engine's registry; an unknown value falls back to the EU set.
 
 
 class ComplianceRefineReq(BaseModel):
     # answers keyed by compliance_clarify's `maps_to` (sector/size_band/sells_digital_products/...)
     answers: dict = {}
     lang: str = "en"
+    jurisdiction: str = ""    # carried through the refine run, or the child re-grades against the
+                              # WRONG regime set the moment the operator answers a question.
 
 
 class AssistReq(BaseModel):
@@ -334,6 +338,58 @@ def doc_lang(requested, fallback=None):
     want = str(requested or fallback or "en").strip().lower()[:2]
     m = _deck_langs_mod()
     return m.supported(want) if m else ("de" if want == "de" else "en")
+
+
+_COMPLIANCE_ENRICH = None
+
+
+def _compliance_mod():
+    """The engine's compliance_enrich module, loaded once. Returns None if unavailable."""
+    global _COMPLIANCE_ENRICH
+    if _COMPLIANCE_ENRICH is None:
+        try:
+            import importlib.util as _ilu
+            _p = os.path.join(os.path.dirname(ENGINE), "compliance_enrich.py")
+            _s = _ilu.spec_from_file_location("compliance_enrich", _p)
+            _m = _ilu.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            _COMPLIANCE_ENRICH = _m
+        except Exception:
+            _COMPLIANCE_ENRICH = False
+    return _COMPLIANCE_ENRICH or None
+
+
+def jurisdiction_ok(want):
+    """Resolve a requested jurisdiction through the ENGINE's registry, never a list in this file.
+
+    This exists because of the `ru` incident: the engine gained a capability, the API flattened it
+    on the way in, and the whole feature was invisible from the web while every engine test passed.
+    A capability is not shipped until the process that does the work will accept it, so the API asks
+    the engine what it supports rather than keeping its own copy.
+    """
+    m = _compliance_mod()
+    if not m:
+        return ""
+    return m.jurisdiction(want)[0]
+
+
+@app.get("/api/jurisdictions")
+def jurisdictions():
+    """Which regime sets the compliance engine can actually grade. Public capability list.
+
+    Derived from compliance_enrich.JURISDICTIONS on disk — a hardcoded list in the frontend would
+    be a second source of truth and would drift the moment a jurisdiction is added.
+    """
+    m = _compliance_mod()
+    if not m:
+        return {"jurisdictions": [{"code": "EU", "label": "EU", "regimes": 3}], "default": "EU"}
+    out = []
+    for code in m.JURISDICTIONS:
+        j = m.JURISDICTIONS[code]
+        out.append({"code": code, "label": j["label"], "title": j["title"],
+                    "regimes": len(j["regimes"]), "decks": len(j["decks"]) + 1,
+                    "names": [m.FIXED[k]["name"] for k in j["regimes"] if k in m.FIXED]})
+    return {"jurisdictions": out, "default": m.DEFAULT_JURISDICTION}
 
 
 @app.get("/api/langs")
@@ -868,9 +924,11 @@ async def compliance(req: ComplianceReq, request: Request):
         _a.observe_assess(email, company, _t.client_ip(request))
     except Exception:
         pass
+    _j = jurisdiction_ok(req.jurisdiction)
     asyncio.create_task(_run_job(job_id, email, company, lang,
+                                 overrides=(["--jurisdiction", _j] if _j else []),
                                  engine=COMPLIANCE_ENGINE, seed_flag="--company"))
-    return {"job_id": job_id}
+    return {"job_id": job_id, "jurisdiction": _j}
 
 
 @app.post("/api/compliance/{job_id}/refine")
@@ -897,9 +955,11 @@ async def compliance_refine(job_id: str, req: ComplianceRefineReq, request: Requ
         pass
     _log(evt="compliance_refine", user=email, company=company, job=child_id, parent=job_id,
          flags=len(flags))
-    asyncio.create_task(_run_job(child_id, email, company, lang, overrides=flags,
+    _j = jurisdiction_ok(req.jurisdiction)
+    asyncio.create_task(_run_job(child_id, email, company, lang,
+                                 overrides=(["--jurisdiction", _j] if _j else []) + flags,
                                  engine=COMPLIANCE_ENGINE, seed_flag="--company"))
-    return {"job_id": child_id, "parent": job_id}
+    return {"job_id": child_id, "parent": job_id, "jurisdiction": _j}
 
 
 @app.get("/api/history")

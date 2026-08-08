@@ -245,10 +245,12 @@ export const keyed = {
   // — …". Preposizioni e articoli stanno quindi nei frammenti b e c (c termina con l'elisione
   // "all'", che si salda direttamente al nome in grassetto).
   "comp.h1": "Analisi di conformità",
-  "comp.sub.a": "Un solo input: il nome di un'azienda. Il motore valuta l'esposizione a ",
-  "comp.sub.b": ", al ",
-  "comp.sub.c": " e all'",
-  "comp.sub.d": " — applicabilità, obblighi, lacune, scadenze ed esposizione sanzionatoria — e scrive tre presentazioni per regime, una presentazione di roadmap e un report animato. Il perimetro viene dedotto dal nome; Lei lo conferma subito dopo.",
+  "comp.jurisdiction": "Giurisdizione",
+  "comp.regimesGraded": "regimi valutati",
+  "comp.decks": "deck",
+  "comp.sub1": "Un solo input: il nome dell'azienda. Il motore valuta l'esposizione a ",
+  "comp.and": " e ",
+  "comp.sub2": " — applicabilità, obblighi, lacune, scadenze ed esposizione sanzionatoria — e produce un deck per regime, un deck di roadmap e un report animato. Deduce il perimetro dal nome; Lei lo conferma in seguito.",
   "comp.company": "Nome dell'azienda",
   "comp.companyPh": "es. Siemens Healthineers AG",
   "comp.docLang": "Lingua del documento",

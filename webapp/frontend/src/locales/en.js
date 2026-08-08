@@ -250,10 +250,12 @@ export const keyed = {
   // translated (NIS2 / Cyber Resilience Act / EU AI Act are the statutory titles). Hence the four
   // connective fragments below rather than one key containing markup. Translators: reorder freely
   // WITHIN each fragment; the three bold names are fixed and appear between b/c/d.
-  "comp.sub.a": "One input: a company name. The engine assesses exposure to ",
-  "comp.sub.b": ", the ",
-  "comp.sub.c": " and the ",
-  "comp.sub.d": " \u2014 applicability, obligations, gaps, deadlines and penalty exposure \u2014 and writes three regime decks, a roadmap deck and an animated report. It infers the scope from the name; you confirm it afterwards.",
+  "comp.jurisdiction": "Jurisdiction",
+  "comp.regimesGraded": "regimes graded",
+  "comp.decks": "decks",
+  "comp.sub1": "One input: a company name. The engine assesses exposure to ",
+  "comp.and": " and ",
+  "comp.sub2": " — applicability, obligations, gaps, deadlines and penalty exposure — and writes a deck per regime, a roadmap deck and an animated report. It infers the scope from the name; you confirm it afterwards.",
   "comp.company": "Company name",
   "comp.companyPh": "e.g. Siemens Healthineers AG",
   "comp.docLang": "Document language",

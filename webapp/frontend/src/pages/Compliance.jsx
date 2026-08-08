@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { startCompliance, complianceRefine, assessEventsUrl, assessStatus, assessClarify } from "../api.js";
+import { startCompliance, complianceRefine, assessEventsUrl, assessStatus, assessClarify, getJurisdictions } from "../api.js";
 import { useT } from "../i18n";
 import { useDocLangs } from "../docLangs.js";
 
@@ -20,6 +20,24 @@ export default function Compliance() {
   // Document language, offered from what the ENGINE can actually render — not from the six the
   // interface speaks. See docLangs.js.
   const { docs: docLangs, lang, setLang, unavailable: docLangUnavailable } = useDocLangs();
+
+  // WHICH REGIME SET to grade against. The options come from /api/jurisdictions, which reads the
+  // engine's own registry — a hardcoded list here would be a second source of truth and would
+  // drift the moment a jurisdiction is added. Defaults to whatever the engine calls default.
+  const [jurs, setJurs] = useState([{ code: "EU", label: "EU", regimes: 3, decks: 4, names: [] }]);
+  const [juris, setJuris] = useState("EU");
+  useEffect(() => {
+    let alive = true;
+    getJurisdictions()
+      .then((d) => {
+        if (!alive || !d || !Array.isArray(d.jurisdictions) || !d.jurisdictions.length) return;
+        setJurs(d.jurisdictions);
+        setJuris(d.default || d.jurisdictions[0].code);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const jur = jurs.find((j) => j.code === juris) || jurs[0];
   const [pct, setPct] = useState(0);
   const [phase, setPhase] = useState("");
   const [notice, setNotice] = useState("");
@@ -128,7 +146,7 @@ export default function Compliance() {
     setStatus("running"); setLines([]); setDecks([]); setErrMsg(""); setClarify(null); setAnswers({});
     setPct(0); setShown(0); setElapsed(0); setPhase(t("comp.phaseStart")); setNotice("");
     startedRef.current = Date.now();
-    const { ok, data } = await startCompliance(name, lang);
+    const { ok, data } = await startCompliance(name, lang, juris);
     if (!ok || !data.job_id) { setStatus("error"); setErrMsg(data.message || t("comp.errStart")); return; }
     try { localStorage.setItem("cg_cjob", data.job_id); } catch { /* ignore */ }
     attach(data.job_id);
@@ -137,7 +155,7 @@ export default function Compliance() {
   async function submitRefine() {
     if (!jobId || !hasAnswers || refining) return;
     setRefining(true);
-    const { ok, data } = await complianceRefine(jobId, answers, lang);
+    const { ok, data } = await complianceRefine(jobId, answers, lang, juris);
     setRefining(false);
     if (!ok || !data.job_id) { setErrMsg(data.message || t("comp.errRefine")); return; }
     setStatus("running"); setLines([]); setDecks([]); setErrMsg(""); setClarify(null);
@@ -152,8 +170,13 @@ export default function Compliance() {
       <h1 className="page-h">{t("comp.h1")}</h1>
       {/* Four connective fragments around three BOLD statutory names. The names are legal titles and
           are never translated (see rule in locales/en.js), so they cannot live inside a key. */}
-      <p className="page-sub">{t("comp.sub.a")}<b>NIS2</b>{t("comp.sub.b")}
-        <b>Cyber Resilience Act</b>{t("comp.sub.c")}<b>EU AI Act</b>{t("comp.sub.d")}</p>
+      <p className="page-sub">
+        {t("comp.sub1")}
+        {(jur && jur.names && jur.names.length ? jur.names : []).map((n, i, arr) => (
+          <span key={n}><b>{n}</b>{i < arr.length - 1 ? (i === arr.length - 2 ? t("comp.and") : ", ") : ""}</span>
+        ))}
+        {t("comp.sub2")}
+      </p>
 
       <div className="panel">
         <form className="assess-row" onSubmit={run}>
@@ -162,6 +185,15 @@ export default function Compliance() {
             <input className="input" placeholder={t("comp.companyPh")}
               value={company} onChange={(e) => setCompany(e.target.value)}
               disabled={status === "running"} />
+          </div>
+          <div className="fld fld-lang">
+            {/* The options come from /api/jurisdictions — the engine's own registry. */}
+            <div className="label">{t("comp.jurisdiction")}</div>
+            <select className="input" value={juris} onChange={(e) => setJuris(e.target.value)}
+              disabled={status === "running"}>
+              {jurs.map((j) => <option key={j.code} value={j.code}>{j.label}</option>)}
+            </select>
+            {jur && <div className="hint">{jur.regimes} {t("comp.regimesGraded")} · {jur.decks} {t("comp.decks")}</div>}
           </div>
           <div className="fld fld-lang">
             {/* The options come from /api/langs — the dictionaries the engine actually has. */}

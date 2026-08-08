@@ -265,10 +265,12 @@ export const keyed = {
   // entirely and .c carries the enumerating "i". The names are indeclinable here, so no case
   // agreement crosses the seam.
   "comp.h1": "Ocena zgodności",
-  "comp.sub.a": "Jedno pole: nazwa firmy. Silnik ocenia ekspozycję na ",
-  "comp.sub.b": ", ",
-  "comp.sub.c": " i ",
-  "comp.sub.d": " — zastosowanie, obowiązki, luki, terminy i ryzyko kary pieniężnej — i pisze trzy prezentacje reżimowe, prezentację z mapą drogową i animowany raport. Zakres wnioskuje z samej nazwy; potwierdzasz go później.",
+  "comp.jurisdiction": "Jurysdykcja",
+  "comp.regimesGraded": "ocenionych reżimów",
+  "comp.decks": "prezentacji",
+  "comp.sub1": "Jedno pole: nazwa firmy. Silnik ocenia ekspozycję na ",
+  "comp.and": " oraz ",
+  "comp.sub2": " — zastosowanie, obowiązki, luki, terminy i ryzyko kar — i tworzy prezentację dla każdego reżimu, prezentację z mapą drogową oraz animowany raport. Zakres wnioskuje z nazwy; potwierdzasz go później.",
   "comp.company": "Nazwa firmy",
   "comp.companyPh": "np. Siemens Healthineers AG",
   "comp.docLang": "Język dokumentów",

@@ -3015,3 +3015,27 @@ gate never rendered (it checks 6 security decks). The `colt` JSON key is a LOOKU
 build_compliance_deck.js and is deliberately NOT renamed; only the values and the rendered label
 changed. Same doctrine as the COLT->MANAGED tag.
 
+## A CAPABILITY THE API DISCARDS IS NOT SHIPPED — the jurisdiction, found on the live screen (2026-08)
+I built the Canadian regime set, the `--jurisdiction` flag, eight regimes of facts, a blocking §6.4
+gate and five rendered decks. Every engine test passed. The operator then opened
+cybergod.ai/app/compliance and asked where it was — because `ComplianceReq` had no `jurisdiction`
+field and `/api/compliance` never passed one to the engine. **The feature was unreachable from the
+product.**
+This is the SAME SHAPE as the `ru` incident already in this file: the engine could render Russian
+decks while main.py flattened the language to `en` at the API boundary. I wrote that rule down and
+then broke it in the same way three weeks later, because I tested the engine and never walked the
+request path.
+NOW: `/api/jurisdictions` (public capability list, read from `compliance_enrich.JURISDICTIONS` —
+never a list in the frontend), `jurisdiction` on BOTH `ComplianceReq` and `ComplianceRefineReq`
+(the refine run must carry it or the child re-grades against the wrong regime set the moment the
+operator answers a question), `jurisdiction_ok()` resolving through the ENGINE's registry, and a
+selector on the Compliance page fed from the endpoint. The page's lede no longer names
+"NIS2 / CRA / EU AI Act" in JSX — it composes the regime names from the API, because prose that
+restates the selector is a second source of truth that is simply false for Canada.
+GUARD: `tests/test_jurisdiction_path.py` asserts the value survives ALL THREE HOPS — engine accepts
+every jurisdiction it advertises and fails closed on junk; the API model has the field AND every
+`_run_job(... COMPLIANCE_ENGINE ...)` launch carries `--jurisdiction`; the frontend sends it on
+start AND refine and holds no hardcoded regime list. Proven by five mutations, including the exact
+defect the operator found. RULE, restated because writing it down once was not enough: **follow the
+VALUE end-to-end — UI -> API -> persistence -> engine — and assert it at each hop.**
+

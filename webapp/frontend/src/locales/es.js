@@ -260,10 +260,12 @@ export const keyed = {
   // traducen. El montaje es: a + NIS2 + b + Cyber Resilience Act + c + EU AI Act + d, así que las
   // preposiciones y los artículos contraídos españoles («a», «al») van en el fragmento ANTERIOR a
   // cada nombre.
-  "comp.sub.a": "Una sola entrada: un nombre de empresa. El motor evalúa la exposición a ",
-  "comp.sub.b": ", al ",
-  "comp.sub.c": " y al ",
-  "comp.sub.d": ": aplicabilidad, obligaciones, brechas, plazos y exposición a sanciones, y redacta tres presentaciones por régimen, una de hoja de ruta y un informe animado. Deduce el alcance a partir del nombre; usted lo confirma después.",
+  "comp.jurisdiction": "Jurisdicción",
+  "comp.regimesGraded": "regímenes evaluados",
+  "comp.decks": "presentaciones",
+  "comp.sub1": "Una sola entrada: el nombre de la empresa. El motor evalúa la exposición a ",
+  "comp.and": " y ",
+  "comp.sub2": " — aplicabilidad, obligaciones, brechas, plazos y exposición sancionadora — y elabora una presentación por régimen, una de hoja de ruta y un informe animado. Deduce el alcance del nombre; usted lo confirma después.",
   "comp.company": "Nombre de la empresa",
   "comp.companyPh": "p. ej. Siemens Healthineers AG",
   "comp.docLang": "Idioma del documento",

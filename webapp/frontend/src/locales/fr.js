@@ -254,10 +254,12 @@ export const keyed = {
   // L'assemblage est : a + NIS2 + b + Cyber Resilience Act + c + EU AI Act + d. Les prépositions
   // françaises (« à », « au », « à l' ») portent donc sur le fragment qui PRÉCÈDE chaque nom, et
   // comp.sub.c se termine par une élision — pas d'espace finale après « l' ».
-  "comp.sub.a": "Une seule saisie : un nom d'entreprise. Le moteur évalue l'exposition à ",
-  "comp.sub.b": ", au ",
-  "comp.sub.c": " et à l'",
-  "comp.sub.d": " — applicabilité, obligations, écarts, échéances et exposition aux sanctions — et rédige trois présentations par régime, une feuille de route et un rapport animé. Il déduit le périmètre à partir du nom ; vous le confirmez ensuite.",
+  "comp.jurisdiction": "Juridiction",
+  "comp.regimesGraded": "régimes évalués",
+  "comp.decks": "decks",
+  "comp.sub1": "Une seule entrée : un nom d'entreprise. Le moteur évalue l'exposition à ",
+  "comp.and": " et ",
+  "comp.sub2": " — applicabilité, obligations, écarts, échéances et exposition aux sanctions — et produit un deck par régime, un deck de feuille de route et un rapport animé. Il déduit le périmètre du nom ; vous le confirmez ensuite.",
   "comp.company": "Nom de l'entreprise",
   "comp.companyPh": "ex. Siemens Healthineers AG",
   "comp.docLang": "Langue du document",

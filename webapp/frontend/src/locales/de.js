@@ -223,10 +223,12 @@ export const keyed = {
   // lautet zusammengesetzt: "\u2026 Betroffenheit durch NIS2, den Cyber Resilience Act und den
   // EU AI Act \u2014 \u2026". Die Kasus/Artikel stehen deshalb in den Fragmenten b und c.
   "comp.h1": "Compliance-Analyse",
-  "comp.sub.a": "Eine Eingabe: ein Firmenname. Die Engine bewertet die Betroffenheit durch ",
-  "comp.sub.b": ", den ",
-  "comp.sub.c": " und den ",
-  "comp.sub.d": " \u2014 Anwendbarkeit, Pflichten, L\u00fccken, Fristen und Bu\u00dfgeldrisiko \u2014 und schreibt drei Regime-Pr\u00e4sentationen, eine Roadmap-Pr\u00e4sentation und einen animierten Bericht. Den Umfang leitet sie aus dem Namen ab; Sie best\u00e4tigen ihn anschlie\u00dfend.",
+  "comp.jurisdiction": "Rechtsraum",
+  "comp.regimesGraded": "Regime bewertet",
+  "comp.decks": "Decks",
+  "comp.sub1": "Eine Eingabe: ein Firmenname. Die Engine bewertet die Exposition gegenüber ",
+  "comp.and": " und ",
+  "comp.sub2": " — Anwendbarkeit, Pflichten, Lücken, Fristen und Bußgeldrisiko — und erstellt je ein Deck pro Regime, ein Fahrplan-Deck und einen animierten Bericht. Der Anwendungsbereich wird aus dem Namen abgeleitet; Sie bestätigen ihn anschließend.",
   "comp.company": "Firmenname",
   "comp.companyPh": "z. B. Siemens Healthineers AG",
   "comp.docLang": "Dokumentsprache",

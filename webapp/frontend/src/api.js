@@ -36,13 +36,14 @@ export const assessClarify = (jobId) => getJSON(`/api/assess/${encodeURIComponen
 export const assessRefine = (jobId, answers, lang = "en") =>
   postJSON(`/api/assess/${encodeURIComponent(jobId)}/refine`, { answers, lang });
 
-// ---- Compliance (NIS2 / CRA / EU AI Act) ----
+// ---- Compliance (regime set follows the JURISDICTION) ----
 // Shares the assess streaming/status/clarify/deck endpoints (engine-agnostic); only start + refine
-// are compliance-specific.
-export const startCompliance = (company, lang = "en") =>
-  postJSON("/api/compliance", { company, lang });
-export const complianceRefine = (jobId, answers, lang = "en") =>
-  postJSON(`/api/compliance/${encodeURIComponent(jobId)}/refine`, { answers, lang });
+// are compliance-specific. `jurisdiction` MUST be carried on the refine call too, or the child run
+// re-grades against the wrong regime set the moment the operator answers a question.
+export const startCompliance = (company, lang = "en", jurisdiction = "") =>
+  postJSON("/api/compliance", { company, lang, jurisdiction });
+export const complianceRefine = (jobId, answers, lang = "en", jurisdiction = "") =>
+  postJSON(`/api/compliance/${encodeURIComponent(jobId)}/refine`, { answers, lang, jurisdiction });
 
 // ---- Assistant ----
 export const assist = (message) => postJSON("/api/assist", { message });
@@ -54,3 +55,7 @@ export const getHistory = () => getJSON("/api/history");
 // docstring: these are different sets, and defaulting the document language from the SITE language
 // was silently sending `--lang it` to an engine that only has an English and a German dictionary.
 export const getLangs = () => getJSON("/api/langs");
+// getJSON-backed: returns the PARSED BODY, not {ok,data}. (api_contract.mjs enforces this — the
+// docLangs hook once destructured {ok,data} from a getJSON call and the language list silently
+// collapsed to English-only.)
+export const getJurisdictions = () => getJSON("/api/jurisdictions");
