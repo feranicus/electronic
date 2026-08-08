@@ -45,7 +45,7 @@ expansion sale to teams next door — his words, 46:11.
 
 | # | Item | Why | Size |
 |---|---|---|---|
-| 1 | **Canadian compliance regimes** | Explicit RBC ask; I committed to weeks | L |
+| 1 | ~~**Canadian compliance regimes**~~ **DONE 7 Aug 2026** | Explicit RBC ask | L |
 | 2 | **Contact + Impressum: who we are** | Directly asked; credibility gap Sam named | S |
 | 3 | **Modularisation** (product + licensing) | Asked by both, repeatedly | L |
 | 4 | **Multi-entity scoping** | "RBC is not one company" (32:11) | M |
@@ -218,3 +218,10 @@ shows the pattern: rebrand at render time, never rename the enum.
   RIPEstat/`searchcomplete` change; it now finds 7 and asks the operator for the rest. That gap was
   found *because of* this account.
 - Jurisdiction-driven framework selection on the findings deck (the mechanism Canada plugs into).
+- **Canadian compliance (item 1) — shipped 7 Aug 2026.** `compliance_enrich.JURISDICTIONS` is one
+  registry (reference doc + ordered regimes + deck subset + prompt framing); `compliance.json`
+  carries its own order so the deck builders hold no regime constant. Eight Canadian regimes graded,
+  five decks rendered, FRFI / foreign-branch / Quebec clarify questions, CA framework set on the
+  findings deck, and `test_compliance_ca.py` turns the reference's §6.4 "must never appear" list
+  into a blocking build gate. A pre-existing carrier-brand leak in the deterministic fallback and in
+  the model PROMPT was closed at the same time.

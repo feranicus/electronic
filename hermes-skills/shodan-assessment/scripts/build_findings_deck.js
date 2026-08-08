@@ -442,6 +442,17 @@ function drawTable(slide, rows, opts) {
           "NCSC-CH minimum ICT standard",
           "ISO/IEC 27001 " + EMDASH + " control-objective mapping",
           "CISA KEV " + EMDASH + " known-exploited vulnerabilities"];
+  } else if (cc === "CA") {
+    // Canada. B-13 §3.2.4 is quoted deliberately: it uses the words "minimizing its attack
+    // surface", which is this deck's subject matter, so the mapping is direct rather than
+    // rhetorical. PIPEDA cl. 4.7 is the "shall" clause (4.7.2/4.7.3 are "should" and are NOT
+    // enforceable). The CCSPA is NOT listed: Part 2 is not in force and Schedule 2 is empty, so
+    // citing it as an applicable framework would be the exact error the reference forbids.
+    fw = ["OSFI B-13 §3.2.4 " + EMDASH + " minimize the external attack surface",
+          "OSFI B-13 §3.2.6 / §3.1.3 " + EMDASH + " vulnerability identification and remediation",
+          "OSFI E-21 " + EMDASH + " operational resilience (full adherence 1 Sep 2026)",
+          "PIPEDA Sch. 1 cl. 4.7 " + EMDASH + " security safeguards",
+          "CISA KEV " + EMDASH + " known-exploited vulnerabilities"];
   } else if (!cc || EU.indexOf(cc) >= 0) {
     fw = ["NIS2 Art. 21 " + EMDASH + " risk-management measures",
           "GDPR Art. 32 " + EMDASH + " security of processing",

@@ -43,6 +43,26 @@ def _tristate(v):
     return None
 
 
+# Filename stems per regime. A lookup, not a transform: "OSFI_B13" reads better than "OSFI-B13"
+# and the operator forwards these files by name.
+DECK_FILE = {"nis2": "NIS2", "cra": "CRA", "aiact": "AI_Act",
+             "osfi_b13": "OSFI_B13", "osfi_e21": "OSFI_E21", "osfi_b10": "OSFI_B10",
+             "osfi_integrity": "OSFI_Integrity", "osfi_incident": "OSFI_Incident",
+             "pipeda": "PIPEDA", "law25": "Quebec_Law25", "ccspa": "CCSPA"}
+
+# Country -> jurisdiction. Kept deliberately small and explicit: a country we cannot place must
+# fall back to the EU set rather than silently produce an empty regime list.
+_COUNTRY_JURIS = {"CA": "CA"}
+
+
+def _infer_jurisdiction(countries):
+    for c in countries or []:
+        j = _COUNTRY_JURIS.get(str(c).strip().upper())
+        if j:
+            return j
+    return CE.DEFAULT_JURISDICTION
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--company", required=True)
@@ -60,6 +80,11 @@ def main():
     ap.add_argument("--sells-digital", dest="sells_digital", default=None)
     ap.add_argument("--builds-ai", dest="builds_ai", default=None)
     ap.add_argument("--country", action="append", default=[])
+    # The regime SET follows the jurisdiction, exactly as build_findings_deck.js already picks its
+    # framework set from d.target.country. One map, never a second code path.
+    ap.add_argument("--jurisdiction", default=None,
+                    help="regime set to grade against (%s); inferred from --country when omitted"
+                         % "|".join(sorted(CE.JURISDICTIONS)))
     ap.add_argument("--notes", default="")
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
@@ -102,20 +127,22 @@ def main():
     if a.notes: overrides["notes"] = a.notes
 
     # 1) enrichment -> compliance.json
-    _pg("Assessing scope against NIS2 / CRA / EU AI Act (AI)", 8)
-    cj, status = CE.build(company, lang, overrides)
+    juris = a.jurisdiction or _infer_jurisdiction(assumptions.get("countries") or [])
+    jcode, J = CE.jurisdiction(juris)
+    _pg("Assessing scope against %s (AI)" % J["label"], 8)
+    cj, status = CE.build(company, lang, overrides, jcode)
     cpath = os.path.join(a.outdir, "compliance.json")
     json.dump(cj, open(cpath, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    _ev(evt="compliance_enrich", company=company, status=status,
-        nis2=cj["regimes"]["nis2"]["classification"], cra=cj["regimes"]["cra"]["classification"],
-        aiact=cj["regimes"]["aiact"]["classification"])
+    _ev(evt="compliance_enrich", company=company, status=status, jurisdiction=jcode,
+        classifications={k: cj["regimes"][k]["classification"] for k in cj["order"]})
     _pg("Regulatory analysis ready — building decks", 56)
 
-    # 2) four decks
-    decks = [("nis2", f"{safe}_NIS2_Compliance{_L}.pptx", 64),
-             ("cra", f"{safe}_CRA_Compliance{_L}.pptx", 72),
-             ("aiact", f"{safe}_AI_Act_Compliance{_L}.pptx", 80),
-             ("roadmap", f"{safe}_Compliance_Roadmap{_L}.pptx", 88)]
+    # 2) the decks the jurisdiction actually calls for, plus the roadmap
+    keys = list(cj.get("decks") or CE.decks_for(jcode))
+    step = 32.0 / max(1, len(keys) + 1)
+    decks = [(k, f"{safe}_{DECK_FILE.get(k, k.upper())}_Compliance{_L}.pptx", int(56 + step * (i + 1)))
+             for i, k in enumerate(keys)]
+    decks.append(("roadmap", f"{safe}_Compliance_Roadmap{_L}.pptx", 88))
     built = []
     for regime, fn, pct in decks:
         outp = os.path.join(a.outdir, fn)
@@ -153,14 +180,13 @@ def main():
     n_ok = sum(1 for ok, _ in built if ok)
     ms = int((time.time() - t0) * 1000)
     _ev(evt="assess_done", kind="compliance", company=company, lang=lang, decks=n_ok,
-        crit=0, high=0, med=0, low=0,
-        nis2=cj["regimes"]["nis2"]["applies"], cra=cj["regimes"]["cra"]["applies"],
-        aiact=cj["regimes"]["aiact"]["applies"], total_ms=ms)
+        crit=0, high=0, med=0, low=0, jurisdiction=jcode,
+        applies={k: cj["regimes"][k]["applies"] for k in cj["order"]}, total_ms=ms)
     _pg("Compliance assessment complete", 100)
     print("==== ASSESSMENT COMPLETE ====")
-    print("Company: %s  · NIS2 %s · CRA %s · AI Act %s" % (
-        company, cj["regimes"]["nis2"]["classification"], cj["regimes"]["cra"]["classification"],
-        cj["regimes"]["aiact"]["classification"]))
+    print("Company: %s  ·  %s" % (company, J["label"]))
+    for k in cj["order"]:
+        print("   %-16s %s" % (k, cj["regimes"][k]["classification"]))
     print("DECKS:")
     for ok, p in built:
         print(("  OK  " if ok else "  FAIL") + p)

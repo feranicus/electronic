@@ -657,6 +657,27 @@ def do_tests():
     except Exception as _e:
         comp_ok = False; print("    compliance smoke error: %r" % _e)
     print("  compliance decks + HTML + clarify build: %s" % ("OK" if comp_ok else "BROKEN"))
+    # CANADA (2026-08). CA_COMPLIANCE_REFERENCE.md §6.4 lists the statements that are WRONG in a
+    # Canadian deck: an OSFI "fine" (OSFI's tools are supervisory), a live CCSPA obligation or
+    # 72-hour clock (Part 2 is not in force and Schedule 2 is empty), a $1M individual AMP (halved
+    # at committee), a PIPEDA penalty attached to the breach itself rather than to KNOWINGLY
+    # failing to report, or an assertion that Quebec Law 25 binds a federally chartered bank (an
+    # open constitutional question). Each is the kind of error a reader who works at a bank spots
+    # instantly. A rule that lives only in a markdown file is a rule the next edit breaks.
+    # It also pins the structural half: the regime set follows the JURISDICTION through one
+    # registry — Canada used to fall through to the generic ISO 27001 / NIST CSF default.
+    #
+    # NOTE the invocation: ship.py's run() is run(args, check=True, cwd=None) — the second
+    # POSITIONAL is `check`, not a label. Passing a description there is the contract-assumption
+    # defect this file already records twice, so this follows the capture-and-report pattern the
+    # other engine tests use.
+    _ca = subprocess.run([sys.executable, os.path.join(engine, "test_compliance_ca.py")],
+                         capture_output=True, text=True, timeout=300)
+    if _ca.returncode != 0:
+        print((_ca.stdout or "") + (_ca.stderr or ""))
+        sys.exit("[X] CANADIAN COMPLIANCE REGRESSION - a Canadian deck would carry a claim the "
+                 "primary sources contradict. Do not ship.")
+    print("  Canada: OSFI / PIPEDA / CCSPA / Law-25 set correct, forbidden claims absent")
     if not comp_ok:
         sys.exit("[X] compliance module failed its smoke (enrich/deck/html/clarify)")
 

@@ -2975,3 +2975,43 @@ pack of HEAD taken from a DIRTY tree must equal a pack of HEAD taken from a clea
 proves the mid-flight-edit property and the staging==production property with one archive. A test
 suite the operator waits through is a test suite that gets skipped.
 
+## Canada — the compliance engine is JURISDICTION-KEYED, not a second code path (2026-08, RBC)
+`compliance_enrich._ORDER` was a flat `["nis2","cra","aiact"]`, so Canada fell through to the
+generic ISO 27001 / NIST CSF default while `build_findings_deck.js` had ALREADY been taught to pick
+its framework set from `d.target.country`. One half of the product knew about jurisdictions and the
+other did not.
+NOW: `JURISDICTIONS` is one registry — reference document, ordered regime list, the SUBSET that gets
+its own deck, prompt framing, eyebrow. `compliance.json` carries its own `order`/`decks`/`eyebrow`,
+so **the deck builders contain no regime constant at all** and a new country is a registry entry
+plus a reference document. Fails CLOSED to the EU set: an unknown code must never yield an empty
+regime list, because a deck with no regimes looks finished.
+CANADA = OSFI B-13 · E-21 · B-10 · Integrity & Security · Incident Reporting Advisory · PIPEDA ·
+Quebec Law 25 · CCSPA (8 graded, 4 + roadmap rendered — a bank does not want eight single-guideline
+decks). `--jurisdiction`, or inferred from `--country CA`.
+**The reference's §6.4 "must never appear" list is now a BUILD GATE** (`test_compliance_ca.py`,
+wired into ship.py): no OSFI fine (its tools are supervisory), no live CCSPA obligation or 72-hour
+clock (Part 2 not in force, Schedule 2 empty), no $1M individual AMP (halved at committee), no
+PIPEDA penalty attached to the breach itself rather than to KNOWINGLY failing to report, no
+assertion that Law 25 binds a federally chartered bank. Research produced that list; a rule that
+lives only in a markdown file is a rule the next edit breaks.
+FOUR THINGS THE RENDER CAUGHT THAT THE TESTS DID NOT — read the artifact, always:
+  * the eyebrow said **"EU DIGITAL & CYBER COMPLIANCE"** on a Canadian bank's deck, on every slide;
+  * the title said **"Three regimes at a glance"** above eight rows;
+  * `(p.essential).split(" of ")[0]` was written to shorten "€10m or 2% of worldwide turnover" and
+    rendered Quebec's "Greater of $25,000,000 or 4%…" as the single word **"Greater"** — the number
+    deleted. Strip the trailing basis phrase; never split on the first " of ";
+  * **"NEAREST DEADLINE" showed the EARLIEST date**, so E-21 advertised 1 Sep 2025 (past) while the
+    live 1 Sep 2026 milestone sat one row down in the same data. Prefer the next FUTURE date.
+Also fixed here: the incident-reporting advisory is a STANDING 24-hour obligation, so it now carries
+NO dated entry — publishing today's date in a deadline column invents a deadline.
+NEGATIVE-TESTED (six mutations, all caught), and the negative test **exposed two of my own checks as
+vacuous**: an OSFI-fine regex anchored on the literal "osfi" with an 80-character window never
+reached the penalty field 400 characters later, and the CCSPA check read only `classification`,
+which the deterministic path never sets to "Applies" anyway. Assert the PROPERTY on every member of
+the set, not a symptom via regex.
+BRAND LEAK CLOSED: `_colt_defaults` shipped "Colt SASE / ZTNA" and the PROMPT opened "You are a Colt
+… analyst" — the DETERMINISTIC fallback and the instruction, i.e. exactly the two paths the brand
+gate never rendered (it checks 6 security decks). The `colt` JSON key is a LOOKUP KEY read by
+build_compliance_deck.js and is deliberately NOT renamed; only the values and the rendered label
+changed. Same doctrine as the COLT->MANAGED tag.
+

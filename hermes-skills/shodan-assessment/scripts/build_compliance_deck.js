@@ -2,10 +2,10 @@
 /**
  * build_compliance_deck.js — ONE parametrized Cybergod-branded deck builder for the Compliance module.
  *
- *   node build_compliance_deck.js compliance.json out.pptx <nis2|cra|aiact|roadmap>
+ *   node build_compliance_deck.js compliance.json out.pptx <regime-key|roadmap>
  *
  * Renders either a single-regime deck (NIS2 / CRA / EU AI Act — scope, obligations, gaps, deadlines,
- * penalty exposure, how Colt helps) or the combined ROADMAP deck (exec summary + assumptions, a
+ * penalty exposure, how we help) or the combined ROADMAP deck (exec summary + assumptions, a
  * three-regime at-a-glance table, the merged deadline calendar, penalty exposure and a phased plan).
  *
  * Deterministic rendering: the JSON is produced by compliance_enrich.py; a weak model can weaken the
@@ -22,7 +22,7 @@ const pptxgen = require("pptxgenjs");
 
 const [, , jsonPath, outPath, regimeArg] = process.argv;
 if (!jsonPath || !outPath || !regimeArg) {
-  console.error("usage: build_compliance_deck.js compliance.json out.pptx <nis2|cra|aiact|roadmap>");
+  console.error("usage: build_compliance_deck.js compliance.json out.pptx <regime-key|roadmap>");
   process.exit(2);
 }
 const D = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
@@ -32,7 +32,7 @@ const LANG_CODE = String(process.env.DECK_LANG || D.lang || "en").toLowerCase().
 const company = D.company || "Target";
 const EMDASH = "—", MIDDOT = "·", RAQUO = "»";
 
-// ---- Colt palette (matches the security decks) ----
+// ---- palette (matches the security decks) ----
 const C = {
   teal: "00D7BD", tealMid: "00A49A", tealDark: "0C544E", black: "121212", dark: "474946",
   light: "ECECED", crit: "F20C36", high: "FF7900", med: "FFC33C", low: "474946",
@@ -65,7 +65,8 @@ const LABELS = {
   milestone: { en: "MILESTONE", de: "MEILENSTEIN", ru: "ЭТАП" },
   essentialMax: { en: "Essential-tier maximum", de: "Obergrenze (essenziell)", ru: "Максимум (существенные)" },
   importantMax: { en: "Important-tier maximum", de: "Obergrenze (wichtig)", ru: "Максимум (важные)" },
-  overview: { en: "Three regimes at a glance", de: "Drei Regime im Überblick", ru: "Три режима: обзор" },
+  overview: { en: "Regimes at a glance", de: "Regime im Überblick", ru: "Режимы: обзор" },
+  eyebrowTail: { en: "digital & cyber compliance", de: "Digital- & Cyber-Compliance", ru: "цифровое и кибер-соответствие" },
   roadmap: { en: "Remediation roadmap", de: "Umsetzungs-Fahrplan", ru: "План устранения" },
   priorities: { en: "Priorities", de: "Prioritäten", ru: "Приоритеты" },
   execSummary: { en: "Executive summary", de: "Management-Zusammenfassung", ru: "Резюме для руководства" },
@@ -104,19 +105,47 @@ const LABELS = {
 const L_HAS = (code) => !!(LABELS.eyebrow || {})[code];
 const LANG = L_HAS(LANG_CODE) ? LANG_CODE : "en";
 const L = (k) => (LABELS[k] || {})[LANG] || (LABELS[k] || {}).en || k;
+// The eyebrow is chrome on every slide. Hardcoding "EU" put the wrong continent on a Canadian
+// bank's deck — the same class as citing NIS2 at Abu Dhabi Police. It is now DATA carried by
+// compliance.json, not a concatenation: gluing the title to a tail produced the immortal
+// "CANADIAN COMPLIANCE DIGITAL & CYBER COMPLIANCE".
+const EYEBROW = () => String(D.eyebrow || "").trim() || L("eyebrow");
 const DATE_LOCALE = { en: "en-GB", de: "de-DE", ru: "ru-RU" };
 
+// Statute and guideline names are PROPER NOUNS and are not translated — only the surrounding
+// chrome is. Same rule the security decks follow for CVE ids and product names.
 const REGIME_TITLE = {
   nis2: { en: "NIS2", de: "NIS2", ru: "NIS2" },
   cra: { en: "Cyber Resilience Act", de: "Cyber Resilience Act", ru: "Cyber Resilience Act" },
   aiact: { en: "EU AI Act", de: "EU AI Act", ru: "EU AI Act" },
+  osfi_b13: { en: "OSFI B-13", de: "OSFI B-13", ru: "OSFI B-13" },
+  osfi_e21: { en: "OSFI E-21", de: "OSFI E-21", ru: "OSFI E-21" },
+  osfi_b10: { en: "OSFI B-10", de: "OSFI B-10", ru: "OSFI B-10" },
+  osfi_integrity: { en: "OSFI Integrity & Security", de: "OSFI Integrity & Security", ru: "OSFI Integrity & Security" },
+  osfi_incident: { en: "OSFI Incident Reporting", de: "OSFI Incident Reporting", ru: "OSFI Incident Reporting" },
+  pipeda: { en: "PIPEDA", de: "PIPEDA", ru: "PIPEDA" },
+  law25: { en: "Quebec Law 25", de: "Quebec Law 25", ru: "Quebec Law 25" },
+  ccspa: { en: "CCSPA (not in force)", de: "CCSPA (nicht in Kraft)", ru: "CCSPA (не вступил в силу)" },
   roadmap: { en: "Compliance Roadmap", de: "Compliance-Fahrplan", ru: "План соответствия" },
 };
+
+// The regime ORDER comes from compliance.json, never from a constant here: the engine's
+// jurisdiction registry is the single source, so a new jurisdiction needs no change in this file.
+const ORDER = Array.isArray(D.order) && D.order.length ? D.order : ["nis2", "cra", "aiact"];
+
+// Shorten a penalty for a table cell WITHOUT deleting the figure. Strip the trailing basis phrase
+// rather than splitting on the first " of ": "Greater of $25,000,000 or 4% of worldwide turnover"
+// must keep its number.
+function shortMoney(v) {
+  const t = String(v || "").trim();
+  if (!t) return EMDASH;
+  return t.replace(/\s+of worldwide turnover/gi, "").replace(/\s+\(ceiling on future regulations\)/i, " (ceiling)");
+}
 
 const pres = new pptxgen();
 pres.layout = "LAYOUT_16x9";
 pres.author = "Cybergod LLC · S4Biz Group";
-pres.title = company + " " + EMDASH + " EU Compliance " + (REGIME_TITLE[regimeArg] || {}).en;
+pres.title = company + " " + EMDASH + " " + (D.jurisdiction_title || "Compliance") + " " + (REGIME_TITLE[regimeArg] || {}).en;
 
 let pageNum = 0, TOTAL = 1;
 
@@ -196,7 +225,7 @@ function regimeDeck(key) {
 
   // -- scope & applicability
   (function () {
-    const s = content(L("eyebrow"), L("scope"));
+    const s = content(EYEBROW(), L("scope"));
     appliesBadge(s, r.applies, 0.4, 1.30);
     s.addText((L("classification") + ": ").toUpperCase() + (r.classification || L("unclear")), { x: 3.2, y: 1.30, w: 6.3, h: 0.34, fontSize: 12, fontFace: FB, color: C.tealDark, bold: true, valign: "middle", margin: 0 });
     s.addText(String(r.rationale || ""), { x: 0.4, y: 1.85, w: 9.2, h: 1.6, fontSize: 12, fontFace: FB, color: C.ink, valign: "top", margin: 0 });
@@ -214,7 +243,7 @@ function regimeDeck(key) {
 
   // -- obligations
   (function () {
-    const s = content(L("eyebrow"), L("obligations"));
+    const s = content(EYEBROW(), L("obligations"));
     const rows = [[hdrCell(L("ref")), hdrCell(L("obligation")), hdrCell(L("requires"))]];
     (r.obligations || []).slice(0, 6).forEach((o) => rows.push([
       { text: o.ref || "", options: { bold: true, color: C.tealDark, valign: "top" } },
@@ -227,7 +256,7 @@ function regimeDeck(key) {
 
   // -- gaps
   (function () {
-    const s = content(L("eyebrow"), L("gaps"));
+    const s = content(EYEBROW(), L("gaps"));
     const gaps = (r.gaps || []).filter((g) => g && (g.title || g.detail));
     if (!gaps.length) {
       s.addText(L("gapNone"), { x: 0.4, y: 1.5, w: 9.2, h: 0.8, fontSize: 12, fontFace: FB, color: C.inkMuted, italic: true, margin: 0 });
@@ -247,7 +276,7 @@ function regimeDeck(key) {
 
   // -- deadlines
   (function () {
-    const s = content(L("eyebrow"), L("deadlines"));
+    const s = content(EYEBROW(), L("deadlines"));
     const rows = [[hdrCell(L("date")), hdrCell(L("milestone"))]];
     (r.deadlines || []).slice(0, 8).forEach((d) => rows.push([
       { text: fmtDate(d.date), options: { bold: true, color: C.tealDark } },
@@ -260,9 +289,12 @@ function regimeDeck(key) {
 
   // -- penalty
   (function () {
-    const s = content(L("eyebrow"), L("penalty"));
+    const s = content(EYEBROW(), L("penalty"));
     const p = r.penalty || {};
-    const cards = [[L("essentialMax"), p.essential || EMDASH, C.crit], [L("importantMax"), p.important || EMDASH, C.high]];
+    // label1/label2 let a regime override the tier wording. "Essential-tier maximum" is NIS2
+    // vocabulary and reads as nonsense over an OSFI guideline that carries no fine at all.
+    const cards = [[p.label1 || L("essentialMax"), p.essential || EMDASH, C.crit],
+                   [p.label2 || L("importantMax"), p.important || EMDASH, C.high]];
     let cx = 0.4;
     cards.forEach(([lab, val, col]) => {
       s.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.5, w: 4.5, h: 1.4, fill: { color: C.tealDark }, line: { type: "none" } });
@@ -279,9 +311,9 @@ function regimeDeck(key) {
     footer(s); tracer(s);
   })();
 
-  // -- how Colt helps
+  // -- how we help (the `colt` JSON key is a LOOKUP KEY and is deliberately NOT renamed)
   if ((r.colt || []).length) {
-    const s = content(L("eyebrow"), L("colt"));
+    const s = content(EYEBROW(), L("colt"));
     let y = 1.4;
     (r.colt || []).slice(0, 4).forEach((c) => {
       s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y, w: 9.2, h: 0.82, fill: { color: C.white }, line: { color: C.divider, pt: 1 } });
@@ -306,7 +338,7 @@ function roadmapDeck() {
 
   // -- exec summary + assumptions
   (function () {
-    const s = content(L("eyebrow"), L("execSummary"));
+    const s = content(EYEBROW(), L("execSummary"));
     s.addText(String(rm.exec_summary || ""), { x: 0.4, y: 1.32, w: 9.2, h: 1.5, fontSize: 12, fontFace: FB, color: C.ink, valign: "top", margin: 0 });
     s.addText(L("assumptions").toUpperCase(), { x: 0.4, y: 3.0, w: 9.2, h: 0.26, fontSize: 9, fontFace: FB, color: C.teal, bold: true, charSpacing: 2, margin: 0 });
     const yn = (v) => v === true ? L("yes") : v === false ? L("no") : L("unknown");
@@ -322,28 +354,34 @@ function roadmapDeck() {
 
   // -- three regimes at a glance
   (function () {
-    const s = content(L("eyebrow"), L("overview"));
+    const s = content(EYEBROW(), L("overview"));
     const rows = [[hdrCell(L("regime")), hdrCell(L("applies")), hdrCell(L("classification")), hdrCell(L("maxFine")), hdrCell(L("nearest"))]];
-    ["nis2", "cra", "aiact"].forEach((k) => {
+    ORDER.forEach((k) => {
       const r = regs[k] || {};
-      const near = (r.deadlines || []).slice().sort((x, y) => String(x.date).localeCompare(String(y.date)))[0];
+      const sorted = (r.deadlines || []).slice().sort((x, y) => String(x.date).localeCompare(String(y.date)));
+      const today = new Date().toISOString().slice(0, 10);
+      const near = sorted.find((z) => String(z.date) >= today) || sorted[sorted.length - 1];
       const p = r.penalty || {};
       const applies = r.applies === true ? L("applies") : r.applies === false ? L("notApplies") : L("unclear");
       rows.push([
         { text: (REGIME_TITLE[k] || {})[LANG] || k.toUpperCase(), options: { bold: true, color: C.tealDark } },
         { text: applies, options: { bold: true, color: r.applies === true ? C.crit : r.applies === false ? C.dark : C.high } },
         { text: r.classification || L("unclear"), options: { fontSize: 8.5 } },
-        { text: (p.essential || EMDASH).split(" of ")[0], options: { fontSize: 8.5 } },
+        { text: shortMoney(p.essential), options: { fontSize: 8.5 } },
         { text: near ? (fmtDate(near.date)) : EMDASH, options: { fontSize: 8.5 } },
       ]);
     });
-    drawTable(s, rows, { x: 0.4, y: 1.4, w: 9.2, colW: [1.9, 1.5, 2.5, 1.7, 1.6], rowH: 0.62, fontSize: 9, valign: "middle" });
+    // Height is arithmetic, not a constant: 3 EU regimes fit at 0.62 but 8 Canadian ones would
+    // run 2.4in off a 5.63in slide. Fit the rows to the space that exists.
+    const rowH = Math.min(0.62, 3.95 / (rows.length));
+    drawTable(s, rows, { x: 0.4, y: 1.4, w: 9.2, colW: [1.9, 1.5, 2.5, 1.7, 1.6], rowH,
+                         fontSize: rows.length > 5 ? 8 : 9, valign: "middle" });
     footer(s); tracer(s);
   })();
 
   // -- merged deadline calendar
   (function () {
-    const s = content(L("eyebrow"), L("deadlines"));
+    const s = content(EYEBROW(), L("deadlines"));
     const all = [];
     ["nis2", "cra", "aiact"].forEach((k) => (regs[k] || {}).deadlines?.forEach((d) => all.push({ ...d, regime: (REGIME_TITLE[k] || {}).en || k })));
     all.sort((x, y) => String(x.date).localeCompare(String(y.date)));
@@ -360,23 +398,34 @@ function roadmapDeck() {
 
   // -- combined penalty exposure
   (function () {
-    const s = content(L("eyebrow"), L("penalty"));
+    const s = content(EYEBROW(), L("penalty"));
+    // Show the regimes that actually carry a monetary exposure. Rendering "No monetary penalty"
+    // three times across an OSFI deck wastes the slide and buries the two figures that matter.
+    const money = ORDER.filter((k) => {
+      const p = (regs[k] || {}).penalty || {};
+      return p.essential && !/^No monetary/i.test(String(p.essential));
+    }).slice(0, 3);
+    const shown = money.length ? money : ORDER.slice(0, 3);
+    const cw = shown.length ? Math.min(3.0, (9.2 - 0.15 * (shown.length - 1)) / shown.length) : 3.0;
     let cx = 0.4;
-    ["nis2", "cra", "aiact"].forEach((k) => {
+    shown.forEach((k) => {
       const r = regs[k] || {}, p = r.penalty || {};
-      s.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.5, w: 3.0, h: 2.4, fill: { color: C.tealDark }, line: { type: "none" } });
-      s.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.5, w: 3.0, h: 0.09, fill: { color: C.crit }, line: { type: "none" } });
-      s.addText((REGIME_TITLE[k] || {})[LANG] || k.toUpperCase(), { x: cx + 0.16, y: 1.64, w: 2.7, h: 0.4, fontSize: 12, fontFace: FB, color: C.teal, bold: true, margin: 0 });
-      s.addText(String(p.essential || EMDASH), { x: cx + 0.16, y: 2.1, w: 2.7, h: 0.9, fontSize: 13, fontFace: FH, color: C.white, bold: true, valign: "top", margin: 0 });
-      s.addText(String(p.important || ""), { x: cx + 0.16, y: 3.0, w: 2.7, h: 0.82, fontSize: 8.5, fontFace: FB, color: C.light, valign: "top", margin: 0 });
-      cx += 3.15;
+      s.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.5, w: cw, h: 2.4, fill: { color: C.tealDark }, line: { type: "none" } });
+      s.addShape(pres.shapes.RECTANGLE, { x: cx, y: 1.5, w: cw, h: 0.09, fill: { color: C.crit }, line: { type: "none" } });
+      s.addText((REGIME_TITLE[k] || {})[LANG] || k.toUpperCase(), { x: cx + 0.16, y: 1.64, w: cw - 0.3, h: 0.4, fontSize: 12, fontFace: FB, color: C.teal, bold: true, margin: 0 });
+      s.addText(String(p.essential || EMDASH), { x: cx + 0.16, y: 2.1, w: cw - 0.3, h: 0.9, fontSize: 12, fontFace: FH, color: C.white, bold: true, valign: "top", margin: 0 });
+      s.addText(String(p.important || ""), { x: cx + 0.16, y: 3.0, w: cw - 0.3, h: 0.82, fontSize: 8.5, fontFace: FB, color: C.light, valign: "top", margin: 0 });
+      cx += cw + 0.15;
     });
+    if (!money.length) {
+      s.addText(String(((regs[ORDER[0]] || {}).penalty || {}).note || ""), { x: 0.4, y: 4.05, w: 9.2, h: 0.7, fontSize: 9.5, fontFace: FB, color: C.ink, valign: "top", margin: 0 });
+    }
     footer(s); tracer(s);
   })();
 
   // -- phased roadmap
   (function () {
-    const s = content(L("eyebrow"), L("roadmap"));
+    const s = content(EYEBROW(), L("roadmap"));
     const phases = (rm.phases || []).slice(0, 3);
     let cx = 0.4;
     const w = (9.2 - 0.4) / Math.max(1, phases.length);
@@ -392,7 +441,7 @@ function roadmapDeck() {
 
   // -- priorities
   if ((rm.priorities || []).length) {
-    const s = content(L("eyebrow"), L("priorities"));
+    const s = content(EYEBROW(), L("priorities"));
     const rows = [[hdrCell(L("regime")), hdrCell(L("action")), hdrCell(L("why")), hdrCell(L("colt").toUpperCase())]];
     (rm.priorities || []).slice(0, 6).forEach((p) => rows.push([
       { text: p.regime || "", options: { bold: true, color: C.tealDark, fontSize: 9 } },

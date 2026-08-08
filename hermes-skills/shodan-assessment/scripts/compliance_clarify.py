@@ -25,6 +25,7 @@ def _load(p):
 
 
 def build(cj):
+    _j = str((cj or {}).get("jurisdiction") or "EU").upper()
     a = cj.get("assumptions") or {}
     company = cj.get("company") or "the company"
     regimes = cj.get("regimes") or {}
@@ -57,13 +58,33 @@ def build(cj):
                   "classification: %s). This includes embedded AI and general-purpose models." % _cls("aiact")),
          "maps_to": "builds_or_deploys_ai"},
 
-        {"id": "countries", "kind": "text", "title": "Which EU countries do you operate in?",
+        {"id": "countries", "kind": "text", "title": "Which countries do you operate in?",
          "body": ("NIS2 is transposed per Member State with different registration deadlines, so the "
                   "deadline calendar depends on where you operate. I assumed: %s."
                   % (", ".join(a.get("countries") or []) or "not confirmed")),
          "placeholder": "e.g. DE, IT, PL, NL",
          "maps_to": "countries"},
 
+        # Canada-only. Both questions decide which regimes bite, and neither can be inferred from
+        # public data: FRFI status decides the whole OSFI block, and the Quebec question is an OPEN
+        # constitutional point the reference explicitly refuses to answer for a federally chartered
+        # bank. Asking is the only honest route — the same doctrine as the security clarify loop.
+        {"id": "frfi", "kind": "yesno",
+         "title": "Is the entity a federally regulated financial institution (FRFI)?",
+         "why": "OSFI Guidelines B-13, E-21, B-10 and Integrity & Security, and the 24-hour incident "
+                "reporting advisory, apply to FRFIs including foreign bank branches.",
+         "maps_to": "frfi", "only_if_jurisdiction": "CA"},
+        {"id": "foreign_branch", "kind": "yesno",
+         "title": "Is this a foreign bank or foreign insurance branch in Canada?",
+         "why": "B-10 applied to FRFIs from 1 May 2024 but to foreign branches only from "
+                "31 March 2025 — the two dates must be modelled separately.",
+         "maps_to": "foreign_branch", "only_if_jurisdiction": "CA"},
+        {"id": "quebec", "kind": "yesno",
+         "title": "Does the entity carry on an enterprise in Quebec?",
+         "why": "Quebec Law 25 carries the largest penalties in Canada. Whether it binds a "
+                "FEDERALLY CHARTERED bank is an open constitutional question for your counsel — "
+                "we will not assert it either way.",
+         "maps_to": "quebec", "only_if_jurisdiction": "CA"},
         {"id": "notes", "kind": "text", "title": "Anything else that affects scope?",
          "body": ("Free text: MDR/DORA/GDPR overlaps, specific products, an AI use-case (recruitment, "
                   "credit scoring, biometrics), or systems to exclude — I will factor it into the rebuild."),
@@ -71,12 +92,19 @@ def build(cj):
          "maps_to": "notes"},
     ]
 
+    # Drop the questions that belong to another jurisdiction. A Canadian bank must not be asked
+    # about AI-Act tiers, and an EU manufacturer must not be asked whether it is an FRFI: a
+    # question that cannot apply teaches the operator the tool does not know who they are.
+    qs = [q for q in qs
+          if not q.get("only_if_jurisdiction") or q["only_if_jurisdiction"].upper() == _j]
+
+    # The summary mirrors whatever regimes were actually graded, from the JSON's own order.
+    order = (cj or {}).get("order") or ["nis2", "cra", "aiact"]
     return {
         "company": company,
-        "summary": {
-            "nis2": _cls("nis2"), "cra": _cls("cra"), "aiact": _cls("aiact"),
-            "assumed_size": a.get("size_band") or "unknown",
-        },
+        "jurisdiction": _j,
+        "summary": dict({k: _cls(k) for k in order},
+                        assumed_size=a.get("size_band") or "unknown"),
         "questions": qs,
     }
 
