@@ -95,6 +95,27 @@ check(D.is_denied("wa.me") and not D.is_denied("wa-me.de"),
 print("\n== 3. the ownership gate refuses a denied apex even when discovery vouches for it ==")
 import shodan_recon as R
 
+# ---------------------------------------------------------------------------------------------
+# HERMETIC BY DEFAULT. run() now performs three NETWORK lookups that the older tests never had to
+# think about: CertSpotter (Certificate Transparency), CAA over DNS-over-HTTPS, and the email
+# authentication records. Left live, a single `python ship.py` made ~14 CertSpotter calls and got
+# HTTP 429 on every one -- burning the free tier's hourly budget that REAL assessments depend on,
+# and making the suite slow and weather-dependent.
+#
+# A test that reaches the internet is not testing this repository. These stubs are installed
+# BEFORE any run() call; the checks that genuinely exercise those code paths inject their own
+# fixtures explicitly (email_auth.assess and cert_intel take a lookup callable for exactly this).
+R._certspotter_issuances = lambda *a, **k: []
+R._caa = lambda *a, **k: None                      # None = "could not ask" -> claims nothing
+try:
+    import email_auth as _EA
+    _EA.assess = lambda domain, txt_of=None: {"domain": domain, "issues": [], "context": [],
+                                              "spf": "unknown", "dmarc": "unknown",
+                                              "mta_sts": "unknown", "dkim_selectors": []}
+except Exception:
+    pass
+
+
 TOK = {"abakus"}
 ok, why = R._owns_apex("wa.me", TOK, "abakus-tk.de", group_domains=["wa.me"], structure_known=True)
 check(not ok, "wa.me refused EVEN THOUGH it is in group_domains -- %s" % why)
@@ -512,9 +533,24 @@ check(not set(EMPT.get("scanned_ips") or []),
       "all 25 strangers are dropped: %d host(s) left" % len(EMPT.get("scanned_ips") or []))
 check(bool(EMPT.get("no_attributable_estate")),
       "the empty outcome is stated explicitly, not left as a silent zero")
-_shodan_findings = [f for f in (_oe.get("findings") or []) if f.get("ft") not in ("no_caa", "dns_no_service")]
-check(not _shodan_findings,
-      "no findings are invented from other companies' hosts (%d)" % len(_shodan_findings))
+# MEASURE THE PROPERTY, NOT A LIST OF EXEMPT TYPES. This used to exclude ("no_caa",
+# "dns_no_service") by name, so every new ZONE-derived finding class had to be remembered here or
+# it failed a correct build -- which is exactly what happened when the email-authentication checks
+# landed. And an exemption list is the wrong shape anyway: it would happily let a real HOST finding
+# through under a newly exempted name.
+#
+# The property that actually matters is that no finding cites a STRANGER'S ADDRESS as evidence. A
+# zone finding's evidence is the customer's own domain, which is theirs whatever the host estate
+# looks like; a host finding's evidence is an IP, and on this fixture every IP belongs to somebody
+# else.
+_stranger_ips = {h["ip_str"] for h in STRANGERS}
+_bad = [f for f in (_oe.get("findings") or [])
+        if any(ip in " ".join(f.get("evidence") or []) for ip in _stranger_ips)]
+check(not _bad,
+      "no finding cites another company's host as evidence (%d did)" % len(_bad))
+check(all(("abakus-tk.de" in " ".join(f.get("evidence") or []) or not (f.get("evidence") or []))
+          for f in (_oe.get("findings") or [])),
+      "every surviving finding is about the customer's OWN zone, not the strangers' estate")
 
 # ...and the lotto24/angermann doctrine is untouched: with its OWN address space, a 95% drop still
 # means the whois data is the suspect.

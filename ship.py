@@ -596,6 +596,25 @@ def do_tests():
         sys.exit('[X] ASN DISCOVERY REGRESSION - an enterprise estate would be truncated. Do not ship.')
     print('  enterprise ASNs: global source first, holder-corroborated, cap 40')
 
+    # THE PASSIVE FEATURE SET from the ns03.ru engagement (email authentication, certificate
+    # intelligence, naming-convention mining) plus the assertion that the ACTIVE tier stays shut.
+    # Replayed against that engagement's real data, so a regression is measured against ground
+    # truth rather than a fixture written to agree with the code.
+    #
+    # THE ACTIVE-TIER ASSERTION IS THE IMPORTANT ONE. Every default check is passive; the moment
+    # one is not, the product's public claim, its Terms of Use, its Article 13 notice and the
+    # signed partner pack all become false, and an unauthorised connection to a third party is a
+    # §202a StGB / CFAA / s.342.1 question rather than a product question. The gate must refuse
+    # without a RECORDED authorisation reference, and this proves it does.
+    _pc = subprocess.run([sys.executable, os.path.join(engine, 'test_passive_checks.py')],
+                         capture_output=True, text=True, timeout=180)
+    if _pc.returncode != 0:
+        print((_pc.stdout or '') + (_pc.stderr or ''))
+        sys.exit('[X] PASSIVE CHECK REGRESSION - a new finding class broke, or the active tier '
+                 'would send packets without recorded authorisation. Do not ship.')
+    print('  passive checks: email auth + certificate intelligence + naming grammar; '
+          'active tier REFUSES without recorded authorisation')
+
     # c''''') THE DRIFT CHECK ITSELF. Its first version md5'd `caddy adapt` against the admin API's
     #        `GET /config/` and failed a HEALTHY staging box twice, blocking a deploy on a defect
     #        that did not exist. Those are two serialisations of one config, so byte equality was
@@ -1097,6 +1116,7 @@ def tag_known_good():
     print("\n  SAFE-POINT saved: %s  (and moved 'last-known-good').  To roll back later:" % tag)
     print("      python ship.py --rollback            # -> last-known-good, redeploys")
     print("      python ship.py --rollback %s   # -> this exact point" % tag)
+    return tag
 
 
 def do_rollback(ref):
@@ -1434,6 +1454,12 @@ def main():
 
     do_git(a.message or "ship: engine + web update")
 
+    # Facts the release notes will quote. Set here so they can never be unbound: `--no-stage` is a
+    # real option, and a NameError inside the notes' own try/except would make them silently never
+    # send while printing nothing -- the exact failure mode this repo keeps recording.
+    _stage_verdict = "not run (--no-stage)"
+    _test_summary = "all suites passed (ship.py exits before deploying if any fail)"
+
     # ---- STAGING GATE — validate on the twin BEFORE production is touched -------------------
     #      The 2026-08-07 outage had no environment in which the change could be REBOOTED first.
     #      stagegate deploys to the staging droplet, health-checks it, reboots it, health-checks it
@@ -1448,6 +1474,7 @@ def main():
         try:
             import stagegate
             gate, digest = stagegate.run(reboot_test=not a.fast_stage)
+            _stage_verdict = gate
             print("\n" + (digest or "").replace("\n", "\n  "))
             print("\n  STAGING GATE: %s" % gate)
             print("  " + (stagegate.notify("cybergod staging validation: %s" % gate, digest) or ""))
@@ -1512,26 +1539,18 @@ def main():
             _cgout = ((_cg.stdout or "") + (_cg.stderr or "")).rstrip()
             print(_cgout or "  caddyguard: no output at all (crashed before printing?)")
 
-            # THE REBOOT GATE MUST BE ON THE BOX, NOT JUST IN THE REPO.
-            # caddyguard reports whether the droplet's patchwatch copy carries the gate that
-            # refuses to reboot into an invalid proxy config. It was MISSING for a whole run and
-            # the only remedy printed was "run this other script" — which is operating principle 7
-            # broken, and a live safety hole meanwhile. Install it here, automatically, once.
-            if "reboot gate MISSING" in _cgout:
-                print("\n  Installing the patchwatch reboot gate on the droplet (was missing)...")
-                _pw = subprocess.run([sys.executable,
-                                      os.path.join(HERE, "patchwatch", "provision_patchwatch.py")],
-                                     capture_output=True, text=True, encoding="utf-8",
-                                     errors="replace", timeout=900)
-                # PRINT STDERR TOO. Last run this failed and showed NOTHING, because only
-                # stdout was echoed — the same "silent skip" class as the ruff gate. A failure
-                # that cannot explain itself is a failure you will keep re-running.
-                _tail = ((_pw.stdout or "") + (_pw.stderr or "")).rstrip().splitlines()[-14:]
-                print("  " + "\n  ".join(_tail) if _tail else "  (no output at all)")
-                if _pw.returncode != 0:
-                    print("  [!] patchwatch provisioning failed — the droplet can still reboot")
-                    print("      into a broken proxy config. Not fatal to this deploy, but fix it.")
-
+            # THE REBOOT GATE IS caddyguard'S JOB NOW, AND ONLY caddyguard'S.
+            # This used to shell out to provision_patchwatch.py whenever caddyguard reported the
+            # gate missing. Two problems, and the run of 9 Aug showed both at once:
+            #   1. THE PROVISIONER HARD-FAILS WITHOUT DO_API_TOKEN, which the gate does not need —
+            #      that token buys droplet snapshots and a Spaces bucket. So the remedy could never
+            #      work, and printed an alarming "the droplet can still reboot into a broken proxy
+            #      config" every single ship.
+            #   2. Once caddyguard installed the gate itself, THIS STEP STILL RAN and still failed,
+            #      so a deploy that had just SUCCEEDED at the thing reported that it had failed.
+            # Two homes for one job, and the stale one shouting over the working one. caddyguard
+            # ships the committed patchwatch.py in the session it already holds, verifies it parses
+            # and carries `reboot_blocked`, and folds the verdict into its own exit code.
             if _cg.returncode != 0:
                 ok = False
                 print("  [!] caddyguard reported a problem with the shared proxy — see above.")
@@ -1556,7 +1575,30 @@ def main():
 
     if ok and not DRY:
         # only tag a SAFE-POINT when the deployed engine actually verified current + live
-        tag_known_good()
+        _tag = tag_known_good()
+
+        # ---- RELEASE NOTES, WRITTEN BY THE SAME FOUR MODELS, AND DELIVERED -------------------
+        # STANDING RULE (operator, 9 Aug 2026): every release, the four panel models write the
+        # notes and they are SENT -- Gmail API gateway to feranicus@s4biz.io, and Telegram. A
+        # release nobody was told about is a release nobody can review.
+        #
+        # It runs LAST, after the deploy verified and the safe-point is tagged, and it can never
+        # fail the ship: the models live on the droplet behind a rate-limited endpoint and the mail
+        # gateway is a third party. A bad day for either must not turn a good release into a failed
+        # one. Same doctrine as the FP auditor and the staging panel: a signal, not an authority.
+        try:
+            _rn = subprocess.run(
+                [sys.executable, os.path.join(HERE, "release_notes.py"),
+                 "--tag", _tag or "", "-m", (a.message or ""),
+                 "--staging", _stage_verdict, "--tests", _test_summary],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=420)
+            print((_rn.stdout or "").rstrip() or "  release notes: no output")
+            if (_rn.stderr or "").strip():
+                print("  " + (_rn.stderr or "").strip()[:400])
+        except Exception as _e:
+            print("  [!] release notes skipped (%s) — the release itself is unaffected."
+                  % type(_e).__name__)
+
         # Remember the UI that just went live, so the next ship only asks for a preview when the
         # frontend has actually changed since this one.
         try:

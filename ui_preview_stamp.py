@@ -56,13 +56,34 @@ def ui_files():
     return sorted(out)
 
 
+# Text extensions get their line endings normalised before hashing. Binaries never do: a PNG can
+# legitimately contain the bytes 0d 0a and "normalising" it would corrupt the digest.
+_TEXT_SUFFIXES = {".jsx", ".js", ".mjs", ".ts", ".tsx", ".css", ".html", ".json",
+                  ".webmanifest", ".txt", ".xml", ".svg", ".md"}
+
+
 def ui_hash():
-    """One sha256 over the whole UI surface: names and contents."""
+    """One sha256 over the whole UI surface: names and contents.
+
+    LINE ENDINGS ARE NORMALISED, and that is not cosmetic. The hash used to be over RAW BYTES, so
+    a Windows checkout (CRLF in the working copy, because core.autocrlf rewrites on checkout) and a
+    Linux checkout of the SAME COMMIT produced DIFFERENT digests. The stamp then meant "previewed
+    on this operating system" rather than "previewed", which is not the claim it advertises: the
+    gate could not be evaluated from anywhere except the machine that wrote it, and a check nobody
+    else can evaluate is a check nobody else can trust.
+
+    This is the third appearance of the same trap in this repo: `git archive` applying autocrlf
+    made the deploy artefact platform-dependent, and before that the CRLF-over-ssh script failure.
+    Content is content; the byte that ends a line is the platform's business, not ours.
+    """
     h = hashlib.sha256()
     for p in ui_files():
         h.update(str(p.relative_to(ROOT)).replace("\\", "/").encode())
         h.update(b"\0")
-        h.update(p.read_bytes())
+        b = p.read_bytes()
+        if p.suffix.lower() in _TEXT_SUFFIXES:
+            b = b.replace(b"\r\n", b"\n")
+        h.update(b)
         h.update(b"\0")
     return h.hexdigest()
 

@@ -20,6 +20,8 @@ Usage:
 """
 import os, re, sys, json, socket, argparse, datetime, urllib.request, urllib.parse
 
+_SEV_ORDER = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+
 UA = {"User-Agent": "colt-shodan-recon/1.2"}
 # ISPs/telcos: the assigned netblock IS the target's — net: sweep is valid.
 CARRIERS = ("deutsche telekom","telekom","vodafone","telefonica","orange","bt ","gtt",
@@ -37,8 +39,15 @@ CDNS = ("cloudflare","akamai","fastly","cloudfront","amazon","aws","google","inc
 def _is(name, tup): return bool(name) and any(t in name.lower() for t in tup)
 
 # ------------------------------------------------------------------ identity ---
-def _get_json(url, timeout=15):
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
+def _get_json(url, timeout=15, headers=None):
+    # `headers` is additive on top of UA. It was added for CertSpotter's optional API key, and
+    # calling this with an argument it did not accept would have raised TypeError INSIDE the
+    # caller's own `except Exception`, silently disabling the second CT source with a warning that
+    # blamed the network. Read the helper's signature before calling it.
+    h = dict(UA)
+    if headers:
+        h.update(headers)
+    with urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8", "replace"))
 
 def _ripe_prefixes(asn, cap=20):
@@ -81,6 +90,10 @@ def _clean_domain(seed):
     return s.lower().lstrip('.')
 
 import psl as _PSL
+import email_auth
+import cert_intel
+import naming
+import active_probe
 
 # Authoritative scope denylist, shared with group_discovery.py. Enforced at the ownership gate
 # (_owns_apex) so it covers EVERY source a domain can arrive from -- group structure, certificate
@@ -486,20 +499,163 @@ def _probe_subdomains(domains, cap=120):
     return found
 
 
+# CertSpotter's free tier is rate-limited per hour for unauthenticated callers. Paging multiplies
+# requests, so it is bounded. Set CERTSPOTTER_TOKEN to raise the limit (SSLMate API key).
+CERTSPOTTER_PAGES = int(os.environ.get("CERTSPOTTER_PAGES", "6"))
+
+
+def _certspotter_issuances(domain, max_pages=None):
+    """Every UNEXPIRED CT issuance for a domain and its subdomains, with the issuer expanded.
+
+    WHY PAGING IS NOT OPTIONAL, and why the previous version quietly lost recall: SSLMate's
+    documentation is explicit that "if the after parameter is empty or omitted, the API will
+    return the LEAST-recently-discovered issuances". So a single call plus [:200] returned the
+    OLDEST 200 certificates of the estate -- the exact opposite of what a recon step wants. On a
+    domain with more than one page of history the recently-issued names, which are the live hosts,
+    were never seen at all. Page with `after=<last id>` until an empty array comes back.
+
+    The endpoint returns only UNEXPIRED issuances, so this is a view of the CURRENT certificate
+    estate, not an archive. That matters for what may honestly be claimed from it.
+
+    expand=issuer.caa_domains is the field SSLMate provides precisely so a caller can compare an
+    issuer against the domain's CAA record set. It is what makes the unauthorised-issuance check
+    possible without a paid monitoring product.
+    """
+    pages = CERTSPOTTER_PAGES if max_pages is None else max_pages
+    tok = os.environ.get("CERTSPOTTER_TOKEN", "").strip()
+    base = ("https://api.certspotter.com/v1/issuances?domain=" + urllib.parse.quote(domain) +
+            "&include_subdomains=true&expand=dns_names&expand=issuer&expand=issuer.caa_domains")
+    out, after = [], None
+    for _ in range(max(1, pages)):
+        u = base + ("&after=" + urllib.parse.quote(str(after)) if after else "")
+        try:
+            rows = _get_json(u, timeout=25, headers=({"Authorization": "Bearer " + tok} if tok else None))
+        except Exception as e:
+            print(f"[warn] certspotter {domain}: {e}", file=sys.stderr)
+            break
+        if not isinstance(rows, list) or not rows:
+            break
+        out.extend(r for r in rows if isinstance(r, dict))
+        after = rows[-1].get("id")
+        if not after:
+            break
+    return out
+
+
 def _certspotter_domains(domain, cap=200):
-    """CT via SSLMate's CertSpotter — free, no API key. A SECOND CT source so one outage cannot
-    blind the whole assessment (crt.sh returned timeout/404/503 on three consecutive bibeltv runs)."""
+    """CT via SSLMate's CertSpotter -- free, no API key. A SECOND CT source so one outage cannot
+    blind the whole assessment (crt.sh returned timeout/404/503 on three consecutive bibeltv runs).
+    Names only; _certspotter_issuances() is the one that talks to the API."""
     out = set()
-    u = ("https://api.certspotter.com/v1/issuances?domain=" + urllib.parse.quote(domain) +
-         "&include_subdomains=true&expand=dns_names")
-    try:
-        for row in (_get_json(u, timeout=25) or [])[:cap]:
-            for nm in (row.get("dns_names") or []):
-                nm = str(nm).strip().lstrip("*.").lower()
-                if nm and "." in nm and " " not in nm:
-                    out.add(nm)
-    except Exception as e:
-        print(f"[warn] certspotter {domain}: {e}", file=sys.stderr)
+    for row in _certspotter_issuances(domain):
+        for nm in (row.get("dns_names") or []):
+            nm = str(nm).strip().lstrip("*.").lower()
+            if nm and "." in nm and " " not in nm:
+                out.add(nm)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _caa_issuers(records):
+    """The CA domains a CAA record set AUTHORISES, from the issue/issuewild tags.
+
+    A record looks like `0 issue "letsencrypt.org"`, and may carry parameters after a semicolon
+    (`"letsencrypt.org; validationmethods=dns-01"`). The special value `;` means NO certificate
+    authority is authorised. `iodef` is a reporting address, not an issuer, and must not be read
+    as one. Returns (issue_set, issuewild_set) lowercased.
+    """
+    issue, wild = set(), set()
+    for rec in (records or []):
+        txt = str(rec or "").strip()
+        m = re.match(r'^\s*\d+\s+(issue|issuewild|iodef)\s+"?([^"]*)"?\s*$', txt, re.I)
+        if not m:
+            continue
+        tag, val = m.group(1).lower(), m.group(2).strip()
+        if tag == "iodef":
+            continue
+        val = val.split(";")[0].strip().lower().rstrip(".")
+        target = wild if tag == "issuewild" else issue
+        target.add(val)          # "" (from a bare ";") means: authorise nobody
+    return issue, wild
+
+
+def _unauthorised_issuances(domain, issuances, caa_records, caa_of=None):
+    """Live certificates whose issuer is NOT authorised by the domain's own CAA record.
+
+    This is the check CAA exists to make possible, and SSLMate publishes `issuer.caa_domains`
+    specifically so it can be made. A certificate outside the policy is either a mis-issuance or,
+    far more often, a real and useful finding: somebody inside the organisation bought a
+    certificate for a company name outside the process that everyone believes is mandatory.
+
+    IT FAILS CLOSED IN FOUR PLACES, because a false accusation of mis-issuance is the worst thing
+    this engine could put in a customer deck:
+      · no CAA published        -> nothing is authorised OR unauthorised. That is the no_caa
+                                   finding instead. Return nothing here.
+      · CAA lookup failed       -> caller passes None. Absence of evidence is never a finding.
+      · issuer.caa_domains null -> SSLMate does not know who this issuer is authorised as. Skip
+                                   the issuance rather than guess.
+      · a SUBDOMAIN with its own CAA -> CAA is resolved at the closest name, so a subdomain may
+                                   legitimately authorise a different CA than the apex. Each
+                                   candidate is re-checked against its own name's CAA before it
+                                   is reported. `caa_of` is injected for testing.
+    """
+    if caa_records is None or not caa_records:
+        return []
+    issue, wild = _caa_issuers(caa_records)
+    if not (issue | wild):
+        return []
+    lookup = caa_of or _caa
+    out, rechecked = [], {}
+    for row in issuances:
+        allowed = (row.get("issuer") or {}).get("caa_domains")
+        if not allowed:                       # null/absent -> no claim
+            continue
+        names = [str(n).strip().lower().rstrip(".") for n in (row.get("dns_names") or []) if n]
+        if not names:
+            continue
+        wanted = wild if any(n.startswith("*.") for n in names) else issue
+        allowed_l = {str(a).strip().lower().rstrip(".") for a in allowed}
+        if allowed_l & (wanted or issue):
+            continue                          # authorised at the apex
+
+        # The apex says no. Before claiming anything, ask whether a closer name authorises it --
+        # CAA is resolved at the closest label with a record, so this is not an edge case.
+        ok_closer = False
+        for n in names:
+            base = n.lstrip("*.")
+            if base == domain or not base.endswith("." + domain):
+                continue
+            if base not in rechecked:
+                rechecked[base] = lookup(base)
+            recs = rechecked[base]
+            if recs is None:                  # could not ask -> do not accuse
+                ok_closer = True
+                break
+            if recs:
+                i2, w2 = _caa_issuers(recs)
+                if allowed_l & ((w2 if base.startswith("*.") else i2) or i2):
+                    ok_closer = True
+                    break
+        if ok_closer:
+            continue
+        out.append({"names": sorted(names)[:6],
+                    "issuer": str((row.get("issuer") or {}).get("friendly_name") or "unknown"),
+                    "not_before": str(row.get("not_before") or ""),
+                    "not_after": str(row.get("not_after") or ""),
+                    "authorised": sorted(allowed_l)[:4]})
+
+    # BLAST-RADIUS GUARD, same doctrine as the co-tenant guard and the FP auditor.
+    # If EVERY live certificate is "unauthorised", the overwhelmingly likelier explanation is that
+    # the CAA record itself is wrong or was added after the certificates -- `0 issue ";"` (authorise
+    # nobody) is a common misconfiguration and would flag the entire estate. Claiming N
+    # mis-issuances there would be spectacularly wrong in a customer deck. The condition is still
+    # reported, but as a CAA-policy problem, which is what it almost always is.
+    considered = [r for r in issuances if (r.get("issuer") or {}).get("caa_domains")]
+    if considered and len(out) == len(considered) and len(considered) > 1:
+        return [{"policy_conflict": True, "count": len(out),
+                 "issuers": sorted({o["issuer"] for o in out})[:6],
+                 "authorised": sorted(issue | wild)[:4]}]
     return out
 
 
@@ -1142,6 +1298,42 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
               "avoids speculative noise on a partner/network brand): %s"
               % (len(_skipped), ", ".join(_skipped[:6])), file=sys.stderr)
     probed = _probe_subdomains(sorted(_probe_apexes))
+
+    # ---- CONVENTION-DERIVED CANDIDATES (ns03.ru) -----------------------------------------------
+    # A blind dictionary is close to useless: on ns03.ru every generic name (vpn, portal, remote,
+    # owa) returned NXDOMAIN, while the target's OWN grammar -- learned from what it published in
+    # CT -- produced ventil/ing/iiko under a site zone `nzn` and `srv-<site>-<role>`. Generating
+    # from the customer's vocabulary is both higher recall AND fewer queries than a wordlist.
+    #
+    # The language set is DERIVED from where the company operates (its ccTLDs, its estate's
+    # countries), never from what languages the product happens to support. Asking a German
+    # manufacturer about `kotelnaya` is wasted queries; asking a Russian one about it found the
+    # boiler house.
+    try:
+        _known_names = sorted(set(list(ident.get("domains") or []) + list(probed) +
+                                  list(ident.get("ct_domains") or [])))
+        _gram = naming.learn(_known_names, sorted(_probe_apexes))
+        if _gram.get("sites") or _gram.get("sequenced"):
+            _langs = naming.langs_for(domains=sorted(_probe_apexes),
+                                      countries=(ident.get("countries") or []),
+                                      country=ident.get("country"))
+            _cands = naming.candidates(_gram, sorted(_probe_apexes)[:2], _langs,
+                                       cap=int(os.environ.get("NAMING_CAP", "220")),
+                                       known=_known_names)
+            _hits = {}
+            for _c2 in _cands:
+                _ips2 = _resolve(_c2)
+                if _ips2:
+                    _hits[_c2] = _ips2
+            ident["naming"] = {"grammar": _gram, "langs": _langs,
+                               "tried": len(_cands), "found": sorted(_hits)}
+            print("[auto] naming convention: sites=%s roles=%s langs=%s -> %d candidate(s), "
+                  "%d resolved" % (_gram.get("sites")[:3], _gram.get("roles")[:3], _langs,
+                                   len(_cands), len(_hits)), file=sys.stderr)
+            probed.update(_hits)
+    except Exception as _e:
+        print("[warn] naming-convention mining failed: %s" % _e, file=sys.stderr)
+
     # Keep the name -> address map. run() needs it to spot names that resolve but have no
     # observable service (the possible-dangling-DNS candidate), which is a DNS-derived finding
     # and cannot be reconstructed from the Shodan results alone.
@@ -1472,6 +1664,20 @@ _ECM_RE = re.compile(
     r"|censhare|bynder|canto cumulus|adobe experience manager|/aem/)")
 
 
+def _eol_hit(m):
+    """(sev, kind, detail) when the banner we ALREADY hold names an out-of-support version.
+
+    ZERO PACKETS. The ns03.ru engagement read the OWA build path by connecting to the server; the
+    same string is frequently present in a scan engine's stored record, and mapping it there costs
+    nothing and touches nobody. Running software past its end of support means no security update
+    exists for the next vulnerability, whatever the patching process does.
+    """
+    info = active_probe.eol_from_banner(_hay(m))
+    if not info:
+        return "", "", None
+    return "HIGH", "eol_software", info
+
+
 def _high_value_hit(m):
     """(sev, kind) for a high-value management plane, or ('','') — checked BEFORE generic buckets."""
     hay = _hay(m)
@@ -1545,6 +1751,14 @@ def classify(m):
     _hv_sev, _hv_kind = _high_value_hit(m)
     if _hv_sev:
         return _hv_sev, _hv_kind
+    # OUT OF SUPPORT, read from the banner we already hold. Checked before the generic buckets for
+    # the same reason as the management planes: an out-of-support Exchange behind IIS on 443 is
+    # otherwise filed as `standard_service`, which is how a platform with no security updates
+    # available ends up rated LOW. A detector that is never called cannot fire, so this line is
+    # the point of the whole check.
+    _eol_sev, _eol_kind, _ = _eol_hit(m)
+    if _eol_sev:
+        return _eol_sev, _eol_kind
     if "ics" in tags or "scada" in tags or port in ICS_PORTSET: return "CRITICAL","ics"
     if port in DB_PORTS:  return "CRITICAL","db_exposed"
     if port in (3389, 3390): return "CRITICAL","rdp"
@@ -1670,6 +1884,99 @@ TEMPLATES = {
              {"tag": "OSS", "title": "Certificate Transparency monitoring",
               "body": "WHY THIS SERVICE: CAA prevents; CT detects. Free CT monitors watch every public log and notify on certificates issued for your names, including ones you did not request. WHAT YOU GET: notification within minutes of an unexpected issuance. HOW: subscribe the domain set to a CT monitor and route alerts to the same mailbox that receives your security notifications."}],
             ["RFC 8659", "CA/Browser Forum Baseline Requirements", "BSI TR-02102"]),
+ # EMAIL AUTHENTICATION. Pure DNS, zero packets, and the biggest gap the engine had: a company's
+ # domain can be forged without a single exposed host. This is the delivery mechanism for the
+ # business-email-compromise losses the C-BIQ deck prices, so it belongs beside the host findings.
+ "eol_software": ("Software running past its end of support",
+            ["The version identified here is past the vendor's end-of-support date. That is a different condition from being unpatched: for software out of support, no security update exists to apply, so the next vulnerability disclosed against it stays open permanently.",
+             "This class of host is specifically hunted. Mail and collaboration platforms out of support have been the entry point for some of the most widely exploited intrusion campaigns of recent years, precisely because the population of unsupported installations is large and cannot be fixed by patching.",
+             "It is also a compliance exposure in its own right: an operator running unsupported software on an internet-facing service will struggle to argue it has taken state-of-the-art technical measures, which is the standard both NIS2 Article 21 and GDPR Article 32 apply."],
+            [{"tag": "COLT", "title": "Plan and execute the version upgrade",
+              "body": "WHY THIS SERVICE: an out-of-support platform is usually still running because upgrading it is entangled with mailbox migration, connector rebuilds and an application nobody wants to touch. The blocker is the plan, not the software. WHAT YOU GET: a supported platform with a migration path that does not interrupt mail flow, and the entanglements identified before they become an outage. HOW: we inventory dependencies, stage the upgrade or the move to a hosted service, and cut over in a window you set."},
+             {"tag": "COLT", "title": "Reduce exposure while the upgrade is planned",
+              "body": "WHY THIS SERVICE: an upgrade takes months and the exposure is live now. Publishing the service through a proxy that terminates and inspects the session removes direct internet reachability without touching the platform. WHAT YOU GET: the vulnerable surface no longer addressable from the internet, immediately, with the upgrade proceeding on its own timetable. HOW: place the service behind a managed gateway with authentication in front of it."},
+             {"tag": "OSS", "title": "Track end-of-support dates against the estate",
+              "body": "WHY THIS SERVICE: end of support arrives on a published date, so it is the one exposure that can be prevented entirely by knowing it is coming. WHAT YOU GET: advance warning per product, mapped to the hosts that run it. HOW: reconcile your software inventory against published vendor lifecycle dates on a schedule."}],
+            ["NIS2 Art. 21", "GDPR Art. 32", "ISO/IEC 27001 A.8.8"]),
+ "dmarc_missing": ("No DMARC policy — this domain can be forged and receiving servers are told nothing",
+            ["DMARC is the record that tells a receiving mail server what to do with a message that claims to come from this domain but fails authentication. With no record published, the answer is: deliver it. Anyone can send mail as any address at this domain and it will land in the inbox looking legitimate.",
+             "This needs no exposed host and no vulnerability. It is the standard opening move for invoice fraud and payment redirection, because a forged message from a real domain passes every human check an employee, customer or supplier applies.",
+             "It also removes the organisation's own visibility: DMARC aggregate reports are the only mechanism that shows who is currently sending mail using this domain, so today nobody would know a campaign was running until a customer complained."],
+            [{"tag": "COLT", "title": "Publish DMARC and move it to enforcement",
+              "body": "WHY THIS SERVICE: DMARC cannot simply be switched to reject — that would break legitimate mail sent by payroll, marketing and ticketing systems nobody has inventoried. The work is the inventory, not the DNS record. WHAT YOU GET: a full picture of every system sending as your domain, then an enforcing policy that rejects forgeries without dropping a single legitimate message. HOW: publish at p=none with reporting, read the reports for a few weeks, authorise what is real, then step through quarantine to reject."},
+             {"tag": "COLT", "title": "Align SPF and DKIM behind the policy",
+              "body": "WHY THIS SERVICE: DMARC only passes if SPF or DKIM passes AND the domain aligns. A policy published over unaligned authentication rejects the company's own mail. WHAT YOU GET: SPF and DKIM configured for every legitimate sender, so enforcement is safe to switch on. HOW: we reconcile the sending inventory against the records and correct both together."},
+             {"tag": "OSS", "title": "Aggregate report monitoring",
+              "body": "WHY THIS SERVICE: the reports arrive as XML from every major mail provider and are unreadable by hand. WHAT YOU GET: a dashboard showing who sends as your domain, which sources fail, and whether enforcement is safe yet. HOW: point the rua address at a report processor and review it during the rollout."}],
+            ["RFC 7489", "NIS2 Art. 21", "ISO/IEC 27001 A.5.14"]),
+ "dmarc_weak": ("DMARC is published but does not reject anything",
+            ["A DMARC record exists, which is often taken as the control being in place, but its policy does not instruct receivers to reject or quarantine a forgery. In its current state it is a monitoring configuration, not a defence.",
+             "The practical consequence is identical to having no DMARC at all: a forged message claiming to be from this domain is delivered to the recipient's inbox. The difference is that the organisation may believe the control is working.",
+             "Partial deployment has the same shape. A policy that applies to only a fraction of messages leaves the remainder delivered untouched, and an attacker only needs the messages that get through."],
+            [{"tag": "COLT", "title": "Complete the rollout to enforcement",
+              "body": "WHY THIS SERVICE: the hard part of DMARC is finishing it. Most deployments stall at monitoring because nobody owns the inventory of legitimate senders and nobody wants to be the person who blocked the invoice run. WHAT YOU GET: a policy at reject, with every legitimate sender authorised first, so forgeries stop and your own mail is unaffected. HOW: we read the existing reports, close the gaps in SPF and DKIM, then step the policy up in stages you approve."},
+             {"tag": "COLT", "title": "Cover the subdomains too",
+              "body": "WHY THIS SERVICE: a policy on the organisational domain can leave subdomains open depending on the sp tag, and a forged subdomain is just as convincing to a recipient. WHAT YOU GET: an explicit subdomain policy so there is no gap to find. HOW: one tag in the same record, verified against a test send."},
+             {"tag": "OSS", "title": "Keep the reports under review",
+              "body": "WHY THIS SERVICE: sending estates change every time a department buys a tool. Without ongoing report review, an enforcing policy eventually blocks something real and gets rolled back. WHAT YOU GET: early warning when a new sender appears. HOW: continuous processing of the aggregate reports you already receive."}],
+            ["RFC 7489", "NIS2 Art. 21", "ISO/IEC 27001 A.5.14"]),
+ "spf_weak": ("The SPF record does not usefully constrain who may send as this domain",
+            ["SPF lists the servers permitted to send mail for a domain. The record published here does not achieve that: it either authorises everyone, expresses no opinion on an unlisted sender, or is malformed in a way that makes a receiving server stop evaluating it entirely.",
+             "A receiver that cannot get a usable answer from SPF falls back to delivering the message. The record's presence therefore provides assurance to the organisation without providing protection to the recipient.",
+             "SPF is also the foundation the DMARC policy stands on. An unusable SPF record means DMARC cannot be moved to enforcement safely, so this one record blocks the control that would actually stop forgery."],
+            [{"tag": "COLT", "title": "Rebuild the SPF record against a real sender inventory",
+              "body": "WHY THIS SERVICE: an SPF record accumulates includes for years as departments add tools, until it exceeds the ten-lookup limit and silently stops working. Rewriting it needs the sending inventory, which is the part nobody has. WHAT YOU GET: a compact, valid record that authorises exactly your real senders and ends in a hard fail. HOW: we enumerate the senders from your own mail flow and DMARC reports, then flatten and publish."},
+             {"tag": "COLT", "title": "Bring it under the ten-lookup limit",
+              "body": "WHY THIS SERVICE: RFC 7208 caps SPF evaluation at ten DNS lookups and a receiver must return a permanent error beyond it, which means no SPF at all. This is invisible without testing. WHAT YOU GET: a record that evaluates correctly at every receiver. HOW: consolidate includes, replace what can be expressed as addresses, and verify against live validators."},
+             {"tag": "OSS", "title": "Automated record validation",
+              "body": "WHY THIS SERVICE: the record breaks when somebody adds one more include, and nothing announces it. WHAT YOU GET: an alert when the record becomes invalid or approaches the limit. HOW: a scheduled validation check against the published record."}],
+            ["RFC 7208", "NIS2 Art. 21", "ISO/IEC 27001 A.5.14"]),
+ # CERTIFICATE INTELLIGENCE. From Certificate Transparency, which cannot be blocked and which sees
+ # hosts a scanner cannot -- the ns03.ru estate returned nothing to Shodan across twelve queries.
+ "cert_revoked_live": ("A revoked certificate covers a hostname that is still live",
+            ["A certificate authority has revoked these certificates, which is a formal statement that they must no longer be trusted. The hostnames they cover still resolve in public DNS.",
+             "Revocation is normally requested for one of two reasons, and both matter here: the private key was exposed or suspected of exposure, or the service was decommissioned. If it was a key incident, the question is whether the replacement key was generated cleanly and whether anything else shared that key.",
+             "If instead the service was retired, the DNS record outliving it is the dangling-record problem: whoever is assigned that address next controls what visitors reach at a name that still carries the organisation's brand."],
+            [{"tag": "COLT", "title": "Close out the revocation",
+              "body": "WHY THIS SERVICE: a revocation is an unfinished incident until somebody records why it happened. If a key was compromised, every other service that shared that key or that host is in scope, and nothing in the certificate tells you which. WHAT YOU GET: a documented reason for each revocation, the blast radius if it was a key event, and confirmation the replacement was issued to a fresh key. HOW: we reconcile the revocations against your change records and certificate inventory."},
+             {"tag": "COLT", "title": "Retire the DNS record if the service is gone",
+              "body": "WHY THIS SERVICE: decommissioning a server and editing the zone are two tasks owned by different people, so the record survives the service by months. WHAT YOU GET: a zone where every name points at something you still control. HOW: reconcile the zone against the live estate and retire what is stale, with the retirement step wired into your change process."},
+             {"tag": "OSS", "title": "Certificate Transparency monitoring",
+              "body": "WHY THIS SERVICE: revocations and new issuance both appear in public logs within minutes, and nobody is watching them. WHAT YOU GET: notification when a certificate for your names is issued or revoked. HOW: subscribe the domain set to a CT monitor routed to your security mailbox."}],
+            ["RFC 5280", "CA/Browser Forum Baseline Requirements", "ISO/IEC 27001 A.5.15"]),
+ "cert_expiring": ("Certificates are days from expiry on live hostnames",
+            ["These certificates expire within weeks on hostnames that are answering today. A lapse is not a degradation: at the moment of expiry every browser, mobile application and machine-to-machine client refuses the connection outright, and it happens to all users simultaneously.",
+             "Expiry is the one outage with a published date, which makes it the one that should never occur. When it does, the cause is almost always that renewal was manual and the person who owned it changed role, or that automated renewal has been failing quietly for weeks.",
+             "The operational damage is compounded by the response: an expiry outage is usually resolved under pressure, which is when a certificate ends up issued to a hastily generated key or deployed with an incomplete chain."],
+            [{"tag": "COLT", "title": "Automate issuance and renewal",
+              "body": "WHY THIS SERVICE: a calendar reminder is not a control, because it depends on a person still being in the role. Automated issuance removes the failure mode rather than reminding somebody about it. WHAT YOU GET: certificates that renew and deploy without human involvement, on every host including the appliances that are usually left out. HOW: we deploy an automated client against your existing authority and cover the exceptions individually."},
+             {"tag": "COLT", "title": "Inventory and expiry alerting",
+              "body": "WHY THIS SERVICE: renewal that fails silently looks exactly like renewal that works, until the day it does not. WHAT YOU GET: a single inventory of every certificate you serve, with alerting well before expiry and an owner against each one. HOW: continuous discovery from public logs plus your own estate, reconciled into one list."},
+             {"tag": "OSS", "title": "External expiry monitoring",
+              "body": "WHY THIS SERVICE: monitoring that runs inside the estate cannot see what an outside client sees, including chain and intermediate problems. WHAT YOU GET: an independent check from outside your network. HOW: scheduled external probes of the published names."}],
+            ["CA/Browser Forum Baseline Requirements", "ISO/IEC 27001 A.5.15", "NIS2 Art. 21"]),
+ "cert_shared_key": ("One certificate and one private key serve several separate services",
+            ["A single certificate covers several distinct services here. That means one private key must be installed on every host that serves any of those names, and the security of all of them is the security of the weakest.",
+             "The consequence is concentration. Exposure of that key on the least-defended of those hosts allows impersonation of all of them, including the mail and gateway services that carry the most trust. A single botched renewal takes every one of them offline at the same moment.",
+             "It also constrains operations: the services can no longer be moved, re-hosted or handed to different teams independently, because they are tied together by a shared secret rather than by any deliberate design decision."],
+            [{"tag": "COLT", "title": "Separate the certificates by service",
+              "body": "WHY THIS SERVICE: shared certificates are almost always an artefact of a manual purchase where adding a name was cheaper than buying another certificate. With automated issuance that saving disappears and the coupling has no remaining justification. WHAT YOU GET: an independent certificate and key per service, so a compromise or a renewal failure is contained to one. HOW: automated per-service issuance, cut over one service at a time with no interruption."},
+             {"tag": "COLT", "title": "Reduce where the key is present",
+              "body": "WHY THIS SERVICE: the key is currently on every host serving any of these names, which is a larger footprint than any of those services needs individually. WHAT YOU GET: each key present only where it is used, and terminated at the edge rather than distributed. HOW: consolidate termination and reissue per service."},
+             {"tag": "OSS", "title": "Track key reuse across the estate",
+              "body": "WHY THIS SERVICE: key reuse is visible in public logs and is a reliable indicator of shared administration you did not intend. WHAT YOU GET: visibility of which hosts share a key. HOW: monitor the public key fingerprint across issued certificates."}],
+            ["ISO/IEC 27001 A.5.15", "NIST SP 1800-16", "CA/Browser Forum Baseline Requirements"]),
+ "cert_unauthorised": ("Certificates issued outside your own CAA policy",
+            ["A CAA record names the certificate authorities you authorise to issue for this domain. Certificate Transparency logs show live, publicly-trusted certificates for these names issued by an authority your CAA record does not list.",
+             "The common cause is not an attack: it is a certificate bought outside the process everyone believes is mandatory, by a team that needed a site up quickly. It means the inventory of who can present your name to a customer is incomplete, and nobody is monitoring the part that is missing.",
+             "The serious cause is the same evidence: a certificate obtained by someone who proved control of the name without your knowledge. Both are indistinguishable to a browser, and both are visible here only because CT logging is mandatory."],
+            [{"tag": "COLT", "title": "Reconcile certificate issuance against policy",
+              "body": "WHY THIS SERVICE: a CAA record only constrains authorities that honour it at issuance time; it does not remove certificates already issued, and nothing tells you about them unless somebody is watching the logs. WHAT YOU GET: a reconciled inventory of every live certificate for your names, each one attributed to an owner and an authority, and the ones nobody claims retired. HOW: we pull the Certificate Transparency record for the domain set, match it against your CAA policy and your known estate, and hand back the exceptions with an owner beside each."},
+             {"tag": "OSS", "title": "Continuous Certificate Transparency monitoring",
+              "body": "WHY THIS SERVICE: this finding is a snapshot. Issuance is continuous, so the control has to be too. Free CT monitors watch every public log and alert within minutes of a certificate appearing for a name you own. WHAT YOU GET: notification of the next unexpected certificate rather than a discovery at the next assessment. HOW: subscribe the domain set to a CT monitor and route the alerts to the mailbox that already receives your security notifications."},
+             {"tag": "COLT", "title": "Tighten the CAA record set",
+              "body": "WHY THIS SERVICE: if an authority is legitimately in use it belongs in the CAA record, and if it is not, the record is what stops the next one. Either way the policy and the reality have to be made to agree. WHAT YOU GET: a CAA set that lists exactly the authorities you use, including the wildcard and reporting entries, so a future exception is unambiguous. HOW: one DNS change per domain, published alongside your existing records."}],
+            ["RFC 8659", "CA/Browser Forum Baseline Requirements", "ISO/IEC 27001 A.5.15"]),
  "dns_no_service": ("Hostnames resolve to addresses with no observable service — possible dangling DNS",
             ["These names still resolve in public DNS, but no service is observable at their addresses in public data. That is consistent with a decommissioned host whose DNS record was never removed.",
              "If the address has been returned to the hosting provider and reassigned, whoever receives it next controls what your customers reach at that hostname — and can complete a domain-validation challenge to obtain a genuine TLS certificate for it.",
@@ -2258,6 +2565,17 @@ def run(ident, F, audience, limit_per_query=500):
     # names (intranet., dev.) resolving to addresses where a router answers host-unreachable.
     _dns_findings = []
     _seedd = _apex(ident["domains"][0]) if ident.get("domains") else None
+    # Fetched ONCE and shared by the CAA authorisation check and the certificate intelligence.
+    # Paging CertSpotter twice would double the requests against a rate-limited free tier to learn
+    # exactly the same thing.
+    _ct_issuances = []
+    if _seedd:
+        try:
+            _ct_issuances = _certspotter_issuances(_seedd)
+            print("[auto] CT: %d unexpired issuance(s) for %s" % (len(_ct_issuances), _seedd),
+                  file=sys.stderr)
+        except Exception as _e:
+            print("[warn] CT issuance fetch failed for %s: %s" % (_seedd, _e), file=sys.stderr)
     if _seedd:
         _c = _caa(_seedd)
         if _c is not None and not _c:          # queried OK and genuinely empty
@@ -2269,6 +2587,115 @@ def run(ident, F, audience, limit_per_query=500):
         elif _c is None:
             print("[auto] CAA lookup failed for %s - reported as unknown, no finding claimed"
                   % _seedd, file=sys.stderr)
+        elif _c:
+            # CAA IS PUBLISHED -> the far more interesting question becomes answerable: is every
+            # LIVE certificate for this name issued by an authority the policy actually allows?
+            # CT logging is mandatory for publicly-trusted certificates, so this sees issuance the
+            # customer never told anyone about -- including on hosts Shodan can never observe
+            # because the front end requires SNI (the abakus-tk.de lesson). Zero packets to them.
+            try:
+                _uz = _unauthorised_issuances(_seedd, _ct_issuances, _c)
+            except Exception as _e:
+                _uz = []
+                print("[warn] CT issuance check failed for %s: %s" % (_seedd, _e), file=sys.stderr)
+            if _uz and _uz[0].get("policy_conflict"):
+                print("[auto] CAA policy conflict on %s: the record authorises %s yet ALL %d live "
+                      "certificate(s) are outside it - reported as a policy problem, NOT as mass "
+                      "mis-issuance" % (_seedd, _uz[0]["authorised"] or "nobody", _uz[0]["count"]),
+                      file=sys.stderr)
+            elif _uz:
+                _t, _w, _r, _f = TEMPLATES["cert_unauthorised"]
+                _ev = ["%s  issued by %s  (CAA authorises %s)  valid %s -> %s"
+                       % (", ".join(u["names"][:3]), u["issuer"],
+                          ", ".join(_caa_issuers(_c)[0]) or "nobody",
+                          u["not_before"][:10], u["not_after"][:10]) for u in _uz[:8]]
+                _dns_findings.append({
+                    "sev": "MEDIUM", "ft": "cert_unauthorised", "title": _t,
+                    "what": ["%d live certificate(s) for %s were issued by an authority the "
+                             "domain's CAA record does not list." % (len(_uz), _seedd)],
+                    "evidence": _ev, "why": _w, "rem": _r, "refs": _f})
+                print("[auto] CT: %d live certificate(s) outside the CAA policy of %s"
+                      % (len(_uz), _seedd), file=sys.stderr)
+
+    # ---- EMAIL AUTHENTICATION (zero packets: DNS only) -----------------------------------------
+    # A domain with no DMARC can be forged without a single exposed host, and that forgery is the
+    # delivery mechanism for the invoice fraud the C-BIQ deck prices. The engine described servers
+    # and said nothing about the asset every customer and supplier sees daily.
+    if _seedd:
+        try:
+            _mail = email_auth.assess(_seedd)
+        except Exception as _e:
+            _mail = None
+            print("[warn] email auth check failed for %s: %s" % (_seedd, _e), file=sys.stderr)
+        if _mail:
+            ident["email_auth"] = _mail
+            _SEV = {"dmarc_missing": ("HIGH", "dmarc_missing"),
+                    "dmarc_monitor_only": ("MEDIUM", "dmarc_weak"),
+                    "dmarc_partial": ("MEDIUM", "dmarc_weak"),
+                    "dmarc_no_reporting": ("LOW", "dmarc_weak"),
+                    "spf_missing": ("MEDIUM", "spf_weak"),
+                    "spf_permissive": ("HIGH", "spf_weak"),
+                    "spf_no_enforcement": ("MEDIUM", "spf_weak"),
+                    "spf_duplicate": ("MEDIUM", "spf_weak"),
+                    "spf_too_many_lookups": ("MEDIUM", "spf_weak")}
+            # One finding per TEMPLATE, not per issue: three SPF defects are one story on the slide.
+            _by_tpl = {}
+            for _iss in _mail["issues"]:
+                _sev, _tpl = _SEV.get(_iss["id"], ("LOW", "spf_weak"))
+                _cur = _by_tpl.setdefault(_tpl, {"sev": _sev, "details": []})
+                _cur["details"].append(_iss["detail"])
+                if _SEV_ORDER.get(_sev, 0) > _SEV_ORDER.get(_cur["sev"], 0):
+                    _cur["sev"] = _sev
+            for _tpl, _agg in _by_tpl.items():
+                _t, _w, _r, _f = TEMPLATES[_tpl]
+                _dns_findings.append({
+                    "sev": _agg["sev"], "ft": _tpl, "title": _t,
+                    "what": ["%s: %s" % (_seedd, _agg["details"][0])],
+                    "evidence": ["%s  %s" % (_seedd, d) for d in _agg["details"][:6]],
+                    "why": _w, "rem": _r, "refs": _f})
+            if _mail.get("context"):
+                print("[auto] email auth %s: %s" % (_seedd, " | ".join(_mail["context"][:3])),
+                      file=sys.stderr)
+
+    # ---- CERTIFICATE INTELLIGENCE (zero packets: Certificate Transparency) ----------------------
+    # CT cannot be blocked and records INTENT rather than reachability, so it sees hosts a scanner
+    # never will -- the ns03.ru estate returned nothing to Shodan across twelve query families.
+    if _seedd and _ct_issuances:
+        _live = set(ident.get("resolved") or {})
+        try:
+            _rev = cert_intel.revoked_live(_ct_issuances, _live)
+            _exp = cert_intel.expiring(_ct_issuances, _live)
+            _shared = cert_intel.shared_blast(_ct_issuances, _live)
+            ident["cert_profile"] = cert_intel.ca_profile(_ct_issuances)
+            ident["cert_internal_names"] = cert_intel.internal_names(_ct_issuances, ident.get("domains") or [])
+        except Exception as _e:
+            _rev = _exp = _shared = []
+            print("[warn] certificate intelligence failed: %s" % _e, file=sys.stderr)
+        if _rev:
+            _t, _w, _r, _f = TEMPLATES["cert_revoked_live"]
+            _dns_findings.append({"sev": "HIGH", "ft": "cert_revoked_live", "title": _t,
+                "what": ["%d revoked certificate(s) cover hostnames that still resolve." % len(_rev)],
+                "evidence": ["%s  REVOKED by %s  (was valid to %s)"
+                             % (", ".join(x["names"][:3]), x["issuer"], x["not_after"][:10])
+                             for x in _rev[:6]],
+                "why": _w, "rem": _r, "refs": _f})
+        if _exp:
+            _t, _w, _r, _f = TEMPLATES["cert_expiring"]
+            _dns_findings.append({"sev": "MEDIUM", "ft": "cert_expiring", "title": _t,
+                "what": ["%d live hostname(s) have a certificate expiring within 21 days." % len(_exp)],
+                "evidence": ["%s  expires %s (%d days)  issuer %s"
+                             % (x["name"], x["not_after"][:10], x["days"], x["issuer"])
+                             for x in _exp[:8]],
+                "why": _w, "rem": _r, "refs": _f})
+        if _shared:
+            _t, _w, _r, _f = TEMPLATES["cert_shared_key"]
+            _dns_findings.append({"sev": "LOW", "ft": "cert_shared_key", "title": _t,
+                "what": ["One certificate and private key serve %d distinct services."
+                         % _shared[0]["count"]],
+                "evidence": ["%d names on one key: %s  (issuer %s)"
+                             % (x["count"], ", ".join(x["names"][:6]), x["issuer"])
+                             for x in _shared[:3]],
+                "why": _w, "rem": _r, "refs": _f})
 
     # A name that resolves but has NO record anywhere in the sweep is a CANDIDATE for a retired
     # host whose DNS was never cleaned up. It is deliberately not asserted: Shodan not holding a

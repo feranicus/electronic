@@ -97,6 +97,30 @@ recs = [_h("217.110.51.2", "Horst F.G. Angermann GmbH", ["angermann.de"]),
 _install_fake_shodan(recs)
 import shodan_recon as R
 
+# ---------------------------------------------------------------------------------------------
+# HERMETIC BY DEFAULT. run() performs three NETWORK lookups the older tests never had to think
+# about: CertSpotter (Certificate Transparency), CAA over DNS-over-HTTPS, and the email
+# authentication records. Left live, one `python ship.py` made ~14 CertSpotter calls and got HTTP
+# 429 on every one -- burning the free tier's hourly budget that REAL assessments depend on.
+#
+# IT MUST BE RE-APPLIED AFTER EVERY importlib.reload(R). A reload rebuilds the module from source
+# and restores the real functions, silently undoing the stub: the first version of this patched
+# once at the top and the suite still made three live calls.
+def _offline():
+    R._certspotter_issuances = lambda *a, **k: []
+    R._caa = lambda *a, **k: None                  # None = "could not ask" -> claims nothing
+    try:
+        import email_auth as _EA
+        _EA.assess = lambda domain, txt_of=None: {"domain": domain, "issues": [], "context": [],
+                                                  "spf": "unknown", "dmarc": "unknown",
+                                                  "mta_sts": "unknown", "dkim_selectors": []}
+    except Exception:
+        pass
+
+
+_offline()
+
+
 ident = _ident(["217.110.51.2"])
 try:
     R.run(ident, NET, "Internal")
@@ -144,6 +168,7 @@ recs2 = [_h("10.0.0.%d" % n, "Some Other Company GmbH", ["other.de"]) for n in r
 _install_fake_shodan(recs2)
 import importlib
 importlib.reload(R)
+_offline()
 i2 = _ident([])
 i2["asns"], i2["nets"] = [], []          # no address space of its own -> the abakus shape
 R.run(i2, [{"n": 1, "name": "net", "clause": 'net:"10.0.0.0/24"', "run": True, "cat": "sweep"}],
@@ -160,6 +185,7 @@ i2b = _ident([])
 i2b["asns"], i2b["nets"] = ["AS8220"], ["10.0.0.0/24"]
 _install_fake_shodan(recs2)
 importlib.reload(R)
+_offline()
 R.run(i2b, [{"n": 1, "name": "net", "clause": 'net:"10.0.0.0/24"', "run": True, "cat": "sweep"}],
       "Internal")
 check(bool(i2b.get("cotenants_refused")),
@@ -194,6 +220,7 @@ junk += [_h("192.0.2.%d" % n, "Lotto24 AG Hamburg, Germany", []) for n in range(
 # The identity query proves 6. Only the org: pivot returns the 400 strangers.
 _install_routing_shodan([('net:"203.0.113', mine), ("org:", mine + junk)], default=mine)
 importlib.reload(R)
+_offline()
 i3 = dict(_ident(["203.0.113.1"]), seed="lotto24.de", company="Lotto24",
           domains=["lotto24.de"], brand_tokens=["lotto24"], group_domains=[],
           org="Lotto24 AG Hamburg, Germany", cert_orgs=["Lotto24 AG Hamburg, Germany"])

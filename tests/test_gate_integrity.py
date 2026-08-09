@@ -241,3 +241,40 @@ def test_the_reboot_gate_installs_itself_without_a_cloud_credential():
     assert "does not parse" in cg and "restoring the previous copy" in cg, (
         "the installer does not validate what it wrote. Overwriting a droplet's patch automation "
         "with a file that does not parse would disable unattended security updates silently.")
+
+
+def test_the_preview_stamp_is_platform_independent():
+    """The stamp must mean "this UI was previewed", not "previewed on this operating system".
+
+    It hashed RAW BYTES, so a Windows checkout (CRLF, because core.autocrlf rewrites on checkout)
+    and a Linux checkout of the SAME COMMIT produced different digests. The gate then could not be
+    evaluated from anywhere except the machine that wrote it. Third appearance of this trap: see
+    also `git archive` applying autocrlf to the deploy artefact.
+    """
+    import hashlib
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("ups", os.path.join(ROOT, "ui_preview_stamp.py"))
+    ups = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(ups)
+
+    def digest(nl):
+        h = hashlib.sha256()
+        for name, body in (("a.jsx", "const a = 1;\nexport default a;\n"),
+                           ("b.css", ".x{color:red}\n")):
+            h.update(name.encode())
+            h.update(b"\0")
+            raw = body.replace("\n", nl).encode()
+            if os.path.splitext(name)[1] in ups._TEXT_SUFFIXES:
+                raw = raw.replace(b"\r\n", b"\n")
+            h.update(raw)
+            h.update(b"\0")
+        return h.hexdigest()
+
+    assert digest("\n") == digest("\r\n"), (
+        "the UI hash still depends on line endings, so Windows and Linux disagree about whether "
+        "the same commit was previewed.")
+
+    # And binaries must NOT be normalised: a PNG can legitimately contain 0d 0a.
+    for binext in (".png", ".jpg", ".mp4", ".ico", ".woff2"):
+        assert binext not in ups._TEXT_SUFFIXES, (
+            "%s is treated as text, so its bytes would be rewritten before hashing" % binext)

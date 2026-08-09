@@ -3554,3 +3554,210 @@ its defect.
 **PANEL INTEGRITY, worth watching:** gemma returned malformed JSON, so only 3 of 4 reviewers
 answered. The "unanimous NO-GO halts a green gate" rule needs >=3 reviewers, so one more dropout
 disarms it silently.
+
+## CertSpotter WAS a check — it was just a name source, and it was losing recall (2026-08-09)
+The operator asked why CertSpotter is not one of our assessment checks. It is: `_certspotter_domains`
+has been the second CT source since the bibeltv.de incident (crt.sh returned timeout/404/503 on three
+consecutive runs, and one CT source is a single point of failure). But it harvested NAMES ONLY and
+discarded everything else the API returns. Two defects and one missed capability:
+
+1. **THE RECALL BUG, confirmed from SSLMate's own documentation, not guessed.** *"If the `after`
+   parameter is empty or omitted, the API will return the LEAST-recently-discovered issuances."* So
+   one call plus `[:200]` returned the OLDEST 200 certificates of the estate — the exact opposite of
+   what recon wants. On any domain with more than a page of history the recently-issued names, which
+   are the live hosts, were never seen. Now pages with `after=<last id>`, bounded by
+   `CERTSPOTTER_PAGES` (free tier is rate-limited hourly; `CERTSPOTTER_TOKEN` raises it).
+2. **`issuer.caa_domains` is published by SSLMate precisely so a caller can compare an issuer
+   against the domain's CAA record set** — and we already had `_caa()` from the abakus work. Both
+   halves existed and had never been joined. New MEDIUM finding `cert_unauthorised`: live,
+   publicly-trusted certificates whose issuer the domain's own CAA record does not authorise. The
+   usual cause is not an attack, it is a certificate bought outside the process everyone believes is
+   mandatory — which is a real finding, and one the customer can act on. Zero packets to the target.
+3. The endpoint returns **only UNEXPIRED** issuances, so this is a view of the CURRENT certificate
+   estate and nothing may be claimed from it about historic or expired certificates.
+
+**IT FAILS CLOSED IN FIVE PLACES**, because a false accusation of mis-issuance is the worst thing
+this engine could put in a customer deck: no CAA published (that is the `no_caa` finding instead) ·
+CAA lookup failed (absence of evidence is never a finding) · `issuer.caa_domains` null (SSLMate does
+not know, so no claim) · a SUBDOMAIN with its own CAA re-checked before any accusation, since CAA
+resolves at the closest name · and a BLAST-RADIUS GUARD: if EVERY live certificate is unauthorised
+the likelier explanation is the CAA record itself (`0 issue ";"` authorises nobody and is a common
+misconfiguration), so it is reported as a policy conflict rather than as mass mis-issuance. Same
+doctrine as the co-tenant guard and the FP auditor.
+
+**THE BUG THAT WOULD HAVE SILENTLY DISABLED THE WHOLE SOURCE:** I called `_get_json(..., headers=)`
+without reading its signature — it had none. That TypeError raises INSIDE the caller's own
+`except Exception`, so the second CT source would have died on every run while printing a warning
+that blamed the network. Third time this session I assumed a helper's contract instead of reading
+it (`run()` returns an int, `getJSON` vs `postJSON`, now this). Guarded by test_recall.py §23, which
+asserts the signature explicitly.
+NEGATIVE-TESTED, and one of the negative tests was itself uninformative: removing the first
+fail-closed guard changed nothing because a second guard downstream also catches it. Removing BOTH
+does fail. **A negative test that passes because of defence in depth is not proof the check works —
+remove every guard on the path before believing it.**
+
+## ship.py had a SECOND home for the patchwatch gate, and it shouted over the working one (2026-08-09)
+The run that installed the reboot gate successfully (`reboot gate INSTALLED and parses`) then
+printed `[X] DO_API_TOKEN is required` and `the droplet can still reboot into a broken proxy
+config`. Both were true statements about a stale code path: ship.py still shelled out to
+`provision_patchwatch.py` whenever caddyguard reported the gate missing, and that provisioner
+hard-fails without a cloud token the gate does not need. So a deploy that had just SUCCEEDED at the
+thing reported that it had failed. Removed; caddyguard owns the gate and folds the verdict into its
+own exit code. Two homes for one job, with the stale one louder than the working one.
+
+## The preview stamp meant "previewed ON THIS OPERATING SYSTEM" (2026-08-09)
+Investigating why the gate reported a changed frontend on a tree git called clean, the answer was
+not a changed file: `ui_hash()` hashed RAW BYTES, and a Windows checkout (CRLF in the working copy,
+because core.autocrlf rewrites on checkout) and a Linux checkout of the SAME COMMIT produce
+different digests. So the stamp could only ever be evaluated on the machine that wrote it, and my
+readings of it from the sandbox were noise I had been reporting as if they meant something.
+Text extensions are now line-ending-normalised before hashing; binaries deliberately are NOT,
+because a PNG can legitimately contain the bytes 0d 0a and "normalising" it corrupts the digest.
+THIRD APPEARANCE OF THIS TRAP: `git archive` applying autocrlf made the deploy artefact
+platform-dependent, and before that a CRLF payload broke a bash script over ssh. Content is
+content; the byte that ends a line is the platform's business.
+NOTE: changing the hash function invalidates the existing stamp, so the next ship asks for one
+preview that was arguably already done. That is a one-off and it is the honest direction to fail.
+
+## ns03.ru — the passive half of an active playbook, and the line we do not cross (2026-08-09)
+The operator ran a hand-built recon script against a pharmaceutical target and asked for the maximum
+feature set out of it, "if this is legal by EU, USA, Canada, Germany". The techniques split along a
+line that matters far more than jurisdiction.
+
+**WHAT THE LAW ACTUALLY TURNS ON IS AUTHORISATION, NOT THE COUNTRY.** With written authorisation
+from the party that controls the asset, every technique in that script is lawful in all four.
+Without it: Germany §202a/§202b StGB (and §303b for anything disruptive), EU Directive 2013/40/EU
+("access without right"), USA CFAA §1030 (Van Buren narrowed it to gates-up-or-down; a public page
+is generally fine, an authentication endpoint is a gate), Canada Criminal Code s.342.1. **And the
+binding constraint is not even the law: it is that "not one packet is sent to the company being
+assessed" is on /partners, in the Terms of Use, in the Article 13 notice and in the signed partner
+pack, and it is the reason no customer authorisation is needed at all.** Operator decision: ship
+the passive tier, BUILD the active tier but leave it OFF.
+
+**PASSIVE, SHIPPED (zero packets — public DNS, public certificate logs, a banner already stored):**
+- `email_auth.py` — SPF / DMARC / DKIM / MTA-STS. The biggest gap the engine had: a domain with no
+  DMARC is forgeable without a single exposed host, and that forgery is the delivery mechanism for
+  the invoice fraud the C-BIQ deck prices. ns03.ru has a correct SPF and NO DMARC at all.
+  **DKIM IS PRESENCE-ONLY, BY CONTRACT**: a selector is arbitrary (`s1`, `google`, `mandrill2024`)
+  and cannot be enumerated, so a key that is found is context and one that is not found is reported
+  as NOT DETERMINABLE. Claiming "DKIM missing" would be a false accusation of a missing control.
+- `cert_intel.py` — revoked-but-still-resolving (ns03 had two: iiko, oo), near-expiry, and
+  shared-certificate blast radius (one key served the gateway + mail + autodiscover + a site
+  gateway). `revoked` is NULLABLE: null means the status is UNKNOWN, never "revoked".
+- `naming.py` — learn the target's own grammar from CT (`srv-<site>-<role>`, `<service>.<site>`),
+  then generate from its own vocabulary. **Language follows the TARGET**, derived from ccTLD and
+  estate countries, per the operator: if the company does not operate somewhere that speaks the
+  language, there is no reason to spend queries asking in it. A `.ru` target earns Russian
+  (`kotel`, `skud`, `energo` — in no English wordlist); a `.com` with no country evidence gets
+  English only, not all seven.
+- `active_probe.eol_from_banner()` + the `eol_software` detector — the highest-value item in the
+  whole playbook (Exchange build -> CU -> end-of-support) delivered from a banner a scan engine
+  ALREADY stored, so it costs nothing and touches nobody. **The honesty caveat is carried into the
+  finding verbatim from the source engagement: OWA exposes major.minor.build only, so the finding
+  names the cumulative update and NEVER a patch level.**
+
+**ACTIVE, BUILT AND SHUT.** `active_probe.enabled()` requires `ACTIVE_PROBE=1` **AND**
+`ACTIVE_PROBE_AUTH=<written authorisation reference>`. Deliberately not one boolean: a flag says
+somebody wanted it, a reference says somebody is accountable, and the reference is what a court, a
+customer or an insurer asks for. It is recorded in the run and printed into the artifact, so a deck
+built from active data always carries the authority it was collected under.
+
+**FOUR MEASUREMENT ERRORS OF MINE, all the same disease and all worth remembering:**
+1. **A stale `.pyc` made a restored file behave like the mutated one.** After a negative test
+   `cp`-restored `cert_intel.py`, Python kept loading bytecode compiled from the BROKEN version —
+   on this mounted filesystem the mtime granularity is coarse enough that cache validation passed.
+   I chased a phantom bug in correct code for several minutes. **Any harness that mutates a module
+   must `rm -rf __pycache__` after restoring**, or the "restored" run tests yesterday's bytecode.
+2. **My negative-test harness counted `FAIL` lines**, so a mutation that CRASHED the module scored
+   zero failures and read as "not caught". Three results were meaningless until it distinguished
+   caught / not-caught / crashed.
+3. **A mutation whose anchor never matched** reported "the guard does not catch this" about a guard
+   that catches it perfectly (`choices=_langs`, not `choices=deck_langs.doc_langs()`). Assert the
+   replacement happened.
+4. **`check(... is False or True, ...)`** — an assertion that cannot fail, in my own new test file,
+   for the exact property I was most worried about.
+
+**AND THE `expiring` RULE THAT IS BETTER THAN THE SOURCE SCRIPT.** The ns03 run read the SERVED
+certificate and reported nextcloud as 31 days from expiry. CT shows a NEWER certificate already
+issued for that name, running to 2026-10-03. Reporting the served one would raise an outage that
+renewal has already prevented, so `expiring()` takes the LATEST certificate per name. (The gap
+between "issued" and "served" is itself a finding, but proving it needs the active tier.)
+
+`tests/test_doc_lang.py` now exempts `test_*.py` from the hardcoded-language-set scan — narrowly,
+by filename prefix — because a test asserting `== ["en","de"]` is the assertion, not an offender,
+and `naming.py`'s wordlist languages are a different concept from the DOCUMENT language set. Both
+directions re-verified: argparse pinned back to `["en","de"]` still fails, and a literal in an
+engine module still fails.
+
+## STANDING RULE — every release, the FOUR models write the release notes and they are SENT
+Operator instruction, 9 Aug 2026: *"every new release the same 4 models need to write release notes
+and send it using our Gmail API gateway to feranicus@s4biz.io and also to my telegram."*
+
+THE SAME FOUR as the staging panel — `deepseek-3.2 · llama-4-maverick · gemma-4-31B-it · kimi-k2.6`
+— and for the same reason: four vendors means no shared failure domain, so a provider-wide 429
+cannot silence the panel and a model that is wrong about the release is contradicted by three
+others. `tests/test_release_notes.py` asserts the two lists are IDENTICAL, so they cannot drift.
+
+WHERE IT RUNS, and why it is split in two:
+  · `release_notes.py` (PC, a BUILDING BLOCK of ship.py — never a second command) gathers the
+    DETERMINISTIC facts: commits and files since the previous `last-known-good` tag (the honest
+    baseline is the last state that actually reached production, not the last commit somebody
+    made), the staging verdict, the test result, the new safe-point tag.
+  · `webapp/backend/app/release_notes.py` (INSIDE colt-web) asks the models and sends. It has to
+    be there: `OPENAI_API_KEY`, the Gmail API credentials and `BOT_TOKEN` all live on the droplet
+    and deliberately never enter git or the operator's PC. One ssh session, facts over stdin in
+    BINARY mode (Windows text mode would rewrite every \n into \r\n).
+  · **SMTP IS BLOCKED OUTBOUND ON THIS DROPLET.** Mail goes through the Gmail API in `notify.py`.
+    The test greps for `smtplib` and fails, because "fixing" this to SMTP has an obvious appeal
+    and would silently stop every release note.
+
+TWO RULES IT OBEYS:
+  · **THE DETERMINISTIC FACTS ARE THE NOTES.** The models add prose on top. With all four failing
+    the notes still go out and are still correct, and they say `0 of 4 models` — the same doctrine
+    that keeps a deck honest when enrichment dies.
+  · **IT CAN NEVER FAIL A DEPLOY.** It runs LAST, after verification and after the safe-point tag,
+    wrapped, returning 0 even on a delivery failure. The models sit behind a rate-limited endpoint
+    and the mail gateway is a third party; neither having a bad day may turn a verified release
+    into a failed one. A signal, not an authority — as with the FP auditor and the staging panel.
+
+TWO VACUOUS CHECKS OF MINE, both caught by writing the negative test:
+  1. The panel-comparison regex was `[a-z0-9.\-]+`, and `gemma-4-31B-it` has a capital B — so it
+     read three models and compared the wrong set. **A model id is not lowercase by convention.**
+  2. The ordering assertion was `s.index("tag_known_good()") < s.index("release_notes.py")`, but
+     `def tag_known_good():` CONTAINS that substring, so it matched the definition near the top of
+     the file and was true wherever the notes ran. Anchor on the CALL SITE (`_tag = tag_known_good()`).
+     Nth instance of the same disease: a check aimed at the wrong subject cannot fail.
+
+## A NEW FINDING SOURCE BROKE A TEST THAT WAS RIGHT, AND MADE THE SUITE HIT THE INTERNET (2026-08-09)
+`python ship.py` refused to deploy, correctly, on one line:
+```
+  FAIL  no findings are invented from other companies' hosts (1)
+[X] SCOPE REGRESSION - a discovered domain can own the estate again. Do not ship.
+```
+It was not a scope regression. The abakus §13 fixture is an estate where every host belongs to a
+stranger and ZERO survive; the new ZONE-derived findings (no_caa, dmarc_weak) then fired from the
+customer's OWN DNS, which is correct and is the entire point of that feature — on a target whose
+whole estate is shared hosting, the zone is the only thing that is unambiguously theirs.
+
+**THE TEST'S MEASUREMENT WAS THE PROBLEM, NOT ITS DOCTRINE.** It excluded `("no_caa",
+"dns_no_service")` BY NAME, so every future zone-derived finding class had to be remembered there
+or it failed a correct build. An exemption list is also the wrong shape in the other direction: it
+would let a genuine HOST finding through under a newly exempted name. It now asserts the PROPERTY —
+no finding may cite a stranger's address as evidence, and every surviving finding must be about the
+customer's own zone. Proven by neutering `_names_the_target()` so the attribution gate keeps
+everything: 3 failures, including the two named co-tenants.
+RULE: when a system grows a new, legitimate source of findings, fix the test to measure the
+property rather than adding the new type to an exemption list.
+
+**AND THE DEFECT I ACTUALLY INTRODUCED: the test suite started calling the internet.** `run()` now
+performs three network lookups the older tests never had to think about — CertSpotter, CAA over
+DoH, and the email-authentication records. The run log shows the result: **~14 CertSpotter calls in
+one `ship.py`, every one HTTP 429**, burning the free tier's hourly budget that REAL assessments
+depend on, and making the suite slow and weather-dependent. A test that reaches the internet is not
+testing this repository.
+`_offline()` in test_scope_abakus.py and test_run_path.py stubs all three before any `run()` call;
+the checks that genuinely exercise those paths inject their own fixtures (`email_auth.assess` and
+the `cert_intel` functions take a lookup callable for exactly this reason).
+**IT MUST BE RE-APPLIED AFTER EVERY `importlib.reload(R)`.** A reload rebuilds the module from
+source and restores the real functions, silently undoing the stub — the first version patched once
+at the top and the suite still made three live calls. Measured both times, not assumed.

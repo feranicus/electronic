@@ -470,3 +470,99 @@ check(not _ok, "no brand token -> CA pivot refused (%s)" % _why)
 _bib = {"seed": "bibeltv.de", "brand": "bibeltv.de", "org": None, "domains": ["bibeltv.de"]}
 check(R._private_ca_ok("Bibel TV Issuing CA 01", _bib, _RareAPI())[0],
       "a genuine branded private CA still passes")
+
+
+# =================================================================================================
+# [23] CERTIFICATE TRANSPARENCY — the operator asked why CertSpotter was not "one of our checks".
+# It was, as a SECOND SOURCE OF NAMES ONLY: it left the two most valuable fields on the table and
+# was quietly losing recall.
+# =================================================================================================
+def test_certspotter():
+    print("\n" + "=" * 78)
+    print("[23] Certificate Transparency: paging, and the CAA authorisation check")
+
+    # --- THE RECALL BUG. SSLMate's documentation is explicit: "if the after parameter is empty or
+    # omitted, the API will return the LEAST-recently-discovered issuances". So one call plus a
+    # [:200] slice returned the OLDEST certificates of the estate. On any domain with more than a
+    # page of history the recently-issued names -- i.e. the live hosts -- were never seen at all.
+    pages = []
+
+    def fake_get(url, timeout=15, headers=None):
+        after = url.split("&after=")[1].split("&")[0] if "&after=" in url else None
+        pages.append(after)
+        if after is None:
+            return [{"id": "1", "dns_names": ["old.x.de"], "issuer": {}}]
+        if after == "1":
+            return [{"id": "2", "dns_names": ["new.x.de"], "issuer": {}}]
+        return []
+
+    _real = R._get_json
+    R._get_json = fake_get
+    try:
+        names = R._certspotter_domains("x.de")
+    finally:
+        R._get_json = _real
+    check(pages == [None, "1", "2"], "paging follows after=<id>, not page 1 only")
+    check("new.x.de" in names, "a name only on page 2 is found (this was the recall bug)")
+    check("old.x.de" in names, "page 1 names are still kept")
+
+    # --- THE HELPER'S SIGNATURE. _get_json had no `headers` parameter; calling it with one raises
+    # TypeError INSIDE the caller's own `except Exception`, which would silently disable the second
+    # CT source while printing a warning that blamed the network.
+    import inspect as _insp
+    check("headers" in _insp.signature(R._get_json).parameters,
+          "_get_json accepts the headers the CT caller passes")
+
+    # --- CAA PARSING. iodef is a reporting address, not an issuer; parameters follow a semicolon.
+    check(R._caa_issuers(['0 issue "letsencrypt.org"'])[0] == {"letsencrypt.org"},
+          "issue tag parsed")
+    check(R._caa_issuers(['0 issue "letsencrypt.org; validationmethods=dns-01"'])[0]
+          == {"letsencrypt.org"}, "parameters after ';' are stripped")
+    check(R._caa_issuers(['0 issuewild "digicert.com"'])[1] == {"digicert.com"},
+          "issuewild is kept separate from issue")
+    check(R._caa_issuers(['0 iodef "mailto:s@x.de"']) == (set(), set()),
+          "iodef is NOT read as an authorised issuer")
+
+    LE = {"friendly_name": "Let's Encrypt", "caa_domains": ["letsencrypt.org"]}
+    DC = {"friendly_name": "DigiCert", "caa_domains": ["digicert.com"]}
+    UNK = {"friendly_name": "Mystery CA", "caa_domains": None}
+
+    def _i(n, issuer):
+        return {"dns_names": n, "issuer": issuer,
+                "not_before": "2026-01-01T00:00:00Z", "not_after": "2026-12-01T00:00:00Z"}
+
+    CAA = ['0 issue "letsencrypt.org"']
+    no_sub_caa = lambda n: []
+
+    def n_flagged(iss, caa, lk=no_sub_caa):
+        return len([g for g in R._unauthorised_issuances("x.de", iss, caa, caa_of=lk)
+                    if not g.get("policy_conflict")])
+
+    check(n_flagged([_i(["a.x.de"], LE)], CAA) == 0, "an authorised certificate is silent")
+    check(n_flagged([_i(["a.x.de"], LE), _i(["b.x.de"], DC)], CAA) == 1,
+          "a certificate outside the CAA policy IS caught")
+
+    # FOUR FAIL-CLOSED PATHS. A false accusation of mis-issuance is the worst thing this engine
+    # could put in a customer deck, so each of these must produce NO finding.
+    check(n_flagged([_i(["b.x.de"], UNK)], CAA) == 0,
+          "an issuer SSLMate cannot classify -> no claim")
+    check(n_flagged([_i(["b.x.de"], DC)], []) == 0,
+          "no CAA published -> that is the no_caa finding, not this one")
+    check(n_flagged([_i(["b.x.de"], DC)], None) == 0,
+          "CAA lookup FAILED -> absence of evidence is never a finding")
+    check(n_flagged([_i(["b.x.de"], DC)], CAA, lambda n: None) == 0,
+          "a subdomain whose CAA cannot be read -> no accusation")
+    check(n_flagged([_i(["b.x.de"], DC)], CAA, lambda n: ['0 issue "digicert.com"']) == 0,
+          "a subdomain that authorises the issuer itself -> quiet")
+
+    # BLAST RADIUS. `0 issue ";"` authorises nobody and is a common misconfiguration; flagging the
+    # entire estate as mis-issued would be spectacularly wrong in a customer deck.
+    g = R._unauthorised_issuances("x.de", [_i(["a.x.de"], DC), _i(["b.x.de"], DC)],
+                                  ['0 issue ";"'], caa_of=no_sub_caa)
+    check(bool(g) and g[0].get("policy_conflict") is True,
+          "every certificate unauthorised -> a CAA POLICY problem, not mass mis-issuance")
+
+    check("cert_unauthorised" in R.TEMPLATES, "the finding has a deck template")
+
+
+test_certspotter()

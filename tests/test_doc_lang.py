@@ -50,6 +50,18 @@ def test_no_hardcoded_language_set_on_the_request_path():
         for f in sorted(os.listdir(d)):
             if not f.endswith(".py"):
                 continue
+            # TEST FILES ARE EXEMPT, and only test files. A test's whole job is to assert a literal
+            # expected value, so `== ["en", "de"]` there is the assertion, not a hardcoded set on
+            # the request path. Scanning them made this guard fire on test_passive_checks.py, which
+            # asserts that a .de target earns the German RECON WORDLIST -- a different concept from
+            # the DOCUMENT language set entirely.
+            #
+            # The exemption is deliberately narrow: it is a filename prefix, not a keyword, so it
+            # cannot be used to hide a real offender in an engine module. Weakening this guard any
+            # further would be a mistake -- it is the one that caught the rt-solar.ru defect where
+            # argparse still carried choices=["en","de"] after the API had been generalised.
+            if f.startswith("test_"):
+                continue
             p = os.path.join(d, f)
             for i, line in enumerate(_code_only(p).splitlines(), 1):
                 if BAD.search(line):
