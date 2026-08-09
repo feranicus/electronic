@@ -17,7 +17,7 @@ HOW IT WORKS, and why the stamp is a HASH rather than a timestamp:
   · `ship.py` recomputes that hash. If it matches, this exact frontend was previewed. If it does
     not, the UI changed since you last looked at it, and ship stops.
   · A timestamp would only prove that a preview happened at some point, which is the same defect
-    as `config_reread` proving startup ORDERING rather than content. A hash proves you previewed
+    as `config_write_ordering` proving startup ORDERING rather than content. A hash proves you previewed
     THIS version. Same doctrine as the engine-hash deploy verify.
   · After a successful ship, `ship.py` records the shipped hash. If nothing UI-related has changed
     since then, no preview is asked for. You are only ever stopped when there is something new to

@@ -225,22 +225,22 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
   if [ -n "$STARTED" ] && [ -n "$WRITTEN" ] && [ "$STARTED" -gt "$WRITTEN" ]; then
     AGE=$((STARTED - WRITTEN))
     if [ -n "$R" ] && [ "$R" != "$EMPTY" ] && [ "$D" = "$R" ]; then
-      chk config_reread yes "started ${AGE}s AFTER the file was written, and the admin API agrees ($D)"
+      chk config_write_ordering yes "started ${AGE}s AFTER the file was written, and the admin API agrees ($D)"
     elif [ -n "$R" ] && [ "$R" != "$EMPTY" ]; then
-      chk config_reread no "started after the write, but admin says disk=$D running=$R — a RELOAD lost it"
+      chk config_write_ordering no "started after the write, but admin says disk=$D running=$R — a RELOAD lost it"
     else
-      chk config_reread yes "started ${AGE}s after the write; WHAT it read is proven by mount_fresh + config_drift, not by this timing"
+      chk config_write_ordering yes "started ${AGE}s after the write; WHAT it read is proven by mount_fresh + config_drift, not by this timing"
     fi
   elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ] && [ "$STARTED" -eq "$WRITTEN" ]; then
     # Same-second tie. The deploy writes the file and then starts the container, so the order IS
     # correct — but one-second timestamp resolution cannot PROVE it. Say exactly that rather than
     # asserting a fault. (The `sleep 1` in deploy_to_staging should make this branch unreachable;
     # it stays because a tie must never be reported as staleness again.)
-    chk config_reread yes "written and started in the same second; content proven by mount_fresh + config_drift"
+    chk config_write_ordering yes "written and started in the same second; content proven by mount_fresh + config_drift"
   elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ]; then
-    chk config_reread no "the process started $((WRITTEN - STARTED))s BEFORE the config was written — it is serving something else"
+    chk config_write_ordering no "the process started $((WRITTEN - STARTED))s BEFORE the config was written — it is serving something else"
   else
-    chk config_reread no "cannot determine container start vs file mtime (started=$STARTED written=$WRITTEN)"
+    chk config_write_ordering no "cannot determine container start vs file mtime (started=$STARTED written=$WRITTEN)"
   fi
 fi
 
@@ -538,7 +538,7 @@ def deploy_to_staging(say):
         # Minimal base: no TLS (staging has no domain), auto_https off, plain :8080. The SITE
         # BLOCK itself is the committed one, which is the part worth testing.
         # ADMIN API ON (localhost, inside the container). I originally wrote `admin off` here, which
-        # made the config_reread check unpassable BY CONSTRUCTION: it asks the running process what
+        # made the config_write_ordering check unpassable BY CONSTRUCTION: it asks the running process what
         # config it is serving, and with the admin API disabled there is nobody to ask. A check that
         # cannot succeed is not a check — the same disease as the ruff gate that silently skipped.
         # Production already runs with the admin API enabled (deploy_web_direct POSTs to /load).
@@ -548,7 +548,7 @@ def deploy_to_staging(say):
         "} > /opt/staging-caddy/Caddyfile\n"
         # ONE SECOND BETWEEN THE WRITE AND THE START. Filesystem mtimes and docker's StartedAt are
         # both whole seconds, so writing the config and starting the container inside the same
-        # second makes their order UNPROVABLE — and the config_reread check then reported
+        # second makes their order UNPROVABLE — and the config_write_ordering check then reported
         # "started 0s BEFORE the config was written" on a system that was demonstrably fine.
         # Removing the ambiguity is the honest fix; widening the comparison to >= would only hide it.
         "sleep 1\n"

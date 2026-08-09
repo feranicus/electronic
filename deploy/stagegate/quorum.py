@@ -67,6 +67,24 @@ ARCH = """HOW CONFIG REACHES THE PROXY ON THIS SYSTEM (facts, so you do not have
     check reports the same result before and after a reboot, suspect the CHECK.
   * There is no Kubernetes, no config-map, no entrypoint that copies config, and no hot-reload
     watcher. Do not propose one; propose changes to files that exist.
+
+WHAT EACH CHECK ALREADY MEASURES (read this before claiming something is unverified — three
+consecutive panels have proposed fixes for checks that already work this way):
+  * mount_fresh   hop 1. sha256 of the HOST file vs the same file read INSIDE the container. The
+                  host path is read from Docker's own mount table, not assumed.
+  * config_drift  hops 2 and 3, SEMANTICALLY. It compares the SET of matched hostnames, the SET of
+                  terminal handlers (proxy upstream dial strings, file_server, respond, root) and
+                  the SET of path matchers, parsed from `caddy adapt` (disk) against the admin
+                  API's GET /config/ (running). It does NOT hash them. The byte-hash method was
+                  real, was a false positive by construction, and was DELETED on 7 Aug 2026. The
+                  "(11 hosts, 11 handlers)" in its output is a printed summary, not the comparison.
+  * vhost_roster  the running config against a COMMITTED list of expected domains, so a vhost that
+                  silently disappears is a failure and not a quiet 404.
+  * admin_api_closed  that the admin endpoint (which can replace the config for EVERY domain and
+                  has no authentication of its own) is bound to loopback and is not docker-published.
+  * config_write_ordering  ONLY that the process started after the file was written. It proves
+                  ordering, nothing about content. It says so itself.
+  * proxy_config  that the config is VALID and the proxy is healthy. Not that it is loaded.
 """
 
 SOLDIER_PROMPT = """You are a release engineer reviewing a STAGING validation run before the change

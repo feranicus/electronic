@@ -161,3 +161,83 @@ def test_the_mount_source_is_asked_for_not_assumed():
     src = open(os.path.join(ROOT, "deploy", "caddyguard", "agent.py"), encoding="utf-8").read()
     assert "def mount_source(" in src, "the host path is still assumed rather than resolved"
     assert "mount_source(c) or LIVE" in src, "mount_sync does not use the resolved source"
+
+
+# ============================================================================================
+def _read(path):
+    return open(path, encoding="utf-8").read()
+
+
+# The panel keeps proposing fixes for checks that already work, because the briefing it is given
+# describes the TRAP without describing the IMPLEMENTATION. kimi-k2.6 has now claimed three runs
+# running that config_drift hash-compares two serialisations. It does not, and has not since
+# 7 Aug 2026. That is a defect in the map we hand the reviewers, not in their reasoning.
+# ============================================================================================
+def test_the_panel_is_told_what_each_check_measures():
+    arch = _read(os.path.join(ROOT, "deploy", "stagegate", "quorum.py"))
+    i = arch.find("ARCH = ")
+    assert i > 0, "ARCH briefing not found in quorum.py"
+    block = arch[i:i + 4000]
+    for check in ("mount_fresh", "config_drift", "vhost_roster", "admin_api_closed"):
+        assert check in block, (
+            "the ARCH briefing does not say what %s measures, so a reviewer can only guess. "
+            "Three panels in a row have spent a slot on a refuted claim for exactly this "
+            "reason." % check)
+    assert "does NOT hash" in block or "not hash" in block, (
+        "the briefing must state that config_drift compares SETS, not hashes — otherwise a "
+        "reviewer reads the 'a hash comparison is a false positive' warning and attributes the "
+        "removed method to the current check.")
+
+
+def test_no_check_name_claims_more_than_it_measures():
+    """A check's NAME is read far more often than its detail text.
+
+    `config_reread` asserted only that the process started after the file was written. It proves
+    ORDERING; the name promised content. kimi was right that renaming it is the honest fix, and a
+    detail string saying "this does not prove what my name says" is not a substitute.
+    """
+    sg = _read(os.path.join(ROOT, "stagegate.py"))
+    assert "config_reread" not in sg, (
+        "config_reread is back. It measures write/start ORDERING only — name it for what it "
+        "measures (config_write_ordering), or make it actually prove a re-read.")
+    assert "config_write_ordering" in sg, "the ordering check disappeared entirely"
+
+
+def test_certificate_expiry_is_a_gate_and_is_also_checked_off_box():
+    """A lapsed certificate takes EVERY domain on the shared proxy down at the same instant, and
+    it is the one outage that arrives on a published schedule. It used to be printed only."""
+    cg = _read(os.path.join(ROOT, "caddyguard.py"))
+    assert "CERT GATE FAILED" in cg, "caddyguard no longer gates on certificate expiry"
+    assert "warn.append" in cg and "return 1" in cg, (
+        "the cert/reboot verdicts are printed but not folded into the exit code — a line in a "
+        "400-line deploy log is a fact nobody reads, not a warning.")
+
+    up = _read(os.path.join(ROOT, ".github", "workflows", "uptime.yml"))
+    assert "x509" in up and "enddate" in up, (
+        "certificate expiry is not checked OFF-BOX. The droplet's own monitoring sits behind the "
+        "proxy it monitors, so it is mute exactly when it matters.")
+
+
+def test_the_reboot_gate_installs_itself_without_a_cloud_credential():
+    """The 6 Aug outage mechanism: patchwatch rebooted into a damaged Caddyfile.
+
+    The gate was reported MISSING across several ships because it was gated behind
+    `provision_patchwatch.py`, which hard-fails without DO_API_TOKEN. That token buys SNAPSHOTS and
+    Spaces backups; the gate is pure code, and patchwatch's credentials live in
+    /etc/patchwatch/patchwatch.env, which installing the code never touches.
+    """
+    cg = _read(os.path.join(ROOT, "caddyguard.py"))
+    assert "/opt/patchwatch/patchwatch.py" in cg and "base64 -d > /opt/patchwatch" in cg, (
+        "caddyguard no longer installs the reboot gate. Telling the operator to run a second "
+        "script breaks the one-command rule AND leaves the guardrail uninstalled.")
+    # STRIP COMMENTS FIRST. The first version of this assertion matched the comment that EXPLAINS
+    # why the token is not needed, and failed on a file that was correct. Same false positive the
+    # brand gate already learned to avoid: grep the code, not the prose about the code.
+    code = "\n".join(ln for ln in cg.splitlines() if not ln.lstrip().startswith("#"))
+    assert "DO_API_TOKEN" not in code, (
+        "the reboot gate depends on a cloud credential again. That token buys snapshots and "
+        "Spaces backups; the gate is pure code and patchwatch's own env file holds its secrets.")
+    # It must verify what it installed rather than assuming the copy worked.
+    assert "does not parse" in cg and "restoring the previous copy" in cg, (
+        "the installer does not validate what it wrote. Overwriting a droplet's patch automation "
+        "with a file that does not parse would disable unattended security updates silently.")

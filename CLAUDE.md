@@ -3496,3 +3496,61 @@ NOT IN THE CABINET. /app has its own bottom navigation and two docked bars would
 `tests/test_routes.py` asserts BOTH directions — every public page renders it, no cabinet page
 does — and states the distinction rather than skipping /app quietly. Proven by SSR (8 public pages
 x 1 bar x 6 tabs, /app none) and by two negative tests.
+
+## THE PANEL, 9 Aug 2026 (second run): one right, one refuted for the THIRD time, and the item
+## nobody has ever flagged
+Gate 37/37 GO. deepseek + maverick GO, gemma UNSURE (its JSON did not parse: "Unterminated
+string"), kimi UNSURE with three risks. Reviewed against the code:
+
+**REFUTED, THIRD CONSECUTIVE RUN.** *"No check compares served hostnames/handlers against the file
+at a semantic level (only hash + host count)."* `agent.py::_served()` compares SETS of hostnames,
+terminal handlers AND path matchers; the "(11 hosts, 11 handlers)" is a printed summary, not the
+comparison, and the byte-hash method was deleted on 7 Aug. **But this is MY defect, not kimi's.**
+The ARCH briefing explained why a hash comparison is a false positive and never said what
+config_drift actually DOES, so a reviewer reasoning from that map lands on the removed method every
+time. ARCH now states, per check, exactly what is measured. Guarded by test_gate_integrity.py.
+RULE: feeding the panel more evidence works; feeding it a map with a hole in it costs a slot every
+run. If a reviewer makes the same wrong call three times, fix the briefing.
+
+**RIGHT, AND ABOUT THE NAME.** *"config_reread's timing claim does not prove Caddy restarted vs
+reloaded."* The detail string already said so, but a check's NAME is read far more often than its
+detail, and a name that promises content while measuring ordering is the `config_reread` disease
+one level down. Renamed **`config_write_ordering`**. A disclaimer is not a substitute for an
+honest name.
+
+**PARTLY RIGHT: certificate renewal.** The load-test half is out of scope (staging has no public
+name). The cert half was real and it was the *shape* of gap this file keeps recording: caddyguard
+PRINTED "60 days left" and flagged under 14, and **the exit code was unaffected and nothing off-box
+looked at all**. A lapsed certificate takes EVERY domain on the shared proxy down at the same
+instant, and it is the one outage that arrives on a published schedule. Now: under 7 days (or no
+certificate presented) FAILS the run, and `.github/workflows/uptime.yml` checks expiry from OUTSIDE
+every 10 minutes, because the box's own monitoring sits behind the proxy it monitors. Caddy renews
+at 30 days, so under 10 means renewal has been failing for three weeks.
+
+**AND THE ITEM NO PANEL HAS EVER MENTIONED, for the second run running:**
+`PATCHWATCH_GATE: reboot gate MISSING on the droplet`. That is the literal 6 Aug mechanism — a
+kernel reboot detonating a Caddyfile damaged twelve hours earlier — and it stayed uninstalled
+across several ships because caddyguard printed *"run: python patchwatch/provision_patchwatch.py"*,
+which is (a) a SECOND command and (b) hard-`die()`s without `DO_API_TOKEN`.
+**The token was never needed.** It buys droplet SNAPSHOTS and a Spaces bucket; the gate is pure
+code, and patchwatch's credentials live in `/etc/patchwatch/patchwatch.env`, which installing the
+code never touches. So the guardrail against the exact outage this whole subsystem exists to
+prevent was blocked for weeks by a dependency it does not have. caddyguard now ships the committed
+`patchwatch.py` in its own existing ssh session, backs up the old copy, and VERIFIES the result
+parses and contains `reboot_blocked` before keeping it — overwriting a droplet's patch automation
+with a file that does not parse would silently disable unattended security updates. If patchwatch
+is absent entirely it says so and installs nothing: nothing reboots the box unattended, so there is
+nothing to gate.
+RULE: when a guardrail reports itself missing run after run, ask what is BLOCKING it before adding
+another reminder. A required credential that is not actually required is an operator step invented
+by accident, and it violates operating principles 1 and 7 at once.
+
+**MY OWN CHECK FALSE-POSITIVED ON ITS OWN COMMENT.** The new assertion "the gate must not depend on
+a cloud credential" matched the comment EXPLAINING why the credential is unnecessary, and failed a
+correct file. Strip comments before grepping source — the brand gate learned this months ago and I
+did not carry it across. Every one of the five new assertions was negative-tested by reintroducing
+its defect.
+
+**PANEL INTEGRITY, worth watching:** gemma returned malformed JSON, so only 3 of 4 reviewers
+answered. The "unanimous NO-GO halts a green gate" rule needs >=3 reviewers, so one more dropout
+disarms it silently.

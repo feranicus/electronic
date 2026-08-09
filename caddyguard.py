@@ -76,6 +76,7 @@ def build(restore, check_only):
     svc = _b64(os.path.join(GUARD, "caddyguard.service"))
     tmr = _b64(os.path.join(GUARD, "caddyguard.timer"))
     jhw = _b64(jhw_snippet())
+    pw = _b64(os.path.join(HERE, "patchwatch", "patchwatch.py"))
     return r"""
 set +e
 export LC_ALL=C
@@ -171,11 +172,32 @@ journalctl -u caddyguard.service --no-pager -n 8 -o cat 2>/dev/null
 echo "#### PATCHWATCH_GATE"
 # The gate lives in patchwatch.py in the repo; report whether the droplet's copy already has it so
 # the operator knows to run the patchwatch provisioner if it does not.
-if grep -q "reboot_blocked" /opt/patchwatch/patchwatch.py 2>/dev/null; then
-  echo "reboot gate PRESENT in /opt/patchwatch/patchwatch.py"
+# THE GATE INSTALLS ITSELF. It used to print "run python patchwatch/provision_patchwatch.py",
+# which (a) is a SECOND command, and (b) hard-fails without DO_API_TOKEN. But that token gates
+# SNAPSHOTS AND SPACES BACKUPS, not the gate: the gate is pure code, and patchwatch's credentials
+# live in /etc/patchwatch/patchwatch.env, which this never touches. So the guardrail against the
+# EXACT 6 Aug mechanism sat uninstalled across several ships waiting on a credential it does not
+# need. Refreshing the committed file is the whole fix, and caddyguard already has the session.
+if [ -f /opt/patchwatch/patchwatch.py ]; then
+  if grep -q "reboot_blocked" /opt/patchwatch/patchwatch.py 2>/dev/null; then
+    echo "reboot gate PRESENT in /opt/patchwatch/patchwatch.py"
+  else
+    echo "reboot gate MISSING — installing the committed patchwatch.py (code only; env untouched)"
+    cp -a /opt/patchwatch/patchwatch.py /opt/patchwatch/patchwatch.py.bak.$(date +%%Y%%m%%d-%%H%%M%%S) 2>/dev/null || true
+    echo '%s' | base64 -d > /opt/patchwatch/patchwatch.py
+    chmod 0755 /opt/patchwatch/patchwatch.py
+    if python3 -c "import ast,sys; ast.parse(open('/opt/patchwatch/patchwatch.py').read())" 2>/dev/null \
+       && grep -q "reboot_blocked" /opt/patchwatch/patchwatch.py; then
+      echo "reboot gate INSTALLED and parses"
+    else
+      echo "[X] the installed patchwatch.py does not parse — restoring the previous copy"
+      cp -a "$(ls -1t /opt/patchwatch/patchwatch.py.bak.* 2>/dev/null | head -1)" /opt/patchwatch/patchwatch.py 2>/dev/null || true
+    fi
+  fi
 else
-  echo "reboot gate MISSING on the droplet — run: python patchwatch/provision_patchwatch.py"
-  echo "(the guardrail is committed; the droplet copy is refreshed by that provisioner)"
+  # No patchwatch at all: nothing reboots this box unattended, so there is nothing to gate.
+  # Installing it here would need cloud credentials for the backup, which is the provisioner's job.
+  echo "patchwatch is NOT installed on this droplet — no unattended reboot, so no gate needed"
 fi
 
 echo "#### DRIFT"
@@ -212,12 +234,17 @@ for d in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de; do
         | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
   if [ -n "$END" ]; then
     LEFT=$(( ( $(date -d "$END" +%%s) - $(date +%%s) ) / 86400 ))
-    if [ "$LEFT" -lt 14 ]; then printf '   [!] %%-28s %%s days left  <- RENEW\n' "$d" "$LEFT"
+    if [ "$LEFT" -lt 7 ]; then printf '   [X] %%-28s %%s days left  <- EXPIRING\n' "$d" "$LEFT"; CERTBAD=1
+    elif [ "$LEFT" -lt 21 ]; then printf '   [!] %%-28s %%s days left  <- RENEW SOON\n' "$d" "$LEFT"
     else printf '   %%-32s %%s days left\n' "$d" "$LEFT"; fi
   else
-    printf '   [!] %%-28s no certificate presented\n' "$d"
+    printf '   [X] %%-28s no certificate presented\n' "$d"; CERTBAD=1
   fi
 done
+# A LAPSED CERT TAKES EVERY DOMAIN DOWN TOGETHER, and it does it on a schedule nobody is watching.
+# Printing "5 days left" into a 400-line deploy log is not a warning, it is a fact nobody reads.
+# Caddy renews at 30 days; still under 7 means renewal has been FAILING for three weeks.
+if [ -n "$CERTBAD" ]; then echo "   [X] CERT GATE FAILED — renewal is not working, this is days from an outage"; fi
 echo "-- local probes (code + BYTES: an empty 200 is what 'the site is dead' looks like):"
 for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.com/ https://jobhuntwow.com/ https://klimaanlage-preise.de/; do
   R=$(curl -sk -o /tmp/body -w '%%{http_code} %%{size_download}' --max-time 12 "$u")
@@ -232,7 +259,7 @@ for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.c
 done
 echo "END"
 """ % (agent, svc, tmr, "check" if check_only else "install",
-       "yes" if restore else "no", jhw)
+       "yes" if restore else "no", jhw, pw)
 
 
 def _selftest():
@@ -301,11 +328,32 @@ def main():
         good += 1 if ok else 0
         print("   %-42s %s" % (u, ("HTTP %d" % st) if st else note))
 
+    # THE REMOTE SCRIPT'S OWN VERDICTS, SURFACED. A line printed into a 400-line deploy log is
+    # not a warning; it is a fact nobody reads. Both of these were only ever printed:
+    #   · the cert gate — a lapsed certificate takes EVERY domain down together, on a schedule;
+    #   · the reboot gate — the literal 6 Aug mechanism, and it stayed MISSING across ships.
+    # Neither is fatal to a deploy that already verified, so they are reported loudly and folded
+    # into the exit code rather than aborting a good release.
+    body = out or ""
+    warn = []
+    if "CERT GATE FAILED" in body:
+        warn.append("TLS: a certificate is under 7 days from expiry or absent. Caddy renews at 30 "
+                    "days, so this means renewal has been FAILING for three weeks.")
+    if "reboot gate MISSING" in body and "reboot gate INSTALLED" not in body:
+        warn.append("PATCHWATCH: the reboot gate is still absent — an unattended kernel reboot "
+                    "could detonate a damaged proxy config, exactly as on 6 Aug 2026.")
+
     print("\n" + "=" * 78)
+    if warn:
+        for w in warn:
+            print("[X] " + w)
+        print("-" * 78)
     print("%d/%d endpoints answering." % (good, len(SITES) + 1))
     print("From now on: no project writes the shared file. Each writes its own fragment via")
     print("`caddyguard write <name> <file>` and the guard assembles, validates and reloads.")
     print("=" * 78)
+    if warn:
+        return 1
     return 0 if good == len(SITES) + 1 else 1
 
 

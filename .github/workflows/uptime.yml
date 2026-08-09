@@ -49,6 +49,28 @@ jobs:
               FAIL="$FAIL\n• $name -> HTTP $code (expected $want)"
             fi
           done
+          # CERTIFICATE EXPIRY. Distinct from reachability and it is the failure that arrives on
+          # a schedule: one lapsed certificate takes EVERY domain on the shared proxy down at the
+          # same instant. Caddy renews at 30 days, so under 10 means renewal has been failing for
+          # ~3 weeks and nobody noticed. Checked from OUTSIDE, because the box's own monitoring
+          # sits behind the proxy it is monitoring.
+          for host in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de; do
+            end=$(echo | timeout 20 openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null \
+                  | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+            if [ -z "$end" ]; then
+              echo "FAIL  $host  -> no certificate presented"
+              FAIL="$FAIL\n• $host -> no TLS certificate presented"
+              continue
+            fi
+            left=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+            if [ "$left" -lt 10 ]; then
+              echo "FAIL  $host  -> certificate expires in ${left}d"
+              FAIL="$FAIL\n• $host -> TLS certificate expires in ${left} days (renewal is failing)"
+            else
+              echo "OK    $host  -> certificate ${left}d left"
+            fi
+          done
+
           if [ -n "$FAIL" ]; then
             {
               echo "failed<<EOF"
