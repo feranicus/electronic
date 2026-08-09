@@ -3315,3 +3315,118 @@ Fixing it surfaced a mismatch that had been shipping all along: `.more-t` was `7
 only ever compared the FIRST rule of each, and those two happened to agree. Both are now `7px 11px`
 / weight 700. **A check that reads one rule of a multi-rule selector is not just wrong when it
 fails; it is wrong when it passes.**
+
+## WHITE TEXT ON A WHITE PANEL — and the mirror check that was missing (2026-08-09)
+Reported on both the phone and the desktop: the More menu opened and the items were invisible.
+Cause, measured: `.more-p a{color:#e8eefb}` and `.lang-list button{color:#e8eefb}` were dark-theme
+leftovers, while I had changed those panels' background to `var(--card)`. **1.16:1.** Not "hard to
+read": gone. Three more of the same leftover were hiding in `.refused`, `.prog-notice` and
+`.legal-todo`.
+
+**THE FIX THE OPERATOR ASKED FOR IS THE RIGHT ONE.** Both floating panels now use the SAME brand
+gradient as /login and the phone header, with white text. Measured, white holds across every stop:
+indigo 6.29:1, violet 5.70:1, magenta 4.71:1. A floating panel is the one element that can land
+over ANY background, so giving it its own opaque saturated surface is what makes it safe by
+construction rather than by luck.
+
+**THE GATE WAS BLIND BY CONSTRUCTION.** Check 5b asks "is any surface still dark". It is
+structurally incapable of seeing "is any TEXT still light", which is the same defect reflected. A
+palette conversion breaks in both directions and needs a check in both directions. New check 5c.
+
+**THE QUESTION IS NOT "IS THIS TEXT LIGHT".** Plenty of light text is correct: a button label, a
+coloured chip. It is *does anything give this text a dark or saturated surface* — the rule itself,
+an ancestor in the selector, or a named exception. The blunt first version flagged `.btn`, `.pill`
+and `.tour`, all white-on-indigo and perfectly fine.
+
+**THREE DEFECTS IN MY OWN CHECK, each found by a negative test:**
+ 1. `var(--grad)` does not contain the word "gradient", and the palette map holds only HEX values,
+    so the resolver defaulted the token to white and everything on the brand gradient looked light.
+ 2. **A blanket exemption for one question silenced a different question.** I reused `DARK_OK` (the
+    white-OVERLAY allowlist, which now contains `.more-p` and `.lang-list`) for the light-text
+    check, so those two selectors were skipped entirely. The negative test reintroduced the exact
+    reported bug and the gate said nothing. 5c now has its own narrow list and lets `covered()`
+    decide everything else.
+ 3. `.iam-tag` sits on the login gradient, but its ancestor is in the DOM, not in the selector
+    string, so `covered()` could not see it and it had to be named.
+
+**AND IT FOUND A REAL ONE I HAD NOT NOTICED:** `.dd .num`, the deep-dive badge, puts `color:#fff`
+on a background set INLINE from `MAP_C`. Those five are deliberately bright so they read on the
+dark architecture map, and white on them measures 1.67:1 to 2.72:1. Now `#0B1030`, which is 6.8:1
+to 11.1:1. Same fix as the map's own badge number, which I had already corrected once.
+
+## STANDING RULE — look at a UI change before you ship it, ENFORCED (2026-08-09)
+Operator instruction: before `python ship.py`, any frontend UI/UX change is previewed locally with
+`python preview.py` and LOOKED AT. Every time.
+
+**IT IS A GATE, NOT A LINE IN THIS FILE.** This session shipped four colour defects that a
+ten-second look would have caught and no automated check could: a dark bar framing a light page
+(twice, `.topbar` then `#hd`), white text on a white More menu, and a badge at 1.67:1. Every gate
+was green each time. A gate can measure contrast and structure; it cannot see. And this file is
+already full of rules that went stale precisely because they were only written down.
+
+`ui_preview_stamp.py` is shared by both scripts so the rule cannot drift between them:
+  · `preview.py` writes `.ui-preview-stamp` = sha256 of every UI file (src/**.jsx|js|css,
+    public/**, index.html) when the server starts.
+  · `ship.py` recomputes it. Match -> proceed. Mismatch -> STOP, print `python preview.py`, exit 2.
+  · After a verified deploy it records the shipped hash, so an unchanged UI never asks again. You
+    are only stopped when there is something NEW to look at.
+  · `--no-preview` overrides deliberately. A broken guard never becomes a broken deploy: any
+    exception in the check is reported and the ship continues (same doctrine as the FP auditor).
+
+**A HASH, NOT A TIMESTAMP.** "A preview happened at some point" is a different claim from "THIS
+frontend was previewed" — the same distinction as `config_reread` proving startup ordering rather
+than content, and the same doctrine as the engine-hash deploy verify. Scope is deliberately narrow:
+a backend or engine edit must not send the operator to a browser for nothing, or the gate becomes
+noise and gets switched off.
+
+**AND THE TEST MUST NOT DISARM THE THING IT TESTED.** Verifying this, I wrote a stamp by hand to
+prove the pass path works, which left a VALID stamp behind and would have let the next ship through
+without a look. Deleted. Same family as the harness that left a `TRANSIENT EDIT` marker in
+Landing.jsx after a timeout.
+
+## THE PANEL, 8 Aug 2026: one point right out of four, and it was the one to act on
+kimi-k2.6 voted NO-GO against a 35/35 green gate. Reviewed against the code, not the prose:
+
+**WRONG (and the SECOND time kimi has made this exact error).** "config_drift compares `caddy adapt`
+against the admin API, which are never byte-identical, so the check is broken." It does not.
+`agent.py::cmd_drift` compares `d_hosts == r_hosts and d_h == r_h`: the SETS of matched hostnames
+and terminal handlers, which are stable under re-serialisation. Its own output says so, printing
+`(11 host(s), 9 handler(s))`. The hash comparison kimi is describing was real, was a false positive
+by construction, and was REMOVED the day before. Kimi is quoting the ARCH briefing's explanation of
+why the old method was wrong and attributing it to the current check. Feeding the panel more
+evidence about the system's history apparently also gives it more rope.
+
+**PARTLY RIGHT, ALREADY LABELLED.** "config_reread only proves timing." True, and the check's own
+detail says exactly that and names `mount_fresh` + `config_drift` as the checks that prove content.
+An honest label is not a defect.
+
+**WRONG ON PRODUCTION.** "No check exercises the reload path; only startup." The production deploy
+does `POST /load` via the admin API (`ADMIN_LOAD_OK`) and THEN runs `config_drift`, which is
+precisely "did the reload take". Kimi's model of the system is missing that step.
+
+**RIGHT, AND FIXED.** `vhost_roster` was SKIP on staging, both before and after the reboot. It was
+invoked with `CADDY_EXPECT=""`, and `cmd_roster` returns SKIP on an empty list — so on the ONE box
+whose entire job is to validate the committed cybergod snippet before production sees it, the check
+that asks "is the domain actually served?" could never fire. gemma raised the same thing. Staging
+now passes `CADDY_EXPECT="cybergod.ai"` (the single vhost its probes already send a Host header
+for), and a SKIP inside the `docker ps | grep caddy` branch is now a FAILURE, because there a SKIP
+cannot mean "no proxy" — it means the check could not see its subject.
+
+**WHAT NOBODY ON THE PANEL FLAGGED, AND IT IS THE BIGGEST ITEM IN THE RUN:**
+`PATCHWATCH_GATE: reboot gate MISSING on the droplet`. That is the guardrail that refuses to reboot
+into an invalid proxy config, and it is not installed because `DO_API_TOKEN` is unset. It is the
+*exact* 6 Aug mechanism: patchwatch upgraded the kernel and rebooted at 04:22 into a Caddyfile that
+had been damaged twelve hours earlier, and every domain on the box died together. Four models read
+that deploy log and none of them mentioned it. The panel reasons well about what it is shown and
+does not notice what is absent — one more reason the deterministic checks decide.
+
+## The phone More menu opens under its own button, not as a bottom sheet (2026-08-09)
+Filmed by the operator: on the installed app the More panel slid up from the bottom of the screen
+while the LANGUAGE menu beside it opened directly under its trigger. Two adjacent controls, two
+different behaviours. `MoreMenu.jsx` passed `style={undefined}` on a phone and `.more-p.sheet`
+positioned it `bottom:12px;left:12px;right:12px`.
+Now anchored on every screen from the trigger's measured rect. `.sheet` keeps ONLY what was right
+about the sheet treatment, the larger tap targets, and the grab handle is gone because an anchored
+menu is not draggable. Still portalled and `fixed`, so the Android stacking-context bug stays fixed.
+RULE: a menu belongs next to the control that opened it. Distance between cause and effect is what
+made this read as a different component.

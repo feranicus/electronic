@@ -129,9 +129,13 @@ export default function MoreMenu() {
           <div
             className={"more-p" + (phone ? " sheet" : "")}
             role="menu"
-            style={phone ? undefined : { top: pos?.top ?? 0, right: pos?.right ?? 0 }}
+            /* ANCHORED ON EVERY SCREEN. The phone used to get `style={undefined}` and open as a
+               bottom sheet; the operator asked for it to open under its own button, like the
+               language menu beside it. The `sheet` class now only carries the larger tap targets.
+               Placement still comes from the trigger's measured rect, so a portalled panel with
+               no positioned ancestor lands in the right place on both. */
+            style={{ top: pos?.top ?? 0, right: pos?.right ?? 0 }}
           >
-            {phone && <div className="more-grab" aria-hidden="true" />}
             {items.map((i) => (
               <Link key={i.to} role="menuitem" to={i.to} onClick={() => setOpen(false)}>
                 {i.label}

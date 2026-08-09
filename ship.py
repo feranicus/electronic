@@ -1363,6 +1363,9 @@ def main():
     ap.add_argument("--direct", action="store_true",
                     help="(default) deploy straight to the droplet over SSH")
     ap.add_argument("--no-test", action="store_true", help="skip the test gate")
+    ap.add_argument("--no-preview", action="store_true",
+                    help="ship a frontend change without previewing it locally first (the "
+                         "standing rule is to look at every UI change; this is the override)")
     ap.add_argument("--no-stage", action="store_true",
                     help="skip the staging validation and deploy straight to production")
     ap.add_argument("--fast-stage", action="store_true",
@@ -1387,6 +1390,41 @@ def main():
     print("  target : %s@%s   web=%s bots=%s   %s"
           % (USER, HOST, web, bots, "via GitHub CI" if a.ci else "direct SSH from this PC"))
     print("=" * 74)
+
+    # ---- LOOK AT IT FIRST -----------------------------------------------------------------
+    # STANDING RULE (operator, 9 Aug 2026): a frontend UI/UX change is previewed locally and
+    # LOOKED AT before it ships. Enforced rather than remembered, because this session shipped
+    # four colour defects that a ten-second look would have caught and no gate could: a dark bar
+    # framing a light page (twice), white text on a white menu, an unreadable badge. Every
+    # automated check was green each time. A gate can measure contrast; it cannot see.
+    #
+    # You are only stopped when there is something NEW to look at: if the UI is byte-identical to
+    # what is already deployed, this says nothing.
+    if not (a.test or DRY or a.no_preview):
+        try:
+            import ui_preview_stamp
+            ok_ui, why = ui_preview_stamp.check()
+            if ok_ui:
+                print("  frontend: %s" % why)
+            else:
+                print("\n" + "=" * 74)
+                print("  STOP — the frontend has not been looked at.")
+                print("  " + why)
+                print("")
+                print("  Run this, look at the pages it lists, then ship:")
+                print("      python preview.py")
+                print("")
+                print("  It also prints a LAN address for your phone. Four colour defects this")
+                print("  week were invisible to every automated check and obvious on screen.")
+                print("")
+                print("  Deliberately skipping the look:  python ship.py --no-preview")
+                print("=" * 74)
+                sys.exit(2)
+        except SystemExit:
+            raise
+        except Exception as _e:
+            # A broken guard must never become a broken deploy. Same doctrine as the FP auditor.
+            print("  [!] preview check skipped (%s) - not blocking" % type(_e).__name__)
 
     if not a.no_test:
         do_tests()
@@ -1519,6 +1557,13 @@ def main():
     if ok and not DRY:
         # only tag a SAFE-POINT when the deployed engine actually verified current + live
         tag_known_good()
+        # Remember the UI that just went live, so the next ship only asks for a preview when the
+        # frontend has actually changed since this one.
+        try:
+            import ui_preview_stamp
+            ui_preview_stamp.record_shipped()
+        except Exception:
+            pass
 
     print("\n" + "=" * 74)
     if ok:

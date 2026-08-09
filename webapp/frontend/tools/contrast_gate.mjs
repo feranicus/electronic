@@ -146,7 +146,7 @@ console.log(`  reserved: solid --cta appears on ${fills.length} selector(s), all
 // `#hd` rules exist only inside @media(max-width:720px) where #hd IS a gradient. The exemptions are
 // therefore narrow and named rather than a blanket "#hd" — a broad exemption here would let a real
 // invisible overlay through on the desktop header.
-const DARK_OK = /iam-brand|iam-steps|iam-tag|loglist|mapbox|shine|prog-fill|cass|tgh|d-canvas|wa-fab|topbar|#hd \.btn\.ghost|#hd \.lang-trigger|#hd \.more-t|\.phone|\.more-bd/;
+const DARK_OK = /iam-brand|iam-steps|iam-tag|loglist|mapbox|shine|prog-fill|cass|tgh|d-canvas|wa-fab|topbar|#hd \.btn\.ghost|#hd \.lang-trigger|#hd \.more-t|\.phone|\.more-bd|\.more-p|\.lang-list/;
 for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
   const sel = m[1].split("\n").pop().trim();
   for (const w of m[2].matchAll(/rgba\(255,\s*255,\s*255,\s*(\.\d+|0?\.\d+|[01])\s*\)/g)) {
@@ -198,6 +198,72 @@ for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
             + `be dark, use var(--d-canvas)/var(--d-surface) and add the selector to DARK_OK.`);
         }
       }
+    }
+  }
+}
+
+// ---- 5c. LIGHT TEXT LEFT ON A LIGHT SURFACE -------------------------------------------------
+// THE MIRROR OF 5b, and the defect the operator reported next: the More menu and the language
+// dropdown rendered WHITE TEXT ON A WHITE PANEL. Both kept `color:#e8eefb` from the dark theme
+// while their background became `var(--card)`. Measured, 1.16:1 — not hard to read, INVISIBLE.
+// Check 5b looks for dark BACKGROUNDS and is structurally blind to light FOREGROUNDS, so it saw
+// nothing. A palette conversion breaks in both directions and needs a check in both directions.
+//
+// THE QUESTION IS NOT "is this text light" — plenty of light text is correct, sitting on a button
+// or a coloured chip. It is "does anything give this text a dark or saturated surface to sit on":
+// the rule itself, an ancestor selector, or the DARK_OK list. The first version asked the blunt
+// question and flagged .btn, .pill and .tour, all of which are white-on-indigo and perfectly fine.
+{
+  // every declared background, by selector, with var() resolved against the palette
+  const bgOf = new Map();
+  for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sel = m[1].split("\n").pop().trim();
+    const d = m[2].match(/background(?:-color)?\s*:\s*([^;}]+)/);
+    if (d) bgOf.set(sel, (bgOf.get(sel) || "") + " " + d[1]);
+  }
+  const isDarkSurface = (val) => {
+    if (!val) return false;
+    // `var(--grad)` does not contain the word "gradient": the palette map holds only HEX values by
+    // construction, so the resolver defaulted that token to white and every element sitting on the
+    // brand gradient looked like it was on a light surface. Name the token explicitly.
+    if (/gradient/.test(val) || /var\(--grad\)/.test(val)) return true;
+    const v = val.replace(/var\(--([\w-]+)[^)]*\)/g, (_, n) => V[n] || "#FFFFFF");
+    const h = v.match(/#[0-9A-Fa-f]{3,6}\b/);
+    if (h) return lum(h[0]) < 0.5;
+    const r = v.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (!r) return false;
+    const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(+r[1]) + 0.7152 * f(+r[2]) + 0.0722 * f(+r[3]) < 0.5;
+  };
+  // "#hd .more-t" -> also consider "#hd", ".more-p a" -> also consider ".more-p"
+  const covered = (sel) => {
+    const parts = sel.split(/\s+/);
+    for (let i = parts.length; i > 0; i--) {
+      const anc = parts.slice(0, i).join(" ");
+      if (isDarkSurface(bgOf.get(anc))) return true;
+      for (const [k, v] of bgOf) {                                // grouped selectors
+        if (k.split(",").map((x) => x.trim()).includes(anc) && isDarkSurface(v)) return true;
+      }
+    }
+    return false;
+  };
+  for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sel = m[1].split("\n").pop().trim();
+    // DELIBERATELY NOT DARK_OK. That list exists for the white-OVERLAY check, and it now contains
+    // `.more-p` and `.lang-list` because translucent white on the brand gradient is correct there.
+    // Reusing it here would SKIP those two selectors entirely, and a negative test proved it: the
+    // exact reported defect (white text on a white menu) was reintroduced and this check said
+    // nothing. A blanket exemption for one question must never silence a different question.
+    // Everything here is decided by `covered()`: does the rule, or an ancestor, actually supply a
+    // dark or saturated surface? Only surfaces that are dark for reasons CSS cannot express (an
+    // inline background set from JS) get named.
+    if (/loglist|mapbox|d-canvas|cass|tgh|\.phone|iam-brand|iam-steps|iam-tag|topbar/.test(sel)) continue;
+    for (const d of m[2].matchAll(/(?<!-)\bcolor\s*:\s*(#[0-9A-Fa-f]{3,6})\b/g)) {
+      if (lum(d[1]) <= 0.5) continue;
+      if (sel.split(",").some((one) => covered(one.trim()))) continue;
+      bad(`"${sel}" sets LIGHT text (${d[1]}) and nothing gives it a dark or saturated surface. `
+        + `On a light page that text is invisible, which is exactly what the More menu did. Use an `
+        + `ink colour, or give the element (or its parent) a saturated background.`);
     }
   }
 }

@@ -198,6 +198,19 @@ def main():
     say("")
     ensure_deps()
 
+    # STAMP THE FRONTEND. ship.py refuses to deploy a UI that has changed since it was last
+    # previewed, and this is what proves you looked at THIS version. A hash rather than a
+    # timestamp, for the same reason the deploy verifies the engine by hash: "a preview happened
+    # at some point" is not the same claim as "this frontend was previewed".
+    try:
+        import ui_preview_stamp
+        h = ui_preview_stamp.write_preview_stamp()
+        say("  stamped      %d UI files (%s) — ship.py will now accept this frontend" %
+            (len(ui_preview_stamp.ui_files()), h[:12]))
+    except Exception as e:
+        say("  [!] could not write the preview stamp (%s); ship.py will still ask for a preview"
+            % type(e).__name__)
+
     env = dict(os.environ)
     port = free_port(a.port)
     if port != a.port:

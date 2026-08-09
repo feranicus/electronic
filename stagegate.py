@@ -292,11 +292,23 @@ fi
 
 if docker ps --format '{{.Names}}' | grep -qi caddy; then
   D=$(python3 /opt/caddyguard/agent.py drift 2>&1 | tr '\n|' '  ' | cut -c1-200)
-  # Staging serves ONE vhost, so the production roster does not apply here; CADDY_EXPECT scopes it.
-  RO=$(CADDY_EXPECT="" python3 /opt/caddyguard/agent.py roster 2>&1 | tr '\n|' '  ' | cut -c1-160)
+  # THE ROSTER CHECK USED TO BE INERT ON STAGING, and both auditors on the panel said so
+  # (kimi-k2.6 and gemma-4-31B-it, 8 Aug 2026). It was invoked with CADDY_EXPECT="", and
+  # agent.py::cmd_roster returns SKIP when the expected list is empty — so on the ONE box whose
+  # entire job is to validate the committed cybergod snippet before production sees it, the check
+  # that asks "is the domain actually served?" could never do anything. A check that always skips
+  # is not a check; that lesson is written in CLAUDE.md three times over.
+  #
+  # Staging serves exactly one vhost: the committed deploy/caddy/cybergod.caddy block on :8080,
+  # which is why the probes above send `Host: cybergod.ai`. So that IS the expected roster here.
+  RO=$(CADDY_EXPECT="cybergod.ai" python3 /opt/caddyguard/agent.py roster 2>&1 | tr '\n|' '  ' | cut -c1-160)
   case "$RO" in
-    OK*|SKIP*) chk vhost_roster yes "${RO}" ;;
-    *)         chk vhost_roster no  "$RO" ;;
+    OK*) chk vhost_roster yes "${RO}" ;;
+    # We are inside `if docker ps | grep caddy`, so a SKIP here cannot mean "no proxy". It means
+    # the admin API was unreachable or the config would not parse: the check could not SEE its
+    # subject, which is a failure to report, not a pass to wave through.
+    SKIP*) chk vhost_roster no "the roster check could not run: ${RO#SKIP }" ;;
+    *)   chk vhost_roster no  "$RO" ;;
   esac
 
   case "$D" in
