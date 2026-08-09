@@ -1694,6 +1694,72 @@ _ECM_RE = re.compile(
     r"|censhare|bynder|canto cumulus|adobe experience manager|/aem/)")
 
 
+# OPERATIONAL TECHNOLOGY / BUILDING MANAGEMENT, identified by the NAME the customer gave the host.
+#
+# THE OPERATOR'S POINT, and the evidence is on his side: an OT or building-management interface
+# reachable from the internet is not a HIGH, it is a CRITICAL. Jaguar Land Rover's September 2025
+# intrusion stopped vehicle production for weeks; the Cyber Monitoring Centre put total UK economic
+# damage at about GBP 1.9bn across 5,000+ organisations, with the manufacturer losing roughly GBP
+# 108m per week of halted output. The distinguishing feature of that class of incident is not data
+# loss, it is that PRODUCTION STOPS -- and a compromise reaching ventilation, heating, access
+# control or a plant automation gateway has exactly that reach.
+#
+# ns03.ru published certificates for `ventil.nzn` (ventilation), `ventil2.nzn` and `ing.nzn`
+# (инженерные системы, building services) at a named production branch. Those are not web servers.
+_OT_WORDS = (
+    # English
+    "hvac", "bms", "bacnet", "modbus", "scada", "plc", "rtu", "hmi", "chiller", "boiler",
+    "ventilation", "cooling", "heating", "access-control", "badge", "turnstile", "cctv",
+    # German
+    "lueftung", "luftung", "heizung", "klima", "kessel", "zutritt", "leitstand", "gebaeude",
+    # Russian (transliterated, as they appear in hostnames)
+    "ventil", "ventilyaciya", "kotel", "kotelnaya", "skud", "energo", "teplo", "nasos",
+    "avtomatika", "dispetcher", "elektro",
+)
+_OT_RE = re.compile(r"(?<![a-z])(" + "|".join(_OT_WORDS) + r")(?![a-z])", re.I)
+# Ambiguous on their own; admissible ONLY inside a site zone already proven to be OT.
+_OT_WEAK_RE = re.compile(r"^(ing|eng|tech|avt|em|bms|ot|prom|proiz)\d*$", re.I)
+
+
+def ot_names(resolved, apexes=()):
+    """Hostnames that name an OT / building-management function and resolve on the public internet.
+
+    PASSIVE AND EVIDENCE-BASED. The evidence is the customer's own DNS record plus, usually, a
+    certificate they requested for that name. What this does NOT claim is that the service is
+    vulnerable, or even what it is: confirming that needs the customer, and the finding says so.
+    Naming a host `ventil` is not proof of a ventilation controller -- but on a production site it
+    is a far better hypothesis than chance, and it is the operator's own estate to confirm.
+    """
+    out, zones = [], set()
+    for name in sorted(resolved or {}):
+        n = str(name).lower()
+        if apexes and not any(n == a or n.endswith("." + a) for a in apexes):
+            continue
+        m = _OT_RE.search(n.split(".")[0]) or _OT_RE.search(n)
+        if m:
+            out.append({"name": name, "token": m.group(1), "why": "name",
+                        "addresses": sorted(resolved[name])[:3]})
+            labs = n.split(".")
+            if len(labs) >= 3:
+                zones.add(".".join(labs[1:]))       # the site zone the OT host lives in
+
+    # CORROBORATION FOR THE AMBIGUOUS TOKENS. `ing` is the Russian abbreviation for инженерные
+    # системы (building services) and it is also a substring of half the internet -- marketing,
+    # hosting, a surname. On its own it is exactly the common-word anchor the abakus incident
+    # taught us to refuse. But a host called `ing` sitting in the SAME SITE ZONE as a confirmed
+    # ventilation controller is corroborated by that zone, which is the standard this engine
+    # applies to every other weak signal.
+    for name in sorted(resolved or {}):
+        n = str(name).lower()
+        if any(o["name"] == name for o in out):
+            continue
+        labs = n.split(".")
+        if len(labs) >= 3 and ".".join(labs[1:]) in zones and _OT_WEAK_RE.match(labs[0]):
+            out.append({"name": name, "token": labs[0], "addresses": sorted(resolved[name])[:3],
+                        "why": "shares the site zone %s with a confirmed OT host" % ".".join(labs[1:])})
+    return out
+
+
 def _eol_hit(m):
     """(sev, kind, detail) when the banner we ALREADY hold names an out-of-support version.
 
@@ -1928,6 +1994,17 @@ TEMPLATES = {
              {"tag": "OSS", "title": "Track end-of-support dates against the estate",
               "body": "WHY THIS SERVICE: end of support arrives on a published date, so it is the one exposure that can be prevented entirely by knowing it is coming. WHAT YOU GET: advance warning per product, mapped to the hosts that run it. HOW: reconcile your software inventory against published vendor lifecycle dates on a schedule."}],
             ["NIS2 Art. 21", "GDPR Art. 32", "ISO/IEC 27001 A.8.8"]),
+ "ot_exposed": ("Operational-technology and building-management systems are named on the public internet",
+            ["These hostnames name plant and building-services functions — ventilation, heating, engineering systems, access control — and they resolve publicly, with certificates the organisation requested for them. That is an operational-technology interface published to the internet, not an office application.",
+             "The distinguishing feature of an intrusion that reaches this layer is not data loss, it is that production stops. Jaguar Land Rover's September 2025 compromise halted vehicle manufacturing for weeks; the Cyber Monitoring Centre assessed total United Kingdom economic damage at approximately GBP 1.9 billion across more than 5,000 organisations, with the manufacturer losing in the order of GBP 108 million for every week of stopped output.",
+             "These systems are also the least defensible part of an estate: they run for a decade or more without a patch cycle, they authenticate weakly or not at all, and the teams that own them are engineering rather than IT. A control that is adequate for a web server is not available here, which is why the exposure itself has to be removed rather than monitored."],
+            [{"tag": "COLT", "title": "Take the operational estate off the public internet",
+              "body": "WHY THIS SERVICE: an engineering interface cannot be hardened to the standard the internet demands, because the equipment behind it was designed for a private network and cannot be patched on a monthly cycle. The only durable control is that it stops being reachable. WHAT YOU GET: plant and building systems reachable only through authenticated, brokered access, so a stolen credential or an unpatched controller is no longer directly addressable from the internet. HOW: we publish these services through a zero-trust access broker and withdraw the public DNS and firewall exposure, in a change window agreed with the engineering owner."},
+             {"tag": "COLT", "title": "Segment the operational network from the corporate one",
+              "body": "WHY THIS SERVICE: the damage in this class of incident comes from lateral movement into production after an ordinary corporate compromise, which is precisely how the Jaguar Land Rover outage propagated. Removing the internet exposure without segmenting the interior leaves the same path open from inside. WHAT YOU GET: an enforced boundary between office and plant networks with brokered, logged crossings, so an intrusion on one side does not stop production on the other. HOW: we map the existing flows, place enforcement at the boundary, and cut over without interrupting the process."},
+             {"tag": "COLT", "title": "Confirm what each of these hosts actually is",
+              "body": "WHY THIS SERVICE: these systems are identified here from their names and certificates, which is strong evidence of function but is not an inventory. An accurate one is the prerequisite for every decision that follows, and it usually does not exist because the equipment was commissioned by contractors rather than by the technology function. WHAT YOU GET: a confirmed register of the internet-facing operational estate, with an owner and a criticality against each entry. HOW: a short workshop with your engineering and facilities owners, reconciled against this external view."}],
+            ["IEC 62443", "NIS2 Art. 21", "BSI ICS Security Compendium"]),
  "dmarc_missing": ("No DMARC policy — this domain can be forged and receiving servers are told nothing",
             ["DMARC is the record that tells a receiving mail server what to do with a message that claims to come from this domain but fails authentication. With no record published, the answer is: deliver it. Anyone can send mail as any address at this domain and it will land in the inbox looking legitimate.",
              "This needs no exposed host and no vulnerability. It is the standard opening move for invoice fraud and payment redirection, because a forged message from a real domain passes every human check an employee, customer or supplier applies.",
@@ -2647,6 +2724,29 @@ def run(ident, F, audience, limit_per_query=500):
                 print("[auto] CT: %d live certificate(s) outside the CAA policy of %s"
                       % (len(_uz), _seedd), file=sys.stderr)
 
+    # ---- OPERATIONAL TECHNOLOGY, NAMED BY THE CUSTOMER (zero packets: DNS + CT) ----------------
+    # CRITICAL, not HIGH. A ventilation or building-services controller reachable from the internet
+    # threatens PRODUCTION, and the loss scale is different in kind from an office exposure -- the
+    # Jaguar Land Rover precedent is in the template. Identified from the customer's own hostnames
+    # and certificates, with the confirmation step written into the remediation because a name is
+    # strong evidence of function and is not an inventory.
+    try:
+        _ot = ot_names(ident.get("resolved") or {}, ident.get("domains") or [])
+    except Exception as _e:
+        _ot = []
+        print("[warn] OT name check failed: %s" % _e, file=sys.stderr)
+    if _ot:
+        _t, _w, _r, _f = TEMPLATES["ot_exposed"]
+        _dns_findings.append({
+            "sev": "CRITICAL", "ft": "ot_exposed", "title": _t,
+            "what": ["%d hostname(s) naming plant or building-services functions resolve publicly."
+                     % len(_ot)],
+            "evidence": ["%s -> %s  (%s)" % (o["name"], ", ".join(o["addresses"]), o["why"])
+                         for o in _ot[:8]],
+            "why": _w, "rem": _r, "refs": _f})
+        print("[auto] OT/BMS named on the public internet (CRITICAL): %s"
+              % ", ".join(o["name"] for o in _ot[:6]), file=sys.stderr)
+
     # ---- EMAIL AUTHENTICATION (zero packets: DNS only) -----------------------------------------
     # A domain with no DMARC can be forged without a single exposed host, and that forgery is the
     # delivery mechanism for the invoice fraud the C-BIQ deck prices. The engine described servers
@@ -2820,7 +2920,18 @@ def run(ident, F, audience, limit_per_query=500):
                        "country": _cc,
                        "scope": _scope_line(ident)},
             "identity": ident,
+            # THE ESTATE THE CUSTOMER'S OWN DNS PROVES, reported ALONGSIDE what a scanner saw.
+            # ns03.ru delivered a deck reading "0 UNIQUE IPS · 0 ASNS · 0 COUNTRIES" for a company
+            # with 12 live hostnames on 4 addresses. Every one of those addresses is theirs -- their
+            # DNS says so -- and every name carries a certificate they requested. What was actually
+            # zero is what SHODAN could see, because the estate is SNI-only and filters scanners.
+            # Publishing only the scanner's number tells the customer they have no internet presence,
+            # which is false, and it is the single most damaging thing this deck can say.
             "summary": {"records": records, "unique_ips": len(hosts), "asns": len(asns) or len(ident["asns"]),
+                        "dns_hosts": len(ident.get("resolved") or {}),
+                        "dns_addresses": len({ip for v in (ident.get("resolved") or {}).values()
+                                              for ip in v}),
+                        "scanner_blind": (not hosts) and bool(ident.get("resolved")),
                         "countries": len(countries), "dropped_false_positives": dropped,
                         "behind_cdn": ident["org_is_cdn"],
                         "inventory": sorted(

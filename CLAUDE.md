@@ -3797,3 +3797,41 @@ directions: removing the CT-resolution block fails, and pointing the miner back 
 fails. One assertion of mine had to be corrected in the process — I claimed the CT names reveal
 addresses the wordlist never reached, and on this target they do not (the wordlist already had all
 four). The gain is the NAMES, which is what makes a certificate joinable to a host at all.
+
+## ns03.ru — the deck said the customer has NOTHING, and OT was not rated at all (2026-08-09)
+With the CT names resolved the run found 3 findings instead of 1, and the two revoked certificates
+finally landed. Reading the DELIVERED deck showed three more defects, two of them mine.
+
+**1. "0 UNIQUE IPS · 0 ASNS · 0 COUNTRIES" — to a customer with 12 live hostnames on 4 addresses.**
+Every one of those addresses is theirs (their own DNS resolves to it) and every name carries a
+certificate they requested. What was actually zero is what SHODAN saw, because the estate is
+SNI-only and filters scanners — which the operator's own playbook documents as the NORMAL outcome
+on this shape of target, not an anomaly. Telling a customer they have no internet presence is false
+and it is the most damaging sentence this deck can print. The engine now publishes `dns_hosts`,
+`dns_addresses` and `scanner_blind`, and the deck swaps its tiles to "HOSTS FROM DNS + CT /
+scanner saw none: SNI-only or filtered" when the scanner is blind.
+
+**2. A raw enum on a customer-facing slide: "COLT: SASE/SSE with ZTNA".** The LOW/baseline table
+built its ACTION cell from `rem.tag + ": " + rem.title` while every other surface goes through
+`tagLabel[...]`. The rebrand renamed the LABEL and deliberately kept `COLT` as a lookup key, so any
+code path that prints the key instead of the label leaks the old brand. The brand gate missed it
+because its fixture has no LOW finding carrying a COLT tag — **a gate is only as good as the shapes
+its fixture contains.**
+
+**3. OT/BMS exposure was not a finding at all, and the operator is right that it is CRITICAL.**
+ns03.ru published certificates for `ventil.nzn` (ventilation), `ventil2.nzn` and `ing.nzn`
+(инженерные системы) at a named production branch. Those are plant systems, and the class of
+incident they enable does not leak data, it STOPS PRODUCTION: Jaguar Land Rover's September 2025
+compromise halted vehicle manufacturing for weeks, with the Cyber Monitoring Centre assessing
+~GBP 1.9bn of UK economic damage across 5,000+ organisations and ~GBP 108m per week of lost output
+at the manufacturer. New `ot_exposed` finding, CRITICAL, mapped to IEC 62443.
+**IT IS EVIDENCE-BASED, NOT INFERRED.** The evidence is the customer's own DNS record plus the
+certificate they requested; the finding does not claim the service is vulnerable or even confirm
+what it is, and one of its three remediation items is to confirm the inventory — because a name is
+strong evidence of function and is not an inventory.
+**AMBIGUOUS TOKENS NEED CORROBORATION.** `ing` is Russian for building services and is also inside
+marketing, hosting and a thousand surnames — on its own it is exactly the common-word anchor the
+abakus incident forbade. It is admitted ONLY when it shares a site zone with a name that matched a
+strong OT word. And zone membership CORROBORATES; it does not ADMIT: `iiko.nzn` (a restaurant
+point-of-sale platform) sits in the same zone and is correctly left out. That last case was the one
+negative test my first version did not catch, because my own fixture never asserted it.

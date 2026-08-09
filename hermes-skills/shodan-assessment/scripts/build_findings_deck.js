@@ -309,10 +309,18 @@ function drawTable(slide, rows, opts) {
     cx += 2.38;
   });
 
-  const stats = [
-    ["unique IPs", sum.unique_ips], ["ASNs", sum.asns],
-    ["countries", sum.countries], ["dropped FPs", sum.dropped_false_positives],
-  ];
+  // WHEN THE SCANNER IS BLIND, REPORT THE ESTATE THE CUSTOMER'S OWN DNS PROVES.
+  // ns03.ru shipped "0 UNIQUE IPS / 0 ASNS / 0 COUNTRIES" to a company with 12 live hostnames on
+  // 4 addresses. Their DNS resolves those names; they requested a certificate for each. What was
+  // zero is what SHODAN saw -- the estate is SNI-only and filters scanners, which the playbook
+  // documents as the normal outcome on this shape of target. Telling a customer they have no
+  // internet presence is both false and the most damaging sentence this deck can print.
+  const blind = !!sum.scanner_blind;
+  const stats = blind
+    ? [["hosts (DNS)", sum.dns_hosts], ["addresses", sum.dns_addresses],
+       ["scanner records", sum.unique_ips], ["dropped FPs", sum.dropped_false_positives]]
+    : [["unique IPs", sum.unique_ips], ["ASNs", sum.asns],
+       ["countries", sum.countries], ["dropped FPs", sum.dropped_false_positives]];
   let sx = 0.4;
   stats.forEach(([l, n]) => {
     s.addText(n == null ? EMDASH : String(n), { x: sx, y: 3.80, w: 2.18, h: 0.46,
@@ -392,7 +400,11 @@ function drawTable(slide, rows, opts) {
   const nF = findings.length;
   const tiles = [
     [raw ? String(raw) : EMDASH, "RAW HOST RECORDS", "Shodan matches before filtering", C.inkMuted],
-    [filt ? String(filt) : EMDASH, "FILTERED UNIQUE IPs", "after CDN/carrier + FP removal", C.tealDark],
+    (sum.scanner_blind
+      ? [String(sum.dns_hosts || 0), "HOSTS FROM DNS + CT",
+         "scanner saw none: SNI-only / filtered", C.tealDark]
+      : [filt ? String(filt) : EMDASH, "FILTERED UNIQUE IPs",
+         "after CDN/carrier + FP removal", C.tealDark]),
     [dropped ? String(dropped) : "0", "DROPPED FALSE-POS", "carrier / CDN / noise removed", C.high],
     [String(nF), "FINDINGS RAISED", "mapped to severity + remediation", C.crit],
   ];
@@ -630,7 +642,7 @@ function lowCombinedSlide(items) {
       { text: String(f.id || ""), options: { fill: zebra, bold: true, fontSize: 7.4, color: C.tealDark, align: "center" } },
       { text: clip(f.title, 60), options: { fill: zebra, fontSize: 7.4 } },
       { text: clip(asText(f.why), 60), options: { fill: zebra, fontSize: 7.2, color: C.inkMuted } },
-      { text: clip(rem ? (rem.tag + ": " + rem.title) : EMDASH, 44), options: { fill: zebra, fontSize: 7.2, color: C.tealDark } },
+      { text: clip(rem ? ((tagLabel[rem.tag] || rem.tag) + ": " + rem.title) : EMDASH, 44), options: { fill: zebra, fontSize: 7.2, color: C.tealDark } },  // tagLabel, NOT the raw enum: this line shipped "COLT: SASE/SSE..." to a customer-facing slide
     ]);
   });
   const rowH = Math.max(0.24, Math.min(0.40, 3.6 / Math.max(rows.length, 1)));

@@ -218,6 +218,69 @@ def test_active_tier_is_off():
           "the finding carries the honesty caveat: the CU is knowable, a patch level is NOT")
 
 
+
+
+def _read_js(name):
+    return open(os.path.join(os.path.dirname(os.path.abspath(__file__)), name),
+                encoding="utf-8").read()
+
+
+def test_ot_and_blind_scanner():
+    print("\n" + "=" * 78)
+    print("[5] ns03.ru DECK DEFECTS — an empty inventory, an enum on a slide, OT rated too low")
+
+    import shodan_recon as R
+
+    # --- OT / BMS. The operator's point, and the Jaguar Land Rover precedent is why it is CRITICAL.
+    resolved = {"ventil.nzn.ns03.ru": ["193.218.140.18"], "ventil2.nzn.ns03.ru": ["193.218.140.18"],
+                "ing.nzn.ns03.ru": ["193.218.140.18"], "iiko.nzn.ns03.ru": ["193.218.140.18"],
+                "mail.ns03.ru": ["80.246.245.158"], "www.ns03.ru": ["195.208.1.101"],
+                "nextcloud.ns03.ru": ["193.218.140.18"]}
+    ot = {o["name"]: o for o in R.ot_names(resolved, ["ns03.ru"])}
+    check("ventil.nzn.ns03.ru" in ot, "a ventilation controller on the public internet is detected")
+    check("ing.nzn.ns03.ru" in ot,
+          "`ing` is admitted ONLY because it shares the OT site zone (corroboration, not the token)")
+    for benign in ("mail.ns03.ru", "www.ns03.ru", "nextcloud.ns03.ru"):
+        check(benign not in ot, "%-22s is NOT mistaken for OT" % benign)
+    # iiko is a restaurant point-of-sale platform and it sits INSIDE the OT site zone. Zone
+    # membership corroborates an ambiguous OT token; it must never promote an unrelated name on
+    # its own, or the zone becomes the same blanket anchor the abakus incident was about.
+    check("iiko.nzn.ns03.ru" not in ot,
+          "a non-OT host inside the OT zone is NOT swept in (zone corroborates, it does not admit)")
+    check(not R.ot_names({"marketing.acme.de": ["1.2.3.4"], "ing.corp.acme.de": ["1.2.3.4"]},
+                         ["acme.de"]),
+          "an ambiguous token with NO OT zone around it raises nothing (the abakus lesson)")
+
+    # THE SEVERITY. Read it from the ENGINE, not from a literal I typed into the assertion.
+    src = _read_js("shodan_recon.py")
+    blk = src[src.index("OPERATIONAL TECHNOLOGY, NAMED BY THE CUSTOMER"):]
+    blk = blk[:blk.index("EMAIL AUTHENTICATION")]
+    check('"sev": "CRITICAL", "ft": "ot_exposed"' in blk,
+          "OT exposure is emitted CRITICAL, not HIGH: this class of incident stops production")
+    check("ot_exposed" in R.TEMPLATES, "the finding has a deck template")
+    _t, _w, _r, _f = R.TEMPLATES["ot_exposed"]
+    check("Jaguar Land Rover" in " ".join(_w),
+          "the template carries the precedent that justifies the severity")
+    check(any("confirm" in x["title"].lower() for x in _r),
+          "and a confirmation step, because a NAME is evidence of function, not an inventory")
+    check("IEC 62443" in _f, "mapped to the OT security standard, not just the IT ones")
+
+    # --- THE EMPTY INVENTORY. The delivered deck said "0 UNIQUE IPS" to a customer with 12 live
+    # hostnames on 4 addresses. What was zero is what the SCANNER saw.
+    js = _read_js("build_findings_deck.js")
+    check("scanner_blind" in js,
+          "the deck distinguishes 'the scanner saw nothing' from 'the customer has nothing'")
+    check("HOSTS FROM DNS + CT" in js,
+          "and reports the estate the customer's own DNS proves")
+    check("dns_hosts" in src and "scanner_blind" in src,
+          "the engine publishes the DNS-known estate for the deck to read")
+
+    # --- THE ENUM ON A SLIDE. The LOW table printed "COLT: SASE/SSE with ZTNA" to a customer.
+    check("(tagLabel[rem.tag] || rem.tag)" in js,
+          "the LOW/baseline table renders the LABEL, never the raw COLT enum")
+    check('rem.tag + ": "' not in js, "no code path prints the raw tag any more")
+
+
 def main():
     print("=" * 78)
     print("  passive checks — replayed against the real ns03.ru engagement")
@@ -225,6 +288,7 @@ def main():
     test_cert_intel()
     test_naming()
     test_active_tier_is_off()
+    test_ot_and_blind_scanner()
     print("\n" + "=" * 78)
     if FAILED:
         print("  %d FAILED" % len(FAILED))
@@ -238,3 +302,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
