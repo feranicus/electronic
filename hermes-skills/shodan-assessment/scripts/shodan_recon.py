@@ -1299,6 +1299,33 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
               % (len(_skipped), ", ".join(_skipped[:6])), file=sys.stderr)
     probed = _probe_subdomains(sorted(_probe_apexes))
 
+    # ---- RESOLVE WHAT CT ACTUALLY TOLD US (ns03.ru, 2026-08-09) --------------------------------
+    # THE BUG THIS FIXES, and it silently gutted a whole assessment: Certificate Transparency
+    # returned 13 names for ns03.ru -- srv-kap-gt, ventil.nzn, ventil2.nzn, ing.nzn, iiko.nzn, oo,
+    # nextcloud -- and NOT ONE OF THEM WAS EVER RESOLVED. They were added to `domains` so they
+    # could become Shodan `hostname:` clauses, and that was all. The consequences compounded:
+    #   · none of them was pinned, so the estate had 4 addresses instead of the real set;
+    #   · none reached ident["resolved"], and cert_intel joins its findings against exactly that
+    #     map -- so the TWO REVOKED CERTIFICATES the feature was built for produced NOTHING;
+    #   · the DNS probe's ~60-word list found 6 generic names and the deck shipped "IPs 0".
+    # CT records INTENT: somebody requested a certificate for that name. Checking whether it also
+    # RESOLVES costs one DNS query and is the difference between a name and a host.
+    _ct_fqdns = [d for d in domains
+                 if d not in probed and d.count(".") >= 1
+                 and any(d == a or d.endswith("." + a) for a in candidate_apexes)]
+    if _ct_fqdns:
+        _ct_live = {}
+        for _n in _ct_fqdns[:120]:            # bounded: one query each, and CT lists can be long
+            _ips = _resolve(_n)
+            if _ips:
+                _ct_live[_n] = _ips
+        if _ct_live:
+            probed.update(_ct_live)
+        print("[auto] CT names resolved: %d of %d discovered name(s) are live%s"
+              % (len(_ct_live), len(_ct_fqdns),
+                 (" -> " + ", ".join(sorted(_ct_live)[:6])) if _ct_live else ""),
+              file=sys.stderr)
+
     # ---- CONVENTION-DERIVED CANDIDATES (ns03.ru) -----------------------------------------------
     # A blind dictionary is close to useless: on ns03.ru every generic name (vpn, portal, remote,
     # owa) returned NXDOMAIN, while the target's OWN grammar -- learned from what it published in
@@ -1310,8 +1337,11 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     # manufacturer about `kotelnaya` is wasted queries; asking a Russian one about it found the
     # boiler house.
     try:
-        _known_names = sorted(set(list(ident.get("domains") or []) + list(probed) +
-                                  list(ident.get("ct_domains") or [])))
+        # READ THE LIST THAT ACTUALLY HOLDS THE CT NAMES. `ident["domains"]` does not receive them
+        # until merge_variants() runs at the END of resolve_identity, and `ident["ct_domains"]`
+        # has never existed at all -- I assumed a key instead of reading one, so this miner
+        # silently found no site codes and skipped itself on every single run.
+        _known_names = sorted(set(list(domains) + list(ident.get("domains") or []) + list(probed)))
         _gram = naming.learn(_known_names, sorted(_probe_apexes))
         if _gram.get("sites") or _gram.get("sequenced"):
             _langs = naming.langs_for(domains=sorted(_probe_apexes),

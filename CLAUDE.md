@@ -3761,3 +3761,39 @@ the `cert_intel` functions take a lookup callable for exactly this reason).
 **IT MUST BE RE-APPLIED AFTER EVERY `importlib.reload(R)`.** A reload rebuilds the module from
 source and restores the real functions, silently undoing the stub — the first version patched once
 at the top and the suite still made three live calls. Measured both times, not assumed.
+
+## ns03.ru — CT told us the name EXISTS; nothing ever checked whether it RESOLVES (2026-08-09)
+The delivered deck said **CRIT 0 · HIGH 0 · MED 1 · LOW 0, IPs 0** and carried a single `no_caa`
+finding. The run log shows Certificate Transparency returning **11 issuances / 13 names** for the
+domain — `srv-kap-gt`, `ventil.nzn`, `ventil2.nzn`, `ing.nzn`, `iiko.nzn`, `oo`, `nextcloud` — and
+the operator was right that none of them reached the deck.
+
+**ROOT CAUSE, one line of missing work.** A CT-discovered name was added to `domains` so it could
+become a Shodan `hostname:` clause, and that was ALL that ever happened to it. Only the ~60-word
+`_probe_subdomains` wordlist was resolved. The consequences compounded:
+  · nothing from CT was pinned, so the estate was 4 addresses instead of the real host set;
+  · nothing from CT reached `ident["resolved"]`, and **`cert_intel` joins every one of its findings
+    against exactly that map** — so the TWO REVOKED CERTIFICATES (`iiko.nzn`, `oo`) that this
+    feature was built for produced NOTHING, on the very engagement it was built from;
+  · the shared-key blast radius (one certificate over gateway + mail + autodiscover + srv-kap-gt)
+    was invisible for the same reason.
+CT records INTENT: somebody requested a certificate for that name. Checking whether it also
+RESOLVES costs one DNS query and is the whole difference between a name and a host. Measured on the
+real data: **6 resolved names -> 13**, and revoked-but-live findings **0 -> 2**.
+
+**AND THE NAMING MINER HAD BEEN SKIPPING ITSELF ON EVERY RUN.** It read `ident["domains"]` and
+`ident["ct_domains"]`. The first is not populated until `merge_variants()` at the END of
+resolve_identity — i.e. AFTER the miner runs — and the second **has never existed anywhere in the
+codebase**. So the grammar saw one apex, found no site codes, and the `if _gram.get("sites")` guard
+skipped the whole block silently. There is no `[auto] naming convention:` line anywhere in the
+ns03.ru log, which is what a silent skip looks like: nothing. FOURTH time this session I assumed a
+key or a signature instead of reading it (`run()` returns an int · `getJSON` vs `postJSON` ·
+`_get_json` had no `headers` · now this).
+RULE, restated because it keeps costing: **a feature guarded by `if <derived thing>:` fails
+silently by construction.** Either log the skip, or assert the wiring in a test — §24 now does both.
+
+Guarded by test_recall.py §24, which asserts the property AND the wiring, and was verified in both
+directions: removing the CT-resolution block fails, and pointing the miner back at the dead key
+fails. One assertion of mine had to be corrected in the process — I claimed the CT names reveal
+addresses the wordlist never reached, and on this target they do not (the wordlist already had all
+four). The gain is the NAMES, which is what makes a certificate joinable to a host at all.

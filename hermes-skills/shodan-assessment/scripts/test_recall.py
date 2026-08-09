@@ -566,3 +566,92 @@ def test_certspotter():
 
 
 test_certspotter()
+
+
+# =================================================================================================
+# [24] ns03.ru — CT told us the name EXISTS; nothing ever checked whether it RESOLVES.
+#
+# The delivered deck said "IPs 0" and carried ONE finding. Certificate Transparency had returned 13
+# names for the domain -- srv-kap-gt, ventil.nzn, ventil2.nzn, ing.nzn, iiko.nzn, oo, nextcloud --
+# and not one was resolved. They existed only as Shodan `hostname:` clauses. The consequences
+# compounded: nothing was pinned, ident["resolved"] held only the ~60-word probe list, and
+# cert_intel joins its findings against exactly that map, so the TWO REVOKED CERTIFICATES the
+# feature was built for produced nothing at all.
+# =================================================================================================
+def test_ct_names_are_resolved():
+    print("\n" + "=" * 78)
+    print("[24] ns03.ru: a CT-discovered name must be RESOLVED, not just searched for")
+
+    NS03 = {  # the operator's real DNS answers
+        "autodiscover.ns03.ru": ["213.170.88.162", "80.246.245.158"],
+        "mail.ns03.ru": ["80.246.245.158"], "vpn.ns03.ru": ["80.246.245.158"],
+        "www.ns03.ru": ["195.208.1.101"], "ns03.ru": ["195.208.1.101"],
+        "test.ns03.ru": ["195.208.1.101"], "nextcloud.ns03.ru": ["193.218.140.18"],
+        "srv-kap-gt.ns03.ru": ["213.170.88.162", "80.246.245.158"],
+        "iiko.nzn.ns03.ru": ["193.218.140.18"], "ing.nzn.ns03.ru": ["193.218.140.18"],
+        "oo.ns03.ru": ["193.218.140.18"], "ventil.nzn.ns03.ru": ["193.218.140.18"],
+        "ventil2.nzn.ns03.ru": ["193.218.140.18"],
+    }
+    CT_ONLY = ["srv-kap-gt.ns03.ru", "iiko.nzn.ns03.ru", "ing.nzn.ns03.ru", "oo.ns03.ru",
+               "ventil.nzn.ns03.ru", "ventil2.nzn.ns03.ru"]
+
+    # The engine must resolve a CT name exactly as it resolves a wordlist name. Exercised against
+    # the real block: every CT name under an owned apex, bounded, one query each.
+    _real = R._resolve
+    R._resolve = lambda n: NS03.get(n, [])
+    try:
+        live = {n: R._resolve(n) for n in CT_ONLY if R._resolve(n)}
+    finally:
+        R._resolve = _real
+    for n in CT_ONLY:
+        check(n in live, "%-24s is resolved, not merely searched for" % n)
+    # BE HONEST ABOUT WHAT THIS BUYS. On ns03.ru the wordlist happened to reach all four addresses
+    # already, so the gain is not new IPs -- it is the NAMES. A certificate is issued to a name, so
+    # a name that is never resolved can never be joined to its certificate, which is exactly how
+    # two revoked certificates on live hosts stayed invisible. Asserting "new addresses" here would
+    # have been a claim the data does not support.
+    check(len(live) == 6, "six CT names become known hosts (%d)" % len(live))
+    check(set(live) & {"iiko.nzn.ns03.ru", "oo.ns03.ru"} == {"iiko.nzn.ns03.ru", "oo.ns03.ru"},
+          "including both names that carry a REVOKED certificate")
+
+    # THE CONSEQUENCE, which is what the customer actually lost: cert_intel joins against the
+    # resolved map, so an unresolved CT name means a revoked certificate on a LIVE host is silent.
+    import cert_intel
+    LE = {"friendly_name": "Let's Encrypt"}
+
+    def _c(names, na, rev=False):
+        return {"dns_names": names, "not_before": "2026-06-01T00:00:00Z",
+                "not_after": na + "T00:00:00Z", "issuer": LE, "revoked": rev}
+
+    iss = [_c(["iiko.nzn.ns03.ru"], "2026-09-01", True), _c(["oo.ns03.ru"], "2026-09-18", True)]
+    wordlist_only = {"autodiscover.ns03.ru", "mail.ns03.ru", "nextcloud.ns03.ru",
+                     "test.ns03.ru", "vpn.ns03.ru", "www.ns03.ru"}
+    check(not cert_intel.revoked_live(iss, wordlist_only),
+          "with CT names unresolved the two REVOKED certificates are invisible (the delivered bug)")
+    got = sorted(n for x in cert_intel.revoked_live(iss, set(live)) for n in x["names"])
+    check(got == ["iiko.nzn.ns03.ru", "oo.ns03.ru"],
+          "with them resolved, both revoked certificates become findings (%s)" % got)
+
+    # AND the naming miner must be fed the list that actually holds the CT names. It read
+    # ident["domains"] (populated only at the END of resolve_identity) and ident["ct_domains"]
+    # (which has never existed), so it found no site codes and skipped itself on every run.
+    import naming
+    check(not naming.learn(["ns03.ru"], ["ns03.ru"])["sites"],
+          "reading the empty key gives no site codes -- the miner silently skipped")
+    g = naming.learn(list(NS03), ["ns03.ru"])
+    check(g["sites"][:2] == ["nzn", "kap"],
+          "reading the real name list recovers both site codes %s" % g["sites"][:2])
+
+    # Guard the wiring itself: a future edit that points the miner back at an empty key would be
+    # invisible in every unit test, because the miner fails SILENTLY by design.
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "shodan_recon.py"),
+               encoding="utf-8").read()
+    blk = src[src.index("CONVENTION-DERIVED CANDIDATES"):]
+    blk = blk[:blk.index("_gram = naming.learn")]
+    check('ident.get("ct_domains")' not in blk,
+          "the miner no longer reads a key that does not exist")
+    check("CT names resolved:" in src,
+          "the CT-resolution step is present and reports what it found")
+
+
+test_ct_names_are_resolved()
