@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { authBegin, authVerify } from "../api.js";
 import SiteHeader from "../components/SiteHeader.jsx";
 import { useT } from "../i18n";
+import TabBar from "../components/TabBar.jsx";
 
 export default function Login() {
   const [, , t] = useT();
@@ -114,6 +115,7 @@ export default function Login() {
           <a href="/impressum">Impressum</a> · <a href="/privacy">Datenschutz / Privacy</a> · <a href="/contact">Kontakt</a></div>
       </main>
       </div>
+      <TabBar />
     </div>
   );
 }

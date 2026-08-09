@@ -86,6 +86,38 @@ def test_every_public_route_is_reachable_from_the_header():
     assert not dead, "MoreMenu links to routes App.jsx does not register: %s" % dead
 
 
+def test_every_public_page_keeps_the_phone_tab_bar():
+    """A phone user must never land on a page with no bottom navigation.
+
+    THE DEFECT (operator, 9 Aug 2026): the tab bar lived only on the landing page, so tapping
+    anything in the More menu, or Demo, or even the bar's own "Open" tab, produced a screen with no
+    navigation at all. In a standalone PWA the Android back button is not always shown, so that was
+    a dead end. It is the same failure the More menu itself was created to fix, one level up.
+
+    The cabinet is excluded ON PURPOSE: it has its own bottom navigation and two docked bars would
+    overlap. That is a real distinction, so the test states it rather than skipping /app quietly.
+    """
+    pages = os.path.join(FE, "src", "pages")
+    CABINET = {"Cabinet.jsx", "NewAssessment.jsx", "Compliance.jsx", "Assistant.jsx", "History.jsx"}
+    missing = []
+    for f in sorted(os.listdir(pages)):
+        if not f.endswith(".jsx") or f in CABINET:
+            continue
+        if "<TabBar" not in _read(os.path.join(pages, f)):
+            missing.append(f)
+    assert not missing, (
+        "these public pages do not render <TabBar/>, so a phone user reaching them has no bottom "
+        "navigation and no way back: %s" % missing)
+
+    # And the reverse: the cabinet must NOT render it, or two docked bars overlap.
+    for f in sorted(CABINET):
+        p = os.path.join(pages, f)
+        if os.path.exists(p) and "<TabBar" in _read(p):
+            raise AssertionError(
+                "%s renders the public TabBar, but the cabinet already has its own bottom "
+                "navigation. Two fixed bars at the bottom cover each other." % f)
+
+
 def test_the_sitemap_and_robots_agree_with_the_bot_gate():
     """A crawler allowed by robots.txt but 404'd by the bot gate just burns crawl budget."""
     robots = _read(os.path.join(FE, "public", "robots.txt"))

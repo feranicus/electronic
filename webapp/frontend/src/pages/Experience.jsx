@@ -11,6 +11,7 @@
 import { GROUP, PRINCIPAL, OPERATOR, useLegalLang } from "../legal";
 import { useT } from "../i18n.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
+import TabBar from "../components/TabBar.jsx";
 
 export default function Experience() {
   const [lang] = useLegalLang();
@@ -98,6 +99,7 @@ export default function Experience() {
         <a href="/impressum">Impressum</a> &middot; <a href="/privacy">Datenschutz / Privacy</a> &middot;{" "}
         <a href="/contact">{t("nav.contact")}</a>
       </p>
+      <TabBar />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { IMPRESSUM, OPERATOR, GROUP, controller, operatorReady, useLegalLang } from "../legal";
 import { useT } from "../i18n.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
+import TabBar from "../components/TabBar.jsx";
 
 export default function Impressum() {
   const [lang] = useLegalLang();
@@ -81,6 +82,7 @@ export default function Impressum() {
 
         <p className="legal-foot">{t.note}</p>
       </div>
+      <TabBar />
     </div>
   );
 }

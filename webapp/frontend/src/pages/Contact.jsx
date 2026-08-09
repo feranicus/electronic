@@ -3,6 +3,7 @@
 import { CONTACT, OPERATOR, GROUP, useLegalLang } from "../legal";
 import { useT } from "../i18n.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
+import TabBar from "../components/TabBar.jsx";
 
 const ICONS = {
   email: (<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5" /><path d="M3 6l9 7 9-7" /></svg>),
@@ -86,6 +87,7 @@ export default function Contact() {
       <p className="legal-foot" style={{ marginTop: 16 }}>
         {t.legal}<a href="/experience">{tk("exp.h1")}</a> &middot; <a href="/impressum">Impressum</a> &middot; <a href="/privacy">Datenschutz / Privacy</a>
       </p>
+      <TabBar />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import TabBar from "../components/TabBar.jsx";
+import TabBar, { tabsFor } from "../components/TabBar.jsx";
 import WhatsAppFab from "../components/WhatsAppFab.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
 import { useT, useTx } from "../i18n";
@@ -26,14 +26,9 @@ export default function Landing() {
   // the whole site map from every phone. They now drive a native-app style bottom tab bar
   // (the jev.best pattern) with a scroll-spy that keeps the active tab in sync with the page.
   const nav = useNavigate();
-  const TABS = [
-    { id: "edge", label: t("tab.why"), href: "#edge" },
-    { id: "demo", label: t("tab.live"), href: "#demo" },
-    { id: "map", label: t("tab.machine"), href: "#map" },
-    { id: "deep", label: t("tab.deep"), href: "#deep" },
-    { id: "secure", label: t("tab.secure"), href: "#secure" },
-    { id: "app", label: t("tab.open"), to: "/login" },
-  ];
+  // ONE tab list, defined in TabBar.jsx, because the bar now renders on every public page and two
+  // copies would drift the moment a label changed.
+  const TABS = tabsFor(t);
   const [tab, setTab] = useState("edge");
 
   const go = (t) => {
@@ -41,6 +36,16 @@ export default function Landing() {
     const el = document.querySelector(t.href);
     if (el) { setTab(t.id); el.scrollIntoView({ behavior: "smooth", block: "start" }); }
   };
+
+  // ARRIVING FROM ANOTHER PAGE. Off the landing page the tab bar navigates to "/#map"; React
+  // Router does not scroll to a hash by itself, so without this the user lands at the top and the
+  // tab they pressed appears to have done nothing.
+  useEffect(() => {
+    const id = (window.location.hash || "").slice(1);
+    if (!id) return;
+    const el = document.getElementById(id);
+    if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: "auto", block: "start" }));
+  }, []);
 
   useEffect(() => {
     // scroll-spy: whichever section owns the middle of the viewport lights its tab

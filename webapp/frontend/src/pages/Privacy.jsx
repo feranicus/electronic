@@ -2,6 +2,7 @@
 // page and the Art.13 notice on the Assess screen can never drift apart.
 import { PRIVACY, useLegalLang } from "../legal";
 import SiteHeader from "../components/SiteHeader.jsx";
+import TabBar from "../components/TabBar.jsx";
 
 export default function Privacy() {
   const [lang] = useLegalLang();
@@ -54,6 +55,7 @@ export default function Privacy() {
         </p>
         <p className="legal-foot"><strong>{t.disclaimerT}</strong>{t.disclaimer}</p>
       </div>
+      <TabBar />
     </div>
   );
 }

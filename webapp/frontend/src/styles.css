@@ -691,6 +691,17 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 
   /* keep the docked bar from covering the end of the page */
   .foot{padding-bottom:calc(var(--tabbar) + var(--sab) + 24px) !important}
+  /* THE DOCKED BAR COVERS THE END OF EVERY PAGE IT IS ON. It is `position:fixed`, so it takes no
+     space in the flow: without this, the last paragraph, the last button and the footer links sit
+     underneath it and cannot be tapped. Landing had this rule; the bar now renders on every public
+     page, so every public page needs it. Same class of defect as the mobile bottom bar that kept
+     `height:100vh` and covered the screen. */
+  .legal,.partners,.demo-wrap,.iam-page{
+    padding-bottom:calc(var(--tabbar) + var(--sab) + 24px)}
+  /* The login card is vertically centred in a flex column; padding on the page would push it off
+     centre, so the SPLIT gets the clearance instead. */
+  .iam-page{padding-bottom:0}
+  .iam-page > .iam{padding-bottom:calc(var(--tabbar) + var(--sab))}
   /* the header keeps brand + CTA; the sections live in the tab bar now */
   #hd nav a:not(.btn){display:none}
 }

@@ -3467,3 +3467,32 @@ design.
 PROCESS NOTE, MINE: twice today an edit script asserted an anchor AFTER making earlier replacements
 in memory and threw before writing, silently losing the earlier edits. Validate every anchor FIRST,
 then edit, then write.
+
+## The phone tab bar now lives on EVERY public page (2026-08-09, operator report)
+Filmed: tapping anything in the More menu, or Demo, or even the bar's own "Open" tab, landed on a
+screen with NO bottom navigation. In a standalone PWA the Android back button is not always shown,
+so that was a dead end. It is the same failure the More menu was created to fix, one level up.
+
+CAUSE: `TabBar` was rendered only by Landing.jsx, which also owned the tab list, the active state
+and the click handler. The tabs are SECTIONS OF THE LANDING PAGE, so the component had no meaning
+anywhere else.
+
+FIX: `TabBar` is self-contained. It owns the tab list (`tabsFor(t)`, imported by Landing so the two
+cannot drift) and behaves by route: on `/` it scrolls in place and Landing's scroll-spy lights the
+tab; anywhere else it navigates to `/#<id>`. An in-page jump to a section that does not exist on
+this page would silently do nothing, which is the trap SiteHeader's nav anchors already document.
+Landing gained a mount effect that scrolls to `window.location.hash`, because React Router does not
+do it and without it the tab appears to have done nothing.
+
+TWO THINGS THAT ARE EASY TO MISS HERE:
+  * **A fixed bar takes no space in the flow.** Every page it now appears on needed
+    `padding-bottom:calc(var(--tabbar) + var(--sab) + 24px)`, or the last paragraph and the footer
+    links sit underneath it and cannot be tapped. Landing already had that rule; the other seven
+    pages did not. Same class as the mobile bottom bar that kept `height:100vh`.
+  * **The login card is vertically centred**, so page padding would push it off centre. The
+    clearance goes on `.iam-page > .iam` instead.
+
+NOT IN THE CABINET. /app has its own bottom navigation and two docked bars would cover each other.
+`tests/test_routes.py` asserts BOTH directions — every public page renders it, no cabinet page
+does — and states the distinction rather than skipping /app quietly. Proven by SSR (8 public pages
+x 1 bar x 6 tabs, /app none) and by two negative tests.

@@ -17,6 +17,7 @@ import WhatsAppFab from "../components/WhatsAppFab.jsx";
 import { useLegalLang, OPERATOR } from "../legal";
 import { useT } from "../i18n.jsx";
 import { partnersFor } from "../partners-locales/index.js";
+import TabBar from "../components/TabBar.jsx";
 
 // Inline emphasis: **bold** inside a bullet. A deliberately tiny subset of Markdown.
 //
@@ -186,6 +187,7 @@ export default function Partners() {
       </div>
 
       <WhatsAppFab />
+      <TabBar />
     </div>
   );
 }

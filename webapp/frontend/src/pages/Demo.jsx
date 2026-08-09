@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import WhatsAppFab from "../components/WhatsAppFab.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
 import { useT } from "../i18n";
+import TabBar from "../components/TabBar.jsx";
 
 /* Public DEMO — "Trojan Empire".
  *
@@ -217,6 +218,7 @@ export default function Demo() {
           </div>
         </div>
       </section>
+      <TabBar />
     </div>
   );
 }
