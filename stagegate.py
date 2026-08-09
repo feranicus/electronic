@@ -145,7 +145,7 @@ if [ -f /opt/caddyguard/agent.py ] && docker ps --format '{{.Names}}' | grep -qi
   # NEVER truncate a failure detail to the last 2 lines: the line that names the cause is usually
   # not the last one. Show the whole diagnosis (minus the alerting noise) — that omission turned a
   # port mismatch into "FAIL ... structural: ok validate: ok", which reads as a contradiction.
-  [ $? -eq 0 ] && chk proxy_config yes "caddyguard: staging proxy config valid + loaded on :8080" \
+  [ $? -eq 0 ] && chk proxy_config yes "caddyguard: staging proxy config VALID + healthy on :8080 (that it is actually LOADED is proven by config_drift, not here)" \
                 || chk proxy_config no "caddyguard: $(grep -v -i 'telegram' /tmp/cg.out | tr '\n' ' | ')"
   P=$(curl -s -A "$UA" -o /dev/null -w '%{http_code}' --max-time 15 -H 'Host: cybergod.ai' http://127.0.0.1:8080/api/me)
   [ "$P" = "401" ] && chk proxy_routes yes "proxy -> colt-web -> 401 (the production path)" \
@@ -302,6 +302,15 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
   # Staging serves exactly one vhost: the committed deploy/caddy/cybergod.caddy block on :8080,
   # which is why the probes above send `Host: cybergod.ai`. So that IS the expected roster here.
   RO=$(CADDY_EXPECT="cybergod.ai" python3 /opt/caddyguard/agent.py roster 2>&1 | tr '\n|' '  ' | cut -c1-160)
+  # ADMIN API EXPOSURE. Raised by kimi-k2.6 and checked by nobody: every drift/roster check READS
+  # the admin API and the deploy WRITES through it, so if it were ever bound off-loopback or the
+  # port published, whoever reached it would own the shared proxy while every check stayed green.
+  AD=$(python3 /opt/caddyguard/agent.py admin 2>&1 | tr '\n|' '  ' | cut -c1-160)
+  case "$AD" in
+    OK*)   chk admin_api_closed yes "${AD#OK }" ;;
+    SKIP*) chk admin_api_closed no  "could not check the admin API: ${AD#SKIP }" ;;
+    *)     chk admin_api_closed no  "$AD" ;;
+  esac
   case "$RO" in
     OK*) chk vhost_roster yes "${RO}" ;;
     # We are inside `if docker ps | grep caddy`, so a SKIP here cannot mean "no proxy". It means

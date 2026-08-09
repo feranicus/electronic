@@ -187,6 +187,8 @@ python3 /opt/caddyguard/agent.py drift
 # reloads leaves both sides agreeing on an estate that is missing a customer's domain. Only a
 # committed list of expected vhosts catches that, and it is the 6 Aug shape one level up.
 python3 /opt/caddyguard/agent.py roster
+echo '--- ADMIN API ---'
+python3 /opt/caddyguard/agent.py admin
 if python3 /opt/caddyguard/agent.py drift 2>/dev/null | grep -q '^DRIFT'; then
   echo "-> forcing a full admin-API load so the process matches the file"
   CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)

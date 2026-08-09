@@ -534,6 +534,13 @@ def _served(cfg):
                 handlers.add("respond:%s" % (o.get("status_code") or o.get("headers") or ""))
             elif hd == "vars" and o.get("root"):
                 handlers.add("root:" + str(o["root"]))
+            # PATH MATCHERS. kimi-k2.6 was right that hosts + terminal handlers alone is coarse:
+            # a fragment rewritten so /api routes elsewhere keeps the same host set and the same
+            # handler TYPES, and the old comparison saw nothing. A path matcher is stable under
+            # re-serialisation, so it can be compared safely.
+            p = o.get("path")
+            if isinstance(p, list) and p:
+                handlers.add("path:" + ",".join(sorted(str(x) for x in p)))
             for v in o.values():
                 walk(v)
         elif isinstance(o, list):
@@ -554,6 +561,53 @@ EXPECT = [d for d in os.environ.get(
     "CADDY_EXPECT",
     "cybergod.ai,www.cybergod.ai,godeyes.ai,jobhuntwow.com,www.jobhuntwow.com,klimaanlage-preise.de"
 ).split(",") if d.strip()]
+
+
+def cmd_admin():
+    """Is Caddy's admin API reachable from anywhere but localhost?
+
+    THE POINT kimi-k2.6 RAISED AND NOBODY HAD CHECKED (9 Aug 2026). Every drift and roster check in
+    this file READS `http://127.0.0.1:2019/config/`, and the deploy WRITES through it
+    (`POST /load`). That endpoint replaces the running configuration for EVERY domain on the box
+    and has no authentication of its own: Caddy's only protection is that it binds to loopback by
+    default. Nothing asserted that it still does. If a config ever set `admin { listen :2019 }`, or
+    the port were published by Docker, anyone able to reach it would own the shared proxy, and
+    every check in this file would keep reporting green while they did.
+
+    Two independent questions, because either alone can be wrong:
+      1. what the RUNNING config says the admin endpoint binds to;
+      2. whether the port is actually published to a public interface by Docker.
+    """
+    c = container()
+    if not c:
+        print("SKIP no proxy container"); return 0
+
+    bad = []
+    raw = sh(["docker", "exec", c, "wget", "-qO-", "http://127.0.0.1:2019/config/"]).stdout
+    listen = None
+    if (raw or "").strip():
+        try:
+            listen = ((json.loads(raw).get("admin") or {}).get("listen"))
+        except Exception:
+            listen = None
+    # Absent means Caddy's default, which IS localhost:2019. An explicit value must be loopback.
+    if listen is not None:
+        v = str(listen)
+        if not (v.startswith("localhost") or v.startswith("127.0.0.1") or v.startswith("[::1]")):
+            bad.append("the running config binds the admin API to %r, not loopback" % v)
+
+    ports = sh(["docker", "port", c]).stdout or ""
+    for line in ports.splitlines():
+        if "2019" in line and ("0.0.0.0" in line or "[::]" in line):
+            bad.append("docker publishes the admin port to the world: %s" % line.strip())
+
+    if bad:
+        for b in bad:
+            print("EXPOSED " + b)
+        return 1
+    print("OK admin API is loopback-only (%s) and not published"
+          % (listen or "Caddy default localhost:2019"))
+    return 0
 
 
 def cmd_roster():
@@ -637,6 +691,8 @@ def main(argv):
         return cmd_drift()
     if cmd == "roster":
         return cmd_roster()
+    if cmd == "admin":
+        return cmd_admin()
     if cmd == "show":
         return cmd_show()
     print(__doc__)

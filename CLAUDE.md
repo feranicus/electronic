@@ -3430,3 +3430,40 @@ about the sheet treatment, the larger tap targets, and the grab handle is gone b
 menu is not draggable. Still portalled and `fixed`, so the Android stacking-context bug stays fixed.
 RULE: a menu belongs next to the control that opened it. Distance between cause and effect is what
 made this read as a different component.
+
+## THE PANEL, 9 Aug 2026: three of four held up, and one was a real SECURITY gap
+The roster fix from the previous run worked (`vhost_roster OK all 1 expected domain(s) are served`,
+before and after the reboot), which is why the panel moved on to sharper points. Reviewed against
+the code, not the prose:
+
+**RIGHT, and it is the `config_reread` disease again.** `proxy_config` printed "valid + loaded"
+while `agent.py check` only VALIDATES and heals; what proves LOADED is `config_drift`. A PASS whose
+wording implies more than it measured is the exact defect already fixed once in this file. The
+label now says VALID + healthy and names the check that proves loading.
+
+**RIGHT, and NEW.** "Comparing host and handler SETS is coarse: a routing change could pass."
+`_served()` collected hostnames, proxy upstreams, file_server, respond and root, so a fragment
+rewritten to route `/api` somewhere else kept the same hosts and the same handler TYPES and drifted
+undetected. Path matchers are now part of the comparison; they are stable under re-serialisation,
+so they can be compared safely. (Note this is a DIFFERENT claim from kimi's previous, wrong one
+that the check hash-compares two serialisations. That one is still wrong.)
+
+**RIGHT, NEW, AND THE BEST CATCH THE PANEL HAS PRODUCED.** *"No check verifies admin API
+accessibility or its authentication."* Every drift and roster check READS
+`http://127.0.0.1:2019/config/`, and the deploy WRITES through it (`POST /load`). That endpoint
+replaces the running configuration for EVERY domain on the box and has no authentication of its
+own: Caddy's only protection is that it binds to loopback by default. **Nothing asserted it still
+did.** One `admin { listen :2019 }` in any project's fragment, or a published port, and whoever
+reached it would own the shared proxy while every check in the file reported green. New
+`agent.py admin` asserts both independently: what the RUNNING config binds the admin endpoint to,
+and whether Docker publishes the port. Wired into stagegate (`admin_api_closed`) and the production
+caddyguard run. Six cases exercised against real config shapes: default/localhost/127.0.0.1 pass,
+`:2019` and `0.0.0.0:2019` fail, and a docker-published port fails.
+
+**WRONG.** "No check sends traffic through the shared proxy from outside." Production ends with
+`--- OUTSIDE VIEW ---`, five external probes against the real names. Staging has no public name by
+design.
+
+PROCESS NOTE, MINE: twice today an edit script asserted an anchor AFTER making earlier replacements
+in memory and threw before writing, silently losing the earlier edits. Validate every anchor FIRST,
+then edit, then write.
