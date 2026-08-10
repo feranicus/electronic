@@ -3835,3 +3835,150 @@ abakus incident forbade. It is admitted ONLY when it shares a site zone with a n
 strong OT word. And zone membership CORROBORATES; it does not ADMIT: `iiko.nzn` (a restaurant
 point-of-sale platform) sits in the same zone and is correctly left out. That last case was the one
 negative test my first version did not catch, because my own fixture never asserted it.
+
+## THE PANEL, 9 Aug 2026 (third run): one NO-GO, one wrong mechanism, two real improvements
+kimi-k2.6 returned NO-GO against a 37/37 green gate. The unanimity rule did not fire (1 of 4), and
+the note printed for the operator to read. Reviewed against the code:
+
+**WRONG MECHANISM, RIGHT DOCTRINE.** *"admin_api_closed is broken: localhost inside a container is
+reachable from any other container on the same Docker network namespace."* It is not — each
+container has its OWN network namespace, so `localhost` inside videodead-caddy is not addressable
+from colt-web, and only `network_mode: container:`/`service:` sharing would change that, which
+nothing here uses. **But the constructive half stands and it is this file's own doctrine: a check
+that REASONS about its subject is weaker than one that REPRODUCES it.** `cmd_admin` now actually
+attempts `http://<caddy-bridge-ip>:2019/config/` from a different running container and reports
+EXPOSED if it answers. Inference became measurement.
+
+**RIGHT, AND NEW.** *"vhost_roster says 'all 1 expected domain(s) are served (2 host(s) total)' —
+the extra host is unexplained. By symmetric logic, a vhost that silently APPEARS should also be a
+failure."* Correct. The roster's premise is that a disappearing vhost is a failure; on a SHARED
+proxy an appearing one means something is claiming traffic and certificates for a name nobody
+committed. Extras are now named. Deliberately a WARNING, not a failure: launching a site is a
+normal operation and a gate that fails every launch is switched off within a week.
+
+**HALF WRONG, AND THE HALF THAT WAS RIGHT WAS THE MOST VALUABLE ITEM.** *"No check exercises the
+reload path."* It does — every deploy writes, applies via `POST /load`, then runs config_drift, on
+both boxes. But each run writes essentially the SAME config, so drift passing never proved a
+DIFFERENT one would propagate, and that is exactly the 6 Aug mechanism: the file changed and the
+process served the old bytes for twelve hours. New staging check `config_change_propagates` adds a
+real vhost through the guard's own validate-then-apply path, proves it reaches the RUNNING config
+without a reboot, removes it and proves it is gone. Safe here in a way it would not be on
+production: the fragment is VALID (unlike the negative test that took staging down in an earlier
+round), and **the revert runs before the verdict**, so a failure cannot leave staging serving it.
+
+TWO MISTAKES OF MINE WHILE DOING IT, both the same one:
+  · I wrote `docker exec "$CADDY"` into the staging script using a variable that script never
+    defines. The container name is now READ the same way the check above it reads it.
+  · The test asserting the admin probe searched for the literal `"docker exec"`, but `sh()` takes
+    an ARGV LIST, so that string never appears — it failed a correct file. Assume the shape of the
+    code and you write a check that cannot pass for the right reason.
+Also fixed: `datetime.utcnow()` in the release notes, which printed a DeprecationWarning into every
+release.
+
+## The sales/partner consensus deck — and the title row is arithmetic, for the third time (2026-08-09)
+`marketing/build_consensus_business_deck.py` argues the MARKET for the 4-model panel; the existing
+`build_consensus_deck.py` argues the mechanism. The new file IMPORTS the old one's Deck/card/
+bullets/stat helpers, so the S4biz template exists in exactly one implementation and the two decks
+cannot drift.
+
+THREE CONTENT RULES, decided with the operator and enforced in the file's own docstring:
+1. **No unsubstantiated comparison against a named product.** We have never benchmarked against
+   Claude, ChatGPT or Gemini. The comparison slide argues ARCHITECTURE — what follows from using
+   one model rather than four — which is checkable without trusting us, plus our own catch ledger.
+   An unsubstantiated superiority claim against a named competitor is comparative advertising under
+   UWG §6 and the UCP Directive. The architecture argument is also strictly stronger: it cannot be
+   refuted by a new model release.
+2. **Every number is ours and measured, or external and cited on the slide.** Operating figures are
+   read out of this repository and the live cost ledger (43 deterministic checks, 426 assertions,
+   11 regression suites, 170 documented defect classes, 183 assessments at $0.0049 average AI
+   cost). Market figures carry their source and are labelled ILLUSTRATIVE because they are
+   benchmarks for comparable services, not our quotes.
+3. **Intelligence services by MISSION, never as prospects.** Naming an agency as a target in a
+   document that circulates is a problem in itself.
+
+THE DECK SHOWS ITS OWN MISSES. Slide 6 is where the panel was WRONG (inverted a check, invented a
+Kubernetes manifest that does not exist, restated the problem as diagnosis). That is not modesty:
+showing the misses is what makes the catches believable, and it is the same doctrine the engine
+applies to itself.
+
+**THE DEFECT THE RENDER CAUGHT, and it is the third instance of one lesson.** Slide 11's title was
+53 characters, wrapped onto a second line at 30pt Arial Black, and that line landed on top of the
+sub-heading. A fixed-height title row is an ARITHMETIC problem, exactly like the site header row
+that this repo has already paid for twice. `_check_title` now fails the BUILD, and it is wired by
+wrapping `d.slide` so a new slide cannot forget to call it.
+**THE CAP WAS SET FROM THE RENDER, NOT CHOSEN.** 49 chars is observed to fit on one line; 53 is
+observed to wrap. So the limit lies in 49..52 and the cap is 50 — the lower end. My first attempt
+set it to 48, the guard immediately failed a title that demonstrably fits, and the honest response
+was to re-read the evidence rather than bump the number until the build went green.
+RULE, restated: judge a visual by RENDERING it. `soffice --headless --convert-to pdf` plus
+pdf2image gives a contact sheet of every slide in seconds, and it is the only thing that would have
+caught this.
+
+## The consensus METHOD deck — sell the algorithm, not the product (2026-08-09)
+The operator corrected a misread: he does not want cybergod.ai pitched. He wants the consensus
+ALGORITHM sold as a decision method engineered into a customer's own business process, with revenue
+in the shape of the Uzbekistan secure-handset programme — development, integration, testing,
+support. `marketing/build_consensus_method_deck.py` is that deck; it reuses the same S4biz template
+helpers, so there is still exactly ONE template implementation across three decks.
+
+**"STOP GUESSING AND STOP JUST ESTIMATING."** The operator's instruction was to go to Gartner,
+McKinsey, Bain and BCG and fact-check. Every market figure on the deck is from a named, dated,
+published source printed ON THE SLIDE:
+  · Gartner 25 Jun 2025 — >40% of agentic AI projects cancelled by end-2027; named causes are cost,
+    unclear value and INADEQUATE RISK CONTROLS; only ~130 of thousands of agentic vendors are real.
+    That third cause is the whole wedge: the method IS the risk control.
+  · Gartner 11 Mar 2026 — multi-agent outperformance by 2028; by 2030 half of agent failures trace
+    to insufficient governance RUNTIME enforcement.
+  · Gartner 17 Mar 2026 — 80%+ of governments deploying AI agents for routine decisions by 2028.
+  · Gartner 19 May 2026 — worldwide AI spending $2.59tn in 2026, +47%.
+  · McKinsey State of AI 2025 — 88% adoption, only ~39% reporting ANY EBIT impact, most below 5%.
+  · McKinsey / BCG-Wellcome — in-silico development up to 60% trial development cost and 40% cycle
+    time; up to 50% early discovery cost; 25-50% early R&D time.
+  · McKinsey product-launch research — launch failure above 40%, and NO correlation between launch
+    spend and success. That second half is the argument, not the first.
+
+**THE POLYGRAPH FINDING IS THE STRONGEST SLIDE IN THE DECK, and it is a limitation, not a claim.**
+The National Research Council (2003) put the median accuracy index at 0.86 but rated the evidence
+quality low and concluded that at low base rates screening produces large numbers of FALSE
+POSITIVES. Paired with RAND RR1408 — Analysis of Competing Hypotheses reduced confirmation bias for
+people WITHOUT an intelligence background and not for those with one — it makes the case that
+structure has to be enforced by the system rather than left to an experienced officer's discipline.
+Citing the weakness of the incumbent instrument sells better than asserting the strength of ours.
+
+**HONEST LIMITS ARE ON THEIR OWN SLIDE.** Every percentage is a third-party SECTOR BENCHMARK for a
+class of technique, not a result we have produced and not a forecast for any engagement. Phase 4 of
+the delivery model exists precisely so the number a customer relies on is measured on their OWN
+historical cases. That is also the phase competitors skip, because it is the phase that can fail,
+which is why it is the one that wins the deal.
+
+## ns03.ru — the Exchange the engine could not see, and the names no certificate covers (2026-08-09)
+The operator's own browser was looking at an **Outlook Web Access sign-in page on 80.246.245.158**,
+served over a certificate the browser marked Not secure, while the engine reported nothing about
+it. Two findings, both derivable from data the run ALREADY HELD.
+
+**1. SELF-HOSTED EXCHANGE, CRITICAL, and the dates are the argument.** Every Exchange detector we
+had read a scan-engine BANNER, and this estate has no scan-engine record at all — so the most
+attacked platform in the enterprise produced silence. The passive discriminator is AUTODISCOVER: it
+is an Exchange-specific service name, and an organisation on Microsoft 365 CNAMEs it into
+Microsoft's platform. When it resolves to an address the customer owns, the mail platform is
+on-premises and its web endpoints are internet-facing. `_is_saas_tenancy()` already existed to tell
+those apart — the two halves had simply never been joined.
+Severity is CRITICAL because of two published dates: Exchange Server 2016 and 2019 reached end of
+support on **14 October 2025**, and the one-time Extended Security Update option ran out on
+**14 April 2026**. An installation running today has NO security update available at any price.
+CORROBORATION IS REQUIRED, and the negative test is what proved it matters: `mail.` and `webmail.`
+are generic names every hosted provider uses, so autodiscover is the only anchor and it must be
+joined by a cert SAN, a sibling name or the MX before anything is claimed. The finding states that
+DNS proves EXPOSURE, not version, and one of its three remediation items is to confirm the build.
+
+**2. LIVE NAMES NO CERTIFICATE COVERS, MEDIUM.** `vpn.ns03.ru` and `www.ns03.ru` resolve but no
+unexpired certificate in CT covers them, which is exactly the browser warning in the operator's
+screenshot. The second-order effect is the real finding: staff who must click through a certificate
+warning to do their job will dismiss the one that matters. Wildcards are honoured (`*.x.de` covers
+`vpn.x.de`) and with no CT data at all the check claims nothing.
+
+**AND THE FIFTH TIME I ASSUMED A KEY.** The Exchange check was written against `ident["mx"]`, which
+nothing in this codebase has ever set. The corroboration would have silently fallen back to its
+other two paths and nobody would have noticed. `_mx()` now exists and populates it — one DoH query,
+no packets. Read the data, or create it; do not reference it and hope.
+Guarded by test_passive_checks.py §6, negative-tested in five directions.

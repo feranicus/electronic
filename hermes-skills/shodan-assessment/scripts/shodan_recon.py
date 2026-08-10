@@ -453,6 +453,35 @@ def _caa(domain):
     return [a.get("data", "") for a in (j.get("Answer") or []) if a.get("type") == 257]
 
 
+def _mx(domain):
+    """MX hostnames for a domain, or [] on any failure.
+
+    ADDED BECAUSE I ASSUMED THE KEY EXISTED. The Exchange check was written against
+    `ident["mx"]`, which nothing in this codebase has ever set -- the fifth time in this workstream
+    that I referenced a key or a signature without reading it first. The corroboration would have
+    silently fallen back to its other two paths and nobody would have noticed. Read the data, or
+    create it.
+
+    One DoH query, no packets to the target.
+    """
+    try:
+        j = _get_json("https://dns.google/resolve?name=%s&type=MX"
+                      % urllib.parse.quote(str(domain)), timeout=8)
+    except Exception:
+        return []
+    if not isinstance(j, dict) or int(j.get("Status", -1)) != 0:
+        return []
+    out = []
+    for a in (j.get("Answer") or []):
+        if a.get("type") != 15:
+            continue
+        # "10 mail.example.com." -> mail.example.com
+        parts = str(a.get("data") or "").split()
+        if parts:
+            out.append(parts[-1].rstrip(".").lower())
+    return out
+
+
 def _cname_chain(name):
     """The CNAME aliases a hostname resolves through, lowercased. [] on any failure.
 
@@ -1368,6 +1397,11 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     # observable service (the possible-dangling-DNS candidate), which is a DNS-derived finding
     # and cannot be reconstructed from the Shodan results alone.
     ident["resolved"] = {k: list(v) for k, v in probed.items()}
+    # The MX set, used to corroborate a self-hosted mail platform. One query per seed apex.
+    try:
+        ident["mx"] = _mx(seed_apex) if seed_apex else []
+    except Exception:
+        ident["mx"] = []
     for fqdn, ips in probed.items():
         low = fqdn.lower()
         ap = _apex(low)
@@ -1994,6 +2028,28 @@ TEMPLATES = {
              {"tag": "OSS", "title": "Track end-of-support dates against the estate",
               "body": "WHY THIS SERVICE: end of support arrives on a published date, so it is the one exposure that can be prevented entirely by knowing it is coming. WHAT YOU GET: advance warning per product, mapped to the hosts that run it. HOW: reconcile your software inventory against published vendor lifecycle dates on a schedule."}],
             ["NIS2 Art. 21", "GDPR Art. 32", "ISO/IEC 27001 A.8.8"]),
+ "exchange_onprem": ("Self-hosted Exchange is published to the internet, and it is past end of support",
+            ["Autodiscover resolves to an address the organisation owns rather than to Microsoft 365, which means the mail platform is on-premises and its web endpoints — Outlook Web Access, Exchange Web Services, Autodiscover and MAPI — are reachable from the internet.",
+             "Exchange Server 2016 and 2019 reached end of support on 14 October 2025, and the one-time Extended Security Update programme ended on 14 April 2026. An installation of either running today therefore has NO security update available at any price: the next vulnerability disclosed against it stays open permanently.",
+             "This is not a theoretical class. Internet-facing Exchange has been the entry point for the most widely exploited intrusion campaigns of recent years, and the reason is structural: the platform authenticates the whole organisation, it is exposed by design, and the population of unsupported installations is large enough to be worth an attacker's tooling."],
+            [{"tag": "COLT", "title": "Move the mailbox estate to a supported platform",
+              "body": "WHY THIS SERVICE: an unsupported mail platform cannot be made safe by patching, because there are no patches. The only durable answers are migration to a hosted service or an upgrade to the current subscription edition, and both are entangled with connectors, relay rules and applications nobody has inventoried. That entanglement, not the software, is what makes this take months. WHAT YOU GET: a supported platform with mail flow uninterrupted and every dependency identified before it becomes an outage. HOW: we inventory the senders and connectors, stage the migration or upgrade, and cut over in a window you set."},
+             {"tag": "COLT", "title": "Remove direct internet exposure now, while the migration runs",
+              "body": "WHY THIS SERVICE: the migration takes months and the exposure is live today. Publishing the web endpoints through an authenticating gateway removes direct reachability without touching the platform itself. WHAT YOU GET: Outlook Web Access, Exchange Web Services and Autodiscover reachable only through brokered, authenticated access, so an unpatched server is no longer directly addressable from the internet. HOW: we place the endpoints behind a managed access gateway with modern authentication in front, then withdraw the public exposure."},
+             {"tag": "COLT", "title": "Confirm the build and the authentication configuration",
+              "body": "WHY THIS SERVICE: this finding is derived from public DNS and certificate data, which establishes that the platform is self-hosted and exposed but not which version or which authentication methods it offers. Both change the urgency materially. WHAT YOU GET: the exact cumulative update, whether legacy or basic authentication is still accepted, and a prioritised list. HOW: a short authenticated review with your messaging team, or an authorised external check under written authorisation."}],
+            ["NIS2 Art. 21", "GDPR Art. 32", "ISO/IEC 27001 A.8.8", "CISA KEV"]),
+ "cert_name_gap": ("Live hostnames that no certificate covers",
+            ["These names resolve and answer, but no unexpired publicly-trusted certificate covers them. Every visitor reaching them over HTTPS is shown a browser trust warning before they see anything else.",
+             "The operational effect is that the service is unusable to a careful visitor and, worse, that regular users are trained to click through certificate warnings to do their job. Once that habit exists, the warning that matters — the one raised by an actual interception — is dismissed with the same reflex.",
+             "It is also a reliable indicator of an unmanaged endpoint: a name that was published without being added to the certificate is usually one that is outside whatever process governs the rest of the estate."],
+            [{"tag": "COLT", "title": "Bring every published name under certificate management",
+              "body": "WHY THIS SERVICE: the gap is almost never deliberate. A name gets published, the certificate is renewed from an old list, and nobody notices because the people who use that service learned to click through the warning. WHAT YOU GET: an inventory reconciled between what DNS publishes and what your certificates cover, with the gaps closed and an owner against each name. HOW: we reconcile the zone against certificate transparency and your own issuance records, then reissue to the corrected name set."},
+             {"tag": "COLT", "title": "Automate issuance so the list cannot drift",
+              "body": "WHY THIS SERVICE: a manually maintained certificate name list drifts every time a service is added. Automation removes the failure mode rather than correcting it once. WHAT YOU GET: certificates that follow the estate instead of trailing it. HOW: automated issuance and deployment against your existing authority, covering the appliances that are usually left out."},
+             {"tag": "OSS", "title": "Monitor the gap continuously",
+              "body": "WHY THIS SERVICE: the reconciliation is only true on the day it is done. WHAT YOU GET: an alert when a published name has no covering certificate. HOW: a scheduled comparison of the zone against public certificate logs."}],
+            ["CA/Browser Forum Baseline Requirements", "ISO/IEC 27001 A.5.15", "NIS2 Art. 21"]),
  "ot_exposed": ("Operational-technology and building-management systems are named on the public internet",
             ["These hostnames name plant and building-services functions — ventilation, heating, engineering systems, access control — and they resolve publicly, with certificates the organisation requested for them. That is an operational-technology interface published to the internet, not an office application.",
              "The distinguishing feature of an intrusion that reaches this layer is not data loss, it is that production stops. Jaguar Land Rover's September 2025 compromise halted vehicle manufacturing for weeks; the Cyber Monitoring Centre assessed total United Kingdom economic damage at approximately GBP 1.9 billion across more than 5,000 organisations, with the manufacturer losing in the order of GBP 108 million for every week of stopped output.",
@@ -2723,6 +2779,50 @@ def run(ident, F, audience, limit_per_query=500):
                     "evidence": _ev, "why": _w, "rem": _r, "refs": _f})
                 print("[auto] CT: %d live certificate(s) outside the CAA policy of %s"
                       % (len(_uz), _seedd), file=sys.stderr)
+
+    # ---- SELF-HOSTED EXCHANGE, AND NAMES NO CERTIFICATE COVERS (zero packets: DNS + CT) --------
+    # BOTH WERE MISSED ON ns03.ru while the operator's own browser was looking at an Outlook Web
+    # Access sign-in page on the raw address, over a certificate the browser rejected. Every
+    # Exchange detector we had read a scan-engine BANNER, and this estate has no scan-engine
+    # record at all -- so the most attacked platform in the enterprise produced nothing.
+    if _seedd:
+        try:
+            _cert_names_all = [n for r in (_ct_issuances or []) for n in (r.get("dns_names") or [])]
+            _ex = cert_intel.onprem_exchange(
+                ident.get("resolved") or {}, ident.get("domains") or [],
+                cert_names=_cert_names_all, is_saas=_is_saas_tenancy,
+                mx_hosts=ident.get("mx") or [])
+        except Exception as _e:
+            _ex = None
+            print("[warn] Exchange check failed: %s" % _e, file=sys.stderr)
+        if _ex:
+            _t, _w, _r, _f = TEMPLATES["exchange_onprem"]
+            _dns_findings.append({
+                "sev": "CRITICAL", "ft": "exchange_onprem", "title": _t,
+                "what": ["Autodiscover resolves to the organisation's own address, not to a hosted "
+                         "platform: the mail estate is self-hosted and internet-facing."],
+                "evidence": _ex["evidence"] + ["corroborated by: " + "; ".join(_ex["corroboration"])],
+                "why": _w, "rem": _r, "refs": _f})
+            print("[auto] SELF-HOSTED EXCHANGE exposed (CRITICAL): %s"
+                  % ", ".join(_ex["evidence"][:3]), file=sys.stderr)
+
+        try:
+            _gap = cert_intel.uncovered_names(ident.get("resolved") or {}, _ct_issuances,
+                                              ident.get("domains") or [])
+        except Exception as _e:
+            _gap = []
+            print("[warn] certificate coverage check failed: %s" % _e, file=sys.stderr)
+        if _gap:
+            _t, _w, _r, _f = TEMPLATES["cert_name_gap"]
+            _dns_findings.append({
+                "sev": "MEDIUM", "ft": "cert_name_gap", "title": _t,
+                "what": ["%d live hostname(s) are covered by no unexpired certificate."
+                         % len(_gap)],
+                "evidence": ["%s -> %s  (no certificate covers this name)"
+                             % (g["name"], ", ".join(g["addresses"])) for g in _gap[:8]],
+                "why": _w, "rem": _r, "refs": _f})
+            print("[auto] %d live name(s) covered by NO certificate: %s"
+                  % (len(_gap), ", ".join(g["name"] for g in _gap[:5])), file=sys.stderr)
 
     # ---- OPERATIONAL TECHNOLOGY, NAMED BY THE CUSTOMER (zero packets: DNS + CT) ----------------
     # CRITICAL, not HIGH. A ventilation or building-services controller reachable from the internet

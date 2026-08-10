@@ -278,3 +278,70 @@ def test_the_preview_stamp_is_platform_independent():
     for binext in (".png", ".jpg", ".mp4", ".ico", ".woff2"):
         assert binext not in ups._TEXT_SUFFIXES, (
             "%s is treated as text, so its bytes would be rewritten before hashing" % binext)
+
+
+# ============================================================================================
+# THE PANEL, 9 Aug 2026 (third run). kimi-k2.6 returned NO-GO with three risks. One mechanism was
+# wrong, two were worth building. These pin what was built.
+# ============================================================================================
+def test_the_roster_reports_unexpected_vhosts_too():
+    """kimi's symmetry argument, and it is correct.
+
+    The roster's premise is "a vhost that silently disappears is a failure". On a SHARED proxy a
+    vhost that silently APPEARS is the same class of event: something is claiming traffic and
+    certificates for a name nobody committed. It is reported as a WARNING rather than a failure,
+    because launching a new site is a normal operation and a gate that fails every launch gets
+    switched off.
+    """
+    a = _read(os.path.join(ROOT, "deploy", "caddyguard", "agent.py"))
+    blk = a[a.index("def cmd_roster"):a.index("def cmd_drift")]
+    assert "NOT on the committed roster" in blk, (
+        "the roster ignores unexpected vhosts again — it only checks that expected ones are there")
+    assert "_INTERNAL" in blk, (
+        "Caddy's own internal names would be reported as unexpected vhosts on every run, which is "
+        "the noise that gets a check disabled")
+
+
+def test_admin_isolation_is_measured_not_inferred():
+    """kimi's MECHANISM was wrong; the doctrine behind the objection was right.
+
+    Each container has its own network namespace, so `localhost` inside the proxy is not reachable
+    from another container, and nothing here shares a namespace. But a check that reasons about its
+    subject is weaker than one that reproduces it — the rule this whole file exists for. So the
+    check now actually tries the connection from a different container.
+    """
+    a = _read(os.path.join(ROOT, "deploy", "caddyguard", "agent.py"))
+    blk = a[a.index("def cmd_admin"):a.index("def cmd_roster")]
+    # `sh()` takes an ARGV LIST, so the literal "docker exec" never appears -- it is
+    # `["docker", "exec", ...]`. My first version of this assertion looked for the joined string
+    # and failed a file that was correct: the same "assume the shape instead of reading it"
+    # mistake this file keeps cataloguing, committed inside the test that catalogues it.
+    assert '"docker", "exec", probe_from' in blk and ":2019/config/" in blk, (
+        "the admin check no longer PROVES isolation by attempting the connection from another "
+        "container; it is back to inferring it from configuration")
+    assert "ANSWERED a request from another container" in blk, (
+        "a successful cross-container probe must be reported as EXPOSED")
+
+
+def test_a_config_change_is_proven_to_propagate():
+    """The valuable half of kimi's third risk.
+
+    Every deploy writes, applies and then runs config_drift — so the reload path IS exercised, and
+    the claim that it is not was wrong. But each run writes essentially the SAME config, so drift
+    passing does not prove a DIFFERENT one would propagate. That is exactly the 6 Aug mechanism:
+    the file changed and the process served the old bytes for twelve hours.
+    """
+    sg = _read(os.path.join(ROOT, "stagegate.py"))
+    assert "config_change_propagates" in sg, (
+        "nothing proves that a CHANGED config reaches the running proxy without a reboot")
+    blk = sg[sg.index("DOES A CONFIG *CHANGE* ACTUALLY PROPAGATE"):]
+    blk = blk[:blk.index("chk config_change_propagates no \"the probe vhost")]
+    assert "rm -f /opt/caddyguard/blocks/zz__reloadprobe.caddy" in blk, (
+        "the probe fragment is not removed — a test that can leave staging serving a probe vhost "
+        "is an outage with a pass/fail label")
+    # The revert must come BEFORE the pass/fail decision, so it runs whatever the result was.
+    assert blk.index("rm -f /opt/caddyguard/blocks") < blk.index("SERVED_GONE"), (
+        "the revert runs after the verdict, so a failure would leave the probe in place")
+    assert "$CADDY\"" not in sg, (
+        "a container-name variable that this script never defines is back — read the name, do not "
+        "assume it")

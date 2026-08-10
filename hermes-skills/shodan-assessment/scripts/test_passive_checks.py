@@ -281,6 +281,68 @@ def test_ot_and_blind_scanner():
     check('rem.tag + ": "' not in js, "no code path prints the raw tag any more")
 
 
+def test_exchange_and_cert_gap():
+    print("\n" + "=" * 78)
+    print("[6] ns03.ru — SELF-HOSTED EXCHANGE and the names no certificate covers")
+
+    import cert_intel as C
+    import shodan_recon as R
+
+    # The operator's own browser found an Outlook Web Access sign-in page on the raw address, over
+    # a certificate the browser rejected, and the engine said NOTHING. Every Exchange detector we
+    # had read a scan-engine banner, and this estate has no scan-engine record at all.
+    resolved = {"autodiscover.ns03.ru": ["213.170.88.162", "80.246.245.158"],
+                "mail.ns03.ru": ["80.246.245.158"], "vpn.ns03.ru": ["80.246.245.158"],
+                "www.ns03.ru": ["195.208.1.101"], "ns03.ru": ["195.208.1.101"],
+                "srv-kap-gt.ns03.ru": ["213.170.88.162"]}
+    certs = [_iss(["ns03.ru", "srv-kap-gt.ns03.ru", "mail.ns03.ru", "autodiscover.ns03.ru"],
+                  "2025-12-05", "2027-01-06", GS)]
+    names = [n for c in certs for n in c["dns_names"]]
+
+    ex = C.onprem_exchange(resolved, ["ns03.ru"], cert_names=names,
+                           is_saas=lambda n: False, mx_hosts=["mail.ns03.ru"])
+    check(bool(ex), "a self-hosted Exchange estate is detected from DNS and certificates alone")
+    check(ex and len(ex["corroboration"]) >= 2,
+          "and it is corroborated, not asserted from autodiscover alone")
+
+    # FAIL CLOSED. Microsoft 365 is a tenancy, not a server.
+    check(not C.onprem_exchange(resolved, ["ns03.ru"], is_saas=lambda n: True),
+          "a Microsoft 365 tenancy raises NOTHING (autodiscover CNAMEs into the platform)")
+    check(not C.onprem_exchange({"autodiscover.x.de": ["1.2.3.4"]}, ["x.de"]),
+          "autodiscover with no corroboration raises nothing")
+    # THE REAL FALSE-POSITIVE RISK, and the fixture above never exercised it: `mail.` and
+    # `webmail.` are generic names that every hosted provider uses. AUTODISCOVER is the only
+    # Exchange-specific anchor, so an estate with mail but no autodiscover must raise nothing.
+    check(not C.onprem_exchange({"mail.x.de": ["1.2.3.4"], "webmail.x.de": ["1.2.3.4"]},
+                                ["x.de"], mx_hosts=["mail.x.de"]),
+          "a generic mail/webmail estate with NO autodiscover is not called Exchange")
+
+    # THE DATES ARE THE ARGUMENT, so they must be in the template.
+    _t, _w, _r, _f = R.TEMPLATES["exchange_onprem"]
+    joined = " ".join(_w)
+    check("14 October 2025" in joined, "the template states the Exchange 2016/2019 end-of-support date")
+    check("14 April 2026" in joined,
+          "and that the paid Extended Security Update option has ALSO expired -- so there is no "
+          "security update available at any price")
+    check(R.TEMPLATES["exchange_onprem"] and any("confirm" in x["title"].lower() for x in _r),
+          "and a step to confirm the build, because DNS proves exposure, not version")
+
+    # NAMES NO CERTIFICATE COVERS. This is the browser warning in the operator's screenshot.
+    gaps = {g["name"] for g in C.uncovered_names(resolved, certs, ["ns03.ru"])}
+    check(gaps == {"vpn.ns03.ru", "www.ns03.ru"},
+          "the two live names no certificate covers are found (%s)" % sorted(gaps))
+    check(not C.uncovered_names(resolved, [], ["ns03.ru"]),
+          "with NO certificate data the check claims nothing (absence of evidence)")
+    check(not C.uncovered_names({"vpn.x.de": ["1.2.3.4"]},
+                                [{"dns_names": ["*.x.de"], "not_after": "2027-01-01T00:00:00Z",
+                                  "issuer": {}}], ["x.de"]),
+          "a wildcard certificate correctly covers the subdomain")
+
+    # And the MX lookup the Exchange corroboration depends on must actually exist.
+    check(callable(getattr(R, "_mx", None)),
+          "_mx() exists: ident['mx'] was referenced before anything ever set it")
+
+
 def main():
     print("=" * 78)
     print("  passive checks — replayed against the real ns03.ru engagement")
@@ -289,6 +351,7 @@ def main():
     test_naming()
     test_active_tier_is_off()
     test_ot_and_blind_scanner()
+    test_exchange_and_cert_gap()
     print("\n" + "=" * 78)
     if FAILED:
         print("  %d FAILED" % len(FAILED))

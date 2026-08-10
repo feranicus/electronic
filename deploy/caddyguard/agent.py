@@ -601,6 +601,34 @@ def cmd_admin():
         if "2019" in line and ("0.0.0.0" in line or "[::]" in line):
             bad.append("docker publishes the admin port to the world: %s" % line.strip())
 
+    # PROVE IT, DO NOT INFER IT. kimi-k2.6 argued (9 Aug 2026) that loopback plus not-published
+    # does not establish isolation from co-tenant containers on the shared Docker bridge. Its
+    # stated mechanism is wrong -- each container has its OWN network namespace, so `localhost`
+    # inside videodead-caddy is not reachable from colt-web, and only `network_mode: container:`
+    # or `service:` sharing would change that, which nothing here uses.
+    #
+    # But the CONSTRUCTIVE half of the objection stands and is the doctrine of this whole file: a
+    # check that reasons about its subject is weaker than one that reproduces it. So actually TRY
+    # to reach the admin API from a DIFFERENT container over the bridge address. If something ever
+    # does share a namespace, or a future config binds 0.0.0.0, this measures it instead of
+    # arguing about it.
+    ip = (sh(["docker", "inspect", "-f",
+              "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", c]).stdout or "").split()
+    probe_from = None
+    for cand in ("colt-web", "jhw-web", "polara-web"):
+        if (sh(["docker", "inspect", "-f", "{{.State.Running}}", cand]).stdout or "").strip() == "true":
+            probe_from = cand
+            break
+    if ip and probe_from:
+        r = sh(["docker", "exec", probe_from, "sh", "-c",
+                "wget -qO- --timeout=3 http://%s:2019/config/ 2>/dev/null | head -c 40" % ip[0]])
+        if (r.stdout or "").strip():
+            bad.append("the admin API ANSWERED a request from another container (%s -> %s:2019); "
+                       "it is reachable across the shared bridge" % (probe_from, ip[0]))
+        else:
+            print("   probed from %s -> %s:2019: no answer (isolated, measured not assumed)"
+                  % (probe_from, ip[0]))
+
     if bad:
         for b in bad:
             print("EXPOSED " + b)
@@ -627,7 +655,28 @@ def cmd_roster():
         print("MISSING the running proxy does not serve: %s" % ", ".join(missing))
         print("   serving: %s" % ", ".join(sorted(hosts)))
         return 1
+
+    # UNEXPECTED VHOSTS ARE ALSO A FINDING. kimi-k2.6 made the symmetry argument on 2026-08-09 and
+    # it is correct: this check's whole premise is that "a vhost that silently disappears is a
+    # failure", and on a SHARED reverse proxy a vhost that silently APPEARS is the same class of
+    # event. An unexplained hostname in the running config means either a project wrote outside the
+    # guard, or something is claiming traffic and certificates for a name nobody committed.
+    #
+    # It is a WARNING, not a failure, and deliberately so: legitimately adding a site is a normal
+    # operation, and a gate that fails the deploy every time somebody launches a project would be
+    # switched off within a week. It names them so the operator decides.
+    known = {d.strip() for d in EXPECT if d.strip()}
+    # Caddy's own internal names are not vhosts anyone committed and are not traffic-bearing.
+    _INTERNAL = {"localhost", "127.0.0.1", "::1", ""}
+    extra = sorted(h for h in hosts
+                   if h not in known and h.lower() not in _INTERNAL
+                   and not any(h == "www." + d or h.endswith("." + d) for d in known))
     print("OK all %d expected domain(s) are served (%d host(s) total)" % (len(EXPECT), len(hosts)))
+    if extra:
+        print("   [!] %d host(s) served that are NOT on the committed roster: %s"
+              % (len(extra), ", ".join(extra[:8])))
+        print("       On a shared proxy an unexpected vhost claims traffic and certificates for a "
+              "name nobody committed. Add it to the roster, or find out who wrote it.")
     return 0
 
 

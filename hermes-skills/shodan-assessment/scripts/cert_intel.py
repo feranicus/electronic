@@ -159,3 +159,107 @@ def internal_names(issuances, apexes):
             if any(n.endswith("." + a) or n == a for a in (apexes or [])) and pat.search(n):
                 out.add(n)
     return sorted(out)
+
+
+# =================================================================================================
+# ON-PREMISES EXCHANGE, AND THE NAMES NO CERTIFICATE COVERS.
+#
+# Both were missed on ns03.ru and both are visible in data the run ALREADY held. The operator's own
+# browser found an Outlook Web Access sign-in page on the raw address, over a certificate the
+# browser rejected, and the engine said nothing at all -- because Shodan has no record for that
+# host and every Exchange detector we had reads a scan-engine banner.
+# =================================================================================================
+_EXCHANGE_NAMES = ("autodiscover", "owa", "ews", "mail", "exchange", "webmail", "outlook")
+
+
+def onprem_exchange(resolved, apexes, cert_names=(), is_saas=None, mx_hosts=()):
+    """Evidence of a self-hosted Exchange estate, from DNS and certificates only.
+
+    THE DISCRIMINATOR IS AUTODISCOVER. It is an Exchange-specific service name, and where a company
+    uses Microsoft 365 it CNAMEs into Microsoft's platform. When it resolves instead to an address
+    the customer owns, the mail platform is on-premises and its web endpoints are internet-facing.
+
+    WHY THIS IS CRITICAL RATHER THAN INFORMATIONAL, and the dates are the argument:
+      · Exchange Server 2016 and 2019 reached end of support on 14 October 2025.
+      · The one-time Extended Security Update option ran out on 14 April 2026.
+    So a 2016 or 2019 installation running today has NO security updates available at any price.
+    Its OWA, EWS, Autodiscover and MAPI endpoints are also the most consistently attacked surface
+    in the enterprise estate.
+
+    FAILS CLOSED. A name that CNAMEs into Microsoft 365 is a tenancy, not a server, and produces
+    nothing. `is_saas` is injected so this module never touches the network.
+    """
+    saas = is_saas or (lambda n: False)
+    hits, evidence = {}, []
+    certset = {str(c).lower().lstrip("*.") for c in (cert_names or [])}
+    for name in sorted(resolved or {}):
+        n = str(name).lower()
+        if apexes and not any(n == a or n.endswith("." + a) for a in apexes):
+            continue
+        label = n.split(".")[0]
+        if label not in _EXCHANGE_NAMES:
+            continue
+        if saas(n):                                  # Microsoft 365 tenancy -> not a server
+            continue
+        hits[label] = sorted(resolved[name])
+        evidence.append("%s -> %s" % (n, ", ".join(sorted(resolved[name])[:3])))
+
+    # AUTODISCOVER IS THE ANCHOR. `mail` alone is a generic name that any provider uses; without
+    # autodiscover on the customer's own address this is not evidence of Exchange specifically.
+    if "autodiscover" not in hits:
+        return None
+
+    corroboration = []
+    if certset & {"autodiscover." + a for a in (apexes or [])}:
+        corroboration.append("a certificate the organisation requested names autodiscover")
+    for extra in ("mail", "owa", "ews", "webmail", "exchange"):
+        if extra in hits:
+            corroboration.append("%s resolves to the same estate" % extra)
+            break
+    for m in (mx_hosts or []):
+        if any(str(m).lower().rstrip(".") == k or str(m).lower().rstrip(".").startswith(k + ".")
+               for k in ("mail", "owa", "exchange")):
+            corroboration.append("the domain's MX points at the same host")
+            break
+    if not corroboration:
+        return None                                  # autodiscover alone is not enough
+
+    return {"names": hits, "evidence": evidence[:6], "corroboration": corroboration,
+            "addresses": sorted({ip for v in hits.values() for ip in v})[:6]}
+
+
+def uncovered_names(resolved, issuances, apexes=()):
+    """Live hostnames that NO unexpired certificate covers.
+
+    Every visitor to such a name gets a browser trust warning, which is a real operational finding
+    twice over: the service is unusable to a cautious user, and an organisation whose staff are
+    trained to click through certificate warnings has lost the control that certificates provide.
+    The operator's own screenshot of this estate shows exactly that: a sign-in page served on an
+    address the browser marks Not secure.
+
+    FAILS CLOSED: with no issuances at all the CT lookup failed or returned nothing, and absence of
+    evidence is never a finding.
+    """
+    if not issuances:
+        return []
+    covered, wildcards = set(), set()
+    for row in issuances:
+        for n in _names(row):
+            covered.add(n)
+    for row in issuances:
+        for raw in (row.get("dns_names") or []):
+            r = str(raw).strip().lower()
+            if r.startswith("*."):
+                wildcards.add(r[2:])
+    out = []
+    for name in sorted(resolved or {}):
+        n = str(name).lower()
+        if apexes and not any(n == a or n.endswith("." + a) for a in apexes):
+            continue
+        if n in covered:
+            continue
+        parent = n.split(".", 1)[1] if "." in n else ""
+        if parent in wildcards:                      # *.example.com covers vpn.example.com
+            continue
+        out.append({"name": n, "addresses": sorted(resolved[name])[:3]})
+    return out

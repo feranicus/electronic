@@ -109,7 +109,7 @@ def compose(facts, reviews):
     L = []
     L.append("RELEASE  %s" % facts.get("tag", "?"))
     L.append("commit   %s" % facts.get("commit", "?"))
-    L.append("when     %s UTC" % datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M"))
+    L.append("when     %s UTC" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M"))
     if facts.get("message"):
         L.append("message  %s" % facts["message"])
     L.append("")

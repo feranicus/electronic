@@ -330,6 +330,54 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
     # A fallback that turns an unknown answer into a pass is strictly worse than no check.
     *)      chk config_drift no  "unrecognised drift verdict (treated as FAILURE): $D" ;;
   esac
+
+# ---- DOES A CONFIG *CHANGE* ACTUALLY PROPAGATE? --------------------------------------------
+# kimi-k2.6 (9 Aug 2026): "no check exercises the reload path; config_drift compares running
+# against file, but nothing proves hop 2 updates when the file CHANGES."
+#
+# Half wrong: every deploy writes, applies and then runs config_drift, on both boxes. But the
+# valuable half is right -- each run writes essentially the SAME config, so drift passing does
+# not prove a DIFFERENT config would propagate. That is precisely the 6 Aug failure mode: the
+# file changed and the running process kept serving the old bytes for twelve hours.
+#
+# So: add a real vhost through the guard's own validate-then-apply path, prove it becomes
+# SERVED without a reboot, then remove it and prove it is gone. This is safe here in a way it
+# would not be on production -- the fragment is VALID (unlike the negative test that took
+# staging down in an earlier round), it goes through the same validation every project uses,
+# and the revert runs unconditionally.
+# The container name and the staging Caddyfile path are NOT assumed: they are read the same way
+# the proxy_config check above reads them. Using a $CADDY variable that this script never defines
+# is exactly the "assume a name instead of reading it" defect that has cost this session four
+# separate rounds.
+CADDY_C=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
+if [ -z "$CADDY_C" ] || [ ! -f /opt/caddyguard/agent.py ]; then
+  chk config_change_propagates yes "no caddy on this box - nothing to propagate (not a fault)"
+else
+  PROBE="cg-reload-probe.invalid"
+  cat > /opt/caddyguard/blocks/zz__reloadprobe.caddy <<EOF
+http://$PROBE {
+	respond "reload-probe" 200
+}
+EOF
+  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
+    python3 /opt/caddyguard/agent.py assemble >/dev/null 2>&1
+  SERVED_AFTER=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
+  # THE REVERT RUNS WHATEVER HAPPENED ABOVE. A test that can leave staging serving a probe vhost
+  # is an outage with a pass/fail label -- the lesson from the negative test that took this box
+  # down in an earlier round.
+  rm -f /opt/caddyguard/blocks/zz__reloadprobe.caddy
+  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
+    python3 /opt/caddyguard/agent.py assemble >/dev/null 2>&1
+  SERVED_GONE=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
+  if [ "${SERVED_AFTER:-0}" -ge 1 ] && [ "${SERVED_GONE:-1}" -eq 0 ]; then
+    chk config_change_propagates yes "a NEW vhost reached the running config without a reboot and was removed again - hop 2 genuinely updates on CHANGE, not just on restart"
+  elif [ "${SERVED_AFTER:-0}" -lt 1 ]; then
+    chk config_change_propagates no "a new vhost was written and applied but NEVER reached the running config - that is the 2026-08-07 latent-outage mechanism, reproduced live"
+  else
+    chk config_change_propagates no "the probe vhost was deleted from disk but is STILL in the running config - a deletion does not propagate"
+  fi
+fi
+
 fi
 
 M=$(free -m | awk '/Mem:/{print $7}')
