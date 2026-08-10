@@ -323,28 +323,33 @@ def test_admin_isolation_is_measured_not_inferred():
         "a successful cross-container probe must be reported as EXPOSED")
 
 
-def test_a_config_change_is_proven_to_propagate():
-    """The valuable half of kimi's third risk.
+def test_propagation_check_is_non_destructive():
+    """The propagation check may never be able to empty the proxy it is testing.
 
-    Every deploy writes, applies and then runs config_drift — so the reload path IS exercised, and
-    the claim that it is not was wrong. But each run writes essentially the SAME config, so drift
-    passing does not prove a DIFFERENT one would propagate. That is exactly the 6 Aug mechanism:
-    the file changed and the process served the old bytes for twelve hours.
+    THE DOCTRINE HERE IS NOW THE OPPOSITE OF THE FIRST VERSION, and the reason is kept rather than
+    deleted. The first version asserted that the check calls `agent.py assemble --apply`, because
+    plain `assemble` writes and reloads nothing and the check could only ever fail. True, and the
+    wrong fix: STAGING IS NOT FRAGMENT-MANAGED. Its Caddyfile is composed directly by the
+    provisioning step, so /opt/caddyguard/blocks/ held nothing but the probe; the reassembly was
+    EMPTY, apply() wrote it, Caddy carried on serving from memory, and the reboot detonated it —
+    post_reboot_proxy_routes 000, roster MISSING cybergod.ai, Caddyfile hash 01ba4719c80b, which is
+    the sha256 of a single newline. The check written to detect the 2026-08-07 outage caused one.
+    The property is therefore no longer "does it apply" but "can it destroy anything": snapshot the
+    live bytes, APPEND to the config that is actually live, apply through the guard's own
+    validate-write-mount-reload path, restore the snapshot, and VERIFY the restore.
     """
-    sg = _read(os.path.join(ROOT, "stagegate.py"))
-    assert "config_change_propagates" in sg, (
-        "nothing proves that a CHANGED config reaches the running proxy without a reboot")
-    blk = sg[sg.index("DOES A CONFIG *CHANGE* ACTUALLY PROPAGATE"):]
-    blk = blk[:blk.index("chk config_change_propagates no \"the probe vhost")]
-    assert "rm -f /opt/caddyguard/blocks/zz__reloadprobe.caddy" in blk, (
-        "the probe fragment is not removed — a test that can leave staging serving a probe vhost "
-        "is an outage with a pass/fail label")
-    # The revert must come BEFORE the pass/fail decision, so it runs whatever the result was.
-    assert blk.index("rm -f /opt/caddyguard/blocks") < blk.index("SERVED_GONE"), (
-        "the revert runs after the verdict, so a failure would leave the probe in place")
-    assert "$CADDY\"" not in sg, (
-        "a container-name variable that this script never defines is back — read the name, do not "
-        "assume it")
+    src = open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read()
+    body = src[src.index("config_change_propagates"):]
+
+    assert "agent.py assemble" not in body, (
+        "the propagation check rebuilds the config from /opt/caddyguard/blocks/ again. On a box "
+        "that is not fragment-managed that assembly is EMPTY and wipes the live proxy.")
+    assert "docker inspect -f" in body and "/etc/caddy/Caddyfile" in body, (
+        "the check must READ the proxy's own bind-mount source, never assume a path")
+    assert "cp -p" in body and "/tmp/cg_snapshot.caddy" in body, "it must snapshot the live bytes"
+    assert "cmp -s /tmp/cg_snapshot.caddy" in body, "and VERIFY the restore, not hope for it"
+    assert "NOT restored byte-for-byte" in body, "a failed restore must be a FAILURE"
+
 
 # =================================================================================================
 # TWO GREEN-BOX FAILURES, 10 Aug 2026. The staging gate said NO-GO on a healthy box and refused to
@@ -442,25 +447,22 @@ def test_agent_admin_prints_its_verdict_first_when_RUN():
     assert rc == 0, "a healthy, loopback-only admin API must not return non-zero"
 
 
-def test_propagation_check_actually_applies():
-    """`agent.py assemble` WITHOUT --apply writes nothing and reloads nothing.
+def test_apply_refuses_to_empty_a_live_proxy():
+    """The guardrail that would have prevented the outage regardless of the check's own bug.
 
-    config_change_propagates wrote a probe vhost, called plain `assemble`, then asserted the vhost
-    had reached the running config. It never could: `cmd_assemble(do_apply)` only calls apply()
-    when the flag is present. So the check reported the 2026-08-07 latent-outage mechanism on a box
-    where nothing was wrong, and blocked promotion twice.
-    kimi-k2.6 was right that the check was broken by construction; its proposed fix (call `caddy
-    reload` directly) was wrong -- the guard's own validate-then-apply path is what production uses,
-    and testing anything else would prove nothing about production.
+    It lives in apply(), so it protects EVERY caller — caddyguard, the 10-minute watchdog, any
+    future script — not just the one check that failed. The behaviour is proven end-to-end in
+    hermes-skills/shodan-assessment/scripts/test_drift.py, which ship.py runs as BLOCKING; this
+    asserts the guard exists, runs BEFORE the write, and that the escape is explicit.
     """
-    src = open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read()
-    body = src[src.index("config_change_propagates"):]
-    body = body[:body.index("#### KERNEL")] if "#### KERNEL" in body else body
-    calls = re.findall(r"agent\.py assemble(?: --apply)?", body)
-    assert calls, "the propagation check no longer assembles anything"
-    assert all(c.endswith("--apply") for c in calls), (
-        "config_change_propagates calls `agent.py assemble` without --apply (%r). That command "
-        "writes nothing and reloads nothing, so the check can only ever fail." % calls)
-    assert "cmd_assemble(\"--apply\" in rest)" in _agent_src(), (
-        "agent.py no longer gates apply on --apply; re-read this test's premise before changing it")
+    src = open(os.path.join(ROOT, "deploy", "caddyguard", "agent.py"), encoding="utf-8").read()
+    body = src[src.index("def apply(text"):]
+    body = body[:body.index("\ndef ")]
+    assert "site_blocks(text)" in body and "site_blocks(before)" in body, (
+        "apply() no longer compares the sites it is about to write against the sites now live")
+    assert "CADDYGUARD_ALLOW_EMPTY" in body, (
+        "emptying a proxy must remain possible, but only by an explicit, named opt-in")
+    assert body.index("old_sites and not new_sites") < body.index("write_inplace(LIVE, text)"), (
+        "the empty-config guard must refuse BEFORE anything is written, not after")
+
 

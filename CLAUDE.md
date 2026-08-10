@@ -4019,3 +4019,59 @@ doctrine that produced the container-to-container admin probe in the first place
 reasons about its subject is weaker than one that reproduces it.
 Guarded by tests/test_gate_integrity.py, all three negative-tested (note-before-verdict, bare note
 returning 0, assemble without --apply).
+
+## I REPRODUCED THE 6 AUG OUTAGE WITH THE CHECK BUILT TO DETECT IT (2026-08-10)
+The previous fix made `config_change_propagates` call `agent.py assemble --apply` — correct as far
+as it went, and it destroyed the staging proxy. **STAGING IS NOT FRAGMENT-MANAGED**: its Caddyfile
+is composed directly by the provisioning step in stagegate.py, so `/opt/caddyguard/blocks/` held
+nothing but the probe fragment. The reassembly was therefore EMPTY, `apply()` wrote it, Caddy kept
+serving from memory, and the reboot detonated it:
+```
+post_reboot_proxy_routes   FAIL  through the proxy /api/me -> 000
+post_reboot_vhost_roster   FAIL  MISSING the running proxy does not serve: cybergod.ai   serving:
+post_reboot_mount_fresh    OK    container reads the current file (01ba4719c80b)
+```
+**`01ba4719c80b` is the sha256 of a single newline.** The file was empty and every hop-level check
+happily agreed the empty file was being served faithfully. That is the exact 2026-08-07 mechanism,
+caused by me, in the check written to prevent it — and CLAUDE.md already carried the rule it broke:
+*a negative test that mutates production-shaped state is an outage with a pass/fail label.*
+
+THREE FIXES, in order of blast radius:
+1. **`apply()` REFUSES a config with no site blocks over a proxy that is currently serving sites.**
+   This is the one that matters: it lives in `apply()`, so it protects caddyguard, the 10-minute
+   watchdog and every future caller, not just the check that failed. `site_blocks()` is text-level
+   on purpose — it guards the write that happens BEFORE any container, admin API or `caddy adapt`
+   is consulted, so it must work with none of them available. Same doctrine as the co-tenant guard
+   and the FP auditor: an automatic process may narrow, it may not wipe. `CADDYGUARD_ALLOW_EMPTY=1`
+   is the deliberate, named escape.
+2. **The check is non-destructive by construction.** It now READS the proxy's own bind-mount source
+   (`docker inspect`, never an assumed path), snapshots the live bytes, APPENDS the probe vhost to
+   the config that is actually live, applies through the guard's real validate → write →
+   mount-check → reload path, then restores the snapshot and **verifies it with `cmp`**. A failed
+   restore is a FAILURE, not a silent pass.
+3. **An EMPTY running config is DEGENERATE, not the absence of drift.** `config_drift` compared
+   `set() == set()` and reported OK on "0 host(s), 0 handler(s)" while the proxy served nothing.
+   gemma-4-31B-it and kimi-k2.6 both caught this on the same run and were right: equal emptiness
+   compares fine and means the box is down.
+
+**THE PANEL, HONESTLY SCORED:** all four said NO-GO and all four were right that the system was
+broken — this time it genuinely was. gemma named the mechanism exactly ("the Caddyfile is empty or
+devoid of vhosts after reboot"). kimi added the sharpest structural point, that a drift check
+reporting zero hosts should never pass. deepseek and maverick restated the failure without adding a
+cause, which is their recurring pattern.
+
+**AND TWO OF MY OWN CHECKS WERE WRONG IN THE SAME SESSION:**
+  * The `config_drift` assertion GREPPED THE SOURCE for its message string, so a mutation that
+    neutered the condition (`if False:`) left the string in place and the check went green on a
+    file carrying the exact defect. Replaced with a functional test that stubs `caddy adapt` and
+    the admin API and RUNS `cmd_drift`. Third time this session a static assertion could not see
+    the thing it was aimed at.
+  * `test_deploy_immutability`'s phantom-path assertion fired on a LibreOffice lock file that
+    `git add -A` committed while a deck was open and that vanished when the app closed. The repo
+    hygiene bug was real (now gitignored repo-wide — the existing rule was scoped to `docs/`, and
+    my `grep -q` for it MATCHED that narrower rule and silently skipped the append). But a staged
+    DELETION legitimately does not exist on disk, so the assertion now distinguishes a deletion
+    from a mis-slice by asking whether the path is in HEAD.
+Guarded by test_drift.py (12 assertions, the four apply() properties proven against a real
+Caddyfile) and tests/test_gate_integrity.py. Negative-tested in seven directions, each verified to
+fail and then restored.

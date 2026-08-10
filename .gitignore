@@ -68,3 +68,9 @@ forensics-*.txt
 # The preview/ship UI stamps describe THIS machine, not the repo.
 .ui-preview-stamp
 .ui-shipped-hash
+
+# LibreOffice / MS Office lock + owner files, ANYWHERE (line 54 only covers docs/).
+# One of these was committed by `git add -A` while a deck was open, then vanished when the app
+# closed, leaving a tracked path that does not exist.
+.~lock.*#
+~$*

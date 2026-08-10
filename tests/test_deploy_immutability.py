@@ -185,7 +185,17 @@ def test_a_dirty_tree_is_reported_not_silently_shipped(dwd):
     for d in dirty:
         # A diagnostic that misreports a path sends the next investigation down the wrong road.
         assert not d.startswith(" "), "dirty path is mis-sliced: %r" % d
-        assert os.path.exists(os.path.join(ROOT, d)) or d.endswith("/"), "phantom path: %r" % d
+        # A DELETED path legitimately does not exist on disk, so "not on disk" alone is not a
+        # defect. The purpose of this assertion is to catch a MIS-SLICED path (the
+        # "eploy_web_direct.py" bug), and a mangled name is neither on disk NOR in HEAD.
+        # It fired for real on a LibreOffice lock file that `git add -A` committed while a deck
+        # was open and that vanished when the app closed -- a genuine repo-hygiene bug, now
+        # gitignored, but a staged deletion of it is not itself a mis-slice.
+        in_head = subprocess.run(["git", "cat-file", "-e", "HEAD:" + d],
+                                 cwd=ROOT, capture_output=True).returncode == 0
+        assert os.path.exists(os.path.join(ROOT, d)) or d.endswith("/") or in_head, (
+            "phantom path: %r — not on disk and not in HEAD, so the porcelain line was mis-sliced"
+            % d)
 
 
 def test_the_archive_is_forced_to_repository_line_endings():

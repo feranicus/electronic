@@ -256,6 +256,23 @@ def mount_sync(c, fix=True):
                    % (h[:12], k2[:12], src))
 
 
+def site_blocks(text):
+    """The site headers in a Caddyfile: every unindented line that opens a block.
+
+    Text-level on purpose. This guards the write that happens BEFORE any container, admin API or
+    `caddy adapt` is consulted, so it must work with none of them. The global options block is a
+    bare `{` with no address in front of it, and is excluded.
+    """
+    out = []
+    for ln in (text or "").splitlines():
+        if not ln or ln[:1].isspace() or ln.lstrip().startswith("#"):
+            continue
+        t = ln.strip()
+        if t.endswith("{") and t != "{":
+            out.append(t[:-1].strip())
+    return out
+
+
 def apply(text, why=""):
     """Validate -> backup -> in-place write -> graceful reload. Rolls back on any failure."""
     c = container()
@@ -263,6 +280,21 @@ def apply(text, why=""):
     if not ok:
         return False, "REFUSED (%s): %s" % (why, msg)
     before = read(LIVE)
+
+    # NEVER EMPTY A LIVE PROXY. 10 Aug 2026: a staging check called `assemble --apply` on a box
+    # whose /opt/caddyguard/blocks/ was empty -- staging composes its Caddyfile directly and is not
+    # fragment-managed -- so the assembly was EMPTY, this function wrote it, Caddy carried on
+    # serving from memory, and the next reboot detonated it. That is the exact 2026-08-07 outage
+    # mechanism, reproduced by the check written to detect it.
+    # A config with no site blocks is never a legitimate deployment onto a proxy that is currently
+    # serving sites. Same doctrine as the co-tenant guard and the FP auditor: an automatic process
+    # may narrow the estate, it may not wipe it. CADDYGUARD_ALLOW_EMPTY is the deliberate escape.
+    new_sites, old_sites = site_blocks(text), site_blocks(before)
+    if old_sites and not new_sites and not os.environ.get("CADDYGUARD_ALLOW_EMPTY"):
+        return False, ("REFUSED (%s): the new config serves NO sites while the live one serves %d "
+                       "(%s). Refusing to empty a running proxy. Set CADDYGUARD_ALLOW_EMPTY=1 if "
+                       "that is genuinely intended."
+                       % (why, len(old_sites), ", ".join(old_sites[:4])))
     b = backup("pre")
     write_inplace(LIVE, text)
     # BEFORE reloading: prove the container can even SEE what we just wrote. Reloading through a
@@ -717,6 +749,14 @@ def cmd_drift():
         r_hosts, r_h = _served(json.loads(run_raw))
     except Exception as e:
         print("SKIP could not parse a config (%s)" % e); return 0
+    # AN EMPTY RUNNING CONFIG IS DEGENERATE, NOT THE ABSENCE OF DRIFT. Raised by gemma-4-31B-it
+    # and kimi-k2.6 on the same run and both were right: after the reboot this reported OK on
+    # "0 host(s), 0 handler(s)" while the proxy served nothing and the roster check correctly
+    # failed. Equal emptiness compares fine and means the box is down.
+    if not d_hosts and not r_hosts:
+        print("DRIFT the running config serves NO hosts at all - the proxy is up but serving "
+              "nothing. That is a degenerate config, not the absence of drift.")
+        return 1
     if d_hosts == r_hosts and d_h == r_h:
         print("OK running config serves exactly what the file says "
               "(%d host(s), %d handler(s))" % (len(r_hosts), len(r_h)))

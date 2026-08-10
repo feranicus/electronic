@@ -353,28 +353,57 @@ CADDY_C=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
 if [ -z "$CADDY_C" ] || [ ! -f /opt/caddyguard/agent.py ]; then
   chk config_change_propagates yes "no caddy on this box - nothing to propagate (not a fault)"
 else
+  # NON-DESTRUCTIVE BY CONSTRUCTION. The previous version rebuilt the Caddyfile from
+  # /opt/caddyguard/blocks/ via `assemble --apply` -- and STAGING IS NOT FRAGMENT-MANAGED: its
+  # Caddyfile is composed directly by the provisioning step above, so blocks/ held nothing but the
+  # probe. The reassembly was therefore EMPTY, it was written over the live config, Caddy kept
+  # serving from memory, and the reboot detonated it: post_reboot_proxy_routes 000 and an empty
+  # roster. I reproduced the 2026-08-07 outage with the check built to detect it.
+  # Now: snapshot the exact bytes, APPEND the probe to the config that is actually live, apply it
+  # through the guard's own validate -> write -> mount-check -> reload path, then restore the
+  # snapshot byte-for-byte and VERIFY the restore. Nothing is ever rebuilt from an assumption
+  # about where this box keeps its configuration.
   PROBE="cg-reload-probe.invalid"
-  cat > /opt/caddyguard/blocks/zz__reloadprobe.caddy <<EOF
-http://$PROBE {
-	respond "reload-probe" 200
-}
-EOF
-  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
-    python3 /opt/caddyguard/agent.py assemble --apply >/dev/null 2>&1
-  SERVED_AFTER=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
-  # THE REVERT RUNS WHATEVER HAPPENED ABOVE. A test that can leave staging serving a probe vhost
-  # is an outage with a pass/fail label -- the lesson from the negative test that took this box
-  # down in an earlier round.
-  rm -f /opt/caddyguard/blocks/zz__reloadprobe.caddy
-  CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
-    python3 /opt/caddyguard/agent.py assemble --apply >/dev/null 2>&1
-  SERVED_GONE=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
-  if [ "${SERVED_AFTER:-0}" -ge 1 ] && [ "${SERVED_GONE:-1}" -eq 0 ]; then
-    chk config_change_propagates yes "a NEW vhost reached the running config without a reboot and was removed again - hop 2 genuinely updates on CHANGE, not just on restart"
-  elif [ "${SERVED_AFTER:-0}" -lt 1 ]; then
-    chk config_change_propagates no "a new vhost was written and applied but NEVER reached the running config - that is the 2026-08-07 latent-outage mechanism, reproduced live"
+  CF=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{end}}{{end}}' "$CADDY_C" 2>/dev/null)
+  if [ -z "$CF" ] || [ ! -f "$CF" ]; then
+    chk config_change_propagates yes "SKIP the proxy does not bind-mount a Caddyfile - nothing to test"
   else
-    chk config_change_propagates no "the probe vhost was deleted from disk but is STILL in the running config - a deletion does not propagate"
+  cp -p "$CF" /tmp/cg_snapshot.caddy
+  python3 - "$CF" "$PROBE" <<'PYEOF' >/tmp/cg_prop.log 2>&1
+import os, sys
+cf, probe = sys.argv[1], sys.argv[2]
+os.environ["CADDYFILE"] = cf
+sys.path.insert(0, "/opt/caddyguard")
+import agent
+original = agent.read(cf)
+ok, msg = agent.apply(original.rstrip("\n") + "\n\nhttp://%s {\n\trespond \"reload-probe\" 200\n}\n" % probe,
+                      "propagation probe")
+print("APPLY %s %s" % (ok, msg))
+PYEOF
+  SERVED_AFTER=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
+  # THE RESTORE IS UNCONDITIONAL and byte-exact: the snapshot is put back and re-applied, whatever
+  # happened above. A test that can leave a proxy serving something the operator did not commit is
+  # an outage with a pass/fail label.
+  cp -p /tmp/cg_snapshot.caddy "$CF"
+  python3 - "$CF" <<'PYEOF' >>/tmp/cg_prop.log 2>&1
+import os, sys
+os.environ["CADDYFILE"] = sys.argv[1]
+sys.path.insert(0, "/opt/caddyguard")
+import agent
+ok, msg = agent.apply(agent.read(sys.argv[1]), "restore after propagation probe")
+print("RESTORE %s %s" % (ok, msg))
+PYEOF
+  SERVED_GONE=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
+  RESTORED=$(cmp -s /tmp/cg_snapshot.caddy "$CF" && echo yes || echo no)
+  if [ "$RESTORED" != "yes" ]; then
+    chk config_change_propagates no "the probe ran but the config was NOT restored byte-for-byte - $CF differs from the snapshot"
+  elif [ "${SERVED_AFTER:-0}" -ge 1 ] && [ "${SERVED_GONE:-1}" -eq 0 ]; then
+    chk config_change_propagates yes "a NEW vhost reached the running config without a reboot and was removed again - hop 2 genuinely updates on CHANGE, and the config was restored byte-for-byte"
+  elif [ "${SERVED_AFTER:-0}" -lt 1 ]; then
+    chk config_change_propagates no "a new vhost was written and applied but NEVER reached the running config - that is the 2026-08-07 latent-outage mechanism, reproduced live. $(tail -2 /tmp/cg_prop.log | tr '\n' ' ')"
+  else
+    chk config_change_propagates no "the probe vhost was removed from disk but is STILL in the running config - a deletion does not propagate"
+  fi
   fi
 fi
 
