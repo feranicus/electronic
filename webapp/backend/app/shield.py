@@ -72,6 +72,8 @@ MAX_TARPIT_CONCURRENT = _i("SHIELD_TARPIT_MAX", 24)
 # Blocks always permitted regardless of the percentage. Deliberately small: enough to stop a
 # handful of scanners on a quiet day, far too few to be an outage. NOT tunable by the panel.
 MIN_ABS_BLOCKS = _i("SHIELD_MIN_ABS_BLOCKS", 5)
+# Distinct 404 paths before a miss is evidence at all. Below this it is a stale bookmark.
+NF_DISTINCT = _i("SHIELD_NF_DISTINCT", 6)
 
 # Addresses that may NEVER be blocked. The operator's own IPs plus anything they add.
 ALLOW_IPS = {x.strip() for x in os.environ.get("SHIELD_ALLOW_IPS", "").split(",") if x.strip()}
@@ -110,7 +112,9 @@ _PROBE_RE = re.compile(
     r"|/(?:boaform|goform|HNAP1|hudson|setup\.cgi|shell\?)"              # router / IoT / CI
     r"|/(?:web\.config|server-status|server-info|\.DS_Store|\.npmrc|\.dockercfg)"
     r"|XDEBUG_SESSION|/_ignition|/telescope/|/login\.action"             # debug + RCE chains
-    r"|%2e%2e|\.\./"                                                     # traversal, encoded or not
+    r"|%2e%2e|\.\./|/%2e[a-z]"    # traversal, AND the single-encoded dot: 185.177.72.x
+                                  # asked for /%2eenv five times each. One %2e IS ".", so that is
+                                  # /.env wearing a costume, and the double-encoded rule missed it.
     r"|/autodiscover/autodiscover\.xml"                                  # Exchange probe (we run none)
     r"|(?:^|/)(?:id_rsa|credentials|dump|backup|shell|cmd|eval)(?:$|[./])"
     r"|(?:^|/)[A-Z_]{3,}\.md$"             # /DOCS.md /IAM.md /README.md at the root: repository
@@ -119,17 +123,27 @@ _PROBE_RE = re.compile(
     re.I)
 
 
-def is_probe_path(path):
-    """True when the PATH ITSELF is scanner behaviour, whatever the user agent claims.
+def probe_shape(path):
+    """Does the path LOOK like scanner behaviour? Pure pattern, NO exemptions.
 
-    A user agent is attacker-controlled. The path is the evidence.
+    SEPARATED FROM is_probe_path BECAUSE THE EXEMPTION HAD BECOME A HIDING PLACE. /api/ is never
+    blocked (every deploy verifier asserts 401 on /api/me), and the first version returned False
+    for anything beneath it -- so /api/wp-login.php, /api/.env and /api/../../etc/passwd scored
+    NOTHING AT ALL. An attacker who prefixed every probe with /api/ was invisible to the shield.
+    Now the SHAPE is always scored; the EXEMPTION only decides whether we may ACT on that request.
     """
     p = str(path or "/")
-    if p.lower().startswith(NEVER_BLOCK_PREFIXES):
-        return False
     if p.lower() in EXTRA_PROBE_PATHS:
         return True
     return bool(_PROBE_RE.search(p))
+
+
+def is_probe_path(path):
+    """probe_shape minus the paths we will never act on. Used for blocking and alert suppression."""
+    p = str(path or "/")
+    if p.lower().startswith(NEVER_BLOCK_PREFIXES):
+        return False
+    return probe_shape(p)
 
 
 def is_honeytoken(path):
@@ -143,6 +157,7 @@ _blocked = {}       # ip -> expires_at
 _seen_ips = {}      # ip -> last_seen  (denominator for the blast cap)
 _tarpits = [0]      # concurrent tarpitted requests, list so it is mutable from a closure
 _recent_paths = {}  # ip -> the last few paths, so an alert can show WHAT was asked for
+_miss = {}          # ip -> {distinct 404 path: ts} — variety separates a scan from a typo
 
 # OPERATOR-AUTHORISED STATE. Written only by shield_console.apply_decisions() after a Telegram tap,
 # never by a model and never by the inline path. Each entry is time-boxed like everything else.
@@ -156,6 +171,10 @@ def _prune(now, window):
         _hits[ip] = [(t, r) for (t, r) in _hits[ip] if now - t < window]
         if not _hits[ip]:
             _hits.pop(ip, None)
+    for ip in list(_miss):
+        _miss[ip] = {k: t for k, t in _miss[ip].items() if now - t < window}
+        if not _miss[ip]:
+            _miss.pop(ip, None)
     for ip in list(_fps):
         _fps[ip] = {f: t for f, t in _fps[ip].items() if now - t < window}
         if not _fps[ip]:
@@ -209,23 +228,32 @@ def observe(ip, path, status, cls, method="GET"):
         win = cfg("window_s")
         _seen_ips[ip] = now
 
-        # A PATH WE WILL NEVER BLOCK ON MUST NOT BE SCORED ON EITHER, or the score is fed by
-        # traffic that can never be acted upon. /api/me answers 401 to every ANONYMOUS caller --
-        # the React app itself requests it on every page load while logged out -- so counting that
-        # as an "authz probe" scored ordinary visitors, and scored the deploy verifier hard enough
-        # to block it. Authentication is the control on /api/; the shield is not.
-        if str(path or "").lower().startswith(NEVER_BLOCK_PREFIXES):
-            return reasons
+        # An exempt path contributes no STATUS signal: /api/me answers 401 to every anonymous
+        # caller (the React app requests it on every logged-out page load), so counting that as an
+        # authz probe scored ordinary visitors and blocked our own deploy verifier. The path SHAPE
+        # is still scored below, or /api/ becomes a hiding place.
+        _exempt = str(path or "").lower().startswith(NEVER_BLOCK_PREFIXES)
         if len(_seen_ips) % 64 == 0:
             _prune(now, win)
 
         if is_honeytoken(path):
             reasons.append("honeytoken")                 # zero false positives, by construction
-        if is_probe_path(path):
-            reasons.append("probe_path")
-        if int(status or 0) == 404:
-            reasons.append("not_found")
-        if int(status or 0) in (401, 403):
+        if probe_shape(path):
+            reasons.append("probe_path")                 # shape is scored even on exempt paths
+        if int(status or 0) == 404 and not _exempt:
+            # A 404 ALONE IS NOT EVIDENCE, and the real log proves it: two sources (Germany and
+            # Israel) produced 439 and 362 404s while asking only for our own routes -- people,
+            # not scanners. VARIETY is the discriminator: a person misses the same few stale paths;
+            # a scanner misses hundreds of DIFFERENT ones. So a 404 scores only once this address
+            # has missed on several DISTINCT paths inside the window.
+            d404 = _miss.setdefault(ip, {})
+            d404[str(path)[:120]] = now
+            for _k, _t in list(d404.items()):
+                if now - _t > win:
+                    d404.pop(_k, None)
+            if len(d404) >= NF_DISTINCT:
+                reasons.append("not_found")
+        if int(status or 0) in (401, 403) and not _exempt:
             reasons.append("authz_probe")
         if str(method).upper() in ("PUT", "DELETE", "PATCH", "TRACE", "CONNECT"):
             reasons.append("method_abuse")

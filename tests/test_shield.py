@@ -481,3 +481,62 @@ def test_no_real_route_is_ever_treated_as_an_attack():
               "/assets/index-abc123.js", "/manifest.webmanifest", "/sw.js", "/icon-192.png"):
         assert not sh.is_probe_path(p), "%s is a real route of ours" % p
 
+# =================================================================================================
+# WRITTEN FROM THE REAL LOG (analyse_attacks.py, 10 Aug 2026): 156,511 requests, 2,253 sources,
+# 604 of them scanners. Three defects that only appeared once the actual traffic was measured.
+# =================================================================================================
+def test_api_is_not_a_hiding_place(sh):
+    """The exemption that stops us blocking /api/ must not stop us SCORING what happens there.
+
+    /api/ is never blocked — every deploy verifier asserts 401 on /api/me. The first version
+    returned False from is_probe_path for anything beneath it, so /api/wp-login.php, /api/.env and
+    /api/../../etc/passwd scored NOTHING: an attacker who prefixed every probe with /api/ was
+    invisible. Shape is now always scored; the exemption only governs whether we may act.
+    """
+    for p in ("/api/wp-login.php", "/api/.env", "/api/../../etc/passwd", "/api/admin.php"):
+        assert sh.probe_shape(p), "%s is scanner behaviour wherever it is sent" % p
+        assert not sh.is_probe_path(p), "%s must still never be BLOCKED on" % p
+    cls = {"browser": "Chrome", "os": "Linux", "device": "desktop"}
+    for _ in range(6):
+        for p in ("/api/wp-login.php", "/api/.env", "/api/admin.php"):
+            sh.observe("198.51.100.77", p, 404, cls)
+    assert sh.decide("198.51.100.77", "/")[0] == "BLOCK", (
+        "a scanner hiding under /api/ must still be stopped everywhere else")
+    assert sh.decide("198.51.100.77", "/api/me")[0] == "ALLOW", "but /api/ itself stays reachable"
+
+
+def test_the_single_encoded_dot(sh):
+    """185.177.72.56/.66/.67 each asked for /%2eenv five times. One %2e IS a dot."""
+    assert sh.probe_shape("/%2eenv"), "/%2eenv is /.env wearing a costume"
+    assert sh.probe_shape("/%2egit/config")
+
+
+def test_a_real_visitor_with_many_404s_is_not_an_attacker(sh):
+    """THE FALSE POSITIVE THE LOG EXPOSED, and it would have hit two real people.
+
+    212.58.119.138 (Germany, 439x404) and 46.116.177.24 (Israel, 362x404) asked only for OUR OWN
+    routes — /api/me, /, /app, /api/demo, /media/cassandra.mp4. They are visitors. On a 404 count
+    alone both would have been blocked.
+    VARIETY is the discriminator: a person misses the same few stale paths; a scanner misses
+    hundreds of different ones.
+    """
+    cls = {"browser": "Chrome", "os": "Windows 10", "device": "desktop"}
+    for _ in range(60):                       # sixty misses, on three stale paths
+        for p in ("/old-link", "/favicon-32.png", "/app/gone"):
+            sh.observe("212.58.119.138", p, 404, cls)
+    assert sh.decide("212.58.119.138", "/")[0] == "ALLOW", (
+        "a person with a stale bookmark is not an attacker, however often they reload")
+
+    for i in range(12):                       # twelve DIFFERENT misses = enumeration
+        sh.observe("198.51.100.99", "/scan-%d" % i, 404, cls)
+    assert sh.decide("198.51.100.99", "/")[0] in ("TARPIT", "BLOCK"), (
+        "many DISTINCT misses is enumeration and must still be caught")
+
+
+def test_the_real_scanner_paths_from_the_log(sh):
+    """Sampled from the sources analyse_attacks.py actually found on the box."""
+    for p in ("/php8.php", "/wp-mail.php", "/alfa.php", "/lock360.php", "/ops.php", "/mini.php",
+              "/wp-content/plugins/hellopress/wp_filemanager.php", "/this_is_a_new_hello_world.php",
+              "/wp-json/batch/v1", "//wp-json/batch/v1", "/adminfuns.php", "/autoload_classmap.php"):
+        assert sh.probe_shape(p), "%s was sent by a real scanner against this site" % p
+

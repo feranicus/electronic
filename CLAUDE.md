@@ -4202,3 +4202,33 @@ NEGATIVE-TEST NOTE, and it cost a cycle: my first mutation "moved" the shield af
 inserting it just BEFORE `call_next` — still correct ordering, so the test rightly passed and I
 briefly believed the check was broken. A mutation that does not actually violate the property
 proves nothing about the check.
+
+## THE REAL LOG SAID SOMETHING THE DESIGN DID NOT (2026-08-10, analyse_attacks.py first run)
+156,511 requests · 2,253 sources · **604 behaved like scanners**. Classes by distinct source:
+wordpress 483 · php_probe 481 · admin_panel 162 · shell_rce 113 · template 100 · env_secrets 96 ·
+backup_file 45 · api_docs 28 · iot_router 6 · traversal 6. Alerts already raised: path_probe x212,
+dir_bruteforce x208, authz_probe x85, ip_burst x71. Three defects, none of which theory found:
+
+1. **`/api/` HAD BECOME A HIDING PLACE.** It is never blocked (every deploy verifier asserts 401 on
+   /api/me), and `is_probe_path` returned False for everything beneath it — so `/api/wp-login.php`,
+   `/api/.env` and `/api/../../etc/passwd` scored NOTHING. An attacker who prefixed every probe with
+   `/api/` was invisible. FIX: `probe_shape()` (pure pattern, no exemptions) is what SCORES;
+   `is_probe_path()` (shape minus the exemption) is what decides whether we may ACT. An exemption
+   about ENFORCEMENT must never silently become an exemption from OBSERVATION.
+2. **The single-encoded dot.** 185.177.72.56/.66/.67 each sent `/%2eenv` five times. The rule only
+   matched `%2e%2e` (double). One `%2e` IS a dot, so that is `/.env` wearing a costume.
+3. **A 404 COUNT ALONE WOULD HAVE BLOCKED TWO REAL PEOPLE.** 212.58.119.138 (Germany, 439 x404) and
+   46.116.177.24 (Israel, 362 x404) asked only for OUR OWN routes — /api/me, /, /app, /api/demo,
+   /media/cassandra.mp4. They are visitors. VARIETY is the discriminator: a person misses the same
+   few stale paths, a scanner misses hundreds of DIFFERENT ones. A 404 now scores only once an
+   address has missed on >= NF_DISTINCT (6) DISTINCT paths inside the window.
+
+**AND MY OWN DIAGNOSTIC WAS THE THING THAT COST A CYCLE.** The coverage report said
+`php_probe 235 path(s)` and nothing more, so I assumed the `.php` detector was broken — it was not;
+every `.php` path tested True. The real cause was defect 1, and the report could not show it because
+it never NAMED a path. It now prints five examples per class. A diagnostic that does not name its
+subject sends the next investigation down the wrong road — the same rule already recorded for the
+co-tenant guard's arithmetic and the mis-sliced dirty path.
+RULE: build the detector from ONE incident, then MEASURE against the whole log before believing it.
+Guarded by tests/test_shield.py, negative-tested in both directions (the hiding place, and the
+404-only false positive).

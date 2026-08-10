@@ -148,17 +148,26 @@ def main():
         from app import shield
         print("\n  COVERAGE — would the shield recognise these paths today?")
         gaps = collections.Counter()
+        examples = collections.defaultdict(list)
         for ip, d in hostile.items():
             for p in d["paths"]:
                 if classify(p) and not (shield.is_probe_path(p) or shield.is_honeytoken(p)):
                     for c in classify(p):
                         gaps[c] += 1
+                        if p not in examples[c]:
+                            examples[c].append(p)
         if not gaps:
             print("    every hostile path seen so far is already recognised")
         else:
+            # NAME THE PATHS. The first version reported "php_probe 235 path(s)" and nothing else,
+            # and I spent a cycle assuming the .php detector was broken when it was not: the real
+            # cause was that /api/ is exempt, so ANY probe under /api/ was invisible. A diagnostic
+            # that does not name its subject sends the next investigation down the wrong road.
             print("    NOT RECOGNISED — these are the detectors still to write:")
             for c, n in gaps.most_common():
                 print("      %-14s %d path(s)" % (c, n))
+                for ex in examples[c][:5]:
+                    print("           %s" % ex[:100])
     except Exception as e:
         print("\n  [!] could not load the shield to compare (%s)" % e)
     return 0
