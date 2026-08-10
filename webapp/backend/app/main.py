@@ -60,6 +60,29 @@ try:
     async def _start_daily_report():
         import asyncio as _aio
         _aio.create_task(_daily.scheduler())
+
+    # SHIELD REVIEW — the same four models, out of band, on a timer. Same reasoning as the daily
+    # report: an in-app asyncio task, so there is no cron in the container and no systemd unit on
+    # the droplet to drift out of this repo. It NEVER touches a request; it reads what the
+    # deterministic shield already did and proposes bounded threshold changes.
+    @app.on_event("startup")
+    async def _start_shield_panel():
+        import asyncio as _aio
+
+        async def _loop():
+            every = max(3600, int(os.environ.get("SHIELD_REVIEW_EVERY_S", 21600)))
+            while True:
+                await _aio.sleep(every)
+                try:
+                    from . import shield, shield_panel
+                    # Nothing happened, so there is nothing to review and no tokens to spend.
+                    if not (shield.state().get("blocked") or shield.state().get("watching")):
+                        continue
+                    await _aio.get_event_loop().run_in_executor(None, shield_panel.main)
+                except Exception as exc:                    # a review must never kill the app
+                    print('{"evt":"shield_panel_error","err":"%s"}' % repr(exc)[:160], flush=True)
+
+        _aio.create_task(_loop())
 except Exception as _e:  # telemetry must never stop the app from booting
     print('{"evt":"telemetry_init","result":"error","err":"%s"}' % repr(_e)[:120], flush=True)
 

@@ -615,6 +615,20 @@ def do_tests():
     print('  passive checks: email auth + certificate intelligence + naming grammar; '
           'active tier REFUSES without recorded authorisation')
 
+    # ACTIVE DEFENCE. Blocking real traffic is the most dangerous thing in this repository, so the
+    # gate is BLOCKING and it asserts the SAFETY RAILS first: never blocks ACME/security.txt, never
+    # blocks the site's own routes, refuses a mass block, fails OPEN on any internal error, and
+    # contains no firewall call at all (Amnezia VPN shares this host). Then it replays the real
+    # 10 Aug 2026 scanner and requires that it is actually stopped.
+    _sd = subprocess.run([sys.executable, '-m', 'pytest', 'tests/test_shield.py', '-q'],
+                         cwd=HERE, capture_output=True, text=True, timeout=180)
+    if _sd.returncode != 0:
+        print((_sd.stdout or '') + (_sd.stderr or ''))
+        sys.exit('[X] ACTIVE DEFENCE REGRESSION - the shield could block a real visitor, fail '
+                 'closed, reach the firewall, or let the model panel leave its bounds. Do not ship.')
+    print('  active defence: scanner stopped, real routes untouched, fails open, firewall never '
+          'touched, panel bounded')
+
     # c''''') THE DRIFT CHECK ITSELF. Its first version md5'd `caddy adapt` against the admin API's
     #        `GET /config/` and failed a HEALTHY staging box twice, blocking a deploy on a defect
     #        that did not exist. Those are two serialisations of one config, so byte equality was

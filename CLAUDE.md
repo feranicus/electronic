@@ -4075,3 +4075,59 @@ cause, which is their recurring pattern.
 Guarded by test_drift.py (12 assertions, the four apply() properties proven against a real
 Caddyfile) and tests/test_gate_integrity.py. Negative-tested in seven directions, each verified to
 fail and then restored.
+
+## ACTIVE DEFENCE — the shield, and why the models are NOT in the request path (2026-08-10)
+The operator asked for the 4-model consensus to be applied to security, "not only to report but
+actively stop". THE INCIDENT that prompted it: 19:05:55-57 UTC, one IP (195.178.110.199, Andorra)
+produced SIX "a person just opened cybergod.ai" alerts in two seconds while announcing SIX
+different browsers — Safari/macOS, Chrome/Linux, Chrome/macOS, Edge/Windows, Firefox/Windows,
+Firefox/macOS — asking for `//slug`, `/[workspace]/`, `/DOCS.md`, `/IAM.md`. The dirbruteforce rule
+fired correctly and then the platform did nothing and mailed the operator six times.
+
+**THE MODELS ARE OUT OF BAND, AND THAT IS THE DESIGN, NOT A LIMITATION.** A model call is 300ms to
+60s: in front of a request that IS a denial of service, and the panel's own failure modes (429,
+timeout) would become site outages. It also breaks operating principle 5, which is the product's
+public claim. So: `shield.py` decides inline in pure arithmetic; `shield_panel.py` runs on a timer,
+reviews what the shield DID, and proposes bounded changes. Exactly the stagegate pattern.
+
+**WHY BLOCKING IS SAFE HERE AT ALL.** The standing rule was "detection only, because we do not
+touch the firewall" — the FIREWALL was always the objection, not the blocking. Amnezia VPN (UDP),
+SSH and the other four sites never pass through colt-web, so HTTP-layer enforcement inside our own
+container cannot reach them. `tests/test_shield.py` greps the three modules (comments stripped —
+the prose legitimately discusses the rule) and fails on any iptables/nft/ufw call.
+
+**FIVE RAILS, each negative-tested by removing it and watching the suite fail:**
+never blocks `/.well-known/` (that would turn a scanner into a CERTIFICATE outage) · never blocks
+the site's own routes · fails OPEN on any internal error · every block is time-boxed and expires ·
+a blast cap refuses a mass block · kill switch + allowlist · tarpit concurrency cap.
+
+**THE STRONGEST SIGNAL IS UA ROTATION, AND IT IS UNFAKEABLE-AWAY.** An attacker varying the user
+agent to defeat per-client limits produces the one thing a real visitor never produces: several
+distinct browser/OS fingerprints from one address in seconds. The evasion IS the evidence. It
+convicted this scanner on its second request, before any 404 threshold. It is also why the operator
+got six alerts: `visitors._key()` includes the fingerprint (deliberately, so two people behind one
+office NAT are two visitors), which made rotation a free way to flood him.
+
+**THREE DEFECTS MY OWN TESTS CAUGHT, all of which would have shipped:**
+1. **The blast cap made blocking arithmetically impossible.** With one scanner and one honest
+   visitor, blocking the scanner is 50% of traffic, so a 20% cap could never fire — on exactly the
+   traffic profile this site has. A percentage of a handful is not a rate. Fixed: a small ABSOLUTE
+   number of blocks is always allowed; the percentage governs only once there are enough to be a
+   pattern.
+2. **The manual unblock did nothing.** It popped the timer but left the history that caused the
+   block, so the next request re-scored and re-blocked instantly. Releasing somebody means
+   forgiving what they did, or it is not a release.
+3. **A negative test passed because of defence in depth.** The allowlist is enforced in BOTH
+   observe() and decide(); deleting decide's guard still passed, because observe() had already
+   refused to record anything. When two guards sit on one path, a negative test must defeat BOTH or
+   it is measuring the other one. (Same lesson as the CertSpotter fail-closed test.)
+
+**WHAT THE PANEL MAY DO** (operator's choice: "auto-tune within committed bounds"): propose values
+for SIX integers, inside ranges committed in `shield.BOUNDS` and enforced by `shield.cfg()` on every
+READ — so a corrupt, hand-edited or hostile tuning file still cannot leave the range. It needs a
+QUORUM of 3 of 4 agreeing on the DIRECTION, and the applied value is the MEDIAN, so one bold model
+cannot drag the result. Steps over 25% are refused. It cannot block or unblock an address, change
+the bounds, the blast cap, the allowlist or the kill switch.
+
+**STANDARDS**: NIST SP 800-53r5 SI-4, SI-10, SC-5, AC-7 · NIST SP 800-63B 5.2.2 · OWASP ASVS 14.6 ·
+OWASP Automated Threat Handbook OAT-011/OAT-014 · MITRE ATT&CK T1595.001/.003, T1110.001.

@@ -121,6 +121,16 @@ def _probe_path(path):
     imported without the app, and the rule here is narrower on purpose — it only has to be right
     about paths a HUMAN would never request, because the only consequence is suppressing an alert.
     """
+    # ONE DEFINITION, SHARED WITH THE SHIELD. Keeping a second, weaker copy here is how
+    # //slug, /[workspace]/, /DOCS.md and /IAM.md all read as human page views on 10 Aug: the
+    # shield knew they were scanner paths and this module did not. A value that two modules must
+    # agree on has one home. The local fallback below only exists so visitors.py still works if it
+    # is ever imported without the rest of the app.
+    try:
+        from . import shield
+        return shield.is_probe_path(path)
+    except Exception:
+        pass
     p = str(path or "/").lower()
     if p.startswith("/.well-known/"):
         return False
@@ -154,6 +164,23 @@ def note_visit(ev, cls):
         # announcing itself as "Safari / iOS / mobile", so the UA-based bot check passed it through
         # and the alert claimed a person had arrived — on a path no person has ever typed. A user
         # agent is attacker-controlled; the path they asked for is the actual evidence.
+        # ONE IP PRESENTING SEVERAL BROWSERS IS A SCANNER, AND THIS IS UNFAKEABLE-AWAY.
+        # On 10 Aug 2026 a single address produced SIX "a person just opened cybergod.ai" alerts
+        # in two seconds as Safari/macOS, Chrome/Linux, Chrome/macOS, Edge/Windows, Firefox/Windows
+        # and Firefox/macOS. The dedupe key deliberately includes the client fingerprint (so a
+        # phone and a laptop behind one office NAT are two visitors) -- which made UA ROTATION a
+        # free way to flood the operator with six alerts. The rotation is the evidence: an attacker
+        # varying the user agent to defeat per-client limits produces the one thing a real visitor
+        # never does. shield.observe() has already recorded the fingerprints, so ask it.
+        try:
+            from . import shield as _sh
+            if "ua_rotation" in _sh.observe(ev.get("ip"), path, ev.get("status", 200),
+                                            cls or {}, ev.get("method", "GET")):
+                notify._log(evt="visit_suppressed", reason="one IP, several browsers (UA rotation)",
+                            ip=ev.get("ip", "-"), path=path, ua=(ev.get("ua") or "")[:120])
+                return
+        except Exception:
+            pass
         if _probe_path(path):
             notify._log(evt="visit_suppressed", reason="probe path (spoofed UA)",
                         ip=ev.get("ip", "-"), path=path, ua=(ev.get("ua") or "")[:120])

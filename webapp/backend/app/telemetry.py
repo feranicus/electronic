@@ -11,7 +11,7 @@ retention is what enforces it here. Set TELEMETRY_HASH_IPS=1 to store a salted h
 raw IP (you keep 'same visitor?' correlation and lose the identifier). Raw is the default because
 you asked for forensics.
 """
-import hashlib, json, os, re, time
+import asyncio, hashlib, json, os, re, time
 
 EVENTS_LOG   = os.environ.get("EVENTS_LOG", "")
 SERVICE      = os.environ.get("SERVICE", "colt-web")
@@ -118,6 +118,40 @@ def install(app, session_email_fn=None):
             except ImportError:
                 _v = None
             cls = _v.classify(request) if _v else None
+
+            # ACTIVE DEFENCE, BEFORE THE APP. shield.decide() is pure in-memory arithmetic over
+            # what this IP has already done, so it costs microseconds and cannot call out to
+            # anything. It is deliberately placed here, ahead of the bot gate, so a confirmed
+            # scanner never reaches application code at all.
+            # FAIL-OPEN BY CONSTRUCTION: every call is wrapped, and shield.decide() itself returns
+            # ALLOW on any internal error. A security control that breaks the site is a worse
+            # outage than the scanning it prevents.
+            try:
+                from . import shield as _sh
+            except Exception:
+                _sh = None
+            if _sh is not None:
+                try:
+                    _ip = client_ip(request)
+                    _verdict, _why = _sh.decide(_ip, request.url.path)
+                    if _verdict == "BLOCK":
+                        from starlette.responses import HTMLResponse
+                        _safe_emit(request, 404, t0, session_email_fn, cls=cls, blocked=True)
+                        return HTMLResponse(_v.NOT_FOUND_HTML if _v else "", status_code=404)
+                    if _verdict == "TARPIT":
+                        # Cheap for us, expensive for them: a scanner's throughput collapses while
+                        # a mistaken human just sees a slow page. The concurrency cap inside
+                        # tarpit_seconds() is what stops this becoming a self-inflicted DoS.
+                        _delay = _sh.tarpit_seconds()
+                        if _delay > 0:
+                            _sh.enter_tarpit()
+                            try:
+                                await asyncio.sleep(_delay)
+                            finally:
+                                _sh.leave_tarpit()
+                except Exception:
+                    pass                                  # fail open, always
+
             if _v is not None and cls and _v.should_block(request.url.path, cls):
                 from starlette.responses import HTMLResponse
                 _safe_emit(request, 404, t0, session_email_fn, cls=cls, blocked=True)
@@ -129,6 +163,12 @@ def install(app, session_email_fn=None):
                 _safe_emit(request, 500, t0, session_email_fn, cls=cls)
                 raise
             _safe_emit(request, status, t0, session_email_fn, cls=cls)
+            if _sh is not None:
+                try:
+                    _sh.observe(client_ip(request), request.url.path, status, cls or {},
+                                request.method)
+                except Exception:
+                    pass
             return response
 
     def _safe_emit(request, status, t0, fn, cls=None, blocked=False):
