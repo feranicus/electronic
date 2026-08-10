@@ -29,7 +29,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "cybergod.ai \u2014 colt-web",
+      "title": "cybergod.ai — colt-web",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -363,7 +363,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "Visitors \u2014 who is hitting cybergod.ai",
+      "title": "Visitors — who is hitting cybergod.ai",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -424,7 +424,7 @@
       "id": 3,
       "type": "stat",
       "title": "Unique visitors (24h)",
-      "description": "Distinct IPs from real browsers in 24h. Bots excluded \u2014 otherwise crawlers inflate it.",
+      "description": "Distinct IPs from real browsers in 24h. Bots excluded — otherwise crawlers inflate it.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -518,7 +518,7 @@
       "id": 5,
       "type": "stat",
       "title": "Bot requests (24h)",
-      "description": "Crawlers, curl, scanners, empty user-agents. Not automatically bad \u2014 Googlebot lives here too.",
+      "description": "Crawlers, curl, scanners, empty user-agents. Not automatically bad — Googlebot lives here too.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -658,7 +658,7 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Traffic per minute \u2014 humans vs bots (a DDoS is a spike in BOTH)",
+      "title": "Traffic per minute — humans vs bots (a DDoS is a spike in BOTH)",
       "description": "Volumetric view. The DDoS rule fires at >300 req/min from >40 distinct IPs.",
       "datasource": {
         "type": "loki",
@@ -743,7 +743,7 @@
     {
       "id": 10,
       "type": "logs",
-      "title": "VISITOR LOG \u2014 time \u00b7 IP \u00b7 country \u00b7 device \u00b7 browser \u00b7 bot? \u00b7 path \u00b7 status",
+      "title": "VISITOR LOG — time · IP · country · device · browser · bot? · path · status",
       "description": "The table you asked for. Every request, newest first. Expand a line for the full JSON (user-agent, referer, latency, signed-in user).",
       "datasource": {
         "type": "loki",
@@ -772,7 +772,7 @@
     {
       "id": 11,
       "type": "table",
-      "title": "Top source IPs (24h) \u2014 volume, and whether they look like a bot",
+      "title": "Top source IPs (24h) — volume, and whether they look like a bot",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -805,7 +805,7 @@
     {
       "id": 12,
       "type": "table",
-      "title": "Bots seen (24h) \u2014 crawlers, scanners, tooling",
+      "title": "Bots seen (24h) — crawlers, scanners, tooling",
       "description": "Googlebot/LinkedInBot are fine. zgrab / sqlmap / nuclei / masscan are someone measuring you.",
       "datasource": {
         "type": "loki",
@@ -839,7 +839,7 @@
     {
       "id": 13,
       "type": "row",
-      "title": "Security \u2014 what fired, and why (alerts also go to Telegram + email)",
+      "title": "Security — what fired, and why (alerts also go to Telegram + email)",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -900,7 +900,7 @@
       "id": 15,
       "type": "stat",
       "title": "Alerts suppressed (storm cap)",
-      "description": "Rules that fired but were held back by the 12/hour cap or the 15-min cooldown. Non-zero here means something is noisy \u2014 check the log below, do not just raise the cap.",
+      "description": "Rules that fired but were held back by the 12/hour cap or the 15-min cooldown. Non-zero here means something is noisy — check the log below, do not just raise the cap.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -1040,7 +1040,7 @@
     {
       "id": 18,
       "type": "logs",
-      "title": "SECURITY ALERTS \u2014 rule \u00b7 severity \u00b7 subject \u00b7 full forensics",
+      "title": "SECURITY ALERTS — rule · severity · subject · full forensics",
       "description": "Every alert with the exact detail that was emailed/telegrammed to you.",
       "datasource": {
         "type": "loki",
@@ -1056,7 +1056,7 @@
         {
           "refId": "A",
           "queryType": "range",
-          "expr": "{container=~\".*assess-bot.*\"} | json | evt=`security_alert` | line_format \"[{{.severity}}] {{.rule}} \u2014 {{.subject}} \u2014 {{.title}}\\n{{.detail}}\""
+          "expr": "{container=~\".*assess-bot.*\"} | json | evt=`security_alert` | line_format \"[{{.severity}}] {{.rule}} — {{.subject}} — {{.title}}\\n{{.detail}}\""
         }
       ],
       "options": {
@@ -1069,7 +1069,7 @@
     {
       "id": 19,
       "type": "logs",
-      "title": "AUTH AUDIT \u2014 every login attempt (success and failure)",
+      "title": "AUTH AUDIT — every login attempt (success and failure)",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -1093,6 +1093,402 @@
         "sortOrder": "Descending",
         "enableLogDetails": true
       }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 83
+      },
+      "title": "Active defence — what the shield DID (and what it asked you about)",
+      "panels": []
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Blocked (24h)",
+      "description": "Addresses the shield actually stopped. Each block is time-boxed and expires.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 84
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=`shield_block` [24h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Would have blocked",
+      "description": "Enforcement is OFF (SHIELD_ENFORCE=0) — this is what it would have done.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 84
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=`shield_would_block` [24h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Refused: blast cap",
+      "description": "The guard that stops the shield blocking a large share of traffic. Non-zero means it engaged — read the log before widening anything.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 84
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=`shield_refused` [24h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Asked you (Telegram)",
+      "description": "Escalation menus sent. One per address per hour.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 84
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=`shield_ask` [24h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "You authorised",
+      "description": "Buttons you tapped that were carried out.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 84
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=`shield_action_applied` [24h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Thresholds tuned",
+      "description": "Changes the 4-model panel made, always inside shield.BOUNDS. Should be rare.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 84
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=`shield_tuned` [24h]))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Blocks and asks over time",
+      "description": "A flat line is quiet. A step means a campaign arrived.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 88
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=`shield_block` [$__interval]))"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=`shield_ask` [$__interval]))"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "table",
+      "title": "Who was stopped, and on what evidence",
+      "description": "Every block with its score and the signals behind it. This is the forensic record.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 88
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=~`shield_block|shield_ask|shield_action_applied|shield_refused` | line_format \"{{.evt}}  {{.ip}}  score={{.score}}  {{.reasons}}{{.actions}}{{.reason}}\""
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "logs",
+      "title": "Shield log — raw",
+      "description": "Everything the shield emitted, newest first. If a block looks wrong, it is explained here before you change any threshold.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 96
+      },
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{container=~\".*assess-bot.*|.*colt-web.*\"} | json | service=`colt-web` | evt=~`shield_.*|visit_suppressed`"
+        }
+      ]
     }
   ]
 }

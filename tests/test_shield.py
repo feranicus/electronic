@@ -540,3 +540,34 @@ def test_the_real_scanner_paths_from_the_log(sh):
               "/wp-json/batch/v1", "//wp-json/batch/v1", "/adminfuns.php", "/autoload_classmap.php"):
         assert sh.probe_shape(p), "%s was sent by a real scanner against this site" % p
 
+def test_every_shield_event_is_visible_in_grafana():
+    """An event nobody can see is not observability.
+
+    The shield emitted six event types for a full day and NOT ONE appeared in any dashboard —
+    `grep shield obs/grafana/dashboards/webapp.json` returned 0. The operator could be under
+    attack, the shield could be stopping it, and Grafana would show nothing at all.
+    Same disease as every other check in this repo that could not see its own subject.
+    """
+    import json as _json
+    import re as _re
+    dash = open(os.path.join(ROOT, "obs", "grafana", "dashboards", "webapp.json"),
+                encoding="utf-8").read()
+    _json.loads(dash)                                    # it must still be valid JSON
+
+    src = open(os.path.join(ROOT, "webapp", "backend", "app", "shield.py"), encoding="utf-8").read()
+    src += open(os.path.join(ROOT, "webapp", "backend", "app", "shield_console.py"),
+                encoding="utf-8").read()
+    src += open(os.path.join(ROOT, "webapp", "backend", "app", "shield_tuning.py"),
+                encoding="utf-8").read()
+    emitted = set(_re.findall(r'evt=["\'](shield_[a-z_]+)["\']', src))
+    emitted |= set(_re.findall(r'_ev\(["\'](shield_[a-z_]+)["\']', src))
+    assert emitted, "no shield events found in the source — read this test's premise again"
+
+    # The raw-log panel uses a regex (evt=~`shield_.*`), which covers every one of them.
+    covers_all = "shield_.*" in dash
+    missing = [e for e in sorted(emitted) if e not in dash]
+    assert covers_all or not missing, (
+        "these shield events reach the log but no Grafana panel: %s" % missing)
+    for must in ("shield_block", "shield_ask", "shield_refused", "shield_tuned"):
+        assert must in dash, "%s deserves its own panel — it is a decision, not noise" % must
+
