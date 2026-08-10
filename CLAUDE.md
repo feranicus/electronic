@@ -3982,3 +3982,40 @@ nothing in this codebase has ever set. The corroboration would have silently fal
 other two paths and nobody would have noticed. `_mx()` now exists and populates it — one DoH query,
 no packets. Read the data, or create it; do not reference it and hope.
 Guarded by test_passive_checks.py §6, negative-tested in five directions.
+
+## THE GATE SAID NO-GO ON A HEALTHY BOX, TWICE, AND BOTH FAULTS WERE IN THE CHECKS (2026-08-10)
+A verified build was refused promotion on 4 failing checks. Production was never touched, which is
+the gate working. But nothing was wrong with the system: `admin_api_closed` and
+`config_change_propagates` (each counted twice, pre- and post-reboot) were both defective.
+
+**1. A VERDICT THAT IS NOT IN A FIXED POSITION IS NOT MACHINE-READABLE.** `cmd_admin` printed a
+diagnostic line — `   probed from colt-web -> 172.18.0.2:2019: no answer (isolated, measured not
+assumed)` — BEFORE its verdict. The caller flattens the output and matches `case "$AD" in OK*)`, so
+a CORRECT result never matched, fell through to the wildcard, and the wildcard had (correctly) been
+made a FAILURE the day before. The detail string even ended in `OK admin API is loopback-only`, so
+the check reported FAIL while quoting its own pass. gemma-4-31B-it named this exactly.
+RULE: the verdict is the FIRST line; notes are INDENTED and come after. Indentation is what
+distinguishes them, so the guard is "every line starting at column zero must be a verdict token".
+That rule immediately caught a second instance: `cmd_drift` printed `[!] no caddy container` and
+returned 0 — a SKIP wearing a pass's clothes.
+
+**2. `agent.py assemble` WITHOUT `--apply` WRITES NOTHING AND RELOADS NOTHING.**
+`cmd_assemble(do_apply)` only calls `apply()` when the flag is present. `config_change_propagates`
+wrote a probe vhost, called plain `assemble`, then asserted the vhost had reached the running
+config. It never could. So the check reported the 2026-08-07 latent-outage mechanism "reproduced
+live" on a box where nothing was wrong. Fixed at BOTH call sites (the write and the revert).
+kimi-k2.6 was right that the check was broken by construction, and its reasoning was the sharpest
+thing in the run: `config_drift` PASSES (running == file) while this check claims the change never
+reached the running config — both cannot be true. Its proposed FIX was wrong (call `caddy reload`
+directly); the guard's own validate-then-apply path is what production uses, and testing anything
+else would prove nothing about production. deepseek, maverick and gemma all proposed adding a
+reload to the SYSTEM, i.e. they fixed the thing that was not broken.
+
+**AND A STATIC CHECK COULD NOT CATCH DEFECT 1.** My first guard walked the AST for string literals.
+The mutation that reproduces the real bug prints a FORMATTED note (`print(n)`), which is not a
+literal, so the AST check skipped it and went green on a file carrying the exact defect. Replaced
+with a FUNCTIONAL test: stub docker to describe a healthy box, RUN `cmd_admin`, read line 1. Same
+doctrine that produced the container-to-container admin probe in the first place — a check that
+reasons about its subject is weaker than one that reproduces it.
+Guarded by tests/test_gate_integrity.py, all three negative-tested (note-before-verdict, bare note
+returning 0, assemble without --apply).

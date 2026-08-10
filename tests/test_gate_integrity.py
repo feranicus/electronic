@@ -345,3 +345,122 @@ def test_a_config_change_is_proven_to_propagate():
     assert "$CADDY\"" not in sg, (
         "a container-name variable that this script never defines is back — read the name, do not "
         "assume it")
+
+# =================================================================================================
+# TWO GREEN-BOX FAILURES, 10 Aug 2026. The staging gate said NO-GO on a healthy box and refused to
+# promote a good build -- twice, for two different reasons, and BOTH were in the checking layer.
+# The panel caught both; three of four models then proposed fixes to the SYSTEM, which was fine.
+# =================================================================================================
+def _agent_src():
+    return open(os.path.join(ROOT, "deploy", "caddyguard", "agent.py"), encoding="utf-8").read()
+
+
+def test_agent_verdict_is_the_first_line():
+    """A machine-read verdict must be the FIRST line of stdout, and every UNINDENTED line is one.
+
+    `cmd_admin` printed a diagnostic ("   probed from colt-web -> ...") BEFORE its verdict. The
+    caller flattens the output and matches `OK*`, so a CORRECT result never matched, fell through
+    to the wildcard -- which the day before I had (correctly) made a FAILURE -- and a healthy,
+    properly isolated admin API was reported as EXPOSED, twice, blocking a good release.
+
+    THE RULE IS NOT "every print starts with a token": continuation notes legitimately do not, and
+    they are INDENTED, which is exactly what distinguishes them. So: any line that starts at column
+    zero is a verdict and must say so. That also caught `cmd_drift` printing "[!] no caddy
+    container" and returning 0 -- a SKIP wearing a pass's clothes.
+    """
+    import ast
+    VERDICTS = ("OK", "SKIP", "DRIFT", "EXPOSED", "STALE", "MISSING")
+    tree = ast.parse(_agent_src())
+    checked = 0
+    for fn in [n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef)
+               and n.name in ("cmd_admin", "cmd_roster", "cmd_drift")]:
+        seen = False
+        for node in ast.walk(fn):
+            if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "print"
+                    and node.args):
+                continue
+            a = node.args[0]
+            v = a.value if isinstance(a, ast.Constant) else (
+                a.left.value if isinstance(a, ast.BinOp) and isinstance(a.left, ast.Constant)
+                else None)
+            if not isinstance(v, str) or not v.strip():
+                continue                      # a formatted expression or a blank line
+            if v[:1].isspace():
+                continue                      # an indented note, which is allowed AFTER a verdict
+            seen = True
+            assert v.split()[0] in VERDICTS, (
+                "%s line %d prints the unindented line %r, which is not a verdict token %s. The "
+                "caller matches on the first token, so this can never be classified."
+                % (fn.name, node.lineno, v[:60], list(VERDICTS)))
+        assert seen, "%s emits no literal verdict at all" % fn.name
+        checked += 1
+    assert checked == 3, "expected 3 verdict-emitting commands, checked %d" % checked
+
+
+def test_agent_admin_prints_its_verdict_first_when_RUN():
+    """The static check above cannot see ordering, so RUN the command and read line 1.
+
+    The mutation that reproduces the real defect prints a FORMATTED note (`print(n)`) before the
+    verdict. That is not a string literal, so an AST check skips it and reports green -- which is
+    precisely the "a check that reasons about its subject is weaker than one that reproduces it"
+    lesson that produced the container-to-container admin probe in the first place. So: stub docker
+    to describe a HEALTHY box, run cmd_admin, and assert the first line is the verdict.
+    """
+    import io, contextlib, types
+    spec = importlib.util.spec_from_file_location(
+        "cg_agent", os.path.join(ROOT, "deploy", "caddyguard", "agent.py"))
+    ag = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ag)
+
+    def fake_sh(cmd, **kw):
+        j = " ".join(cmd)
+        out = ""
+        if "/config/" in j:
+            out = "" if "wget" in j and ":2019" in j and "exec" in j and "127.0.0.1" not in j else \
+                  '{"admin": {"listen": "localhost:2019"}}'
+        elif ".NetworkSettings.Networks" in j:
+            out = "172.18.0.2 "
+        elif ".State.Running" in j:
+            out = "true"
+        elif "ps" in j:
+            out = ""                      # no published ports
+        return types.SimpleNamespace(stdout=out, stderr="", returncode=0)
+
+    ag.sh = fake_sh
+    ag.container = lambda *a, **k: "videodead-caddy"
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = ag.cmd_admin()
+    lines = [x for x in buf.getvalue().splitlines() if x.strip()]
+    assert lines, "cmd_admin printed nothing at all"
+    first = lines[0].split()[0]
+    assert first in ("OK", "SKIP", "EXPOSED"), (
+        "cmd_admin's FIRST line is %r, not a verdict. The caller does `case $AD in OK*)`, so a "
+        "healthy box scores as a failure -- which is exactly what blocked two good releases."
+        % lines[0][:80])
+    assert rc == 0, "a healthy, loopback-only admin API must not return non-zero"
+
+
+def test_propagation_check_actually_applies():
+    """`agent.py assemble` WITHOUT --apply writes nothing and reloads nothing.
+
+    config_change_propagates wrote a probe vhost, called plain `assemble`, then asserted the vhost
+    had reached the running config. It never could: `cmd_assemble(do_apply)` only calls apply()
+    when the flag is present. So the check reported the 2026-08-07 latent-outage mechanism on a box
+    where nothing was wrong, and blocked promotion twice.
+    kimi-k2.6 was right that the check was broken by construction; its proposed fix (call `caddy
+    reload` directly) was wrong -- the guard's own validate-then-apply path is what production uses,
+    and testing anything else would prove nothing about production.
+    """
+    src = open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read()
+    body = src[src.index("config_change_propagates"):]
+    body = body[:body.index("#### KERNEL")] if "#### KERNEL" in body else body
+    calls = re.findall(r"agent\.py assemble(?: --apply)?", body)
+    assert calls, "the propagation check no longer assembles anything"
+    assert all(c.endswith("--apply") for c in calls), (
+        "config_change_propagates calls `agent.py assemble` without --apply (%r). That command "
+        "writes nothing and reloads nothing, so the check can only ever fail." % calls)
+    assert "cmd_assemble(\"--apply\" in rest)" in _agent_src(), (
+        "agent.py no longer gates apply on --apply; re-read this test's premise before changing it")
+

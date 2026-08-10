@@ -360,14 +360,14 @@ http://$PROBE {
 }
 EOF
   CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
-    python3 /opt/caddyguard/agent.py assemble >/dev/null 2>&1
+    python3 /opt/caddyguard/agent.py assemble --apply >/dev/null 2>&1
   SERVED_AFTER=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
   # THE REVERT RUNS WHATEVER HAPPENED ABOVE. A test that can leave staging serving a probe vhost
   # is an outage with a pass/fail label -- the lesson from the negative test that took this box
   # down in an earlier round.
   rm -f /opt/caddyguard/blocks/zz__reloadprobe.caddy
   CADDYFILE=/opt/staging-caddy/Caddyfile CADDY_PORT=8080 \
-    python3 /opt/caddyguard/agent.py assemble >/dev/null 2>&1
+    python3 /opt/caddyguard/agent.py assemble --apply >/dev/null 2>&1
   SERVED_GONE=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
   if [ "${SERVED_AFTER:-0}" -ge 1 ] && [ "${SERVED_GONE:-1}" -eq 0 ]; then
     chk config_change_propagates yes "a NEW vhost reached the running config without a reboot and was removed again - hop 2 genuinely updates on CHANGE, not just on restart"

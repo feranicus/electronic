@@ -612,6 +612,7 @@ def cmd_admin():
     # to reach the admin API from a DIFFERENT container over the bridge address. If something ever
     # does share a namespace, or a future config binds 0.0.0.0, this measures it instead of
     # arguing about it.
+    notes = []
     ip = (sh(["docker", "inspect", "-f",
               "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", c]).stdout or "").split()
     probe_from = None
@@ -626,15 +627,23 @@ def cmd_admin():
             bad.append("the admin API ANSWERED a request from another container (%s -> %s:2019); "
                        "it is reachable across the shared bridge" % (probe_from, ip[0]))
         else:
-            print("   probed from %s -> %s:2019: no answer (isolated, measured not assumed)"
-                  % (probe_from, ip[0]))
+            notes.append("probed from %s -> %s:2019: no answer (isolated, measured not assumed)"
+                         % (probe_from, ip[0]))
 
+    # THE VERDICT IS THE FIRST LINE. This check reported FAIL on a healthy box for one reason: it
+    # printed a diagnostic line BEFORE its verdict, the caller matches `OK*` on the flattened
+    # output, and so a correct result never matched and fell through to the wildcard -- which I
+    # had (correctly) made a FAILURE the day before. A machine-readable verdict that is not in a
+    # fixed position is not machine-readable. Notes come after, never before.
     if bad:
-        for b in bad:
-            print("EXPOSED " + b)
+        print("EXPOSED " + " | ".join(bad))
+        for n in notes:
+            print("   " + n)
         return 1
     print("OK admin API is loopback-only (%s) and not published"
           % (listen or "Caddy default localhost:2019"))
+    for n in notes:
+        print("   " + n)
     return 0
 
 
@@ -683,7 +692,9 @@ def cmd_roster():
 def cmd_drift():
     c = container()
     if not c:
-        print("[!] no caddy container - cannot compare"); return 0
+        # SKIP, not a bare note: a caller matching on the verdict token cannot classify "[!] ..."
+        # and would score this either as a pass it did not earn or as a failure it did not deserve.
+        print("SKIP no caddy container - nothing to compare"); return 0
     # HOP 1 - HOST FILE  ->  CONTAINER FILE (across the bind mount).
     # The first version of this check compared only hops 2 and 3, BOTH of which read from inside
     # the container. A stale single-file mount makes both sides agree perfectly on the wrong
