@@ -109,3 +109,59 @@ def test_it_is_a_building_block_not_a_second_command():
     tree = ast.parse(src)
     names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     assert {"gather", "send"} <= names, "gather() and send() must stay separable"
+
+def test_notes_are_sent_on_a_FAILED_release_too():
+    """The releases most worth reading were the ones that stayed silent.
+
+    10 Aug 2026: the operator asked why he never got release notes. `ok = do_verify(...)` was False
+    (the new shield was blocking /api/me), and BOTH the safe-point tag and the release notes sat
+    behind the same `if ok and not DRY:`. So a release that went wrong produced no tag — correct —
+    and no notification at all — the opposite of the standing rule, which exists precisely so that
+    "a release nobody was told about is a release nobody can review".
+    The tag stays gated on success. The notes do not.
+    """
+    src = open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read()
+    i = src.index("release_notes.py")
+    guard = src.rindex("if ", 0, i)
+    block = src[guard:i]
+    assert "if ok and not DRY" not in block, (
+        "the release notes are gated on a SUCCESSFUL deploy again — a failed release would be "
+        "silent, which is the exact defect the operator reported")
+    assert '"--result"' in src and '"GO" if ok else "FAIL"' in src, (
+        "the notes must carry the deploy outcome")
+    assert "VERIFY_FAILURES" in src, "the notes must carry WHICH checks failed, not just a boolean"
+    # ...and the tag must still be earned.
+    assert "tag_known_good() if ok else" in src, (
+        "a failed deploy must never be tagged as the last known good state")
+
+
+def test_the_failing_checks_are_captured_not_just_printed():
+    """A reason printed to a terminal the operator has already closed is not a report."""
+    src = open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read()
+    i = src.index("def do_verify(")
+    j = src.index("\ndef ", i + 10)
+    body = src[i:j]
+    # LOOK AT A WINDOW, NOT ONE LINE. The first version flagged every bare `ok = False`, including
+    # the bot-gate branch that records its reasons on the four lines above it — so it reported a
+    # correct block as a defect while a genuinely unrecorded one (the stale-engine check) sat in
+    # the same list. It still caught that real gap, which is why the window is small.
+    lines = body.splitlines()
+    stray = []
+    for n, ln in enumerate(lines):
+        if "ok = False" not in ln or "_vfail(" in ln:
+            continue
+        window = "\n".join(lines[max(0, n - 5):n + 1])
+        if "VERIFY_FAILURES" not in window and "_vfail(" not in window:
+            stray.append(ln.strip() + "   (line %d of do_verify)" % n)
+    assert not stray, ("these verify failures are printed but never recorded, so the release "
+                       "notes cannot quote them: %s" % stray[:3])
+
+
+def test_the_outcome_reaches_the_models_and_the_message():
+    """A model told only about the commits will write a cheerful note about a broken release."""
+    app_rn = open(os.path.join(ROOT, "webapp", "backend", "app", "release_notes.py"),
+                  encoding="utf-8").read()
+    assert "Deploy result:" in app_rn, "the facts handed to the model must state the outcome"
+    assert "FAILED CHECK:" in app_rn, "and name the checks that failed"
+    assert "LEAD with that" in app_rn, "the prompt must tell the model not to gloss over a failure"
+

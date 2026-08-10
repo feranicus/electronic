@@ -627,7 +627,7 @@ def do_tests():
         sys.exit('[X] ACTIVE DEFENCE REGRESSION - the shield could block a real visitor, fail '
                  'closed, reach the firewall, or let the model panel leave its bounds. Do not ship.')
     print('  active defence: scanner stopped, real routes untouched, fails open, firewall never '
-          'touched, panel bounded')
+          'touched, panel bounded, 42-path scanning corpus covered, middleware+panel WIRED')
 
     # c''''') THE DRIFT CHECK ITSELF. Its first version md5'd `caddy adapt` against the admin API's
     #        `GET /config/` and failed a HEALTHY staging box twice, blocking a deploy on a defect
@@ -1237,6 +1237,17 @@ def _import_grafana():
 
 
 # ------------------------------------------------------------------ 4. verify
+# The verify step's failure REASONS, not just its boolean. The release notes need to say WHAT
+# failed: "FINISHED WITH WARNINGS" in a terminal the operator has already closed is not a report.
+VERIFY_FAILURES = []
+
+
+def _vfail(msg):
+    """Print a verify failure and remember it, so the release notes can quote it."""
+    print("  [!] " + msg)
+    VERIFY_FAILURES.append(msg)
+
+
 def do_verify(web, bots):
     """5/5 VERIFY — everything read-only in ONE ssh session.
 
@@ -1246,6 +1257,7 @@ def do_verify(web, bots):
     the last one in the burst would sit there for minutes — AFTER the deploy had already succeeded.
     One session, delimited sections, parsed locally. A correction (rare) opens a second."""
     say("5/5  VERIFY")
+    del VERIFY_FAILURES[:]
     ok = True
     if DRY:
         return True
@@ -1278,9 +1290,9 @@ def do_verify(web, bots):
         psout = sec.get("PS", "")
         print("    " + "\n    ".join(l for l in psout.splitlines() if l.strip()))
         if "colt-assessbot" not in psout:
-            print("  [!] colt-assessbot not visible"); ok = False
+            _vfail("colt-assessbot not visible"); ok = False
         if "colt-promtail" not in psout:
-            print("  [!] colt-promtail missing — Grafana will go quiet"); ok = False
+            _vfail("colt-promtail missing — Grafana will go quiet"); ok = False
 
     # The engine hash is the load-bearing check. HTTP 401 only proves *something* is listening —
     # a 3-day-old container answers it just as happily as a current one.
@@ -1300,6 +1312,8 @@ def do_verify(web, bots):
         if not good:
             for st in stale:
                 print("      " + st)
+            VERIFY_FAILURES.append(
+                "%s is running a STALE engine — its assessments would be wrong" % cont)
             ok = False
 
     if web:
@@ -1362,6 +1376,11 @@ def do_verify(web, bots):
             import check_bot_gate as _bg
             _r = _bg.run(DOMAIN, "https", insecure=False)
             if _r["failures"]:
+                # RECORD THEM, not just the boolean. These are the lines that explained the
+                # 10 Aug failure ("/api/me returned 404 for GPTBot"), and they were printed to a
+                # terminal and then lost -- the release notes never saw them.
+                for _f in _r["failures"][:8]:
+                    VERIFY_FAILURES.append("bot gate: %s" % str(_f)[:160])
                 ok = False
         except Exception as _e:
             print("  [!] bot-gate check skipped (%s)" % type(_e).__name__)
@@ -1373,14 +1392,14 @@ def do_verify(web, bots):
             try:
                 ctx = _ssl.create_default_context()
                 urllib.request.urlopen(urllib.request.Request(url), timeout=20, context=ctx)
-                print("  [!] 200 without a session — auth is NOT enforced"); ok = False
+                _vfail("200 without a session — auth is NOT enforced"); ok = False
             except urllib.error.HTTPError as e:
                 if e.code == 401:
                     print("  OK  401 Unauthorized — colt-web is live and locked down")
                 else:
-                    print("  [!] HTTP %s (expected 401)" % e.code); ok = False
+                    _vfail("HTTP %s (expected 401)" % e.code); ok = False
             except Exception as e:
-                print("  [!] unreachable: %r" % e); ok = False
+                _vfail("unreachable: %r" % e); ok = False
     return ok
 
 
@@ -1587,14 +1606,19 @@ def main():
         print('  [!] model-watch skipped (%s) - never blocks a deploy' % type(_e).__name__)
 
 
-    if ok and not DRY:
-        # only tag a SAFE-POINT when the deployed engine actually verified current + live
-        _tag = tag_known_good()
+    if not DRY:
+        # ONLY TAG A SAFE-POINT WHEN THE DEPLOY ACTUALLY VERIFIED. That gate is correct and stays.
+        _tag = tag_known_good() if ok else ""
 
         # ---- RELEASE NOTES, WRITTEN BY THE SAME FOUR MODELS, AND DELIVERED -------------------
         # STANDING RULE (operator, 9 Aug 2026): every release, the four panel models write the
         # notes and they are SENT -- Gmail API gateway to feranicus@s4biz.io, and Telegram. A
         # release nobody was told about is a release nobody can review.
+        #
+        # IT RUNS ON A FAILED DEPLOY TOO. It used to sit behind `if ok:` together with the
+        # safe-point tag, so the runs that went WRONG were silent -- and on 10 Aug the operator
+        # got no notes at all for a release whose verify failed, which is precisely the release he
+        # needed to read about. The tag stays gated on success; the notes do not.
         #
         # It runs LAST, after the deploy verified and the safe-point is tagged, and it can never
         # fail the ship: the models live on the droplet behind a rate-limited endpoint and the mail
@@ -1604,7 +1628,9 @@ def main():
             _rn = subprocess.run(
                 [sys.executable, os.path.join(HERE, "release_notes.py"),
                  "--tag", _tag or "", "-m", (a.message or ""),
-                 "--staging", _stage_verdict, "--tests", _test_summary],
+                 "--staging", _stage_verdict, "--tests", _test_summary,
+                 "--result", "GO" if ok else "FAIL",
+                 "--failures", "\n".join(VERIFY_FAILURES)],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=420)
             print((_rn.stdout or "").rstrip() or "  release notes: no output")
             if (_rn.stderr or "").strip():

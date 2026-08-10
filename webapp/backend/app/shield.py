@@ -101,6 +101,17 @@ _PROBE_RE = re.compile(
                                            #   cannot type this; it is a scanner replaying docs.
     r"|\.(?:php|asp|aspx|jsp|cgi|sql|bak|old|db|sqlite|pem|key|log|ini|yml|yaml|env)(?:$|[?/])"
     r"|/(?:wp-|wordpress|phpmyadmin|xmlrpc|cgi-bin|adminer|actuator|struts|vendor/|solr|jenkins)"
+    # THE NINETEEN CLASSES MEASURED AGAINST THE REAL MASS-SCANNING CORPUS (OWASP OAT-014, CISA
+    # advisories, public honeypot feeds). Written from evidence of what scanners actually send,
+    # not from imagination — `analyse_attacks.py` re-runs that comparison against OUR OWN log so
+    # the next gap is found the same way.
+    r"|/(?:admin|manager/html|cpanel|webadmin|adminpanel)(?:$|[/?])"      # admin consoles
+    r"|/(?:swagger|api-docs|graphql|graphiql)|/v\d/api-docs"              # API introspection
+    r"|/(?:boaform|goform|HNAP1|hudson|setup\.cgi|shell\?)"              # router / IoT / CI
+    r"|/(?:web\.config|server-status|server-info|\.DS_Store|\.npmrc|\.dockercfg)"
+    r"|XDEBUG_SESSION|/_ignition|/telescope/|/login\.action"             # debug + RCE chains
+    r"|%2e%2e|\.\./"                                                     # traversal, encoded or not
+    r"|/autodiscover/autodiscover\.xml"                                  # Exchange probe (we run none)
     r"|(?:^|/)(?:id_rsa|credentials|dump|backup|shell|cmd|eval)(?:$|[./])"
     r"|(?:^|/)[A-Z_]{3,}\.md$"             # /DOCS.md /IAM.md /README.md at the root: repository
                                            #   documentation we do not serve, a leaked-docs scan.

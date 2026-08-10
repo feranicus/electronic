@@ -4179,3 +4179,26 @@ matters most is the one that silently never arrives.
 TWO OF MY OWN CHECKS WERE AIMED AT THE WRONG SCOPE AGAIN: the callback-authentication test grepped
 the WHOLE bot file, where every other handler already calls `AUTH.is_authed`, so deleting the check
 from `shield_decide` alone still passed. Scope the grep to the handler.
+
+## THE GUARDRAILS ARE TESTED FOR BEHAVIOUR *AND* FOR BEING WIRED IN (2026-08-10)
+Every shield test proved shield.py BEHAVES correctly. None proved the middleware CALLS it, that the
+panel is scheduled, or that a Telegram tap reaches the app. A control that is correct and
+unreachable is not a control — the same disease as the ruff gate that silently skipped. Four new
+blocking assertions in tests/test_shield.py, each negative-tested:
+  · the middleware calls `decide()` BEFORE `await call_next(` (a blocked scanner must not reach
+    application code) and `observe()` after — anchored on the CALL, because `call_next` also
+    appears in the method signature and comparing against the bare name failed a correct file;
+  · main.py schedules the panel as a background task AND calls `shield_console.apply_decisions`,
+    without which every button on the Telegram console would silently do nothing;
+  · a 42-path MASS-SCANNING CORPUS (OWASP OAT-014, CISA advisories, public honeypot feeds) is all
+    recognised — 19 of them were NOT when first measured, which is how the detector list was
+    written from evidence rather than memory;
+  · none of OUR 21 real routes is ever treated as an attack.
+`analyse_attacks.py` repeats that same corpus-vs-shield comparison against the REAL event log
+(`docker exec colt-web`, read-only, one ssh), groups every source by behaviour and prints the
+classes the shield does NOT yet recognise. That is the loop: measure the log, close the gap, keep
+the corpus in the test so it cannot reopen.
+NEGATIVE-TEST NOTE, and it cost a cycle: my first mutation "moved" the shield after the app by
+inserting it just BEFORE `call_next` — still correct ordering, so the test rightly passed and I
+briefly believed the check was broken. A mutation that does not actually violate the property
+proves nothing about the check.

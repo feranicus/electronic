@@ -419,3 +419,65 @@ def test_a_wider_or_stricter_response_is_operator_only(sh):
         assert name not in body, "decide() writes %s — that is operator-authorised state" % name
     assert "BLOCK_NETS.get" in body and "STRICT_UNTIL[0] >" in body, "but it must HONOUR them"
 
+# =================================================================================================
+# ARE THE GUARDRAILS ACTUALLY WIRED IN? Every test above proves shield.py BEHAVES correctly. None
+# of them proves the middleware CALLS it, that the panel is scheduled, or that a decision reaches
+# the app. A control that is correct and unreachable is not a control -- the same disease as the
+# ruff gate that silently skipped and the check that could not see its subject.
+# =================================================================================================
+def test_the_shield_is_actually_in_the_request_path():
+    tele = open(os.path.join(ROOT, "webapp", "backend", "app", "telemetry.py"),
+                encoding="utf-8").read()
+    i = tele.index("class _Telemetry")
+    body = tele[i:]
+    assert "shield" in body and "_sh.decide(" in body, "the middleware never asks the shield"
+    assert "_sh.observe(" in body, "the middleware never feeds the shield what happened"
+    # ANCHOR ON THE CALL, NOT THE PARAMETER NAME. `call_next` appears first in the method
+    # SIGNATURE (`async def dispatch(self, request, call_next)`), so comparing against the bare
+    # name compared decide() against position 80 and failed a correctly ordered file.
+    assert body.index("_sh.decide(") < body.index("await call_next("), (
+        "decide() must run BEFORE the app, or a blocked scanner still reaches application code")
+    assert "except Exception" in body, "the shield call must be wrapped — it fails OPEN"
+
+
+def test_the_panel_is_scheduled_and_decisions_are_applied():
+    main = open(os.path.join(ROOT, "webapp", "backend", "app", "main.py"), encoding="utf-8").read()
+    assert "shield_panel" in main, "the out-of-band review is never started"
+    assert "shield_console.apply_decisions" in main, (
+        "nothing applies what the operator taps on Telegram — the buttons would do nothing")
+    assert "create_task" in main, "the review must be a background task, never in a request"
+
+
+def test_the_measured_scanning_corpus_is_covered():
+    """Written from what scanners ACTUALLY send, and re-measured here on every deploy.
+
+    19 of these 48 were unrecognised when the corpus was first run against the shield. That is why
+    analyse_attacks.py exists: it repeats this comparison against OUR OWN event log, so the next
+    detector is written from evidence rather than from memory.
+    """
+    from app import shield as sh
+    corpus = [
+        "/wp-login.php", "/xmlrpc.php", "/.env", "/.git/config", "/.aws/credentials",
+        "/.ssh/id_rsa", "/phpmyadmin/", "/adminer.php", "/admin/", "/manager/html", "/cpanel",
+        "/actuator/env", "/swagger-ui.html", "/graphql", "/api-docs", "/v2/api-docs",
+        "/cgi-bin/luci", "/boaform/admin/formLogin", "/goform/setSysTools", "/HNAP1/",
+        "/solr/admin/info/system", "/jenkins/script", "/hudson", "/backup.zip", "/db.sql",
+        "/config.old", "/web.config", "/.DS_Store", "/?XDEBUG_SESSION_START=phpstorm",
+        "/server-status", "/../../../../etc/passwd", "/%2e%2e/%2e%2e/etc/passwd",
+        "/login.action", "/autodiscover/autodiscover.xml", "/telescope/requests",
+        "/_ignition/execute-solution", "/DOCS.md", "/IAM.md", "//slug", "/[workspace]/",
+        "/.npmrc", "/.dockercfg",
+    ]
+    missed = [p for p in corpus if not (sh.is_probe_path(p) or sh.is_honeytoken(p))]
+    assert not missed, "the shield no longer recognises known mass-scanning paths: %s" % missed[:6]
+
+
+def test_no_real_route_is_ever_treated_as_an_attack():
+    """The other direction, and the one that costs a customer their visit."""
+    from app import shield as sh
+    for p in ("/", "/partners", "/demo", "/experience", "/contact", "/privacy", "/impressum",
+              "/app", "/app/compliance", "/app/history", "/login", "/api/me", "/api/langs",
+              "/sitemap.xml", "/robots.txt", "/.well-known/security.txt", "/media/cassandra.mp4",
+              "/assets/index-abc123.js", "/manifest.webmanifest", "/sw.js", "/icon-192.png"):
+        assert not sh.is_probe_path(p), "%s is a real route of ours" % p
+

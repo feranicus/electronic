@@ -48,6 +48,8 @@ RULES:
   whether something works, say that it is untested rather than guessing.
 - No version numbers, dates, CVE identifiers or figures unless they appear in the facts.
 - Be specific: name the actual files and behaviours, not "various improvements".
+- If "Deploy result" is FAIL, LEAD with that: say what failed and what the operator should check.
+  A failed release is the one he most needs to understand, not the one to gloss over.
 
 Return STRICT JSON, no prose outside it:
 {"headline": "one sentence, under 120 characters, what this release is",
@@ -87,6 +89,9 @@ def _ask(model, facts_text):
 def _facts_text(f):
     """The deterministic half, formatted for the model AND reproduced verbatim in the notes."""
     out = []
+    out.append("Deploy result: %s" % f.get("result", "GO"))
+    for x in (f.get("failures") or []):
+        out.append("  FAILED CHECK: %s" % x)
     out.append("Commit: %s" % f.get("commit", "?"))
     out.append("Safe-point tag: %s" % f.get("tag", "?"))
     out.append("Message: %s" % f.get("message", ""))
@@ -107,7 +112,9 @@ def compose(facts, reviews):
     """The message body. Facts first, then each model, then who did not answer."""
     answered = [r for r in reviews if not r.get("error")]
     L = []
-    L.append("RELEASE  %s" % facts.get("tag", "?"))
+    _res = str(facts.get("result", "GO")).upper()
+    L.append("%s  RELEASE  %s" % ("\U00002705" if _res == "GO" else "\U0001f6a8 FAILED —",
+                                  facts.get("tag", "?")))
     L.append("commit   %s" % facts.get("commit", "?"))
     L.append("when     %s UTC" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M"))
     if facts.get("message"):
@@ -117,6 +124,9 @@ def compose(facts, reviews):
         L.append("Staging gate : %s" % facts["staging"])
     if facts.get("tests"):
         L.append("Tests        : %s" % facts["tests"])
+    L.append("Deploy       : %s" % _res)
+    for x in (facts.get("failures") or []):
+        L.append("   FAILED     : %s" % x)
     L.append("Notes written by %d of %d models" % (len(answered), len(reviews)))
     L.append("=" * 68)
 

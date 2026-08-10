@@ -39,7 +39,7 @@ def _git(*args, cwd=HERE):
         return ""
 
 
-def gather(tag="", message="", staging="", tests=""):
+def gather(tag="", message="", staging="", tests="", result="GO", failures=""):
     """Everything true about this release that can be computed without asking a model."""
     commit = _git("rev-parse", "--short", "HEAD")
     # The PREVIOUS safe-point is the honest baseline for "what changed": it is the last state that
@@ -51,7 +51,12 @@ def gather(tag="", message="", staging="", tests=""):
     return {"commit": commit, "tag": tag or commit, "message": message,
             "staging": staging, "tests": tests,
             "commits": commits, "files": files[:40], "files_total": len(files),
-            "previous": prev}
+            "previous": prev,
+            # THE OUTCOME IS A FACT ABOUT THE RELEASE, so it belongs in the notes like any other.
+            # Notes used to be sent only when the deploy VERIFIED, so the runs that went wrong --
+            # the ones most worth reading -- were exactly the ones that stayed silent.
+            "result": (result or "GO").upper(),
+            "failures": [x for x in (failures or "").splitlines() if x.strip()][:12]}
 
 
 def send(facts, dry_run=False, timeout=300):
@@ -78,12 +83,14 @@ def main():
     ap.add_argument("-m", "--message", default="")
     ap.add_argument("--staging", default="")
     ap.add_argument("--tests", default="")
+    ap.add_argument("--result", default="GO", help="GO or FAIL - did the deploy verify?")
+    ap.add_argument("--failures", default="", help="the verify lines that failed, newline-joined")
     ap.add_argument("--print", dest="dry", action="store_true",
                     help="render on the droplet and print, send nothing")
     ap.add_argument("--facts-only", action="store_true", help="show what would be sent, no ssh")
     a = ap.parse_args()
 
-    facts = gather(a.tag, a.message, a.staging, a.tests)
+    facts = gather(a.tag, a.message, a.staging, a.tests, a.result, a.failures)
     if a.facts_only:
         print(json.dumps(facts, indent=2, ensure_ascii=False))
         return 0
