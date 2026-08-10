@@ -565,8 +565,59 @@ async def _run_assessment(msg, ctx, uid, seed, extra, ui="en"):
             with open(path, "rb") as fh:
                 await msg.reply_document(fh, filename=os.path.basename(path))
 
+SHIELD_DIR = os.environ.get("SHIELD_STATE_DIR", "/var/log/colt")
+
+
+async def shield_decide(update, ctx):
+    """The operator tapped an escalation on a shield alert.
+
+    THE BOT OWNS THE CALLBACK because it already long-polls Telegram; a second getUpdates consumer
+    in colt-web would steal messages from this one. It writes the answer to the shared colt_events
+    volume (which both containers already mount read-write) and colt-web applies it on its next
+    pass. No new port, no second Telegram consumer, no direct call between the two containers.
+
+    IT ONLY RECORDS THE CHOICE. Nothing here blocks, unblocks or reports anything itself: the
+    authorisation and the action stay in separate processes, so a bug in the bot cannot enforce.
+    """
+    q = update.callback_query
+    try:
+        await q.answer()
+    except Exception:
+        pass
+    try:
+        _, incident, action = (q.data or "").split(":", 2)
+    except ValueError:
+        return
+    uid = q.from_user.id if q.from_user else 0
+    if not AUTH.is_authed(uid, ALLOWED):
+        # AUTHORISATION IS NOT OPTIONAL HERE. Anyone who learns a chat id could otherwise tap a
+        # button and change the site's defensive posture.
+        try:
+            await q.edit_message_text((q.message.text or "") + "\n\n[X] Not authorised — /auth first.")
+        except Exception:
+            pass
+        return
+    email = AUTH.authed.get(str(uid), {}).get("email", "")
+    try:
+        path = os.path.join(SHIELD_DIR, "shield_decisions.json")
+        cur = {}
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                cur = json.load(fh)
+        cur[incident] = {"action": action, "by": email, "ts": time.time()}
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cur, fh, indent=2)
+        os.replace(tmp, path)
+        await q.edit_message_text((q.message.text or "")
+                                  + "\n\n>> %s authorised by %s. Applying." % (action, email))
+    except Exception as e:
+        _log(evt="shield_decide_error", err=repr(e)[:160])
+
+
 def main():
     app = Application.builder().token(TOKEN).build()
+    app.add_handler(CallbackQueryHandler(shield_decide, pattern=r"^sh:"))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("auth", auth))
     app.add_handler(CommandHandler("verify", verify))

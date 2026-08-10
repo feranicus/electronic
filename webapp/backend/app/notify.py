@@ -50,15 +50,25 @@ def _tg_chats():
     return out
 
 
-def telegram(text):
+def telegram(text, reply_markup=None):
+    """Send to every configured chat. `reply_markup` adds an inline keyboard (JSON per the API).
+
+    Markdown is DROPPED when a keyboard is attached: an attacker-supplied path can contain `_` or
+    `*`, Telegram then rejects the whole message as malformed entities, and the alert that matters
+    most is the one that silently never arrives.
+    """
     if not TG_TOKEN:
         return False
     ok = False
     for chat in _tg_chats():
         try:
-            data = urllib.parse.urlencode({"chat_id": chat, "text": text[:3900],
-                                           "parse_mode": "Markdown",
-                                           "disable_web_page_preview": "true"}).encode()
+            payload = {"chat_id": chat, "text": text[:3900],
+                       "disable_web_page_preview": "true"}
+            if reply_markup is None:
+                payload["parse_mode"] = "Markdown"
+            else:
+                payload["reply_markup"] = json.dumps(reply_markup)
+            data = urllib.parse.urlencode(payload).encode()
             req = urllib.request.Request("https://api.telegram.org/bot%s/sendMessage" % TG_TOKEN, data=data)
             with urllib.request.urlopen(req, timeout=12) as r:
                 ok = (r.status == 200) or ok

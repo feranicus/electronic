@@ -74,7 +74,11 @@ try:
             while True:
                 await _aio.sleep(every)
                 try:
-                    from . import shield, shield_panel
+                    from . import shield, shield_console, shield_panel
+                    # Apply anything the operator tapped on Telegram since the last pass. This is
+                    # FIRST: an authorisation the operator has already given should take effect
+                    # before the panel spends a token deliberating about the same incident.
+                    shield_console.apply_decisions(shield)
                     # Nothing happened, so there is nothing to review and no tokens to spend.
                     if not (shield.state().get("blocked") or shield.state().get("watching")):
                         continue

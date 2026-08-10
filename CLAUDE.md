@@ -4131,3 +4131,51 @@ the bounds, the blast cap, the allowlist or the kill switch.
 
 **STANDARDS**: NIST SP 800-53r5 SI-4, SI-10, SC-5, AC-7 · NIST SP 800-63B 5.2.2 · OWASP ASVS 14.6 ·
 OWASP Automated Threat Handbook OAT-011/OAT-014 · MITRE ATT&CK T1595.001/.003, T1110.001.
+
+## THE SHIELD BLOCKED OUR OWN DEPLOY VERIFIER (2026-08-10, shipped and caught in production)
+The first shield release FAILED its own deploy:
+```
+[X] /api/me returned 404 for GPTBot - expected 401     RESULT: FAIL
+https://cybergod.ai/api/me   HTTP 404      (was 401)
+```
+`check_bot_gate.py` sends TWELVE user agents from ONE address to prove the bot gate works. The
+shield read that as UA rotation, blocked the operator's own IP, and /api/me answered 404 to
+everything from it. Two defects, and the second is a design correction rather than a threshold:
+1. **`/api/` was missing from NEVER_BLOCK_PREFIXES.** visitors.py has exempted it since the day it
+   was written — *"every deploy verifier in this repo asserts 401 on /api/me"* — and I did not carry
+   the exemption across. Authentication is the control on /api/; a 401 is already a refusal.
+2. **UA ROTATION NEEDS CORROBORATION.** It proves AUTOMATION, not ATTACK. Monitoring, uptime checks
+   and CI all rotate agents on legitimate paths. It now scores only when at least one other hostile
+   signal is present. On the real 10 Aug incident the rotation arrived WITH four probe paths and a
+   row of 404s, so nothing is lost there.
+3. **A PATH WE WILL NEVER BLOCK ON MUST NOT BE SCORED ON EITHER.** `/api/me` returns 401 to every
+   anonymous caller — the React app itself requests it on every logged-out page load — so counting
+   that as an "authz probe" was scoring ordinary visitors.
+RULE: before shipping an inline control, list the traffic THIS REPOSITORY generates against itself
+(deploy verifiers, uptime workflow, the SPA's own calls) and check the control against it. I tested
+the attacker and not the tooling.
+
+## The Telegram attack console — three tiers, and the third has no button (2026-08-10)
+Operator requirement: see clearly when under attack, have the models report what they are doing, be
+ASKED before anything stronger, with a menu to approve.
+- **AUTO** (no question): tarpit, 15-minute HTTP block, alert. Waiting for a human to approve a
+  15-minute 404 means the scan finishes before the phone unlocks.
+- **ASK** (one tap, expires in 2h unanswered): Hold 24h · Block /24 1h · Report abuse (AbuseIPDB) ·
+  Strict 1h · Ban this path · False alarm (release + allow). A /24 is up to 256 addresses and may
+  be a whole office or a mobile carrier, so the shield may HONOUR that state but never write it.
+- **NEVER**: scanning or connecting back. Criminal under DE StGB §202a/§303b, EU Directive 2013/40,
+  US CFAA §1030, Canada CC s.342.1; the address is usually a compromised third party; and one such
+  packet ends the "not one packet" promise on /partners, in the ToU and in the signed partner pack.
+  Guarded by a test that fails if an offensive-looking action is ever added.
+PLUMBING: colt-web writes the pending ask to the shared `colt_events` volume and sends the keyboard;
+**colt-assessbot owns the callback** because it already long-polls Telegram — a second getUpdates
+consumer would steal its messages — and writes the answer back to the same volume, which both
+containers already mount read-write. The bot RECORDS; colt-web ENFORCES. Authorisation and
+enforcement in separate processes, so a bug in the bot cannot block anybody, and the callback is
+authenticated (`AUTH.is_authed`) because a leaked chat id must not change defensive posture.
+`notify.telegram()` drops Markdown when a keyboard is attached: an attacker-supplied path can
+contain `_` or `*`, Telegram rejects the whole message as malformed entities, and the alert that
+matters most is the one that silently never arrives.
+TWO OF MY OWN CHECKS WERE AIMED AT THE WRONG SCOPE AGAIN: the callback-authentication test grepped
+the WHOLE bot file, where every other handler already calls `AUTH.is_authed`, so deleting the check
+from `shield_decide` alone still passed. Scope the grep to the handler.

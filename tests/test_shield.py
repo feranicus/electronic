@@ -127,6 +127,43 @@ def test_the_incident_escalates_to_a_block(sh):
     assert sh.decide(INCIDENT_IP, "/")[0] == "BLOCK"
 
 
+def test_the_deploy_verifier_is_never_blocked(sh):
+    """THIS SHIPPED AND BROKE A DEPLOY. It is the most important test in this file.
+
+    ship.py's bot-404 gate sends TWELVE different user agents from ONE address to prove the gate
+    works, and asks only for `/` and `/api/me`. The shield read that as UA rotation, blocked the
+    operator's own IP, and /api/me answered 404 to everybody from it:
+        [X] /api/me returned 404 for GPTBot - expected 401
+        RESULT: FAIL       https://cybergod.ai/api/me   HTTP 404
+    Two fixes, and the second is a design correction rather than a threshold change:
+      · /api/ joins /.well-known/ in NEVER_BLOCK_PREFIXES. visitors.py has exempted it since the
+        day it was written; I did not carry the exemption across. Authentication protects /api/,
+        and a 401 is already a refusal.
+      · UA rotation now needs CORROBORATION. It proves AUTOMATION, not ATTACK. Monitoring, uptime
+        checks and CI all rotate agents on legitimate paths.
+    """
+    UAS = ["Chrome", "iPhone", "Googlebot", "Bingbot", "GPTBot", "AhrefsBot",
+           "Censys", "nuclei", "sqlmap", "curl", "python-requests", ""]
+    for ua in UAS:                                   # exactly what check_bot_gate.py does
+        for path in ("/", "/api/me"):
+            sh.observe("203.0.113.42", path, 200 if path == "/" else 401,
+                       {"browser": ua or "-", "os": "-", "device": "desktop"})
+    assert sh.decide("203.0.113.42", "/api/me")[0] == "ALLOW", (
+        "the deploy verifier must reach /api/me — every verifier in this repo asserts 401 there")
+    assert sh.decide("203.0.113.42", "/")[0] == "ALLOW", (
+        "rotating agents on legitimate paths is automation, not an attack")
+
+
+def test_api_can_never_be_blocked_even_for_a_proven_scanner(sh):
+    """Even a convicted attacker gets 401 on /api/, not 404. Auth is the control there."""
+    for _ in range(5):
+        for path, cls in INCIDENT:
+            sh.observe(INCIDENT_IP, path, 404, cls)
+    assert sh.decide(INCIDENT_IP, "/")[0] == "BLOCK"
+    assert sh.decide(INCIDENT_IP, "/api/me")[0] == "ALLOW"
+    assert sh.decide(INCIDENT_IP, "/.well-known/acme-challenge/x")[0] == "ALLOW"
+
+
 # ------------------------------------------------------------------ the four safety rails
 def test_never_blocks_acme_or_security_txt(sh):
     """Blocking /.well-known turns a scanner into a CERTIFICATE OUTAGE for every visitor."""
@@ -303,3 +340,82 @@ def test_the_panel_is_not_in_the_request_path(sh):
     src = _re.sub(r'"""(?:.|\n)*?"""|#.*', "", src)
     for forbidden in ("import enrich", "shield_panel", "urllib.request", "requests."):
         assert forbidden not in src, "shield.py must stay pure arithmetic: found %r" % forbidden
+
+# ------------------------------------------------------------------ the Telegram attack console
+def test_the_menu_contains_no_offensive_action(sh):
+    """There is no hack-back button, and there must never be one.
+
+    Scanning or connecting back to the attacker is a criminal offence in every jurisdiction this
+    platform operates in (DE StGB s.202a/303b, EU Directive 2013/40, US CFAA s.1030, Canada
+    Criminal Code s.342.1). The address is also usually a compromised third party rather than the
+    attacker. And one such packet would end the "not one packet is sent to the company being
+    assessed" promise that /partners, the Terms of Use and the signed partner pack all rest on.
+    """
+    from app import shield_console as sc
+    banned = ("scan", "nmap", "exploit", "attack", "hack", "retaliat", "counter", "probe_them",
+              "portscan", "ddos", "flood")
+    for key, a in sc.ACTIONS.items():
+        blob = (key + " " + a["label"] + " " + a["what"]).lower()
+        for b in banned:
+            assert b not in blob, "action %r looks offensive (%r)" % (key, b)
+    src = open(os.path.join(ROOT, "webapp", "backend", "app", "shield_console.py"),
+               encoding="utf-8").read()
+    import re as _re
+    code = _re.sub(r'"""(?:.|\n)*?"""|#.*', "", src)
+    for b in ("socket.", "nmap", "urlopen(\"http://%s" % "", "masscan"):
+        assert b not in code, "the console reaches out to the attacker: %r" % b
+
+
+def test_every_escalation_is_time_boxed_or_reversible(sh):
+    """Nothing an operator taps in a hurry may become permanent by accident."""
+    from app import shield_console as sc
+    assert set(sc.ACTIONS) == {"hold24", "net", "abuse", "strict", "deny", "release"}
+    src = open(os.path.join(ROOT, "webapp", "backend", "app", "shield_console.py"),
+               encoding="utf-8").read()
+    assert "86400" in src and "3600" in src, "the hold and the /24 must carry an explicit expiry"
+    assert "ASK_TTL_S" in src, "an unanswered ask must expire rather than linger as authorisation"
+
+
+def test_a_tap_is_recorded_by_the_bot_and_applied_by_the_app(sh):
+    """Authorisation and enforcement live in different processes on purpose."""
+    bot = open(os.path.join(ROOT, "assess-bot", "bot.py"), encoding="utf-8").read()
+    # SCOPE THE CHECK TO THE HANDLER. The first version grepped the WHOLE file, and every other
+    # handler already calls AUTH.is_authed — so deleting the check from shield_decide alone left
+    # the string in place and the test passed on a file where anyone who learned the chat id could
+    # change the site's defensive posture. Nth instance of a check aimed at the wrong subject.
+    i = bot.index("async def shield_decide")
+    j = bot.index("\ndef ", i) if "\ndef " in bot[i:] else len(bot)
+    handler = bot[i:j]
+    assert "shield_decisions.json" in handler, "the handler must record the choice"
+    assert "AUTH.is_authed" in handler, (
+        "the callback must be authenticated — a chat id alone cannot change defensive posture")
+    for verb in ("_blocked[", "unblock(", "abuse_report"):
+        assert verb not in handler, "the bot records the choice; it must not enforce it (%r)" % verb
+
+
+def test_decisions_are_applied_and_are_operator_scoped(sh):
+    """End to end over the real files: a tap becomes a state change, once."""
+    import json as _json
+    import tempfile as _tf
+    from app import shield_console as sc
+    d = _tf.mkdtemp()
+    sc.PENDING = os.path.join(d, "pending.json")
+    sc.DECISIONS = os.path.join(d, "decisions.json")
+    with open(sc.PENDING, "w") as fh:
+        _json.dump({"i1": {"ip": "203.0.113.55", "ts": time.time(), "path": "/x.php"}}, fh)
+    with open(sc.DECISIONS, "w") as fh:
+        _json.dump({"i1": {"action": "hold24", "by": "feranicus@s4biz.io"}}, fh)
+    done = sc.apply_decisions(sh)
+    assert any("24h" in x for x in done)
+    assert sh._blocked.get("203.0.113.55", 0) > time.time() + 80000
+    assert sc.apply_decisions(sh) == [], "a decision is consumed once, never replayed"
+
+
+def test_a_wider_or_stricter_response_is_operator_only(sh):
+    """The shield may never widen to a /24 or go strict on its own — a /24 can be a whole office."""
+    src = open(os.path.join(ROOT, "webapp", "backend", "app", "shield.py"), encoding="utf-8").read()
+    body = src[src.index("def decide("):src.index("def tarpit_seconds(")]
+    for name in ("BLOCK_NETS[", "STRICT_UNTIL[0] ="):
+        assert name not in body, "decide() writes %s — that is operator-authorised state" % name
+    assert "BLOCK_NETS.get" in body and "STRICT_UNTIL[0] >" in body, "but it must HONOUR them"
+

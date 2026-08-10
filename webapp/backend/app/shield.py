@@ -76,9 +76,17 @@ MIN_ABS_BLOCKS = _i("SHIELD_MIN_ABS_BLOCKS", 5)
 # Addresses that may NEVER be blocked. The operator's own IPs plus anything they add.
 ALLOW_IPS = {x.strip() for x in os.environ.get("SHIELD_ALLOW_IPS", "").split(",") if x.strip()}
 
-# Paths that must always work no matter what: ACME/TLS renewal and RFC 9116. Blocking these would
-# turn a scanner into a certificate outage for every visitor.
-NEVER_BLOCK_PREFIXES = ("/.well-known/",)
+# Paths that must always work NO MATTER WHAT.
+#   /.well-known/ — ACME/TLS renewal and RFC 9116. Blocking it turns a scanner into a CERTIFICATE
+#                   outage for every visitor of every domain on the box.
+#   /api/         — every deploy verifier in this repo asserts 401 on /api/me, and colt-web's own
+#                   health depends on it. THIS OMISSION SHIPPED AND BROKE A DEPLOY: the bot-404
+#                   gate sends twelve user agents from one address, the shield read that as UA
+#                   rotation, blocked the operator's own IP, and /api/me answered 404 to everybody
+#                   from it. visitors.py has exempted /api/ since the day it was written and I did
+#                   not carry the exemption across. Authentication is what protects /api/, not the
+#                   shield; a 401 is already a refusal.
+NEVER_BLOCK_PREFIXES = ("/.well-known/", "/api/")
 
 # ------------------------------------------------------------------ detection
 # A HONEYTOKEN IS THE ONLY ZERO-FALSE-POSITIVE SIGNAL WE HAVE. These paths are listed in robots.txt
@@ -108,6 +116,8 @@ def is_probe_path(path):
     p = str(path or "/")
     if p.lower().startswith(NEVER_BLOCK_PREFIXES):
         return False
+    if p.lower() in EXTRA_PROBE_PATHS:
+        return True
     return bool(_PROBE_RE.search(p))
 
 
@@ -121,6 +131,13 @@ _fps = {}           # ip -> {fingerprint: ts}
 _blocked = {}       # ip -> expires_at
 _seen_ips = {}      # ip -> last_seen  (denominator for the blast cap)
 _tarpits = [0]      # concurrent tarpitted requests, list so it is mutable from a closure
+_recent_paths = {}  # ip -> the last few paths, so an alert can show WHAT was asked for
+
+# OPERATOR-AUTHORISED STATE. Written only by shield_console.apply_decisions() after a Telegram tap,
+# never by a model and never by the inline path. Each entry is time-boxed like everything else.
+BLOCK_NETS = {}          # "203.0.113" -> expires_at   (a /24, approved by hand)
+STRICT_UNTIL = [0.0]     # strict mode expiry
+EXTRA_PROBE_PATHS = set()   # paths the operator banned permanently
 
 
 def _prune(now, window):
@@ -180,6 +197,14 @@ def observe(ip, path, status, cls, method="GET"):
         now = time.time()
         win = cfg("window_s")
         _seen_ips[ip] = now
+
+        # A PATH WE WILL NEVER BLOCK ON MUST NOT BE SCORED ON EITHER, or the score is fed by
+        # traffic that can never be acted upon. /api/me answers 401 to every ANONYMOUS caller --
+        # the React app itself requests it on every page load while logged out -- so counting that
+        # as an "authz probe" scored ordinary visitors, and scored the deploy verifier hard enough
+        # to block it. Authentication is the control on /api/; the shield is not.
+        if str(path or "").lower().startswith(NEVER_BLOCK_PREFIXES):
+            return reasons
         if len(_seen_ips) % 64 == 0:
             _prune(now, win)
 
@@ -201,19 +226,39 @@ def observe(ip, path, status, cls, method="GET"):
 
         if reasons:
             _hits.setdefault(ip, []).append((now, reasons[0]))
+            rp = _recent_paths.setdefault(ip, [])
+            rp.append(str(path)[:120])
+            del rp[:-10]                     # bounded: the alert shows five, keep a little slack
         return reasons
     except Exception:
         return []                                        # fail open, always
 
 
+# A honeytoken is worth far more than one 404: a 404 can be a stale bookmark, a honeytoken cannot.
+_WEIGHT = {"honeytoken": 6, "ua_rotation": 4, "probe_path": 3,
+           "method_abuse": 2, "authz_probe": 1, "not_found": 1}
+
+
 def _score(ip, now, win):
+    """Weighted hostility for this address inside the window.
+
+    UA ROTATION ONLY COUNTS WHEN SOMETHING ELSE IS ALSO WRONG, and that is a correction to the
+    first version rather than a tuning change. Rotation is strong evidence of AUTOMATION; it is not
+    by itself evidence of ATTACK. This repository's own deploy verifier sends twelve user agents
+    from one address to prove the bot gate works, asks only for legitimate routes, and was duly
+    blocked -- taking /api/me to 404 and failing the deploy. Monitoring, uptime checks and CI all
+    look exactly like that.
+    On the real 10 Aug incident the rotation arrived WITH four probe paths and a row of 404s, so
+    requiring corroboration loses nothing there and removes a whole class of false positive here.
+    Same doctrine as every ownership anchor in the engine: a strong signal still has to be
+    corroborated before it is allowed to convict.
+    """
     hits = [h for h in _hits.get(ip, ()) if now - h[0] < win]
-    # A honeytoken or a rotating fingerprint is worth far more than one 404: a 404 can be a stale
-    # bookmark, those two cannot. Weighting them is what lets the thresholds stay low enough to be
-    # useful without catching a person who mistyped a URL.
-    weight = {"honeytoken": 6, "ua_rotation": 4, "probe_path": 3,
-              "method_abuse": 2, "authz_probe": 1, "not_found": 1}
-    return sum(weight.get(r, 1) for (_t, r) in hits), len(hits)
+    base = sum(_WEIGHT.get(r, 1) for (_t, r) in hits if r != "ua_rotation")
+    if base <= 0:
+        return 0, len(hits)                  # automation on legitimate paths is not an attack
+    rot = sum(_WEIGHT["ua_rotation"] for (_t, r) in hits if r == "ua_rotation")
+    return base + rot, len(hits)
 
 
 def blast_ok():
@@ -245,6 +290,13 @@ def decide(ip, path):
         exp = _blocked.get(ip, 0)
         if exp > now:
             return "BLOCK", "already blocked for %ds more" % int(exp - now)
+        # A /24 the operator approved by hand. Deliberately NOT something the shield can decide on
+        # its own: a /24 is up to 256 addresses and may be a whole office or a mobile carrier.
+        net = ".".join(str(ip).split(".")[:3])
+        if BLOCK_NETS.get(net, 0) > now:
+            return "BLOCK", "operator-approved /24 hold"
+        if STRICT_UNTIL[0] > now:
+            return "TARPIT", "strict mode (operator-approved)"
         score, n = _score(ip, now, cfg("window_s"))
         if score >= cfg("block_after"):
             if not blast_ok():
@@ -255,6 +307,7 @@ def decide(ip, path):
             if ENFORCE:
                 _blocked[ip] = now + cfg("block_s")
                 _ev("shield_block", ip=ip, score=score, hits=n, seconds=cfg("block_s"))
+                _announce(ip, score, n)
                 return "BLOCK", "score %d over %d" % (score, cfg("block_after"))
             _ev("shield_would_block", ip=ip, score=score, hits=n)
             return "TARPIT", "enforcement off - would have blocked"
@@ -311,6 +364,26 @@ def state():
         "watching": len(_hits), "seen_ips_1h": len(_seen_ips),
         "blast_cap_pct": BLAST_CAP, "tarpits_in_flight": _tarpits[0],
     }
+
+
+def _announce(ip, score, n):
+    """Tell the operator, with the escalation menu. Best-effort and strictly non-blocking.
+
+    The console is imported HERE rather than at module scope so that shield.py keeps no import of
+    anything that talks to the network, and so a broken console can never take the request path
+    down with it.
+    """
+    try:
+        from . import shield_console
+        hits = _hits.get(ip, ())
+        shield_console.announce(ip, {
+            "reasons": sorted({r for (_t, r) in hits}),
+            "hits": n, "score": score,
+            "paths": sorted({p for p in _recent_paths.get(ip, ())})[:5],
+            "last_path": (_recent_paths.get(ip) or [""])[-1],
+        })
+    except Exception:
+        pass
 
 
 def _ev(evt, **k):
