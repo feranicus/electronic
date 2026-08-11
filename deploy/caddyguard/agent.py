@@ -591,7 +591,9 @@ def _served(cfg):
 # a box that legitimately serves something else (staging serves one vhost, production eleven).
 EXPECT = [d for d in os.environ.get(
     "CADDY_EXPECT",
-    "cybergod.ai,www.cybergod.ai,godeyes.ai,jobhuntwow.com,www.jobhuntwow.com,klimaanlage-preise.de"
+    "cybergod.ai,www.cybergod.ai,godeyes.ai,jobhuntwow.com,www.jobhuntwow.com,"
+    "klimaanlage-preise.de,klimaanlage-montieren.de,www.klimaanlage-montieren.de,"
+    "jev.best,www.jev.best"
 ).split(",") if d.strip()]
 
 

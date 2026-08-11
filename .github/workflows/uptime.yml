@@ -30,9 +30,14 @@ jobs:
           # host|url|expected-regex.  cybergod.ai/api/me answering 401 is HEALTHY: it proves the
           # backend is reachable AND that auth is enforced. Probing only "/" would go green on a
           # cached shell served by the PWA service worker.
+          # Announce a browser. colt-web serves an unrecognised user agent a 404 on every PAGE
+          # route (scanners get nothing), so a bare curl cannot see the site at all. This is
+          # first-party monitoring of our own site; check_bot_gate.py is what tests the gate.
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 cybergod-monitor/1.0"
           TARGETS=(
             "cybergod.ai|https://cybergod.ai/api/me|^(401)$"
-            "www.cybergod.ai|https://www.cybergod.ai/|^(200|301|302|308|404)$"
+            "www.cybergod.ai|https://www.cybergod.ai/|^(200|301|302|308)$"
+            "cybergod.ai/|https://cybergod.ai/|^(200)$"
             "godeyes.ai|https://godeyes.ai/|^(200|301|302|308)$"
             "jobhuntwow.com|https://jobhuntwow.com/|^(200|301|302|308)$"
             "www.jobhuntwow.com|https://www.jobhuntwow.com/|^(200|301|302|308)$"
@@ -41,7 +46,8 @@ jobs:
           FAIL=""
           for t in "${TARGETS[@]}"; do
             IFS='|' read -r name url want <<< "$t"
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 5 "$url")
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 5 \
+                     -A "$UA" "$url")
             if [[ "$code" =~ $want ]]; then
               echo "OK    $name  -> $code"
             else

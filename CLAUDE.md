@@ -4319,3 +4319,58 @@ instance of a check aimed at the wrong subject.
 TWO INVENTED NAMES IN ONE CHANGE (`_ev`, then `_src` in the test file) — the sixth and seventh time
 in this workstream I have referenced a helper without reading it. `notify._log` is the real event
 logger and every other event in that module already went through it.
+
+## THE OUTSIDE VIEW COULD NOT SEE THE SITE, AND THE OFF-BOX MONITOR ACCEPTED A 404 (2026-08-11)
+Reviewing the previous ship's log. The panel's four models produced one genuinely useful point
+between them; the worst defect in the run was in a line all four read past:
+```
+--- OUTSIDE VIEW ---
+   https://www.cybergod.ai/     HTTP 404
+5/5 endpoints answering.
+```
+CAUSE: `recover.probe()` sent `User-Agent: cybergod-recover/1.0`, and colt-web's BOT_404 gate
+serves an unrecognised agent a 404 on every PAGE route. So the external check was measuring the
+BOT GATE, not the site, and counting the 404 as an answer. The only cybergod line that ever
+passed honestly was `/api/me`, and only because `/api/` is EXEMPT from the gate. **Our external
+monitoring had never once verified that the pages work.**
+FAR WORSE, in `.github/workflows/uptime.yml`: the same bare-curl blind spot, and `404` had been
+added to the ACCEPTED status set for www.cybergod.ai to stop it complaining. Widening an
+expectation to match a broken probe is how a monitor comes to accept an outage — and this is the
+ONE monitor that runs off-box, precisely because everything on the droplet sits behind the proxy
+it is watching. A completely dead front page would have been reported healthy.
+FIX: both probes announce a browser (first-party monitoring of our own site is exactly the case
+the gate is not for; `check_bot_gate.py` remains the thing that tests the gate, by sending twelve
+agents deliberately). `404` removed from every accepted set, and `https://cybergod.ai/` added as
+its own target — `/api/me` proves the backend and auth, and can pass while every human-facing
+page is broken.
+Guarded by `tests/test_outside_view.py`, five negative tests, all caught.
+
+THE PANEL, 11 Aug 2026 (39/39 GO, kimi NO-GO):
+- **RIGHT, and cheap.** `post_reboot_config_change_propagates` said "without a reboot" while
+  carrying a `post_reboot_` prefix, so the detail read as contradicting its own execution
+  context. The claim is about the MECHANISM, not about when the check ran. Reworded.
+- **RIGHT ABOUT THE SYMPTOM, WRONG ABOUT THE CAUSE, and worth acting on anyway.** It flagged the
+  artifact being 39084b pre-reboot and 39329b post-reboot as possible drift or a race. The cause
+  is benign and knowable: the GEOPOL page's prose is written by a MODEL, so two runs of identical
+  code produce different words. But **a number that legitimately varies must not be printed as if
+  it were a signature** — it cost a review slot and would cost a human ten minutes. `engine_runs`
+  now reports the canvas count and the leak check (and asserts >=5 canvases, which is what a
+  hollow shell looks like) and says outright that the size varies by design.
+- **WRONG, and it is the same wrong call for the fourth run running.** "The check claims restored
+  byte-for-byte, but adapt and the admin API are never byte-identical." The restore comparison is
+  `cmp -s` between the FILE snapshot and the restored FILE. Kimi keeps reaching for the ARCH
+  briefing's explanation of the removed hash method and attaching it to whichever check is
+  nearest.
+- **MOSTLY ALREADY COVERED.** "admin_api_closed only probes from colt-web and nothing checks the
+  Caddyfile does not publish 2019." `cmd_admin` reads what the RUNNING config binds admin to and
+  whether Docker publishes the port, and the probe from colt-web is a real cross-container test.
+- **OUT OF SCOPE.** TLS/SNI on staging: staging has no public name. Production checks expiry.
+ALSO CLOSED: the roster warning ("4 host(s) served that are NOT on the committed roster:
+jev.best, klimaanlage-montieren.de, www.*") had fired benignly on several consecutive ships.
+Both are the operator's own sites, so they are now committed. **A warning that is benign every
+single time is training to ignore the one that is not**, which defeats the roster's entire purpose.
+AND MY OWN CHECK FALSE-POSITIVED ON MY OWN COMMENT — the assertion that the retired user agent is
+gone matched the comment EXPLAINING that it was removed, and failed a correct file. The brand gate
+learned to strip comments before grepping months ago and I did not carry it across. Second defect
+in the same file: the expectation regexes contain `|`, so `line.split("|")` unpacked into too many
+values and the check crashed instead of measuring.

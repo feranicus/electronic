@@ -111,10 +111,26 @@ def sections(out):
     return {k: "\n".join(v).strip() for k, v in res.items()}
 
 
-def probe(url, timeout=12):
+# THE OUTSIDE VIEW COULD NOT SEE THE SITE IT MONITORS.
+# This probe sent "cybergod-recover/1.0", and colt-web's BOT_404 gate serves an unrecognised
+# user agent a 404 on every page route. So the deploy log printed
+#     https://www.cybergod.ai/    HTTP 404
+# run after run, which reads exactly like a dead site, and "5/5 endpoints answering" was counting
+# a 404 as an answer. The only cybergod line that ever passed honestly was /api/me, and that is
+# because /api/ is EXEMPT from the gate. In other words our external monitoring had never once
+# checked that the pages work.
+# Nth instance of the disease this repo keeps recording: a check that cannot see its subject.
+# First-party monitoring of our own site is exactly the case the gate is not for, so it announces
+# itself as a browser. check_bot_gate.py remains the thing that tests the gate, deliberately, by
+# sending twelve agents on purpose.
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+               "Chrome/127.0.0.0 Safari/537.36 cybergod-monitor/1.0")
+
+
+def probe(url, timeout=12, ua=_BROWSER_UA):
     """(status, note) for a public URL. A 401 from /api/me is a HEALTHY answer."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "cybergod-recover/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": ua})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return int(getattr(r, "status", 0) or 0), "ok"
     except urllib.error.HTTPError as e:

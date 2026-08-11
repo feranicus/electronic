@@ -176,10 +176,11 @@ else
   BAD=$(docker exec "$C" sh -c "grep -c -E 'undefined|NaN|\\[object Object\\]|<h1></h1>' '$H' 2>/dev/null" | head -1)
   BAD=${BAD:-0}
   SZ=$(docker exec "$C" sh -c "stat -c %s '$H' 2>/dev/null || echo 0")
-  if [ "${N:-0}" -ge 3 ] && [ "${SZ:-0}" -gt 20000 ] && [ "${BAD:-1}" -eq 0 ]; then
-    chk engine_runs yes "${N} decks + ${SZ}b html, zero undefined/NaN leaks (output CHECKED, not just exit 0)"
+  CV=$(docker exec "$C" sh -c "grep -o '<canvas' '$H' 2>/dev/null | wc -l" | head -1); CV=${CV:-0}
+  if [ "${N:-0}" -ge 3 ] && [ "${SZ:-0}" -gt 20000 ] && [ "${BAD:-1}" -eq 0 ] && [ "${CV:-0}" -ge 5 ]; then
+    chk engine_runs yes "${N} decks + ${CV} canvases, no undefined/NaN/blank-heading leaks (output CHECKED, not exit 0). html prose is model-authored so its SIZE varies by design and is not a signature"
   else
-    chk engine_runs no "decks=${N} html=${SZ}b leaks=${BAD} — it ran but the OUTPUT is wrong"
+    chk engine_runs no "decks=${N} html=${SZ}b canvases=${CV} leaks=${BAD} — it ran but the OUTPUT is wrong"
   fi
 fi
 
@@ -398,7 +399,7 @@ PYEOF
   if [ "$RESTORED" != "yes" ]; then
     chk config_change_propagates no "the probe ran but the config was NOT restored byte-for-byte - $CF differs from the snapshot"
   elif [ "${SERVED_AFTER:-0}" -ge 1 ] && [ "${SERVED_GONE:-1}" -eq 0 ]; then
-    chk config_change_propagates yes "a NEW vhost reached the running config without a reboot and was removed again - hop 2 genuinely updates on CHANGE, and the config was restored byte-for-byte"
+    chk config_change_propagates yes "a config change propagated to the running config with no restart, then the live file was restored and cmp-verified - hop 2 genuinely updates on CHANGE, and the config was restored byte-for-byte"
   elif [ "${SERVED_AFTER:-0}" -lt 1 ]; then
     chk config_change_propagates no "a new vhost was written and applied but NEVER reached the running config - that is the 2026-08-07 latent-outage mechanism, reproduced live. $(tail -2 /tmp/cg_prop.log | tr '\n' ' ')"
   else
