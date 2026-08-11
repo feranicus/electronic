@@ -4232,3 +4232,55 @@ co-tenant guard's arithmetic and the mis-sliced dirty path.
 RULE: build the detector from ONE incident, then MEASURE against the whole log before believing it.
 Guarded by tests/test_shield.py, negative-tested in both directions (the hiding place, and the
 404-only false positive).
+
+## STANDING RULE — public-facing copy must not read as AI-written (operator, 2026-08-10)
+The instruction, verbatim: *"never put this shit in the posts — and always fact check and make posts
+as human as possible remove all stuff that will for sure pin point it as AI"*.
+
+**BANNED OUTRIGHT: the em dash (—).** It is the single clearest tell, and the operator has now said
+so twice: `partners_gate.mjs` already fails the build on "no long dashes" for /partners. The rule is
+now global for every post, caption, LinkedIn draft and piece of marketing copy. Use a comma, a full
+stop, brackets, or restructure the sentence. Never an em dash, never an en dash used as punctuation.
+
+THE OTHER TELLS, which matter as much and are harder to see:
+  · **"It's not X, it's Y"** and its cousins ("Not a breach. Just the internet doing what the
+    internet does"). Perfectly balanced antithesis is the most recognisable AI cadence there is.
+  · **Rule of three everywhere.** Three items, three clauses, three sentences per paragraph. Real
+    writing is lumpy: two here, five there, one on its own.
+  · **Uniform sentence length.** Vary it hard. A four-word sentence next to a forty-word one.
+  · **A neat aphorism as the closing line.** "Measure your own traffic this week. You will not enjoy
+    it, and you will be better for it." Nobody talks like that. Stop the post when the point is made.
+  · **Systematic emoji placement** (one per bullet, one per section header). Use two or three, where
+    a person would actually put them, or none.
+  · **Signposting**: "Here's the thing", "The uncomfortable part", "But here's what matters".
+  · Vocabulary: delve, leverage, robust, seamless, landscape, testament, underscore, pivotal.
+  · **Bullet symmetry.** If every bullet is the same length and grammatical shape, a human did not
+    write them.
+FACT CHECK IS NOT OPTIONAL: every number in a post is traced to the measurement that produced it
+before the post is written, and the post must not claim more than the measurement supports. The
+live-fire post says 604 scanners were DETECTED, never "stopped", because the shield shipped after
+the log was written. On a security post an unsupported number is self-refuting.
+
+## The run log became a DELIVERABLE, and the raw one can never be it (2026-08-11)
+Operator asked for the full per-company run log in History, downloadable by the assessed company.
+Good idea: the log is a methodology receipt. It shows the timings, what was found, and every place
+the engine REFUSED to conclude ("does NOT corroborate", "ASNs unknown, NOT 'none'", "absence of
+evidence is never a finding", "NO ATTRIBUTABLE ESTATE ... that is a finding, not a failure"), plus
+which model wrote the prose and which DIFFERENT-VENDOR model audited it. That is the strongest
+trust artifact in the product and it costs nothing to produce.
+THE RAW LOG CANNOT BE HANDED OVER. It carries the operator's email on every structured line,
+internal paths naming him and the job id, and `cost_snapshot` — which on the sberautotech run read
+193 assessments, $0.95 lifetime, $0.0049 average. Giving the assessed company the exact AI cost of
+the report they are invoiced for, plus the size of the whole book, is not a privacy leak. It is a
+negotiating position given away for free.
+`scripts/run_log.py` builds the customer copy. **TWO LAYERS, AND THE ALLOW-LIST IS THE PRIMARY
+ONE**: only recognised events and line shapes are rendered, with named keys only; the regex
+redaction is a backstop. Its own negative tests proved the split — deleting the email regex or
+un-dropping cost_snapshot changes nothing (neither ever reaches the renderer), while removing the
+allow-list leaks instantly. The line to protect is the final `continue`.
+DELIVERY: written by `main._run_job` after the engine exits, because the engine's stdout IS
+run.log and it cannot read the file it is still writing. `_collect_decks` globs `*_Run_Log_*.txt`;
+the download endpoint allows `.txt` ONLY when the name carries `_run_log_`, so `run.log` itself is
+never reachable. Served text/plain inline. A failure to build it can never fail a completed
+assessment.
+Guarded by tests/test_run_log.py against the REAL sberautotech.ru run.

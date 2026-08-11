@@ -553,6 +553,12 @@ def _collect_decks(job_id: str, jobdir: Path) -> list:
     # the 5th deliverable — bespoke animated GEOPOL HTML (also accept the older _Report name)
     out += [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*_GEOPOL_Animated*.html"))]
     out += [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*_Report*.html"))]
+    # THE RUN LOG, as a customer-readable txt. It is written by the engine from run.log with the
+    # operator's email, our internal paths and the COST LEDGER stripped out. See
+    # scripts/run_log.py for exactly what is removed and why: handing a customer the per-run AI
+    # cost and the lifetime assessment count is worse than a privacy leak, it is a negotiating
+    # position given away. The raw run.log is NEVER offered here.
+    out += [_deck_entry(job_id, p) for p in sorted(jobdir.glob("*_Run_Log_*.txt"))]
     return out
 
 
@@ -629,6 +635,19 @@ async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: 
         _w(json.dumps({"evt": "error", "message": repr(e)[:200]}))
 
     if completed:
+        # THE CUSTOMER RUN LOG, written here rather than in the engine because the engine's stdout
+        # IS run.log: it cannot read the file it is still writing. Redaction lives in the engine's
+        # scripts/run_log.py so the rules travel with the engine and are tested with it.
+        try:
+            import importlib.util as _ilu
+            _rl_path = os.path.join(os.path.dirname(ENGINE), "run_log.py")
+            _spec = _ilu.spec_from_file_location("run_log", _rl_path)
+            _rl = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_rl)
+            _rl.write(logp.read_text(encoding="utf-8", errors="replace"), company, lang, str(jobdir))
+        except Exception as _e:
+            # A missing log must never fail a completed assessment. The decks are the deliverable.
+            print('{"evt":"run_log_error","err":"%s"}' % repr(_e)[:140], flush=True)
         decks = _collect_decks(job_id, jobdir)
         store.finish_job(job_id, decks, summary, status="done")
         try:
@@ -757,18 +776,23 @@ def assess_deck(job_id: str, name: str, request: Request):
     job = store.get_job(job_id)
     if not job or job["email"] != email.lower():
         raise HTTPException(status_code=404, detail="not found")
-    # prevent path traversal — only a bare filename; allow the .pptx decks and the _Report.html
+    # prevent path traversal — only a bare filename; allow the .pptx decks, the _Report.html,
+    # and the GENERATED customer run log. `.txt` is gated on the _Run_Log_ marker on purpose:
+    # run.log itself carries the operator's email on every line and must never be reachable here.
     low = name.lower()
-    if "/" in name or "\\" in name or ".." in name or not (low.endswith(".pptx") or low.endswith(".html")):
+    if ("/" in name or "\\" in name or ".." in name
+            or not (low.endswith(".pptx") or low.endswith(".html")
+                    or (low.endswith(".txt") and "_run_log_" in low))):
         raise HTTPException(status_code=400, detail="bad filename")
     jobdir = _job_dir(email, job_id)
     path = jobdir / name
     if not path.exists():
         raise HTTPException(status_code=404, detail="deck not found")
     media = ("text/html" if low.endswith(".html")
+             else "text/plain; charset=utf-8" if low.endswith(".txt")
              else "application/vnd.openxmlformats-officedocument.presentationml.presentation")
-    # HTML report opens in the browser; decks download as attachments.
-    disp = "inline" if low.endswith(".html") else "attachment"
+    # HTML report and the run log open in the browser; decks download as attachments.
+    disp = "inline" if (low.endswith(".html") or low.endswith(".txt")) else "attachment"
     return FileResponse(str(path), media_type=media, filename=name,
                         content_disposition_type=disp)
 
