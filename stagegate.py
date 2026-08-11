@@ -399,7 +399,7 @@ PYEOF
   if [ "$RESTORED" != "yes" ]; then
     chk config_change_propagates no "the probe ran but the config was NOT restored byte-for-byte - $CF differs from the snapshot"
   elif [ "${SERVED_AFTER:-0}" -ge 1 ] && [ "${SERVED_GONE:-1}" -eq 0 ]; then
-    chk config_change_propagates yes "a config change propagated to the running config with no restart, then the live file was restored and cmp-verified - hop 2 genuinely updates on CHANGE, and the config was restored byte-for-byte"
+    chk config_change_propagates yes "a change written through the guard's OWN path (validate -> write -> mount-check -> EXPLICIT caddy reload, via agent.apply) reached the running config without restarting the container, and the live file was then restored and cmp-verified byte-for-byte. NOTE: a bare file edit does NOT propagate - Caddy reads its config at start or on reload, which is why the write goes through apply()"
   elif [ "${SERVED_AFTER:-0}" -lt 1 ]; then
     chk config_change_propagates no "a new vhost was written and applied but NEVER reached the running config - that is the 2026-08-07 latent-outage mechanism, reproduced live. $(tail -2 /tmp/cg_prop.log | tr '\n' ' ')"
   else

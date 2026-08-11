@@ -532,3 +532,19 @@ def test_model_watch_runs_where_it_can_see_the_catalog():
     seg = s[i:i + 900]
     assert "docker exec colt-web" in seg, \
         "model_watch still only runs on the PC, where OPENAI_API_KEY does not exist"
+
+
+def test_no_check_implies_a_bare_file_edit_propagates():
+    """The 2026-08-07 outage was a config edited and silently not applied for twelve hours. A
+    check whose detail reads 'propagated with no restart' teaches exactly that belief, even
+    though the check itself goes through an explicit reload. Name the mechanism."""
+    with open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8") as fh:
+        s = fh.read()
+    claims = [ln for ln in s.splitlines()
+              if "chk config_change_propagates yes" in ln and "running config" in ln]
+    assert claims, "no pass branch claims a change reached the running config"
+    for d in claims:
+        assert "EXPLICIT caddy reload" in d or "agent.apply" in d, \
+            "a branch claims propagation without saying HOW: %s" % d[:120]
+        assert "a bare file edit does NOT propagate" in d, \
+            "nothing warns that editing the file alone is not enough — that belief IS the outage"

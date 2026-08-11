@@ -4422,3 +4422,61 @@ MY OWN CHECKS, THREE DEFECTS IN ONE CHANGE, all found by the negative tests:
 3. The bot-gate assertion measured the warning's MESSAGE while the defect lives in its CONDITION,
    so a mutation restoring the unconditional comparison passed. **A check aimed at a string when
    the bug is in the logic cannot fail for the right reason.**
+
+## THE PANEL, 11 Aug 2026 (second run): one right, one refuted for the THIRD time, and the item
+## nobody has ever flagged
+Gate 39/39 GO. deepseek + maverick GO, gemma UNSURE (its JSON did not parse: "Unterminated
+string"), kimi UNSURE with three risks. Reviewed against the code:
+
+**REFUTED, THIRD CONSECUTIVE RUN.** *"No check compares served hostnames/handlers against the file
+at a semantic level (only hash + host count)."* `agent.py::_served()` compares SETS of hostnames,
+terminal handlers AND path matchers; the "(11 hosts, 11 handlers)" is a printed summary, not the
+comparison, and the byte-hash method was deleted on 7 Aug. **But this is MY defect, not kimi's.**
+The ARCH briefing explained why a hash comparison is a false positive and never said what
+config_drift actually DOES, so a reviewer reasoning from that map lands on the removed method every
+time. ARCH now states, per check, exactly what is measured. Guarded by test_gate_integrity.py.
+RULE: feeding the panel more evidence works; feeding it a map with a hole in it costs a slot every
+run. If a reviewer makes the same wrong call three times, fix the briefing.
+
+**RIGHT, AND ABOUT THE NAME.** *"config_reread's timing claim does not prove Caddy restarted vs
+reloaded."* The detail string already said so, but a check's NAME is read far more often than its
+detail, and a name that promises content while measuring ordering is the `config_reread` disease
+one level down. Renamed **`config_write_ordering`**. A disclaimer is not a substitute for an
+honest name.
+
+**PARTLY RIGHT: certificate renewal.** The load-test half is out of scope (staging has no public
+name). The cert half was real and it was the *shape* of gap this file keeps recording: caddyguard
+PRINTED "60 days left" and flagged under 14, and **the exit code was unaffected and nothing off-box
+looked at all**. A lapsed certificate takes EVERY domain on the shared proxy down at the same
+instant, and it is the one outage that arrives on a published schedule. Now: under 7 days (or no
+certificate presented) FAILS the run, and `.github/workflows/uptime.yml` checks expiry from OUTSIDE
+every 10 minutes, because the box's own monitoring sits behind the proxy it monitors. Caddy renews
+at 30 days, so under 10 means renewal has been failing for three weeks.
+
+**AND THE ITEM NO PANEL HAS EVER MENTIONED, for the second run running:**
+`PATCHWATCH_GATE: reboot gate MISSING on the droplet`. That is the literal 6 Aug mechanism — a
+kernel reboot detonating a Caddyfile damaged twelve hours earlier — and it stayed uninstalled
+across several ships because caddyguard printed *"run: python patchwatch/provision_patchwatch.py"*,
+which is (a) a SECOND command and (b) hard-`die()`s without `DO_API_TOKEN`.
+**The token was never needed.** It buys droplet SNAPSHOTS and a Spaces bucket; the gate is pure
+code, and patchwatch's credentials live in `/etc/patchwatch/patchwatch.env`, which installing the
+code never touches. So the guardrail against the exact outage this whole subsystem exists to
+prevent was blocked for weeks by a dependency it does not have.
+
+## A DETAIL STRING THAT TEACHES THE OUTAGE IS A DEFECT (2026-08-11)
+kimi returned NO-GO against a 39/39 gate on `config_change_propagates`, arguing the check "claims
+reload-free propagation works" while Caddy reads its config only at start or on an explicit reload,
+and that this "trains operators to believe file edits auto-propagate".
+**Wrong about the mechanism: right about the wording, and the wording is mine.** The check goes
+through `agent.apply()` — the guard's real validate -> write -> mount-check -> EXPLICIT reload path
+— so the implementation was never reload-free. But the detail I wrote the day before said
+*"a config change propagated to the running config with no restart"*, and that sentence, read on
+its own in a deploy log, says a bare file edit is enough. **That belief IS the 2026-08-07 outage**:
+a config edited at 16:15 and silently unapplied until a kernel reboot detonated it twelve hours
+later. Same defect class as `config_reread` promising more than it measured, one level down.
+The detail now names the mechanism and states outright that a bare file edit does NOT propagate.
+Guarded by a test that fails if any pass branch claims propagation without saying how.
+AND THE WRONG-SUBJECT DEFECT, THIRD TIME IN TWO DAYS: there are THREE `chk config_change_propagates
+yes` branches and my first test grabbed `[0]`, which is the "no caddy on this box" case, failing a
+correct file. It now selects every branch that actually makes the propagation claim and asserts the
+property on all of them.
