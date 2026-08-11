@@ -4284,3 +4284,38 @@ the download endpoint allows `.txt` ONLY when the name carries `_run_log_`, so `
 never reachable. Served text/plain inline. A failure to build it can never fail a completed
 assessment.
 Guarded by tests/test_run_log.py against the REAL sberautotech.ru run.
+
+## THE BUTTON WORKED AND THE CONFIRMATION WAS SIX HOURS AWAY (2026-08-11)
+The Telegram attack console shipped and fired for real: `UNDER ATTACK 136.67.108.237, probe_path,
+/.vite/manifest.json, /api/graphql, /dist/.vite/manifest.json, /graphql`, tarpitted then blocked
+15 minutes automatically, six buttons offered. The operator asked the right question: *"I need
+confirmation from bot or 4llms when I press the button then it's indeed propagated to the system."*
+He could not have known it, but there was no such confirmation on any useful timescale.
+CAUSE: `apply_decisions()` was called INSIDE the six-hourly panel loop
+(`SHIELD_REVIEW_EVERY_S=21600`). So a tap was recorded, the bot replied "Applying.", and nothing
+happened until the next panel pass. **Applying a decision is a small file read; deliberating with
+four models is expensive. They do not belong on the same clock.** Split into `_decisions_loop`
+(20s, no model calls) and `_panel_loop` (6h, unchanged).
+FOUR PROPERTIES, each negative-tested:
+1. **THE CONFIRMATION IS READ BACK OUT OF SHIELD STATE AFTER THE WRITE.** The first version
+   printed "Applied: holding 1.2.3.4 for 24h", which is the same sentence whether or not anything
+   happened. Now each line re-reads the actual expiry, the actual block-list size, the actual
+   strict deadline; a disagreement is reported instead.
+2. **ABSOLUTE UTC, NOT A COUNTDOWN.** "Expires in 23h 59m" is arithmetic the operator cannot check
+   against anything. "until 21:01 UTC" is something he can hold the system to tomorrow.
+3. **A FAILED ACTION IS REPORTED.** Silence after a tap is indistinguishable from success, and the
+   whole value of this console is that its statements can be trusted. `NOT APPLIED` lines carry the
+   reason (`2001:db8::1: not an IPv4 address, cannot widen to a /24`).
+4. **THE BOT NO LONGER PROMISES WHAT IT CANNOT VERIFY.** The bot RECORDS and colt-web ENFORCES, in
+   separate processes deliberately, so "Applying." was a claim the bot had no way to check. It now
+   says the platform confirms within ~20s and that **no confirmation means colt-web is not
+   running** — which makes SILENCE INTERPRETABLE instead of ambiguous.
+AND THE DEEPEST VERSION OF THE OPERATOR'S QUESTION: a button that writes a name `decide()` never
+consults is a lie with a confirmation attached. Asserted by AST that all five globals the six
+actions write (`_blocked`, `BLOCK_NETS`, `STRICT_UNTIL`, `EXTRA_PROBE_PATHS`, `ALLOW_IPS`) are read
+on the request path. My first attempt at that measurement used a 2600-character window per function
+and gave a FALSE PASS by overlapping into the next function; `ast` gives the real answer. Nth
+instance of a check aimed at the wrong subject.
+TWO INVENTED NAMES IN ONE CHANGE (`_ev`, then `_src` in the test file) — the sixth and seventh time
+in this workstream I have referenced a helper without reading it. `notify._log` is the real event
+logger and every other event in that module already went through it.

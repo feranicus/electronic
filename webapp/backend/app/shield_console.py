@@ -127,57 +127,132 @@ def announce(ip, evidence, verdicts=None, already_done="tarpitted, then blocked 
         return None
 
 
+def _hhmm(ts):
+    """Absolute UTC clock time. A countdown ("expires in 23h 59m") is arithmetic the operator
+    cannot check; a wall-clock time is something he can hold the system to tomorrow."""
+    return time.strftime("%H:%M", time.gmtime(ts))
+
+
 def apply_decisions(shield):
-    """Read what the operator tapped and carry it out. Returns a list of applied descriptions."""
-    done = []
+    """Read what the operator tapped and carry it out. Returns a list of applied descriptions.
+
+    THE CONFIRMATION MUST PROVE THE CHANGE, NOT ANNOUNCE IT. The first version replied
+    "Applied: holding 1.2.3.4 for 24h", which is the same sentence whether or not anything
+    happened. Now each line is read back OUT OF THE SHIELD'S OWN STATE after the write: the actual
+    expiry, the actual size of the block list, the actual strict-mode deadline. If the read-back
+    disagrees with what was asked for, the operator is told that instead.
+
+    A FAILED ACTION IS REPORTED, NEVER SWALLOWED. Silence after a tap is indistinguishable from
+    success, and the whole point of this console is that the operator can trust what it says.
+    """
+    done, failed = [], []
     try:
         dec = _read(DECISIONS, {})
         if not dec:
             return done
         pend = _read(PENDING, {})
+        now = time.time()
         for incident_id, choice in list(dec.items()):
             item = pend.get(incident_id)
             action = (choice or {}).get("action")
+            who = (choice or {}).get("by", "?")
             if not item or action not in ACTIONS:
                 dec.pop(incident_id, None)
+                failed.append("%s: unknown action or the ask has expired" % (action or "?"))
                 continue
             ip = item["ip"]
-            if action == "release":
-                shield.unblock(ip)
-                shield.ALLOW_IPS.add(ip)
-                done.append("released and allowed %s" % ip)
-            elif action == "hold24":
-                shield._blocked[ip] = time.time() + 86400
-                done.append("holding %s for 24h" % ip)
-            elif action == "net":
-                net = ".".join(str(ip).split(".")[:3])
-                if net.count(".") == 2:
-                    shield.BLOCK_NETS[net] = time.time() + 3600
-                    done.append("blocking %s.0/24 for 1h" % net)
-            elif action == "strict":
-                shield.STRICT_UNTIL[0] = time.time() + 3600
-                done.append("strict mode for 1h")
-            elif action == "deny":
-                p = (item.get("path") or "").strip()
-                if p:
-                    shield.EXTRA_PROBE_PATHS.add(p.lower())
-                    done.append("added %s to the probe list" % p)
-            elif action == "abuse":
-                try:
+            try:
+                if action == "release":
+                    shield.unblock(ip)
+                    shield.ALLOW_IPS.add(ip)
+                    ok = ip in shield.ALLOW_IPS and not shield._blocked.get(ip)
+                    done.append("%s released and allowed. Blocked now: %d address(es)"
+                                % (ip, len(shield._blocked)) if ok else "")
+                    if not ok:
+                        failed.append("%s: release did not take" % ip)
+                elif action == "hold24":
+                    shield._blocked[ip] = now + 86400
+                    exp = shield._blocked.get(ip, 0)
+                    if exp - time.time() > 86000:
+                        done.append("%s held 24h, until %s UTC (read back from shield state)"
+                                    % (ip, _hhmm(exp)))
+                    else:
+                        failed.append("%s: hold not present in shield state after write" % ip)
+                elif action == "net":
+                    net = ".".join(str(ip).split(".")[:3])
+                    if net.count(".") != 2:
+                        failed.append("%s: not an IPv4 address, cannot widen to a /24" % ip)
+                    else:
+                        shield.BLOCK_NETS[net] = now + 3600
+                        exp = shield.BLOCK_NETS.get(net, 0)
+                        if exp - time.time() > 3500:
+                            done.append("%s.0/24 blocked 1h, until %s UTC. Networks held: %d"
+                                        % (net, _hhmm(exp), len(shield.BLOCK_NETS)))
+                        else:
+                            failed.append("%s.0/24: not present in shield state after write" % net)
+                elif action == "strict":
+                    shield.STRICT_UNTIL[0] = now + 3600
+                    if shield.STRICT_UNTIL[0] - time.time() > 3500:
+                        done.append("strict mode on 1h, until %s UTC. Every unauthenticated request "
+                                    "off the known routes is now tarpitted"
+                                    % _hhmm(shield.STRICT_UNTIL[0]))
+                    else:
+                        failed.append("strict mode: deadline not set")
+                elif action == "deny":
+                    pth = (item.get("path") or "").strip().lower()
+                    if not pth:
+                        failed.append("no path recorded on this incident, nothing to ban")
+                    else:
+                        shield.EXTRA_PROBE_PATHS.add(pth)
+                        if shield.probe_shape(pth):
+                            done.append("%s added to the probe list. Banned paths: %d"
+                                        % (pth, len(shield.EXTRA_PROBE_PATHS)))
+                        else:
+                            failed.append("%s: added but the detector does not match it" % pth)
+                elif action == "abuse":
                     from . import abuse_report
-                    abuse_report.report(ip, categories="21,15",
-                                        comment="Automated web scanning against cybergod.ai")
-                    done.append("reported %s to AbuseIPDB" % ip)
-                except Exception as e:
-                    done.append("AbuseIPDB report failed: %s" % e)
+                    r = abuse_report.report(ip, categories="21,15",
+                                            comment="Automated web scanning against cybergod.ai")
+                    if r:
+                        done.append("%s reported to AbuseIPDB" % ip)
+                    else:
+                        failed.append("%s: AbuseIPDB refused or ABUSEIPDB_KEY is not set" % ip)
+            except Exception as e:
+                failed.append("%s on %s: %s" % (action, ip, type(e).__name__))
             dec.pop(incident_id, None)
             pend.pop(incident_id, None)
+            try:
+                from . import notify as _n
+                _n._log(evt="shield_action_applied", ip=ip, action=action, by=who,
+                        ok=bool(done), detail=(done or failed or ["-"])[-1][:200])
+            except Exception:
+                pass
+
+        done = [x for x in done if x]
         _write(DECISIONS, dec)
         _write(PENDING, pend)
-        if done:
+
+        if done or failed:
             from . import notify
-            notify.telegram("\U00002705 Applied: " + "; ".join(done))
-            notify._log(evt="shield_action_applied", actions=done)
-    except Exception:
-        pass
+            L = []
+            if done:
+                L.append("\U00002705 ГОТОВО / APPLIED")
+                L += ["   " + x for x in done]
+            if failed:
+                L.append("\U0000274C NOT APPLIED")
+                L += ["   " + x for x in failed]
+            L.append("")
+            st = shield.state()
+            L.append("Shield now: %d blocked · %d net(s) · %d watching · strict %s"
+                     % (len(st.get("blocked") or {}), len(getattr(shield, "BLOCK_NETS", {})),
+                        st.get("watching", 0),
+                        "ON" if shield.STRICT_UNTIL[0] > time.time() else "off"))
+            notify.telegram("\n".join(L))
+    except Exception as e:
+        try:
+            from . import notify
+            notify.telegram("\U0000274C Shield console error while applying: %s" % type(e).__name__)
+            notify._log(evt="shield_apply_error", err=repr(e)[:200])
+        except Exception:
+            pass
     return done

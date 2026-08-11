@@ -610,7 +610,10 @@ async def shield_decide(update, ctx):
             json.dump(cur, fh, indent=2)
         os.replace(tmp, path)
         await q.edit_message_text((q.message.text or "")
-                                  + "\n\n>> %s authorised by %s. Applying." % (action, email))
+                                  + "\n\n>> %s authorised by %s.\nRecorded. The platform "
+                                    "confirms with the resulting state within ~20s. If NO "
+                                    "confirmation arrives, colt-web is not running and nothing "
+                                    "was applied." % (action, email))
     except Exception as e:
         _log(evt="shield_decide_error", err=repr(e)[:160])
 

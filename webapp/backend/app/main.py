@@ -69,16 +69,29 @@ try:
     async def _start_shield_panel():
         import asyncio as _aio
 
-        async def _loop():
+        # TWO LOOPS, AND SPLITTING THEM IS THE POINT.
+        # The first version applied the operator's Telegram taps inside the SIX-HOURLY panel loop.
+        # So he tapped "Hold 24h", the bot said "Applying", and the confirmation that anything had
+        # actually happened could be six hours away. A button that reports success and then goes
+        # quiet for a working day is worse than no button: the next time it matters he will not
+        # trust it. Applying a decision is a small file read; deliberating with four models is
+        # expensive. They do not belong on the same clock.
+        async def _decisions_loop():
+            every = max(5, int(os.environ.get("SHIELD_APPLY_EVERY_S", 20)))
+            while True:
+                await _aio.sleep(every)
+                try:
+                    from . import shield, shield_console
+                    shield_console.apply_decisions(shield)
+                except Exception as exc:
+                    print('{"evt":"shield_apply_error","err":"%s"}' % repr(exc)[:160], flush=True)
+
+        async def _panel_loop():
             every = max(3600, int(os.environ.get("SHIELD_REVIEW_EVERY_S", 21600)))
             while True:
                 await _aio.sleep(every)
                 try:
-                    from . import shield, shield_console, shield_panel
-                    # Apply anything the operator tapped on Telegram since the last pass. This is
-                    # FIRST: an authorisation the operator has already given should take effect
-                    # before the panel spends a token deliberating about the same incident.
-                    shield_console.apply_decisions(shield)
+                    from . import shield, shield_panel
                     # Nothing happened, so there is nothing to review and no tokens to spend.
                     if not (shield.state().get("blocked") or shield.state().get("watching")):
                         continue
@@ -86,7 +99,8 @@ try:
                 except Exception as exc:                    # a review must never kill the app
                     print('{"evt":"shield_panel_error","err":"%s"}' % repr(exc)[:160], flush=True)
 
-        _aio.create_task(_loop())
+        _aio.create_task(_decisions_loop())
+        _aio.create_task(_panel_loop())
 except Exception as _e:  # telemetry must never stop the app from booting
     print('{"evt":"telemetry_init","result":"error","err":"%s"}' % repr(_e)[:120], flush=True)
 

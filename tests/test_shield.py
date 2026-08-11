@@ -7,12 +7,19 @@ than the scanning it prevents.
 """
 import importlib
 import os
+import re
 import sys
 import time
 
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _src(rel):
+    """Source of a repo file, for the checks that assert WIRING rather than behaviour."""
+    with open(os.path.join(ROOT, *rel.split("/")), encoding="utf-8") as fh:
+        return fh.read()
 _BACKEND = os.path.join(ROOT, "webapp", "backend")
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
@@ -571,3 +578,82 @@ def test_every_shield_event_is_visible_in_grafana():
     for must in ("shield_block", "shield_ask", "shield_refused", "shield_tuned"):
         assert must in dash, "%s deserves its own panel — it is a decision, not noise" % must
 
+
+
+# --------------------------------------------------------------------------------------
+# S7. THE OPERATOR MUST GET A CONFIRMATION, AND IT MUST BE TRUE
+#
+# The console shipped working: a real UNDER ATTACK alert with six buttons, tapped on a phone.
+# What it did NOT have was proof that a tap reached the system. apply_decisions() ran only
+# inside the SIX-HOURLY panel loop, so the bot said "Applying" and the confirmation could be a
+# working day away. Silence after a tap is indistinguishable from failure, and a control the
+# operator has learned not to trust is worse than no control.
+# --------------------------------------------------------------------------------------
+
+def test_decisions_apply_on_their_own_fast_loop():
+    """The cheap action and the expensive deliberation must not share a clock."""
+    s = _src("webapp/backend/app/main.py")
+    assert "_decisions_loop" in s and "_panel_loop" in s, "the two loops were merged again"
+    assert "_aio.create_task(_decisions_loop())" in s, "the decision loop is never started"
+    # The apply loop must be seconds, not hours. Read the floor the code actually enforces.
+    m = re.search(r'SHIELD_APPLY_EVERY_S["\']?,\s*(\d+)', s)
+    assert m and int(m.group(1)) <= 60, "a tap must be applied within a minute, not a shift"
+    # And apply_decisions must no longer be buried in the panel loop.
+    panel = s[s.index("async def _panel_loop"):]
+    assert "apply_decisions" not in panel, "applying is back inside the 6-hourly panel loop"
+
+
+def test_confirmation_is_read_back_from_shield_state(sh):
+    """A confirmation that would print identically whether or not anything happened is not a
+    confirmation. Each line is re-read out of the shield AFTER the write."""
+    import json as _json
+    import tempfile as _tf
+    from app import shield_console as sc
+    d = _tf.mkdtemp()
+    sc.PENDING, sc.DECISIONS = os.path.join(d, "p.json"), os.path.join(d, "d.json")
+    _json.dump({"i1": {"ip": "203.0.113.9", "ts": time.time(), "path": "/x.php"}},
+               open(sc.PENDING, "w"))
+    _json.dump({"i1": {"action": "net", "by": "feranicus@s4biz.io"}}, open(sc.DECISIONS, "w"))
+    done = sc.apply_decisions(sh)
+    assert done and "203.0.113.0/24" in done[0]
+    # The state it reported is the state the request path will actually consult.
+    assert "203.0.113" in sh.BLOCK_NETS, "reported blocked, but decide() will never see it"
+
+
+def test_a_failed_action_is_reported_not_swallowed(sh):
+    """Silence must never be able to mean failure."""
+    import json as _json
+    import tempfile as _tf
+    from app import shield_console as sc
+    d = _tf.mkdtemp()
+    sc.PENDING, sc.DECISIONS = os.path.join(d, "p.json"), os.path.join(d, "d.json")
+    # A /24 of an IPv6 address is meaningless: the action cannot be carried out.
+    _json.dump({"i1": {"ip": "2001:db8::1", "ts": time.time(), "path": ""}}, open(sc.PENDING, "w"))
+    _json.dump({"i1": {"action": "net", "by": "x@y"}}, open(sc.DECISIONS, "w"))
+    sent = []
+    from app import notify
+    notify.telegram = lambda t, **k: sent.append(t)
+    sc.apply_decisions(sh)
+    assert sent and "NOT APPLIED" in sent[0], "a failed action reported nothing to the operator"
+
+
+def test_every_button_changes_something_the_request_path_reads(sh):
+    """The console offers six actions. A button that writes a name decide() never consults is a
+    lie told with a confirmation attached, which is the worst of both."""
+    import ast as _ast
+    t = _ast.parse(_src("webapp/backend/app/shield.py"))
+    onpath = set()
+    for f in [n for n in t.body if isinstance(n, _ast.FunctionDef)]:
+        if f.name in ("decide", "observe", "probe_shape", "tarpit_seconds"):
+            onpath |= {x.id for x in _ast.walk(f) if isinstance(x, _ast.Name)}
+    for g in ("BLOCK_NETS", "STRICT_UNTIL", "EXTRA_PROBE_PATHS", "ALLOW_IPS", "_blocked"):
+        assert g in onpath, "%s is written by a button but never read on the request path" % g
+
+
+def test_the_bot_does_not_promise_what_it_cannot_verify():
+    """The bot RECORDS, colt-web ENFORCES: separate processes, deliberately. So the bot cannot
+    honestly say 'Applying'. Saying what silence means is what makes silence useful."""
+    s = _src("assess-bot/bot.py")
+    h = s[s.index("def shield_decide"):s.index("def shield_decide") + 3000]
+    assert "Applying." not in h, "the bot claims an outcome it has no way to check"
+    assert "colt-web is not running" in h, "silence after a tap is left ambiguous"
