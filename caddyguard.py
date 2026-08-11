@@ -76,6 +76,7 @@ def build(restore, check_only):
     svc = _b64(os.path.join(GUARD, "caddyguard.service"))
     tmr = _b64(os.path.join(GUARD, "caddyguard.timer"))
     jhw = _b64(jhw_snippet())
+    colt = _b64(os.path.join(HERE, "deploy", "caddy", "cybergod.caddy"))
     pw = _b64(os.path.join(HERE, "patchwatch", "patchwatch.py"))
     return r"""
 set +e
@@ -122,6 +123,20 @@ if [ "%s" = "yes" ]; then
     echo "jhw fragment already matches the committed block"
   fi
   python3 /opt/caddyguard/agent.py restore jhw:jobhuntwow
+
+  # TAMPER CHECK — CONSISTENCY IS NOT AUTHENTICITY.
+  # Every fragment with a committed counterpart is compared to it. A difference is reported by
+  # NAME and the committed block is reinstalled, so a hand-edit on the droplet cannot survive a
+  # ship. This is the only check on this box that asks "is this OUR config", as opposed to
+  # "does the running config match the file".
+  echo '%s' | base64 -d > /tmp/colt.caddy
+  if ! cmp -s /tmp/colt.caddy /opt/caddyguard/blocks/colt__cybergod.caddy 2>/dev/null; then
+    echo "TAMPER/DRIFT: colt:cybergod differs from the COMMITTED block - reinstalling it"
+    diff /opt/caddyguard/blocks/colt__cybergod.caddy /tmp/colt.caddy 2>/dev/null | head -20
+    cp /tmp/colt.caddy /opt/caddyguard/blocks/colt__cybergod.caddy
+  else
+    echo "colt:cybergod matches the committed block (no host-side edit)"
+  fi
 
   # THE UPSTREAM CONTRACT (CADDY_ARCHITECTURE.md 2). A perfect Caddyfile in front of a missing or
   # unreachable app container still returns an empty 200 — which is exactly what the operator saw.
@@ -259,7 +274,7 @@ for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.c
 done
 echo "END"
 """ % (agent, svc, tmr, "check" if check_only else "install",
-       "yes" if restore else "no", jhw, pw)
+       "yes" if restore else "no", jhw, colt, pw)
 
 
 def _selftest():

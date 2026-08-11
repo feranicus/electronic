@@ -4480,3 +4480,38 @@ AND THE WRONG-SUBJECT DEFECT, THIRD TIME IN TWO DAYS: there are THREE `chk confi
 yes` branches and my first test grabbed `[0]`, which is the "no caddy on this box" case, failing a
 correct file. It now selects every branch that actually makes the propagation claim and asserts the
 property on all of them.
+
+## CONSISTENCY IS NOT AUTHENTICITY — the config was never checked against the REPO (2026-08-11)
+Raised by kimi-k2.6 on a 39/39 GO run, and it is the best structural point the panel has produced
+since the admin-API one: *"No check validates that the Caddyfile on disk matches the repo. An
+attacker with host access could edit the file and mount_fresh + config_drift would BOTH pass,
+showing the running config matches the attacked file."*
+Correct, and caddyguard made it worse BY DESIGN: `migrate` re-splits whatever is LIVE into
+fragments, so a hand-edit is captured as a fragment and `assemble` writes it straight back — the
+edit survives every ship. Only the jhw block was ever compared to its committed counterpart, and
+`deploy/caddy/cybergod.caddy` is committed too and was never checked.
+FIX: every fragment with a committed block is now compared to it, the difference is printed by
+NAME with a diff, and the committed block is reinstalled. This is the only check on the box that
+asks *"is this OUR config"* rather than *"do the three hops agree with each other"*.
+RULE: hop checks prove CONSISTENCY. Nothing about them proves the file is the one we wrote.
+Guarded by test_gate_integrity.py, which derives the list from `deploy/caddy/*.caddy` so a NEW
+committed block cannot be added without a comparison (it fails with "add it to the map").
+
+MY OWN CHECK MATCHED A COMMENT, FOR THE THIRD TIME IN THREE DAYS. The `TAMPER` assertion passed
+against a mutation that removed the word from the line the operator SEES, because "TAMPER CHECK —
+CONSISTENCY IS NOT AUTHENTICITY" is a bash comment inside the shipped script. Strip comments, then
+assert on what is echoed. The brand gate learned this months ago; recover.py relearned it on
+Monday; this is the third instance.
+Also: my first render assertion was `"%s" not in script.replace("%%","")`, which is naive — the
+RENDERED script legitimately contains 11 `%s` from bash `printf '%-12s %s'` and `date +%s`. It
+failed a correct file until I looked at what it had actually matched.
+
+## THE RUN THAT CONFIRMED THREE DIAGNOSES (2026-08-11, f12e270)
+- `[model-watch] first run - recording the baseline, nothing to diff` — printed the FIRST time the
+  check has ever executed, which is the proof that "catalog unavailable - skipping" on every
+  previous deploy meant exactly what it said.
+- `www.cybergod.ai HTTP 200` (was 404 on every run) and `all 10 expected domain(s) are served`
+  (was a 4-host warning) — the monitoring and roster fixes landed.
+- `bots blocked: 8/10` with NO warning line — the intended allow-list is now respected.
+- `[!] working tree is DIRTY ... packing the COMMIT f12e270, not your working copy` — the
+  immutability guard behaving exactly as designed, and saying so.

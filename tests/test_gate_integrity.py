@@ -548,3 +548,33 @@ def test_no_check_implies_a_bare_file_edit_propagates():
             "a branch claims propagation without saying HOW: %s" % d[:120]
         assert "a bare file edit does NOT propagate" in d, \
             "nothing warns that editing the file alone is not enough — that belief IS the outage"
+
+
+def test_every_committed_caddy_block_is_checked_against_the_repo():
+    """CONSISTENCY IS NOT AUTHENTICITY (raised by kimi-k2.6, 11 Aug 2026, and correct).
+
+    mount_fresh and config_drift prove the three hops agree with each other. Neither asks whether
+    the file is OURS. caddyguard makes that worse by design: `migrate` re-splits whatever is LIVE
+    into fragments, so a hand-edit on the droplet is captured and `assemble` writes it back.
+    Only the jhw block was ever compared to its committed counterpart.
+    """
+    import importlib.util as _u
+    sp = _u.spec_from_file_location("cg", os.path.join(ROOT, "caddyguard.py"))
+    m = _u.module_from_spec(sp)
+    sp.loader.exec_module(m)
+    script = m.build(restore=True, check_only=False)
+
+    committed = [f for f in os.listdir(os.path.join(ROOT, "deploy", "caddy"))
+                 if f.endswith(".caddy")]
+    assert committed, "no committed caddy blocks found — has the layout changed?"
+    for f in committed:
+        stem = f.replace(".caddy", "")
+        frag = {"cybergod": "colt__cybergod", "jobhuntwow": "jhw__jobhuntwow"}.get(stem)
+        assert frag, "committed block %s has no known fragment name — add it to the map" % f
+        assert frag + ".caddy" in script, (
+            "%s is committed but caddyguard never compares the live fragment to it — a host-side "
+            "edit would be migrated into the fragment and reassembled, surviving every ship" % f)
+    live = "\n".join(ln for ln in script.splitlines() if not ln.strip().startswith("#"))
+    assert "TAMPER" in live, (
+        "a difference from the repo is not REPORTED as tampering on any line the operator sees "
+        "(the word survives only in a comment)")
