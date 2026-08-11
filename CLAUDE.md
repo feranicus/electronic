@@ -4374,3 +4374,51 @@ gone matched the comment EXPLAINING that it was removed, and failed a correct fi
 learned to strip comments before grepping months ago and I did not carry it across. Second defect
 in the same file: the expectation regexes contain `|`, so `line.split("|")` unpacked into too many
 values and the check crashed instead of measuring.
+
+## WE WERE TRUNCATING THE REVIEWER AND CALLING IT AN ERRATIC MODEL (2026-08-11)
+The run was clean, and the line worth acting on was in the deterministic output, not the panel:
+```
+  REVIEW PANEL (3 of 4 answered):
+    [auditor] gemma-4-31B-it     UNSURE
+          . did not answer: Unterminated string starting at: line 1 column 2 (char 1)
+```
+"Unterminated string" is JSON cut mid-string, which is OUR `max_tokens` ceiling — the identical
+lesson already recorded for enrich.py ("a `finish_reason == length` is OUR ceiling truncating the
+JSON, not a model fault"). `quorum._ask` asked for **900 tokens** while the panel's own contract
+permits 3 reasons + 3 risks at 400 chars each plus two 500-char fields = **~1020 tokens of content
+before any JSON structure**. So a reviewer that answered FULLY was guaranteed to be cut off, and
+the failure was then reported as "did not answer", which is how gemma acquired a reputation for
+being erratic across two reviews. Raised to 1800, and a truncated answer now says whose fault it is.
+**AND THE SAFEGUARD COULD SILENTLY SWITCH ITSELF OFF.** The rule that HALTS a green gate on a
+unanimous NO-GO requires `len(revs) >= 3`. gemma has now dropped out twice, so the panel is one
+dropout from that protection being disarmed with nothing said. `quorum` now prints
+`!! PANEL BELOW QUORUM: N of 4 answered ... it CANNOT FIRE this run`, naming the non-answers, and a
+test asserts the warning threshold still matches the quorum the rule actually uses.
+RULE: a safeguard that cannot fire must announce it. Silence is indistinguishable from "it passed".
+
+## TWO WARNINGS THAT WERE BENIGN EVERY SINGLE RUN (2026-08-11)
+Both trained the operator to read past a warning line, which is exactly how a real one gets missed:
+- `[!] 8/10 bots blocked — the rest may be in BOT_404_ALLOW`. Googlebot and Bingbot are allowed
+  BY DESIGN (404-ing Googlebot is what kept a stale pre-rebrand snippet in Google's index for
+  months). 8/10 is the CORRECT state. It now warns only when a bot OUTSIDE the deliberate
+  allow-list gets through.
+- `[!] 4 host(s) NOT on the committed roster: jev.best, klimaanlage-montieren.de, www.*` — both
+  the operator's own sites, now committed.
+
+## A CHECK THAT PRINTS "SKIPPING" ON EVERY RUN HAS NEVER RUN (2026-08-11)
+`[model-watch] catalog unavailable (no OPENAI_API_KEY) - skipping` has appeared on every single
+deploy since the check was written. The key lives on the DROPLET and never on the operator's PC,
+so the NEW/DISAPPEARED-model diff that model_watch exists to produce **has never once been
+computed** — the same disease as the ruff gate that silently skipped for weeks and the esbuild
+path that was "missing" on a machine where esbuild worked. `model_probe.py` had ALREADY solved
+this by running inside colt-web; ship.py now falls back to the same place instead of printing an
+excuse. Non-blocking by design: a new model is information, not a broken build.
+
+MY OWN CHECKS, THREE DEFECTS IN ONE CHANGE, all found by the negative tests:
+1. `sshout()` does not exist in ship.py — the EIGHTH invented name in this workstream. The helper
+   is `ssh()`, and it returns its output. Read the signature; do not assume it.
+2. The model_watch assertion sliced around the FIRST occurrence of the filename, which is a
+   COMMENT about it, and failed a correct file. Anchor on the CALL SITE.
+3. The bot-gate assertion measured the warning's MESSAGE while the defect lives in its CONDITION,
+   so a mutation restoring the unconditional comparison passed. **A check aimed at a string when
+   the bug is in the logic cannot fail for the right reason.**

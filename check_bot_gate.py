@@ -101,10 +101,16 @@ def run(host="cybergod.ai", scheme="https", insecure=False, quiet=False):
                          % (a, label))
         line(label, p, a, verdict)
 
+    # Search + preview crawlers are allowed BY DESIGN (see the SEO note in CLAUDE.md): 404-ing
+    # Googlebot is what kept a stale pre-rebrand snippet in Google's index for months.
+    _INTENTIONALLY_ALLOWED = {"Googlebot", "Bingbot"}
+
     if blocked == 0:
         warns.append("no bot was served a 404 — is BOT_404=0, or is the new code not deployed yet?")
-    elif blocked < len(BOTS):
-        warns.append("%d/%d bots blocked — the rest may be in BOT_404_ALLOW" % (blocked, len(BOTS)))
+    elif blocked < len(BOTS) - len(_INTENTIONALLY_ALLOWED):
+        warns.append("%d/%d bots blocked and that is fewer than expected — a bot outside the "
+                     "deliberate allow-list (%s) is getting through"
+                     % (blocked, len(BOTS), ", ".join(sorted(_INTENTIONALLY_ALLOWED))))
 
     if not quiet:
         print("  " + "-" * 68)

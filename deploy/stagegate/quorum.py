@@ -144,7 +144,7 @@ def _ask(model, prompt):
         return {"model": model, "verdict": "unsure", "reasons": ["enrich unavailable: %s" % _IMPORT_ERR],
                 "risks": [], "error": "import"}
     try:
-        raw, usage = E._call(prompt, model=model, max_tokens=900, timeout=90)
+        raw, usage = E._call(prompt, model=model, max_tokens=1800, timeout=90)
         j = E._json(raw)
         if not isinstance(j, dict):
             raise ValueError("model returned %s, not an object" % type(j).__name__)
@@ -161,7 +161,11 @@ def _ask(model, prompt):
     except Exception as e:
         # A reviewer that 429s or times out is DATA, not a failure of the release. Recorded so the
         # digest is honest about how many opinions it actually collected.
-        return {"model": model, "verdict": "unsure", "reasons": ["did not answer: %s" % e],
+        why = str(e)
+        if "Unterminated" in why or "Expecting" in why or "char 1" in why:
+            why = ("answer was CUT OFF mid-JSON — that is our max_tokens ceiling, not the model "
+                   "(raise it in quorum._ask): %s" % why)
+        return {"model": model, "verdict": "unsure", "reasons": ["did not answer: %s" % why],
                 "risks": [], "error": type(e).__name__}
 
 
@@ -214,6 +218,12 @@ def main():
                       % len(dissent),
                   "checks above, so this did not block the promotion — but read it before you"
                   " promote again."]
+    if len(answered) < 3:
+        lines += ["", "!! PANEL BELOW QUORUM: %d of 4 answered. The safeguard that HALTS a green "
+                  "gate on a unanimous NO-GO needs >= 3 reviewers, so it CANNOT FIRE this run."
+                  % len(answered),
+                  "   Non-answers: " + "; ".join("%s (%s)" % (r["model"], r.get("error") or "?")
+                                                 for r in reviews if r.get("error"))]
     if len(answered) < 2:
         lines += ["", "NOTE: fewer than two reviewers answered (quota or outage). The digest is"
                       " thin; the gate is unaffected."]

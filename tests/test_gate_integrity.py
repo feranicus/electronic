@@ -466,3 +466,69 @@ def test_apply_refuses_to_empty_a_live_proxy():
         "the empty-config guard must refuse BEFORE anything is written, not after")
 
 
+
+
+# --------------------------------------------------------------------------------------
+# THE PANEL'S OWN INTEGRITY. The safeguard that HALTS a green gate on a unanimous NO-GO needs
+# >= 3 reviewers. gemma has now dropped out on two consecutive runs, so at one more dropout the
+# safeguard is silently disarmed and nothing says so. And its dropout was OUR fault: max_tokens
+# was 900 while the panel's own contract permits ~1020 tokens of content, so the JSON was cut
+# mid-string and reported as "did not answer" - blaming the model for our ceiling.
+# --------------------------------------------------------------------------------------
+
+def _q():
+    with open(os.path.join(ROOT, "deploy", "stagegate", "quorum.py"), encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_the_panel_can_actually_fit_its_own_contract():
+    """reasons(3x400) + risks(3x400) + diagnosis(500) + proposed_fix(500) ~= 1020 tokens."""
+    s = _q()
+    m = re.search(r"max_tokens=(\d+)", s)
+    assert m, "the panel no longer states a token ceiling"
+    assert int(m.group(1)) >= 1400, (
+        "max_tokens=%s truncates the panel's own contract — that is what made gemma 'fail'"
+        % m.group(1))
+
+
+def test_a_truncated_answer_is_not_blamed_on_the_model():
+    s = _q()
+    assert "max_tokens ceiling, not the model" in s, \
+        "a cut-off JSON is reported as the model failing, which sent two reviews down a blind alley"
+
+
+def test_below_quorum_is_announced():
+    """A safeguard that cannot fire must say so. Silence is indistinguishable from 'it passed'."""
+    s = _q()
+    assert "PANEL BELOW QUORUM" in s, "nothing warns when the unanimous-NO-GO halt cannot fire"
+    assert "len(answered) < 3" in s, \
+        "the warning threshold no longer matches the >=3 the halt rule requires"
+    # And it must agree with the rule it describes.
+    with open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8") as fh:
+        st = fh.read()
+    assert "len(revs) >= 3" in st, "the halt rule's quorum changed; the warning now lies"
+
+
+def test_the_bot_gate_only_warns_about_bots_it_did_not_mean_to_allow():
+    """Googlebot and Bingbot are allowed BY DESIGN (the SEO fix). Flagging that every run is how
+    the roster warning went stale and stopped being read."""
+    with open(os.path.join(ROOT, "check_bot_gate.py"), encoding="utf-8") as fh:
+        s = fh.read()
+    assert "_INTENTIONALLY_ALLOWED" in s, "the intended allow-list is not named"
+    cond = [ln for ln in s.splitlines()
+            if "elif blocked <" in ln or (ln.strip().startswith("elif") and "blocked" in ln)]
+    assert cond, "the warning's condition disappeared"
+    assert any("_INTENTIONALLY_ALLOWED" in ln for ln in cond), (
+        "the warning fires whenever ANY bot is served (%s) — Googlebot and Bingbot are allowed on "
+        "purpose, so that flags a correct configuration on every single run" % "; ".join(cond))
+
+
+def test_model_watch_runs_where_it_can_see_the_catalog():
+    """It printed 'catalog unavailable - skipping' on every run since it was written, so the
+    NEW/DISAPPEARED-model diff it exists to produce has never once been computed."""
+    with open(os.path.join(ROOT, "ship.py"), encoding="utf-8") as fh:
+        s = fh.read()
+    i = s.index("os.path.join(_eng, 'model_watch.py')")
+    seg = s[i:i + 900]
+    assert "docker exec colt-web" in seg, \
+        "model_watch still only runs on the PC, where OPENAI_API_KEY does not exist"

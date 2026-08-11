@@ -1600,8 +1600,14 @@ def main():
         _eng = os.path.join(HERE, 'hermes-skills', 'shodan-assessment', 'scripts')
         _mw = subprocess.run([sys.executable, os.path.join(_eng, 'model_watch.py')],
                              capture_output=True, text=True, timeout=240)
+        _out = (_mw.stdout or '').rstrip()
+        if 'catalog unavailable' in _out or not _out:
+            # The key is on the droplet. Run it where it can SEE the thing it checks.
+            _out = (ssh("docker exec colt-web python3 "
+                        "/opt/shodan-skill/scripts/model_watch.py 2>&1 || true",
+                        timeout=240) or "").rstrip() or _out
         print('')
-        print((_mw.stdout or '').rstrip() or '  model-watch: no output')
+        print(_out or '  model-watch: no output')
     except Exception as _e:
         print('  [!] model-watch skipped (%s) - never blocks a deploy' % type(_e).__name__)
 
