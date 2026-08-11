@@ -312,6 +312,20 @@ async def _warm_demo():
     asyncio.get_event_loop().run_in_executor(None, _ensure_demo)
 
 
+
+@app.get("/api/siege")
+def api_siege(since: int = None):
+    """PUBLIC, REDACTED live attack feed for the siege page.
+
+    Everything here is already anonymised by siege.record() on the way IN: addresses truncated to
+    a /24, ordinary visitor traffic never recorded at all, paths echoed only when they match the
+    probe corpus with no query string. No user, no session, no user agent.
+    Cheap by construction: an in-memory ring buffer with a short snapshot cache, so a public
+    endpoint cannot be used to make the server work.
+    """
+    from . import siege
+    return siege.snapshot(since)
+
 @app.get("/api/demo")
 def demo_meta():
     """Everything the Demo page needs: the notice, the company, and the artifact list."""

@@ -165,8 +165,21 @@ def install(app, session_email_fn=None):
             _safe_emit(request, status, t0, session_email_fn, cls=cls)
             if _sh is not None:
                 try:
-                    _sh.observe(client_ip(request), request.url.path, status, cls or {},
-                                request.method)
+                    _ip = client_ip(request)
+                    _pth = request.url.path
+                    _sh.observe(_ip, _pth, status, cls or {}, request.method)
+                    # PUBLIC SIEGE FEED. Only ATTACK-SHAPED requests, and the address is truncated
+                    # inside siege.record() on the way in - an ordinary visitor never reaches it.
+                    _lane = _sh.lane_of(_pth)
+                    if _lane:
+                        from . import siege as _sg
+                        _cc = ""
+                        try:
+                            from . import geoip as _gi
+                            _cc = _gi.country(_ip) or ""
+                        except Exception:
+                            pass
+                        _sg.record(_ip, _pth, _lane, bool(_sh.is_blocked(_ip)), status, _cc)
                 except Exception:
                     pass
             return response

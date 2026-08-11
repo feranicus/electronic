@@ -39,25 +39,13 @@ def fetch():
 
 # Behaviour classes. Each is a candidate DETECTOR: if a class is common and the shield does not
 # already cover it, that is the gap.
-CLASSES = [
-    ("wordpress",   re.compile(r"(?i)/(wp-|wordpress|xmlrpc)")),
-    ("php_probe",   re.compile(r"(?i)\.php(?:$|[?/])")),
-    ("env_secrets", re.compile(r"(?i)(?:^|/)\.(env|git|aws|ssh|svn)")),
-    ("admin_panel", re.compile(r"(?i)/(admin|manager|phpmyadmin|adminer|cpanel|webadmin)")),
-    ("api_docs",    re.compile(r"(?i)/(swagger|openapi|graphql|actuator|\.well-known/openid)")),
-    ("shell_rce",   re.compile(r"(?i)(cgi-bin|/shell|/cmd|eval\(|\bbash\b|\bwget\b|\bcurl\b)")),
-    ("traversal",   re.compile(r"(\.\./|%2e%2e|\.\.%2f)")),
-    ("sqli",        re.compile(r"(?i)(union\s+select|'\s+or\s+1=1|sleep\(|benchmark\()")),
-    ("xss",         re.compile(r"(?i)(<script|javascript:|onerror=)")),
-    ("backup_file", re.compile(r"(?i)\.(bak|old|sql|zip|tar|gz|db|sqlite|log|ini|ya?ml)(?:$|[?/])")),
-    ("docs_leak",   re.compile(r"(?:^|/)[A-Z_]{3,}\.md$")),
-    ("template",    re.compile(r"(//|/\[)")),
-    ("iot_router",  re.compile(r"(?i)/(boaform|goform|HNAP1|setup\.cgi|hudson|jenkins|solr)")),
-]
+# THE TABLE MOVED to webapp/backend/app/shield.py so the container can name a lane too.
+# Imported, never re-declared: one vocabulary for the detector, the feed and this analysis.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp", "backend"))
+from app.shield import CLASSES            # noqa: E402
 
 
-def classify(path):
-    return [name for name, rx in CLASSES if rx.search(path or "")]
+from app.shield import classify   # noqa: E402,F811  (one implementation)
 
 
 def main():

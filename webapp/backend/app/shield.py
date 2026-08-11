@@ -123,6 +123,42 @@ _PROBE_RE = re.compile(
     re.I)
 
 
+# ---------------------------------------------------------------------------------------------
+# THE CLASS VOCABULARY. One table, used by three things: the public siege feed, analyse_attacks.py
+# and the Grafana labels. It lived only in analyse_attacks.py, which is a repo-root ops script and
+# is NOT copied into the colt-web image - so the feed could not have named a lane without a second
+# copy, and a second copy is how ENRICH_MODELS ended up with four homes.
+# NOTE this does NOT make the gap analysis circular: that compares this CORPUS against
+# probe_shape(), which is a separate regex. The corpus is "what exists"; probe_shape is "what we
+# detect". Sharing the vocabulary is what lets the two be compared at all.
+CLASSES = [
+    ("wordpress",   re.compile(r"(?i)/(wp-|wordpress|xmlrpc)")),
+    ("php_probe",   re.compile(r"(?i)\.php(?:$|[?/])")),
+    ("env_secrets", re.compile(r"(?i)(?:^|/)\.(env|git|aws|ssh|svn)")),
+    ("admin_panel", re.compile(r"(?i)/(admin|manager|phpmyadmin|adminer|cpanel|webadmin)")),
+    ("api_docs",    re.compile(r"(?i)/(swagger|openapi|graphql|actuator|\.well-known/openid)")),
+    ("shell_rce",   re.compile(r"(?i)(cgi-bin|/shell|/cmd|eval\(|\bbash\b|\bwget\b|\bcurl\b)")),
+    ("traversal",   re.compile(r"(\.\./|%2e%2e|\.\.%2f)")),
+    ("sqli",        re.compile(r"(?i)(union\s+select|'\s+or\s+1=1|sleep\(|benchmark\()")),
+    ("xss",         re.compile(r"(?i)(<script|javascript:|onerror=)")),
+    ("backup_file", re.compile(r"(?i)\.(bak|old|sql|zip|tar|gz|db|sqlite|log|ini|ya?ml)(?:$|[?/])")),
+    ("docs_leak",   re.compile(r"(?:^|/)[A-Z_]{3,}\.md$")),
+    ("template",    re.compile(r"(//|/\[)")),
+    ("iot_router",  re.compile(r"(?i)/(boaform|goform|HNAP1|setup\.cgi|hudson|jenkins|solr)")),
+]
+
+
+def classify(path):
+    """Every class a path belongs to, most specific first. [] means it is not attack-shaped."""
+    return [name for name, rx in CLASSES if rx.search(path or "")]
+
+
+def lane_of(path):
+    """The single lane the public feed should draw this in, or None."""
+    hits = classify(path)
+    return hits[0] if hits else None
+
+
 def probe_shape(path):
     """Does the path LOOK like scanner behaviour? Pure pattern, NO exemptions.
 
@@ -375,6 +411,22 @@ def enter_tarpit():
 
 def leave_tarpit():
     _tarpits[0] = max(0, _tarpits[0] - 1)
+
+
+def is_blocked(ip):
+    """Is this address currently held? Public because the siege feed must report what the shield
+    ACTUALLY did, not infer it from a status code - the bot gate also answers 404, so `status==404`
+    would have coloured ordinary crawler traffic as a block."""
+    try:
+        _prune()
+        if str(ip) in ALLOW_IPS:
+            return False
+        if _blocked.get(str(ip), 0) > time.time():
+            return True
+        net = ".".join(str(ip).split(".")[:3])
+        return BLOCK_NETS.get(net, 0) > time.time()
+    except Exception:
+        return False
 
 
 def unblock(ip):

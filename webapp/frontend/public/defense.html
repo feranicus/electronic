@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Siege - what actually hits cybergod.ai</title>
-<meta name="description" content="Eight attack classes, 604 scanner-like sources, one small server. A measured record, played back.">
+<meta name="description" content="Eight attack classes, 604 scanner-like sources. A measured record, and a live feed.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Unbounded:wght@600;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -21,6 +21,9 @@
     border:1px solid rgba(140,170,210,.25);background:rgba(10,17,29,.7);padding:8px 14px;
     border-radius:999px;user-select:none;transition:.2s}
   #replay:hover{color:#00D7BD;border-color:rgba(0,215,189,.5)}
+  #mode{position:fixed;right:18px;top:14px;z-index:6;font-family:"JetBrains Mono",monospace;
+    font-size:10px;letter-spacing:.22em;color:#00D7BD;border:1px solid rgba(0,215,189,.35);
+    background:rgba(0,215,189,.08);padding:5px 11px;border-radius:999px}
   #note{position:fixed;left:18px;bottom:14px;z-index:6;font-family:"JetBrains Mono",monospace;
     font-size:10px;line-height:1.6;color:#5D6E86;max-width:52vw}
   @media(max-width:720px){#note{max-width:70vw;font-size:9px}#replay{padding:7px 11px;font-size:10px}}
@@ -29,10 +32,11 @@
 <body>
 <div id="wrap"><canvas id="c"></canvas></div>
 <div id="bar"><i id="prog"></i></div>
-<div id="replay">Replay</div>
+<div id="replay">Replay the story</div>
+<div id="mode">RECORDED</div>
 <div id="note">Counts are DISTINCT SOURCES per class from colt-web's event log, 10-11 Aug 2026.
 604 distinct sources behaved like scanners overall; a source can appear in more than one class, so
-the lane figures do not sum to it. They were DETECTED - the shield shipped after this window.</div>
+the lane figures do not sum to it. They were DETECTED - the shield shipped after this window.<br>LIVE mode plays real requests as they arrive. Addresses are truncated to a /24 and only attack-shaped requests appear: an ordinary visitor is never in this feed.</div>
 
 <script>
 (function(){
@@ -204,7 +208,7 @@ function castle(){
   x.fillStyle="#EAFBF8"; x.shadowColor="rgba(0,215,189,.9)"; x.shadowBlur=22;
   x.fillText("cybergod.ai",CX+28,760); x.shadowBlur=0;
   x.font='600 11.5px "JetBrains Mono", monospace'; x.fillStyle="#6F8398";
-  x.fillText("FRA1 · one small server",CX+28,782);
+  x.fillText("FRA1 · EU",CX+28,782);
   x.textAlign="left";
 
   if(hit>0){ x.globalAlpha=hit*.45; x.fillStyle="#FF3B57";
@@ -280,7 +284,7 @@ function hud(){
   x.fillStyle=sealed?"#00F0D4":"#E9F1FA";
   x.fillText(blocked.toLocaleString("en-US"),1560,by+34);
   x.font='600 10.5px "JetBrains Mono", monospace'; x.fillStyle="#6F8398";
-  x.fillText("SHOTS MET AT THE WALL",1560,by+54);
+  x.fillText(LIVE?"PROBES MET · LIVE":"SHOTS MET AT THE WALL",1560,by+54);
 
   x.font='800 30px Unbounded, sans-serif';
   x.fillStyle=integrity>=100?"#26D98A":(integrity>70?"#FFC33C":"#FF3B57");
@@ -288,7 +292,8 @@ function hud(){
   x.font='600 10.5px "JetBrains Mono", monospace'; x.fillStyle="#6F8398";
   x.fillText("ESTATE INTEGRITY",1560,by+128);
 
-  var st = act>=3 ? (sealed?"SEALED · 48/48 CLASSES":"CLOSING") :
+  var st = LIVE ? "LIVE · " + (liveStats?(liveStats.sources+" SOURCES SEEN"):"CONNECTED")
+       : act>=3 ? (sealed?"SEALED · 48/48 CLASSES":"CLOSING") :
            (act===2 ? "UNRECOGNISED CLASSES GETTING THROUGH" : "HOLDING");
   var sc = act===2 ? "#FF3B57" : (sealed?"#00F0D4":"#FFC33C");
   x.font='700 12px "JetBrains Mono", monospace'; x.fillStyle=sc;
@@ -336,6 +341,43 @@ function panel(){
 }
 
 /* ---- main loop --------------------------------------------------------------------------- */
+/* ---- LIVE FEED --------------------------------------------------------------------------
+   Polls the public, REDACTED /api/siege. Addresses arrive already truncated to a /24, ordinary
+   visitor traffic is never in the feed at all, and a path is only ever present when it matched
+   the probe corpus with no query string. The page therefore cannot display something it should
+   not, because it is never sent it.
+   If the endpoint is absent (opened as a file, or an older server) LIVE silently stays off and
+   the scripted six acts play - the page must never be blank because a fetch failed.            */
+var LIVE=false, liveSeq=null, liveQ=[], liveStats=null, lastPoll=0, liveFails=0;
+var LANE_BY_KEY={}; LANES.forEach(function(L){ LANE_BY_KEY[L.k]=L; });
+
+function poll(){
+  var url="/api/siege"+(liveSeq!=null?("?since="+liveSeq):"");
+  fetch(url,{cache:"no-store"}).then(function(r){ return r.ok?r.json():null; }).then(function(j){
+    if(!j||!j.events){ liveFails++; return; }
+    liveFails=0;
+    if(!LIVE){ LIVE=true; document.getElementById("mode").textContent="LIVE"; }
+    liveSeq=j.seq; liveStats=j;
+    j.events.forEach(function(e){ liveQ.push(e); });
+    if(liveQ.length>240) liveQ=liveQ.slice(-240);
+  }).catch(function(){ liveFails++; });
+}
+
+function liveTick(now){
+  if(now-lastPoll>2500){ lastPoll=now; poll(); }
+  /* Drain a couple of queued events per frame so a burst of 50 looks like a volley, not a wall */
+  for(var i=0;i<2 && liveQ.length;i++){
+    var e=liveQ.shift();
+    var L=LANE_BY_KEY[e.lane]||LANES[LANES.length-1];
+    fire(L,false);
+    var s2=shots[shots.length-1];
+    if(s2){
+      s2.tag=(e.path||e.lane)+"  "+e.net+(e.cc?(" · "+e.cc):"");
+      s2.held=!!e.blocked;                       /* the source is under an active block */
+    }
+  }
+}
+
 var lastFire=0, lastFriend=0;
 function frame(now){
   requestAnimationFrame(frame);
@@ -348,9 +390,11 @@ function frame(now){
   if(act>=3) sealed=true;
   if(act>=4) panelIn=Math.min(1,panelIn+0.02);
 
-  /* --- spawn ---------------------------------------------------------------------------- */
+  liveTick(now);
+
+  /* --- spawn ------------------------------------------------------------------------- */
   var rate = act===0?520 : act===1?95 : act===2?85 : act===3?70 : act===4?110 : 150;
-  if(now-lastFire>rate){
+  if(!LIVE && now-lastFire>rate){
     lastFire=now;
     var pool = act===0 ? LANES.slice(0,3) : LANES;
     var L=pool[(Math.random()*pool.length)|0];
@@ -377,9 +421,11 @@ function frame(now){
         say(s.tx+70,s.y-16,"THROUGH · "+s.L.e,"#FF6B82");
       }else{
         blocked++; s.L.blocked++;
-        ripples.push({a:Math.atan2(s.y-CY,s.tx-CX),life:1,col:hexa(s.L.c,.95)});
-        burst(s.tx,s.y,s.L.c,10,1);
-        if(Math.random()<0.16) say(s.tx-16,s.y-14,s.L.e,hexa(s.L.c,.95));
+        ripples.push({a:Math.atan2(s.y-CY,s.tx-CX),life:1,
+                      col:s.held?"rgba(0,240,212,.95)":hexa(s.L.c,.95)});
+        burst(s.tx,s.y,s.held?"#00F0D4":s.L.c,s.held?16:10,s.held?1.3:1);
+        if(s.tag) say(s.tx-16,s.y-14,s.tag,hexa(s.L.c,.95));
+        else if(Math.random()<0.16) say(s.tx-16,s.y-14,s.L.e,hexa(s.L.c,.95));
         shake=Math.max(shake,2.2);
       }
     }

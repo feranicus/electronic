@@ -4541,3 +4541,38 @@ by construction. Proven by reintroducing the operator's exact bug (caught, by na
 helper (caught) and an undefined colour (caught).
 RULE: for anything that draws, PARSE is not RUN and a static render of the same maths is not the
 page. Execute the loop.
+
+## THE PUBLIC SIEGE FEED — redaction is the precondition, not a feature (2026-08-11)
+`/defense.html` now plays REAL requests. `webapp/backend/app/siege.py` is an in-memory ring buffer
+fed by the telemetry middleware at the SAME point the shield observes, so the feed and the detector
+can never disagree about what an attack is; the page polls `GET /api/siege?since=<seq>` every 2.5s.
+Near-real-time with no log parsing and no disk I/O.
+**THE ENDPOINT IS WORLD-READABLE AND THE STREAM CARRIES ORDINARY VISITORS, so four rules are
+enforced in code, each negative-tested:**
+1. **An IP address is PERSONAL DATA** (GDPR; CJEU C-582/14 Breyer) and "they attacked us" is not a
+   lawful basis for publishing it. Truncated to a /24 (IPv4) or /48 (IPv6) **on the way IN**, so a
+   later bug in the endpoint cannot leak what was never stored.
+2. **Only attack-shaped requests are recorded at all.** A human reading the site never appears,
+   not even anonymised.
+3. **A raw path is an exfiltration vector** — the attacker controls it and it can carry an email,
+   a token or a session id in a query string. Echoed ONLY when it matches a strict shape with no
+   query; otherwise the class name is shown and the path is discarded.
+4. **No user, no session, no referrer, no user agent.** A UA is attacker-controlled free text.
+Bounded buffer + cached snapshot, because a public endpoint that recomputes is a lever for making
+our own server work - an unusually embarrassing way to be taken down given what the page is about.
+**HONESTY IN THE ANIMATION.** A live shot is NOT drawn as "blocked" unless `shield.is_blocked()`
+says the source is actually held. The shield blocks a SOURCE after it scores; a first probe from a
+new address is DETECTED and answered. Drawing both as interceptions would be the same overclaim as
+saying the 604 were "stopped".
+**ONE CLASS VOCABULARY.** The table lived only in `analyse_attacks.py`, which is a repo-root ops
+script NOT copied into the image - so the feed could not name a lane without a second copy, and a
+second copy is how ENRICH_MODELS ended up with four homes. `CLASSES` + `classify()` + `lane_of()`
+moved into `shield.py`; analyse_attacks.py imports them. This does NOT make the gap analysis
+circular: that compares this CORPUS against `probe_shape()`, a separate regex.
+MY OWN ERRORS, ALL CAUGHT BY WRITING THE CHECKS: `shield.is_blocked()` did not exist and my first
+wiring inferred it from `status == 404` - which the BOT GATE also returns, so ordinary crawler
+traffic would have been coloured as blocks. And `probe_shape()` returns a BOOLEAN, not a class
+name (ninth assumed signature in this workstream), so every event would have landed in one lane.
+NEGATIVE-TEST NOTE: the query-string guard is doubled (explicit `?` check + the `_SAFE_PATH`
+character class). Removing either alone leaves the other holding and the mutation looks green -
+defeat BOTH before believing it.
