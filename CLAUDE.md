@@ -4515,3 +4515,29 @@ failed a correct file until I looked at what it had actually matched.
 - `bots blocked: 8/10` with NO warning line — the intended allow-list is now respected.
 - `[!] working tree is DIRTY ... packing the COMMIT f12e270, not your working copy` — the
   immutability guard behaving exactly as designed, and saying so.
+
+## A BLACK RECTANGLE THAT PARSED, BUILT AND SHIPPED (2026-08-11, defense.html)
+The operator opened the page and got a black screen with **3,637 console errors**, all identical:
+```
+Uncaught SyntaxError: Failed to execute 'addColorStop' on 'CanvasGradient':
+The value provided ('rgba(FF3B57') could not be parsed as a color.   at glow -> roster -> frame
+```
+CAUSE, and it is entirely mine: a half-written line left in `roster()` -
+`glow(232,L.y,30,L.c.replace(")",",.9)").replace("#","rgba(")||L.c,.0); /* no-op guard */`
+`"#FF3B57"` contains no `)`, so the first replace does nothing and the second yields
+**`rgba(FF3B57`**. It threw on the FIRST call of the FIRST frame, so the render loop died before
+anything was drawn. `hexa()`, the correct helper, sits two lines below it.
+**WHY EVERY CHECK I RAN SAID FINE.** `node --check` only PARSES - an invalid value is legal
+JavaScript until it executes. The offline composition render redraws the maths in PIL and never
+executes the page's own JavaScript, so it happily produced a beautiful picture of a page that
+could not run. CLAUDE.md ALREADY carried the rule from the `/app` white-screen incident - *"a
+passing vite build does NOT mean the page works ... an undefined identifier is legal JS until it
+executes"* - and I checked syntax instead of running the thing.
+FIX: `webapp/frontend/tools/canvas_smoke.mjs` EXECUTES the real render loop for 900 frames (the
+whole 41s timeline, every act) against a stub 2D context that validates every colour reaching
+`fillStyle`/`strokeStyle`/`shadowColor`/`addColorStop` and fails on any exception. Wired into
+ship.py AND into `webapp/Dockerfile`'s fe stage, so it also runs on the toolchain that is correct
+by construction. Proven by reintroducing the operator's exact bug (caught, by name), a typo'd
+helper (caught) and an undefined colour (caught).
+RULE: for anything that draws, PARSE is not RUN and a static render of the same maths is not the
+page. Execute the loop.

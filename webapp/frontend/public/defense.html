@@ -242,7 +242,6 @@ function shield(){
 function roster(){
   LANES.forEach(function(L){
     var pulse=0.55+0.45*Math.sin(T/240+L.y);
-    glow(232,L.y,30,L.c.replace(")",",.9)").replace("#","rgba(")||L.c,.0); /* no-op guard */
     glow(232,L.y,34,hexa(L.c,.30),1);
     x.fillStyle=L.c; x.globalAlpha=.55+pulse*.45;
     x.beginPath(); x.arc(232,L.y,9,0,6.283); x.fill(); x.globalAlpha=1;

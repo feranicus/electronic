@@ -845,6 +845,19 @@ def do_tests():
             i18n_ok = False
             print("    !! an api.js call site consumes the wrong response shape")
 
+        # CANVAS SMOKE. A canvas page can PARSE, BUILD and still be a black rectangle.
+        # defense.html shipped with a half-written line producing the colour "rgba(FF3B57"; it
+        # threw inside addColorStop on every frame, so the render loop died on frame one and the
+        # operator got a black screen with 3,637 console errors. It passed `node --check` (that
+        # only parses) and it passed the offline composition render (that redraws the maths in
+        # Python and never executes the page's own JavaScript).
+        # This RUNS the real loop for 900 frames against a stub 2D context and fails on any
+        # exception or any invalid colour reaching fillStyle/strokeStyle/addColorStop.
+        if run(["node", "tools/canvas_smoke.mjs", "public/defense.html", "900"],
+               check=False, cwd=_fe) != 0:
+            i18n_ok = False
+            print("    !! a canvas page throws at runtime or emits an invalid colour")
+
         # HEADER LAYOUT. A fixed-height flex row is ARITHMETIC: brand + every control + gaps, in
         # the LONGEST language. Adding "Who we are" to the nav pushed the GERMAN row past the
         # viewport and "Zur Anwendung" landed on top of the page heading. CLAUDE.md had recorded
