@@ -4980,3 +4980,44 @@ comes to believe a bare file edit propagates. That belief IS the 6 Aug outage.
    rather than eyeballing a diffstat. Restore immediately after each mutation, not in a `finally`.
 RULE, restated: after any harness that edits real files, grep for every marker it could have left.
 A "clean" diffstat is not a clean tree when the interesting change is one line long.
+
+## THE TEST FAILED ONLY ON WINDOWS, AND THE PASSING HALF WAS A FALSE PASS (2026-08-13)
+`python ship.py` refused to deploy, correctly, on one line:
+```
+  FAIL  a healthy proxy (running config == file) is NOT flagged
+[X] DRIFT CHECK REGRESSION - the staging gate would block or miss wrongly. Do not ship.
+```
+Green in my sandbox, red on the operator's box. The fixture wrote its temp Caddyfile with
+`open(path, "w")` — Python TEXT mode, which on Windows rewrites every `\n` into `\r\n` — while the
+stub for "what the container sees" hashed an LF string. So `mount_sync` compared CRLF bytes against
+an LF hash, reported a STALE MOUNT, and `cmd_check` called a perfectly healthy box unhealthy.
+**AND THE DRIFT CASE PASSED FOR ENTIRELY THE WRONG REASON**: it wanted rc=1 and got rc=1, but from
+the phantom mount mismatch, not from detecting drift. A false pass is the more dangerous half —
+the failing assertion at least announces itself.
+FOURTH APPEARANCE OF THIS TRAP HERE: `git archive` applying autocrlf made the deploy artefact
+platform-dependent; a CRLF payload over ssh broke a bash script; the preview stamp hashed raw bytes
+so it meant "previewed on this operating system". Content is content; the byte that ends a line is
+the platform's business.
+TWO FIXES, and the second is the one that generalises:
+1. **The stub now models the mount honestly** — the container reads the SAME MOUNTED FILE, so it
+   hashes what is actually on disk instead of a hardcoded string. A fixture that does not model
+   reality is a test of the fixture. (Same class as the secaudit stub that spoke `key=value` at a
+   parser reading `key: value`.)
+2. **The line ending is now a PARAMETER.** Every watchdog assertion runs under LF and CRLF and the
+   verdict must be identical, plus an explicit `"STALE MOUNT" not in output` so a line-ending
+   artefact can never again be mistaken for a drift verdict. A platform difference now fails in the
+   test, not on the operator's machine.
+RULE: any fixture written to disk that will be hashed, diffed or fed to a parser must be written in
+BINARY with explicit bytes. And when a test only exercises one platform's line ending, it is
+testing one platform.
+
+**AND A GAP THE MUTATIONS FOUND: BEHAVIOUR WAS TESTED, WIRING WAS NOT.** `mount_sync` has eight
+dedicated assertions — all in ISOLATION. Stubbing out the CALL inside `cmd_check` went completely
+unnoticed, because the dedicated tests invoke `mount_sync` directly and never ask whether the
+watchdog still consults it. A control that is correct and unreachable is not a control; identical
+to the shield tests that proved shield.py behaves while nothing asserted the middleware invokes it.
+Two assertions added: the watchdog must consult the mount hop, and it must pass `fix=bool(heal)` so
+a read-only run cannot restart the proxy and blip every vhost on the box.
+Six mutations, all verified to fail and then restored: no drift comparison · drift dropped from the
+verdict · detected-but-not-alerted · cmd_drift not called · mount check removed · read-only run
+made destructive.

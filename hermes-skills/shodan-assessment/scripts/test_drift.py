@@ -308,18 +308,28 @@ def _wd_cfg(hosts):
         {"match": [{"host": hosts}], "handle": [{"handler": "static_response"}]}]}}}}})
 
 
-def _watchdog(running_hosts):
+def _watchdog(running_hosts, eol="\n"):
     """Fresh agent: the FILE says a.com+b.de, the RUNNING config says `running_hosts`."""
     _sp = importlib.util.spec_from_file_location("cg_agent_wd", AGENT)
     a = importlib.util.module_from_spec(_sp)
     _sp.loader.exec_module(a)
     fd, path = _tf.mkstemp()
     os.close(fd)
-    open(path, "w").write(_GOOD)
+    # BINARY. Python TEXT mode on Windows rewrites every \n into \r\n, so the file on disk would
+    # hash differently from the LF bytes stubbed as the container's copy - mount_sync would report
+    # a stale mount and cmd_check would call a healthy box unhealthy. That failed the healthy case
+    # AND made the drift case pass for the wrong reason, which is the more dangerous half.
+    # Fourth appearance of this trap in this repo: content is content, the line ending is the
+    # platform's business.
+    open(path, "wb").write(_GOOD.replace("\n", eol).encode("utf-8"))
     a.LIVE = path
     a.container = lambda: "c"
     a.mount_source = lambda c: path
-    a._sha_in_container = lambda c: _hl.sha256(_GOOD.encode()).hexdigest()
+    # The container reads the SAME MOUNTED FILE, so it must hash what is actually on disk.
+    # Hardcoding the hash of an LF string made the stub disagree with a CRLF checkout and
+    # invented a stale mount that production could never have. A fixture that does not
+    # model reality is a test of the fixture.
+    a._sha_in_container = lambda c: _hl.sha256(open(path, "rb").read()).hexdigest()
     a.validate = lambda t, c=None: (True, "")
     a.alerted = []
     a.notify = lambda t: a.alerted.append(t) or True
@@ -350,16 +360,26 @@ def _run_check(a, heal=False):
     return rc, " ".join(buf.getvalue().split())
 
 
-# A guard that fires on a healthy box gets switched off within a week.
-_a = _watchdog(["a.com", "b.de"])
-_rc, _out = _run_check(_a)
-ok_(_rc == 0, "a healthy proxy (running config == file) is NOT flagged")
+# THE VERDICT MUST BE THE SAME ON BOTH PLATFORMS.
+# The first version of this test wrote its fixture in Python TEXT mode, so on the operator's
+# Windows box the file landed as CRLF while the stubbed container copy was LF. mount_sync then
+# reported a stale mount, the healthy case was called unhealthy, and the DRIFT case passed for
+# entirely the wrong reason - a false pass, which is the more dangerous half. Line ending is now
+# a parameter and every assertion runs under both, so a platform difference fails HERE rather
+# than on the operator's machine.
+for _eol, _plat in (("\n", "LF/linux"), ("\r\n", "CRLF/windows")):
+    # A guard that fires on a healthy box gets switched off within a week.
+    _a = _watchdog(["a.com", "b.de"], _eol)
+    _rc, _out = _run_check(_a)
+    ok_(_rc == 0, "[%s] a healthy proxy (running config == file) is NOT flagged" % _plat)
 
-# The real defect: valid on disk, never reloaded.
-_a = _watchdog(["a.com"])                                # b.de on disk, NOT served
-_rc, _out = _run_check(_a)
-ok_(_rc == 1, "a VALID config that was never reloaded is caught (the 6 Aug mechanism)")
-ok_(bool(_a.alerted), "and it reaches a human - silent detection is not detection")
+    # The real defect: valid on disk, never reloaded.
+    _a = _watchdog(["a.com"], _eol)                      # b.de on disk, NOT served
+    _rc, _out = _run_check(_a)
+    ok_(_rc == 1, "[%s] a VALID config never reloaded is caught (the 6 Aug mechanism)" % _plat)
+    ok_(bool(_a.alerted), "[%s] and it reaches a human - silent detection is not detection" % _plat)
+    ok_("STALE MOUNT" not in _out, "[%s] the verdict is about DRIFT, not a line-ending artefact"
+        % _plat)
 
 # One implementation, or the timer and the deploy will disagree about what drift means.
 _src = open(AGENT, encoding="utf-8").read()
@@ -367,6 +387,14 @@ _i = _src.index("def cmd_check(")
 _chk = _src[_i:_src.index("\ndef ", _i + 10)]
 ok_("cmd_drift()" in _chk, "the watchdog REUSES cmd_drift rather than growing a second comparison")
 ok_("_served(" not in _chk, "no second copy of the comparison has appeared inside cmd_check")
+
+# WIRING, not behaviour. mount_sync is tested thoroughly above - in ISOLATION. Nothing proved the
+# watchdog still CALLS it, and a mutation that stubbed the call out went completely unnoticed. A
+# control that is correct and unreachable is not a control; that is the same class as the shield
+# tests that proved shield.py behaves while nothing asserted the middleware invokes it.
+ok_("mount_sync(" in _chk, "cmd_check still consults the MOUNT hop (hop 1), not only drift")
+ok_("fix=bool(heal)" in _chk,
+    "and it only repairs the mount under --heal - a read-only run must not blip every vhost")
 
 
 print("=" * 78)
