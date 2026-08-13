@@ -691,3 +691,71 @@ def test_an_unrecognised_patchwatch_state_is_never_read_as_healthy():
             "patchwatch=%r was treated as healthy" % state)
     _bad, warn = sa.verdict("t", dict(base, patchwatch="enabled"))
     assert not any("patchwatch" in w for w in warn), "an enabled timer must not warn"
+
+
+def _selftest_pass_detail():
+    """Run cmd_selftest for real against a temp config and return the PASS detail it prints."""
+    import contextlib
+    import importlib.util
+    import io
+    import tempfile
+    spec = importlib.util.spec_from_file_location(
+        "cg_agent", os.path.join(ROOT, "deploy", "caddyguard", "agent.py"))
+    ag = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ag)
+    good = 'example.com {\n  reverse_proxy app:8000\n}\nfoo.de {\n  respond "hi"\n}\n'
+    fd, p = tempfile.mkstemp()
+    os.close(fd)
+    with open(p, "w") as fh:
+        fh.write(good)
+    try:
+        ag.LIVE = "/opt/videodead/Caddyfile"          # production's path, absent here
+        ag.container = lambda: "c"
+        ag.mount_source = lambda c: p                 # the container's REAL mount, elsewhere
+        ag.validate = lambda t, c=None: (
+            bool(ag.balance(t)[0] == ag.balance(t)[1] and "not a caddyfile" not in t and t.strip()),
+            "")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = ag.cmd_selftest()
+        out = buf.getvalue().strip()
+    finally:
+        os.remove(p)
+    assert rc == 0 and out.startswith("OK"), "the selftest did not pass on a healthy fixture: %s" % out
+    return out[2:].strip()
+
+
+def test_the_selftest_pass_detail_does_not_trip_the_contradiction_demoter():
+    """THE TEST THAT WOULD HAVE SAVED A DEPLOY CYCLE.
+
+    The check's PASS detail said "refuses an unbalanced config and junk". `refus` is on
+    stagegate's contradiction word list, so a CORRECT pass was demoted to a FAILURE and the gate
+    refused a good release — twice, pre- and post-reboot. The word was this check's own name and
+    its success condition, but a substring scan cannot know that.
+    Running the real output through the real demoter is the only thing that catches this class,
+    because both halves are correct in isolation.
+    """
+    sys.path.insert(0, ROOT)
+    import stagegate as SG
+    detail = _selftest_pass_detail()
+    word = SG.self_contradictory({"ok": True, "detail": detail})
+    assert not word, (
+        "the selftest's PASS detail trips the self-contradiction demoter (%s), so a healthy run "
+        "is scored as a broken check. Describe what was OBSERVED; do not restate the check's "
+        "name, and keep failure vocabulary out of a success message.\n  detail: %s" % (word, detail))
+
+
+def test_the_demoter_reports_its_match_in_context():
+    """It returned the bare regex match, so a false positive printed `detail says 'refus'` — five
+    characters with no context. That cost a diagnosis a model had to reason out."""
+    sys.path.insert(0, ROOT)
+    import stagegate as SG
+    w = SG.self_contradictory({"ok": True, "detail": "mount: STALE MOUNT host= container=abc123"})
+    assert w, "a genuinely self-contradictory detail is no longer caught"
+    assert len(w) > 12 and "..." in w, (
+        "the demoter still reports a bare fragment with no context: %r" % w)
+    # and it must still let the deliberately-benign wordings through
+    for ok_detail in ("container reads the current file (abc) - bind mount is not stale",
+                      "running config serves exactly what the file says, no silent drift"):
+        assert not SG.self_contradictory({"ok": True, "detail": ok_detail}), (
+            "a benign phrasing is being demoted: %s" % ok_detail)

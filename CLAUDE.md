@@ -4847,3 +4847,36 @@ said so.
 RULE, now enforced rather than written down for a second time: any check that reads a path on a
 droplet must ASK for that path, never assume the production default. A check that cannot see its
 subject reports the absence as a fault, and that is worse than having no check.
+
+## A CHECK'S DETAIL IS PARSED BY ANOTHER CHECK — keep failure vocabulary out of a PASS (2026-08-13)
+The path fix worked: `refuses_bad_config` correctly reported
+`OK ... (/opt/staging-caddy/Caddyfile, 2 site block(s)), source file untouched`.
+And the gate STILL went NO-GO, because stagegate's `self_contradictory()` demoter scans a PASS
+detail for failure vocabulary and `refus` is on that list — matching inside the word "refuses",
+which is this check's SUCCESS condition and its own name. A correct pass was flipped to a failure
+and a good release was refused, twice.
+kimi-k2.6 diagnosed it exactly: *"the check's own string parsing ('refus' matching 'refused' in
+the detail description) flips the verdict to false."* All four models agreed it was a check
+defect, not a system defect, and they were right.
+TWO FIXES, and the second is the one that generalises:
+1. **A detail states what was OBSERVED, not what the check is called.** "unbalanced config
+   rejected, junk rejected, live config accepted" carries the same information with no failure
+   vocabulary. Restating the check's own name in its detail adds nothing a reader did not already
+   have from the name, and here it cost a deploy cycle.
+2. **The demoter now reports its match IN CONTEXT.** It returned the bare regex match, so the
+   failure read `detail says 'refus'` — five characters, no context, inside a sentence describing
+   correct behaviour. It took a model reasoning from first principles to work that out; the
+   message should simply have said it. Now: `'refus' in ...still accepts the live one...`.
+DELIBERATELY NOT DONE: exempting a contradiction word when it appears in the check's own NAME.
+That would have fixed this instance and blinded `config_drift` to a detail saying "drift" while
+claiming PASS — which is the 2026-08-07 incident this whole demoter exists to catch.
+GUARD: `test_the_selftest_pass_detail_does_not_trip_the_contradiction_demoter` RUNS cmd_selftest
+against a healthy fixture and feeds its real PASS detail to the real `self_contradictory()`. Both
+halves were individually correct, so only running them together catches this class. Four negative
+tests, including reintroducing the exact wording that broke the deploy.
+ON KIMI'S SECOND POINT (mount_fresh showing the same hash before and after the reboot, called
+"suspicious"): the hash is the same because THE FILE IS THE SAME. Identical pre/post results are
+what proves the check measures real state rather than a cache — CLAUDE.md already records exactly
+that reasoning for config_drift, which kimi itself made in an earlier run. Its proposed fix (write
+a nonce into the file) would mean MUTATING the live shared config to test it, which is the thing
+that took staging down in an earlier round.

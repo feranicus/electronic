@@ -460,14 +460,25 @@ _BENIGN = re.compile(r"(?i)(no silent drift|not stale|nothing to compare|no drif
 
 
 def self_contradictory(c):
-    """A check that says PASS while its detail describes a failure is a BROKEN CHECK."""
+    """A check that says PASS while its detail describes a failure is a BROKEN CHECK.
+
+    Returns "" or a human-readable fragment SHOWING THE MATCH IN CONTEXT. It used to return the
+    bare regex match, so a false positive printed `detail says 'refus'` — five characters, out of
+    any context, matched inside the word "refuses" in a detail that was describing correct
+    behaviour. It took a model to work that out from first principles; the message should simply
+    have said it. Print what matched AND what surrounds it, so the next false positive is a
+    ten-second diagnosis instead of a deploy cycle.
+    """
     if not c["ok"]:
         return ""
     d = c["detail"]
     if _BENIGN.search(d):
         return ""
     m = _CONTRADICTION.search(d)
-    return m.group(0) if m else ""
+    if not m:
+        return ""
+    a, b = max(0, m.start() - 28), min(len(d), m.end() + 28)
+    return "%r in ...%s..." % (m.group(0), d[a:b].strip())
 
 
 def _decide_from_verdict(verdict):

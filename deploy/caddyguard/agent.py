@@ -884,8 +884,15 @@ def cmd_selftest():
     if fails:
         print("FAIL " + " | ".join(fails))
         return 1
-    print("OK   refuses an unbalanced config and junk, still accepts the live one "
-          "(%s, %d site block(s)), source file untouched (%s)" % (src, live_blocks, h0))
+    # WORD IT AS AN OUTCOME, NOT AS A CAPABILITY. The first version said "refuses an unbalanced
+    # config and junk" — and stagegate's self-contradiction demoter scans a PASS detail for
+    # failure vocabulary, where `refus` is on the list. So a correct PASS was flipped to a FAILURE
+    # and the gate refused a good release. The word was this check's SUCCESS condition and its own
+    # name, but a substring scan cannot know that.
+    # A check's detail should say what it OBSERVED. Restating the check's name in the detail adds
+    # nothing a reader did not already have, and here it cost a deploy.
+    print("OK   unbalanced config rejected, junk rejected, live config accepted "
+          "(%s, %d site block(s)); source file unchanged (%s)" % (src, live_blocks, h0))
     return 0
 
 
