@@ -4576,3 +4576,61 @@ name (ninth assumed signature in this workstream), so every event would have lan
 NEGATIVE-TEST NOTE: the query-string guard is doubled (explicit `?` check + the `_SAFE_PATH`
 character class). Removing either alone leaves the other holding and the mutation looks green -
 defeat BOTH before believing it.
+
+## THE TRIVY -> LiteLLM CHAIN, AND THE 432-CVE WEEK (2026-08-13)
+Two stories the operator sent, and they are really one story about cadence and dependencies.
+
+**WE WERE NOT AFFECTED BY EITHER, and the evidence is dates, not optimism:**
+  · Aqua's **Trivy** was compromised late Feb 2026 (disclosed 1 Mar; the rotation was NOT atomic so
+    a still-valid token took the newly rotated secrets; a second wave ~16-21 Mar pushed a malicious
+    **v0.69.4** to GHCR, ECR Public and Docker Hub, force-pushed **76 of 77 trivy-action tags** and
+    every setup-trivy tag, with a payload that dumped **Runner.Worker process memory**).
+  · **LiteLLM was compromised BECAUSE its CI installed the poisoned Trivy automatically** — 2,500+
+    organisations and 434,000 pipelines, "one unrevoked token, three tools deep" (CloudSEK).
+  · This repository's **first commit is 2026-07-09**, months after the window, so no workflow of
+    ours could ever have run against it. We never used trivy-action or setup-trivy. And we have
+    **no LiteLLM dependency at all**: enrich.py posts to the inference endpoint with stdlib
+    urllib, and the backend has seven requirements, none of which reach it.
+
+**BUT THE SHAPE OF THE FAILURE WAS LIVE IN OUR CI.** Both workflows ran
+`curl .../aquasecurity/trivy/main/contrib/install.sh | sh` — an installer from a MOVING BRANCH,
+taking whatever the newest release happened to be, in a job holding `DROPLET_SSH_KEY`. Our own
+comment called it a feature ("CLI, no fragile action pins"). That is precisely the LiteLLM
+mechanism. Now: pinned to **0.69.3** (a version Aqua confirmed clean), the tarball's **sha256
+verified against the signed checksums file BEFORE the binary is executed**, and a test that fails
+if a moving ref, v0.69.4, trivy-action or setup-trivy ever reappear.
+
+**TRIVY HAD NEVER FAILED A BUILD.** All four invocations used `--exit-code 0`, and deploy.yml
+documented the intent in its own step name ("report-only; flip --exit-code to 1 to gate") without
+ever doing it — the same disease as the ruff gate that silently skipped for weeks. Now CRITICAL
+exits 1 and HIGH still reports, because a gate that fires on everything is switched off within a
+week. `.trivyignore` exists and the test **requires a reason and a date** per entry: an
+unexplained allowlist is `--exit-code 0` wearing a hat.
+
+**AND THE IMAGE THE SCANNER HAD NEVER SEEN.** Trivy scanned colttechbot and cassandra in CI.
+`colt-web` is built by `deploy_web_direct.py` ON THE DROPLET, so it never went through CI at all —
+the only INTERNET-FACING image was the only unscanned one. It is now scanned where it is built,
+and the verdict is CONSUMED: the first cut echoed `TRIVY_CRITICAL_FAIL` and nothing read it, which
+is the prints-but-does-not-gate defect this whole change set out to fix.
+
+**THE 432 CVEs ARE A CADENCE QUESTION, NOT A TRIAGE QUESTION.** Schaumann (Akamai) on oss-sec:
+"this onslaught really shows it's not feasible to attempt to prioritize individual kernel changes";
+Kroah-Hartman's framing explains the volume (at the level the kernel runs, almost any bug that can
+affect a running system meets the CVE definition). So `secaudit.py` does not count CVEs. It
+measures the only things that decide exposure: **is the running kernel the newest installed one, is
+a reboot pending, how many security packages are queued, is anything applying updates unattended.**
+READ-ONLY, one ssh session per host, wired into ship.py as a building block, non-blocking.
+
+**MY OWN DEFECTS IN THIS CHANGE, all caught by checking rather than assuming:**
+1. **Valid YAML, broken shell.** Replacing a one-line `run:` with two commands produced a plain
+   scalar, and YAML FOLDS those into one string: `trivy image ... trivy image ...` as a single
+   nonsense command. `yaml.safe_load` was perfectly happy. Parsing is not correctness, again.
+   Fixed with `run: |`; the guard asserts LINES >= COMMANDS.
+2. **My own guard for (1) was vacuous.** It asserted every line starts with "trivy" — but after
+   folding there is exactly ONE line and it does start with "trivy". The negative test is what
+   exposed it. Assert the COUNT, not the shape.
+3. **I reported a failed lookup as a finding.** The sandbox has no route to GitHub, so the
+   `tpcp-docs` IOC check returned HTTP 000 and my script printed "INVESTIGATE". A lookup that
+   cannot run is not a check — the oldest rule in this file, broken by me, in a security review.
+RULE FOR SCANNERS GENERALLY: **the scanner is a supply-chain dependency like any other.** Pin it,
+verify it, and make it able to fail — a scanner nobody gates on is a log file with a licence.
