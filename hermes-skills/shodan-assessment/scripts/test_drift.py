@@ -275,11 +275,98 @@ ok_(_rc == 1, "file serves a host but the running process serves none -> caught"
 # And the stagegate check must never again rebuild from an assumption about where this box keeps
 # its configuration, nor merely hope that its restore worked.
 _sg = open(os.path.normpath(os.path.join(HERE, "..", "..", "..", "stagegate.py")), encoding="utf-8").read()
-_body = _sg[_sg.index("config_change_propagates"):]
+_body = _sg[_sg.index("guard_write_path_reloads"):]
 ok_("agent.py assemble" not in _body,
     "the propagation check no longer rebuilds the config from fragments")
 ok_("cmp -s /tmp/cg_snapshot.caddy" in _body, "it snapshots the live bytes and VERIFIES the restore")
 ok_("NOT restored byte-for-byte" in _body, "a failed restore is a FAILURE, not a silent pass")
+
+
+
+
+# =============================================================================================
+# THE 10-MINUTE WATCHDOG MUST SEE HOPS 2-3, NOT JUST HOP 1.
+# Raised by kimi-k2.6 on 2026-08-13; the sharpest gap the panel has found.
+# cmd_check verified: the file is VALID, the proxy is RUNNING, :443 is BOUND and the container can
+# SEE the file (hop 1). It never asked whether the running process was SERVING that file. So a
+# config that is valid on disk and simply never reloaded was invisible to the watchdog until the
+# next ship or the next reboot. THAT IS THE 2026-08-07 OUTAGE WITH THE INVALIDITY REMOVED.
+# The point of a 10-minute timer is to turn a 12-hour latent window into a 10-minute one, and it
+# was only doing that for the half of the problem `validate` happens to catch.
+# =============================================================================================
+import contextlib as _ctx
+import hashlib as _hl
+import tempfile as _tf
+
+print("\nTHE 10-MINUTE WATCHDOG - does it see a config that was never reloaded?")
+
+_GOOD = 'a.com {\n  reverse_proxy app:8000\n}\nb.de {\n  respond "hi"\n}\n'
+
+
+def _wd_cfg(hosts):
+    return json.dumps({"apps": {"http": {"servers": {"s": {"routes": [
+        {"match": [{"host": hosts}], "handle": [{"handler": "static_response"}]}]}}}}})
+
+
+def _watchdog(running_hosts):
+    """Fresh agent: the FILE says a.com+b.de, the RUNNING config says `running_hosts`."""
+    _sp = importlib.util.spec_from_file_location("cg_agent_wd", AGENT)
+    a = importlib.util.module_from_spec(_sp)
+    _sp.loader.exec_module(a)
+    fd, path = _tf.mkstemp()
+    os.close(fd)
+    open(path, "w").write(_GOOD)
+    a.LIVE = path
+    a.container = lambda: "c"
+    a.mount_source = lambda c: path
+    a._sha_in_container = lambda c: _hl.sha256(_GOOD.encode()).hexdigest()
+    a.validate = lambda t, c=None: (True, "")
+    a.alerted = []
+    a.notify = lambda t: a.alerted.append(t) or True
+
+    def sh(cmd, **kw):
+        j = " ".join(cmd)
+
+        class R(object):
+            returncode, stdout, stderr = 0, "", ""
+        r = R()
+        if "adapt" in j:
+            r.stdout = _wd_cfg(["a.com", "b.de"])       # what the FILE says
+        elif "2019/config" in j:
+            r.stdout = _wd_cfg(running_hosts)           # what is actually RUNNING
+        elif "State.Status" in j:
+            r.stdout = "running\n"
+        else:
+            r.stdout = "0.0.0.0:443\n"
+        return r
+    a.sh = sh
+    return a
+
+
+def _run_check(a, heal=False):
+    buf = _io.StringIO()
+    with _ctx.redirect_stdout(buf):
+        rc = a.cmd_check(heal=heal)
+    return rc, " ".join(buf.getvalue().split())
+
+
+# A guard that fires on a healthy box gets switched off within a week.
+_a = _watchdog(["a.com", "b.de"])
+_rc, _out = _run_check(_a)
+ok_(_rc == 0, "a healthy proxy (running config == file) is NOT flagged")
+
+# The real defect: valid on disk, never reloaded.
+_a = _watchdog(["a.com"])                                # b.de on disk, NOT served
+_rc, _out = _run_check(_a)
+ok_(_rc == 1, "a VALID config that was never reloaded is caught (the 6 Aug mechanism)")
+ok_(bool(_a.alerted), "and it reaches a human - silent detection is not detection")
+
+# One implementation, or the timer and the deploy will disagree about what drift means.
+_src = open(AGENT, encoding="utf-8").read()
+_i = _src.index("def cmd_check(")
+_chk = _src[_i:_src.index("\ndef ", _i + 10)]
+ok_("cmd_drift()" in _chk, "the watchdog REUSES cmd_drift rather than growing a second comparison")
+ok_("_served(" not in _chk, "no second copy of the comparison has appeared inside cmd_check")
 
 
 print("=" * 78)

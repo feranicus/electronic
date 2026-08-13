@@ -4919,3 +4919,64 @@ that could never run and the test still passed; and my first verification of the
 RE-IMPLEMENTED the expression in the test instead of calling `secaudit.main()`, proving nothing
 about the code that ships. The rewritten test stubs `run()` and `sys.argv` and executes the real
 path. Five negative tests, all caught after the fixes.
+
+## THE 10-MINUTE WATCHDOG CHECKED EVERY HOP BUT THE ONE THAT CAUSED THE OUTAGE (2026-08-13)
+kimi-k2.6, on a 41/41 GO run, and it is the sharpest gap the panel has found since the admin API:
+*"No check verifies that an external edit to /etc/caddy/Caddyfile triggers auto-reload. The
+2026-08-07 outage involved exactly this: 12 hours of silent unapplied config."*
+Confirmed by inspection. `cmd_check` — the thing the systemd timer runs every 10 minutes — verified
+that the file is VALID, the proxy is RUNNING, :443 is BOUND, and the container can SEE the file
+(hop 1, `mount_sync`). **It never asked whether the running process was SERVING that file.** So a
+config that is valid on disk and was simply never reloaded was invisible to the watchdog until the
+next ship or the next reboot. That is the 6 Aug mechanism with the invalidity removed — and Caddy
+reads its config only at start, so "valid on disk" is the state that outage was in for twelve hours.
+The entire point of a 10-minute timer is to turn a 12-hour latent window into a 10-minute one, and
+it was only doing that for the half of the problem `validate` happens to catch.
+FIX: `cmd_check` now runs `cmd_drift()` — REUSING it, not reimplementing it, so the timer and the
+deploy can never disagree about what drift means — folds the result into the verdict, and with
+`--heal` re-applies the validated live config. Guarded by test_drift.py, negative-tested in four
+directions (no comparison · detected-but-not-alerted · drift dropped from the verdict · cmd_drift
+not called at all), each verified to fail and then restored.
+
+**MY OWN TWIN-KERNEL CHECK RAN, ANSWERED CORRECTLY, AND WAS THROWN AWAY.** ship.py filtered
+secaudit's output through a HARDCODED LIST of the phrases I happened to think of when I wrote it.
+My new comparison prints `OK  staging and production run the SAME kernel`; the list matched
+`OK  running`. So the result was computed on the droplet and dropped here, and on screen a healthy
+twin was indistinguishable from a check that never ran. Same defect as the caddyguard DRIFT section
+that executed and was never printed, and the same shape as `_APP_ROUTES` going stale: two homes for
+"which lines matter", and the newer one always loses.
+FIX: `ship.secaudit_line_matters()` — a NAMED function, because a predicate buried inline cannot be
+tested. A verdict is any line carrying a MARKER (`[X]`, `[!]`, `OK `), which is a property of the
+output format, so a new check inherits it for free; the keyword list survives only for fact lines
+that carry no marker. The test does NOT re-implement it (that proves nothing about what ships): it
+runs the REAL `secaudit.main()` over stubbed droplets and feeds its REAL output to the REAL
+predicate, in both the twins-agree and twins-drifted directions.
+
+**AND `config_change_propagates` WAS RENAMED TO `guard_write_path_reloads`** — kimi again, same
+class as the earlier `config_reread` → `config_write_ordering` rename. The check exercises the
+guard's own validate → write → mount-check → reload path; it says nothing about an external edit.
+A name is read far more often than a detail string, and a name that overclaims is how an operator
+comes to believe a bare file edit propagates. That belief IS the 6 Aug outage.
+
+**SIX DEFECTS OF MY OWN IN ONE SESSION, five of them in the checks rather than the code:**
+1. **I appended pytest-shaped functions to a file that has its own `ok_()` runner.** They parsed,
+   the suite went green, and NOT ONE of them ever executed. The ruff gate cannot see this and
+   neither can a passing run — only counting the check's own output does. Nth instance of "a check
+   that cannot run is not a check", this time self-inflicted in the same breath as fixing one.
+2. **`src[index("def cmd_check("):index("def cmd_write(")]`** — `cmd_write` is DEFINED EARLIER in
+   the file, so the slice ran backwards and measured an empty string. Anchor on the NEXT `\ndef `,
+   never on a function name whose position you assumed.
+3. **`replace(a, b, 1)` mutated the wrong function.** `notify("\n".join(detail))` appears in
+   `cmd_migrate` too, and cmd_migrate comes first, so my negative test muted the wrong alert,
+   reported NOT CAUGHT, and I nearly "fixed" a working assertion. A mutation must be scoped to the
+   function it claims to break.
+4. **A stub that spoke a format the parser never accepts.** `parse()` reads `key: value`; I wrote
+   `key=value`, so every fact came back None and the twin comparison had nothing to compare. A
+   fixture that cannot be parsed is a test of the fixture.
+5. **`_strip_comments` does not exist in that file** — the TWELFTH invented name in this workstream.
+6. **A `glob("**/__pycache__", recursive=True)` over a repo containing node_modules** timed the
+   harness out, and a SIGKILL cannot run `finally`, so a muted `TWIN DRIFT` line was left in
+   secaudit.py. Caught only because I scanned for EVERY marker the harness could have written
+   rather than eyeballing a diffstat. Restore immediately after each mutation, not in a `finally`.
+RULE, restated: after any harness that edits real files, grep for every marker it could have left.
+A "clean" diffstat is not a clean tree when the interesting change is one line long.

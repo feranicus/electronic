@@ -35,7 +35,9 @@ IN-PLACE WRITES ONLY. The mount is a single file, so the container is bound to i
 the target swaps the inode and the container silently keeps reading the OLD file forever. Every
 write here is truncate-and-write (`open(...,"w")`), which preserves the inode.
 """
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -534,10 +536,40 @@ def cmd_check(heal):
     # reports it. Never silently: a proxy reading a file nobody can see is the latent bomb.
     msync, mmsg = mount_sync(c, fix=bool(heal)) if c else (True, "no container")
 
-    healthy = (not probs) and vok and st == "running" and bound and msync
+    # HOPS 2-3: IS THE RUNNING PROCESS ACTUALLY SERVING THE FILE?
+    # Raised by kimi-k2.6 on 2026-08-13 and it is the sharpest gap it has found. Until now this
+    # watchdog checked that the file is VALID and that the container can SEE it - hop 1 - and
+    # stopped there. So a config that is valid on disk and was never RELOADED was invisible to it
+    # and would sit undetected until the next ship or the next reboot.
+    # THAT IS THE 2026-08-07 OUTAGE WITH THE INVALIDITY REMOVED: the file changed at 16:15, Caddy
+    # kept serving from memory, and a kernel reboot 12 hours later detonated it. The whole purpose
+    # of a 10-minute timer is to turn a 12-hour latent window into a 10-minute one, and it was
+    # only doing that for the half of the problem that `validate` happens to catch.
+    # cmd_drift() already compares hostnames, terminal handlers and path matchers - stable under
+    # re-serialisation - so this REUSES it rather than growing a second implementation that could
+    # disagree with the one the deploy runs. It returns 0 on OK *and* on SKIP (admin API off,
+    # unparseable), so only a real DRIFT verdict marks the box unhealthy.
+    drift_ok = True
+    if c:
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            drift_ok = cmd_drift() == 0
+        dmsg = " ".join(_buf.getvalue().split())[:200]
+
+    healthy = (not probs) and vok and st == "running" and bound and msync and drift_ok
     if healthy:
         print("OK  live config valid · proxy running · :%s bound · %s" % (port, mmsg))
         return 0
+    if not drift_ok:
+        probs.append("the running process is NOT serving the file on disk: %s" % dmsg)
+        if heal:
+            # The file is VALID (checked above) and it is what we want served, so re-applying it
+            # is the correct repair - the same validate -> write -> mount-check -> reload path a
+            # deploy uses. apply() still refuses an empty config over a serving proxy.
+            print("   drift detected - re-applying the validated live config")
+            # apply(text, why="") — NOT tag=. Read the signature; do not assume it.
+            _ok_apply, amsg = apply(live, why="drift-heal")
+            print("   %s" % amsg)
 
     detail = ["CADDY GUARD — the shared proxy config is NOT healthy",
               "file:      %s" % LIVE,

@@ -29,6 +29,28 @@ What it orchestrates (each of these is still runnable alone for debugging, but y
 """
 import argparse, base64, os, subprocess, sys, time
 
+def secaudit_line_matters(s):
+    """Which secaudit lines reach the operator.
+
+    A NAMED function because the previous inline version was a hardcoded list of the phrases I
+    happened to think of at the time, and my own twin-kernel check printed "OK  staging and
+    production run the SAME kernel" while the list matched only "OK  running" - so a healthy
+    result was computed on the droplet and silently thrown away here. You could not tell "the
+    twins agree" from "the check never ran", which is the same defect as the caddyguard DRIFT
+    section that executed and was never printed.
+
+    A VERDICT LINE IS ANY LINE CARRYING A MARKER. That is a property of the output format, so a
+    new check inherits it for free; the keyword list below is only for fact lines that carry no
+    marker. Being a function means a test can call THIS, rather than re-implementing it and
+    proving nothing about what ships.
+    """
+    s = (s or "").strip()
+    return bool(s) and (
+        s.startswith(("[X]", "[!]", "OK ")) or
+        any(k in s for k in ("kernel_stale", "reboot_required", "security:",
+                             "UNREACHABLE", "patchwatch_timer")))
+
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.environ.get("DROPLET_HOST", "64.225.108.200")
 USER = os.environ.get("DROPLET_USER", "root")
@@ -1658,10 +1680,17 @@ def main():
                              capture_output=True, text=True, timeout=300)
         _saout = ((_sa.stdout or "") + (_sa.stderr or "")).rstrip()
         print("")
+        # SURFACE EVERY VERDICT LINE, not a hardcoded list of the ones I happened to think of.
+        # The twin-kernel comparison printed "OK  staging and production run the SAME kernel" and
+        # this filter matched only "OK  running", so the healthy result was computed on the droplet
+        # and thrown away here - you could not tell "twin OK" from "the check never ran". That is
+        # the same defect as the caddyguard DRIFT section that executed and was never printed:
+        # two homes for "which lines matter", and the newer one always loses.
+        # A verdict line is any line starting with a marker; facts keep their explicit keywords.
         for _l in _saout.splitlines():
-            if any(k in _l for k in ("kernel_stale", "reboot_required", "security:", "[X]", "[!]",
-                                     "OK  running", "UNREACHABLE", "patchwatch_timer")):
-                print("  " + _l.strip())
+            _s = _l.strip()
+            if secaudit_line_matters(_s):
+                print("  " + _s)
         if _sa.returncode == 2:
             print("  [!] a droplet is not running the kernel it has installed. Not blocking this")
             print("      deploy, but it is the one number that matters after a 432-CVE week.")

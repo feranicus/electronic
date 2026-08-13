@@ -364,7 +364,7 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
 # separate rounds.
 CADDY_C=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)
 if [ -z "$CADDY_C" ] || [ ! -f /opt/caddyguard/agent.py ]; then
-  chk config_change_propagates yes "no caddy on this box - nothing to propagate (not a fault)"
+  chk guard_write_path_reloads yes "no caddy on this box - nothing to propagate (not a fault)"
 else
   # NON-DESTRUCTIVE BY CONSTRUCTION. The previous version rebuilt the Caddyfile from
   # /opt/caddyguard/blocks/ via `assemble --apply` -- and STAGING IS NOT FRAGMENT-MANAGED: its
@@ -379,7 +379,7 @@ else
   PROBE="cg-reload-probe.invalid"
   CF=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{end}}{{end}}' "$CADDY_C" 2>/dev/null)
   if [ -z "$CF" ] || [ ! -f "$CF" ]; then
-    chk config_change_propagates yes "SKIP the proxy does not bind-mount a Caddyfile - nothing to test"
+    chk guard_write_path_reloads yes "SKIP the proxy does not bind-mount a Caddyfile - nothing to test"
   else
   cp -p "$CF" /tmp/cg_snapshot.caddy
   python3 - "$CF" "$PROBE" <<'PYEOF' >/tmp/cg_prop.log 2>&1
@@ -409,13 +409,13 @@ PYEOF
   SERVED_GONE=$(docker exec "$CADDY_C" wget -qO- http://127.0.0.1:2019/config/ 2>/dev/null | grep -c "$PROBE")
   RESTORED=$(cmp -s /tmp/cg_snapshot.caddy "$CF" && echo yes || echo no)
   if [ "$RESTORED" != "yes" ]; then
-    chk config_change_propagates no "the probe ran but the config was NOT restored byte-for-byte - $CF differs from the snapshot"
+    chk guard_write_path_reloads no "the probe ran but the config was NOT restored byte-for-byte - $CF differs from the snapshot"
   elif [ "${SERVED_AFTER:-0}" -ge 1 ] && [ "${SERVED_GONE:-1}" -eq 0 ]; then
-    chk config_change_propagates yes "a change written through the guard's OWN path (validate -> write -> mount-check -> EXPLICIT caddy reload, via agent.apply) reached the running config without restarting the container, and the live file was then restored and cmp-verified byte-for-byte. NOTE: a bare file edit does NOT propagate - Caddy reads its config at start or on reload, which is why the write goes through apply()"
+    chk guard_write_path_reloads yes "a change written through the guard's OWN path (validate -> write -> mount-check -> EXPLICIT caddy reload, via agent.apply) reached the running config without restarting the container, and the live file was then restored and cmp-verified byte-for-byte. NOTE: a bare file edit does NOT propagate - Caddy reads its config at start or on reload, which is why the write goes through apply()"
   elif [ "${SERVED_AFTER:-0}" -lt 1 ]; then
-    chk config_change_propagates no "a new vhost was written and applied but NEVER reached the running config - that is the 2026-08-07 latent-outage mechanism, reproduced live. $(tail -2 /tmp/cg_prop.log | tr '\n' ' ')"
+    chk guard_write_path_reloads no "a new vhost was written and applied but NEVER reached the running config - that is the 2026-08-07 latent-outage mechanism, reproduced live. $(tail -2 /tmp/cg_prop.log | tr '\n' ' ')"
   else
-    chk config_change_propagates no "the probe vhost was removed from disk but is STILL in the running config - a deletion does not propagate"
+    chk guard_write_path_reloads no "the probe vhost was removed from disk but is STILL in the running config - a deletion does not propagate"
   fi
   fi
 fi

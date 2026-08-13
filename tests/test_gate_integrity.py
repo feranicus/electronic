@@ -339,7 +339,7 @@ def test_propagation_check_is_non_destructive():
     validate-write-mount-reload path, restore the snapshot, and VERIFY the restore.
     """
     src = open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read()
-    body = src[src.index("config_change_propagates"):]
+    body = src[src.index("guard_write_path_reloads"):]
 
     assert "agent.py assemble" not in body, (
         "the propagation check rebuilds the config from /opt/caddyguard/blocks/ again. On a box "
@@ -541,7 +541,7 @@ def test_no_check_implies_a_bare_file_edit_propagates():
     with open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8") as fh:
         s = fh.read()
     claims = [ln for ln in s.splitlines()
-              if "chk config_change_propagates yes" in ln and "running config" in ln]
+              if "chk guard_write_path_reloads yes" in ln and "running config" in ln]
     assert claims, "no pass branch claims a change reached the running config"
     for d in claims:
         assert "EXPLICIT caddy reload" in d or "agent.apply" in d, \
@@ -759,3 +759,79 @@ def test_the_demoter_reports_its_match_in_context():
                       "running config serves exactly what the file says, no silent drift"):
         assert not SG.self_contradictory({"ok": True, "detail": ok_detail}), (
             "a benign phrasing is being demoted: %s" % ok_detail)
+
+
+# =================================================================================================
+# EVERY VERDICT secaudit CAN EMIT MUST REACH THE OPERATOR.
+# My own twin-kernel comparison ran on the droplet, produced the right answer, and was DISCARDED
+# by ship.py's output filter, because that filter was a hardcoded list of the phrases I happened
+# to think of when I wrote it and the new line was not one of them. On screen, a healthy twin was
+# indistinguishable from a check that never ran. Same defect as the caddyguard DRIFT section that
+# executed and was never printed: two homes for "which lines matter", and the newer one loses.
+# So this does NOT re-implement the filter (that would prove nothing about what ships). It runs
+# the REAL secaudit.main() over stubbed hosts and feeds its REAL output to the REAL predicate.
+# =================================================================================================
+def _secaudit_output(prod_kernel, stage_kernel):
+    """Run the real secaudit.main() against two stubbed droplets and capture what it prints."""
+    import io as _io
+    import contextlib as _ctx
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("secaudit_t", os.path.join(ROOT, "secaudit.py"))
+    sa = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(sa)
+
+    def fake_run(host, timeout=180):
+        k = prod_kernel if host == sa.PROD else stage_kernel
+        return 0, ("#### HOST\ndistro: ubuntu 24.04\nrunning: %s\nkernel_stale: no\n"
+                   "reboot_required: no\nsecurity: 0\nunattended-upgrades: enabled\n"
+                   "patchwatch_timer: enabled\n" % k)
+    sa.run = fake_run
+    buf = _io.StringIO()
+    argv = sys.argv[:]
+    sys.argv = ["secaudit.py"]
+    try:
+        with _ctx.redirect_stdout(buf):
+            sa.main()
+    finally:
+        sys.argv = argv
+    return buf.getvalue()
+
+
+def _ship():
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("ship_t", os.path.join(ROOT, "ship.py"))
+    m = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_every_secaudit_verdict_survives_ships_output_filter():
+    ship = _ship()
+    for label, out in (("twins agree", _secaudit_output("6.8.0-137", "6.8.0-137")),
+                       ("twins drifted", _secaudit_output("6.8.0-137", "6.8.0-131"))):
+        verdicts = [ln.strip() for ln in out.splitlines()
+                    if ln.strip().startswith(("[X]", "[!]", "OK "))]
+        assert verdicts, "%s: secaudit emitted no verdict at all - the stub is wrong" % label
+        dropped = [v for v in verdicts if not ship.secaudit_line_matters(v)]
+        assert not dropped, (
+            "%s: ship.py silently swallows %d verdict line(s) secaudit produced, so a real "
+            "result is indistinguishable from a check that never ran: %r" % (label, len(dropped), dropped[:3]))
+
+
+def test_the_twin_kernel_comparison_actually_speaks_in_both_directions():
+    """The check that was being swallowed. Both outcomes must be stated: silence on the healthy
+    path is what made the drift path unreadable."""
+    agree = _secaudit_output("6.8.0-137", "6.8.0-137")
+    drift = _secaudit_output("6.8.0-137", "6.8.0-131")
+    assert "SAME kernel" in agree, "a healthy twin says nothing, so you cannot tell it ran"
+    assert "TWIN DRIFT" in drift, "a drifted twin is not reported by name"
+    assert "6.8.0-131" in drift, "the drift message does not name the kernel it found"
+
+
+def test_the_filter_is_a_named_function_not_an_inline_phrase_list():
+    src = open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read()
+    body = src
+    assert "def secaudit_line_matters(" in body, "the predicate is not callable, so no test can reach it"
+    assert body.count('startswith(("[X]", "[!]", "OK "))') == 1, (
+        "the marker list has more than one home again - the copy ship.py uses will drift from the "
+        "copy the test checks")
