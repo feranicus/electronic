@@ -618,6 +618,19 @@ def test_the_refusal_path_is_exercised_without_touching_live_state():
     body = _agent_src()
     st = body[body.index("def cmd_selftest"):body.index("def main(")]
     assert "validate(" in st and "site_blocks(" in st
+    # NEVER ASSUME `LIVE`. It defaults to PRODUCTION's /opt/videodead/Caddyfile; staging's proxy
+    # mounts a different path, so the first version read "" there, validated an empty string, and
+    # reported "the LIVE config does not validate" about a healthy box - failing the gate and
+    # refusing a good release. mount_source() exists three functions above for exactly this, and
+    # its docstring says NEVER ASSUME LIVE in capital letters. All four review models diagnosed it
+    # correctly as a broken check rather than a broken system.
+    assert "mount_source(" in st, (
+        "cmd_selftest reads the hardcoded LIVE path instead of asking docker where THIS "
+        "container's config actually comes from; on staging that file does not exist")
+    assert "if not before.strip():" in st, (
+        "an unreadable or empty config source must SKIP, not FAIL - absence of evidence is never "
+        "a finding, and that is the oldest rule in this repository")
+    assert "read(LIVE)" not in st, "a direct read(LIVE) survives in cmd_selftest"
     assert "h0 != h1" in st, "the selftest does not prove it left the live file alone"
     assert "if not live_ok" in st, (
         "nothing requires the LIVE config to still validate; a validator that rejects everything "

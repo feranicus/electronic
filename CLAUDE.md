@@ -4819,3 +4819,31 @@ a diagnosis. Verified separately that an offending import in ANOTHER file is cau
 RULE, restated for the fourth time and now enforced: **before telling the operator to run
 anything, ask which machine and which toolchain.** A green run in the dev sandbox is not evidence
 about his box.
+
+## I SHIPPED THE *SAME* HARDCODED-PATH DEFECT `mount_source()` EXISTS TO PREVENT (2026-08-13)
+The staging gate went NO-GO on `refuses_bad_config`, pre- and post-reboot, and REFUSED to promote.
+Production was never touched. All four review models diagnosed it correctly and unanimously: the
+CHECK was broken, not the system — every other check passed, the site served traffic, and
+`config_drift` proved the running config matched the file.
+THE CAUSE, and it is humiliating: `cmd_selftest()` read `LIVE`, which defaults to PRODUCTION's
+`/opt/videodead/Caddyfile`. Staging's proxy mounts a different path, so `read()` returned `""`,
+`site_blocks("")` was 0, validating an empty string errored with "adapting config", and the check
+announced "the LIVE config does not validate" about a demonstrably healthy box.
+**That is the identical defect `mount_source()` was written to fix on 11 Aug, three functions
+above in the same file, whose docstring says NEVER ASSUME LIVE in capital letters.** It is also
+absence of evidence being turned into a finding, which is the oldest rule in this repository, in a
+guard I wrote to prove other things fail safely.
+FIX: ask docker where THIS container's `/etc/caddy/Caddyfile` comes from (`mount_source(c) or
+LIVE`), read that, and SKIP — not FAIL — when there is nothing readable there. Verified against a
+reproduced staging shape (LIVE absent, real mount elsewhere) and in all four behavioural
+directions: honest validator passes, a validator that accepts junk fails, one that rejects
+everything fails, and a mutation of the file during the "read-only" selftest fails.
+Guarded by test_gate_integrity.py: `mount_source(` must be used, `read(LIVE)` must not appear, and
+the empty-source SKIP branch must exist. Both negative-tested.
+WHAT THE GATE GOT RIGHT: it failed closed, printed the failing checks, showed four independent
+diagnoses that all named the real cause, and offered only staging-scoped actions. The correct
+answer to its prompt was `n` — no panel action can fix a code defect, and the panel's own proposal
+said so.
+RULE, now enforced rather than written down for a second time: any check that reads a path on a
+droplet must ASK for that path, never assume the production default. A check that cannot see its
+subject reports the absence as a fault, and that is worse than having no check.

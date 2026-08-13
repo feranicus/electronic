@@ -820,9 +820,18 @@ def cmd_selftest():
     "does it reject garbage" test perfectly and is useless. So the live text must still VALIDATE
     in the same breath. And the live file's hash is compared before and after, because the whole
     point is that proving the refusal cost nothing.
+
+    NEVER ASSUME `LIVE` — AND I DID, ON THE SAME DAY, IN THIS FILE.
+    The first version read `LIVE`, which defaults to production's /opt/videodead/Caddyfile.
+    Staging's proxy mounts a DIFFERENT path, so on staging `read()` returned "", `site_blocks("")`
+    was 0, validating an empty string errored, and this check reported "the LIVE config does not
+    validate" about a box whose config was demonstrably healthy — every other check passed and the
+    site served traffic. That is the identical defect `mount_source()` was written to fix three
+    functions above, whose docstring says NEVER ASSUME LIVE in capital letters, and it is absence
+    of evidence being turned into a finding, which is the oldest rule in this repository.
+    All four review models diagnosed it correctly and the gate refused to promote. Ask docker
+    where the file is; if there is no file to read, SKIP.
     """
-    before = read(LIVE)
-    h0 = hashlib.sha256(before.encode("utf-8", "replace")).hexdigest()[:12]
     try:
         c = container()
     except Exception as e:
@@ -836,6 +845,15 @@ def cmd_selftest():
         print("SKIP no caddy container on this host - nothing to validate against")
         return 0
 
+    src = mount_source(c) or LIVE
+    before = read(src)
+    if not before.strip():
+        print("SKIP the proxy's config source (%s) is empty or unreadable from here - there is "
+              "nothing to validate, which is not the same as a config that fails to validate"
+              % src)
+        return 0
+    h0 = hashlib.sha256(before.encode("utf-8", "replace")).hexdigest()[:12]
+
     bad_ok, bad_msg = validate("example.com {\n  reverse_proxy nope:8000\n", c)   # missing brace
     junk_ok, _ = validate("this is not a caddyfile at all %%%\n", c)
     live_ok, live_msg = validate(before, c)
@@ -846,7 +864,7 @@ def cmd_selftest():
     empty_blocks = len(site_blocks(""))
     live_blocks = len(site_blocks(before))
 
-    after = read(LIVE)
+    after = read(src)          # the SAME source we read before, not the hardcoded default
     h1 = hashlib.sha256(after.encode("utf-8", "replace")).hexdigest()[:12]
 
     fails = []
@@ -867,7 +885,7 @@ def cmd_selftest():
         print("FAIL " + " | ".join(fails))
         return 1
     print("OK   refuses an unbalanced config and junk, still accepts the live one "
-          "(%d site block(s)), live file untouched (%s)" % (live_blocks, h0))
+          "(%s, %d site block(s)), source file untouched (%s)" % (src, live_blocks, h0))
     return 0
 
 
