@@ -1603,6 +1603,31 @@ def main():
         except Exception as _e:
             print("  [!] caddyguard skipped (%s)" % type(_e).__name__)
 
+    # ---- PATCH CADENCE ON BOTH DROPLETS ------------------------------------------------------
+    #      secaudit.py is a BUILDING BLOCK, not a second command (operating principle 7).
+    #      WHY IT EXISTS: the kernel CVE team published 432 CVEs across one weekend in July 2026.
+    #      Akamai's Jan Schaumann put it plainly on oss-sec: "it's not feasible to attempt to
+    #      prioritize individual kernel changes", and the only workable answer is regular automated
+    #      updates within a tolerance window. So we do not triage 432 CVEs; we measure the only
+    #      thing that decides exposure, which is CADENCE: is the running kernel the newest
+    #      installed one, is a reboot pending, is anything applying updates unattended.
+    #      NON-BLOCKING: a pending reboot is information for the operator, not a reason to refuse
+    #      a verified deploy. Same doctrine as model_watch and the review panel.
+    try:
+        _sa = subprocess.run([sys.executable, os.path.join(HERE, "secaudit.py")],
+                             capture_output=True, text=True, timeout=300)
+        _saout = ((_sa.stdout or "") + (_sa.stderr or "")).rstrip()
+        print("")
+        for _l in _saout.splitlines():
+            if any(k in _l for k in ("kernel_stale", "reboot_required", "security:", "[X]", "[!]",
+                                     "OK  running", "UNREACHABLE", "patchwatch_timer")):
+                print("  " + _l.strip())
+        if _sa.returncode == 2:
+            print("  [!] a droplet is not running the kernel it has installed. Not blocking this")
+            print("      deploy, but it is the one number that matters after a 432-CVE week.")
+    except Exception as _e:
+        print("  [!] secaudit skipped (%s) - never blocks a deploy" % type(_e).__name__)
+
     # ---- has DigitalOcean shipped anything new, and does it answer fast? ----------------------
     #      Runs after verify so it can never delay the deploy, and is NON-BLOCKING by design: a
     #      new model is information, not a broken build. It exists because the enrichment chain is

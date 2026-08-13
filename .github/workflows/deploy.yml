@@ -35,8 +35,33 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install Trivy (CLI, no fragile action pins)
-        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      # TRIVY IS A SUPPLY-CHAIN DEPENDENCY LIKE ANY OTHER, AND IT HAS BEEN COMPROMISED ONCE.
+      # Aqua's Trivy was hit in Feb/Mar 2026: a malicious v0.69.4 went to GHCR, ECR Public and
+      # Docker Hub, and 76 of 77 trivy-action tags were force-pushed to an infostealer that
+      # scraped Runner.Worker process memory for every secret in the job. LiteLLM was then
+      # compromised precisely BECAUSE its CI installed the poisoned Trivy automatically, which
+      # is how one unrevoked token reached 2,500+ organisations.
+      # We were never exposed (this repo's first commit is 2026-07-09, after the window, and we
+      # never used trivy-action or setup-trivy). But the SHAPE of the risk was live here:
+      # `curl .../main/contrib/install.sh | sh` fetches an installer from a MOVING BRANCH and
+      # takes whatever the latest release happens to be, in a job that holds the droplet key.
+      # So: pinned version, pinned installer commit, and the binary's checksum verified against
+      # the signed checksums file BEFORE it is ever executed.
+      - name: Install Trivy (pinned + checksum-verified)
+        env:
+          TRIVY_VERSION: "0.69.3"        # last release confirmed clean by Aqua's advisory
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          BASE="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          curl -sfLO "$BASE/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sfLO "$BASE/trivy_${TRIVY_VERSION}_checksums.txt"
+          # verify BEFORE unpacking or running anything
+          grep " trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz$" "trivy_${TRIVY_VERSION}_checksums.txt" \
+            | sha256sum -c -
+          tar xzf "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+          trivy --version
 
       # ---- colttechbot: build (load) -> Trivy scan -> push (only if clean) ----
       - uses: docker/build-push-action@v6
@@ -45,8 +70,10 @@ jobs:
           file: assess-bot/Dockerfile
           load: true
           tags: ${{ env.IMAGE_BASE }}/colttechbot:${{ steps.meta.outputs.tag }}
-      - name: Scan colttechbot (report-only; flip --exit-code to 1 to gate)
-        run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}"
+      - name: Scan colttechbot (HIGH reports, CRITICAL FAILS the build)
+        run: |
+          trivy image --severity HIGH --ignore-unfixed --exit-code 0 "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}"
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 --ignorefile .trivyignore "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}"
       - name: Push colttechbot
         run: |
           docker tag "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}" "$IMAGE_BASE/colttechbot:latest"
@@ -60,8 +87,10 @@ jobs:
           file: cassandra-bot/Dockerfile
           load: true
           tags: ${{ env.IMAGE_BASE }}/cassandra:${{ steps.meta.outputs.tag }}
-      - name: Scan cassandra (report-only; flip --exit-code to 1 to gate)
-        run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}"
+      - name: Scan cassandra (HIGH reports, CRITICAL FAILS the build)
+        run: |
+          trivy image --severity HIGH --ignore-unfixed --exit-code 0 "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}"
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 --ignorefile .trivyignore "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}"
       - name: Push cassandra
         run: |
           docker tag "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}" "$IMAGE_BASE/cassandra:latest"

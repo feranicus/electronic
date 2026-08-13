@@ -1,0 +1,6 @@
+# Accepted risk, reviewed. Every line needs a REASON and a DATE, or the gate degrades into a
+# rubber stamp: an allowlist nobody has to justify is just --exit-code 0 with extra steps.
+#
+# Format: CVE-ID  # reason (owner, date)
+# Empty on purpose right now. If the CRITICAL gate fires, the choice is fix it or write the
+# reason here in the same change.

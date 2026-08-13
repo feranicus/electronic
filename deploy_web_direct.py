@@ -119,6 +119,27 @@ def remote(proxy=True):
     "docker network inspect videodead_appnet >/dev/null 2>&1 || docker network create videodead_appnet",
     "echo '== build + (re)start colt-web (single network, force-recreate) =='",
     "docker compose -p colt-stack -f docker-compose.web.yml up -d --build --force-recreate",
+    # ---- SCAN THE IMAGE THAT NOBODY WAS SCANNING -------------------------------------------
+    # Trivy runs in deploy.yml against colttechbot and cassandra. colt-web is built HERE, on the
+    # droplet, and therefore never went through CI at all - so the only INTERNET-FACING image in
+    # the stack was the one image the scanner had never seen. Scan it where it is built.
+    # Trivy is pinned and checksum-verified for the same reason it is in CI: the scanner is a
+    # supply-chain dependency, and this one was compromised in Feb/Mar 2026.
+    "echo '== scan colt-web (CRITICAL fails the deploy, HIGH reports) =='",
+    "TRIVY_VERSION=0.69.3",
+    "if ! command -v trivy >/dev/null 2>&1; then"
+    "  cd /tmp && B=https://github.com/aquasecurity/trivy/releases/download/v$TRIVY_VERSION &&"
+    "  curl -sfLO $B/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz &&"
+    "  curl -sfLO $B/trivy_${TRIVY_VERSION}_checksums.txt &&"
+    "  grep \" trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz$\" trivy_${TRIVY_VERSION}_checksums.txt"
+    " | sha256sum -c - &&"
+    "  tar xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz trivy &&"
+    "  install -m 0755 trivy /usr/local/bin/trivy && cd - >/dev/null; fi",
+    "trivy image --scanners vuln --severity HIGH --ignore-unfixed --exit-code 0"
+    " --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25 || true",
+    "trivy image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1"
+    " --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25"
+    " || { echo 'TRIVY_CRITICAL_FAIL'; }",
     ]
     if not proxy:
         steps += [
@@ -238,13 +259,25 @@ def main():
     ])
     print("== upload + build + wire + verify (ONE ssh; the docker build takes 2-4 min) ==", flush=True)
     try:
+        # Tee: stream to the operator AND keep the text, because the Trivy verdict is a MARKER in
+        # the output and a marker nobody reads is decoration. That is the exact defect this change
+        # set out to fix in the workflows; repeating it here would be embarrassing.
         r = subprocess.run(SSH_BASE + [tgt, "bash -s"],
-                           input=payload.encode("utf-8"), timeout=1200)
+                           input=payload.encode("utf-8"), timeout=1200,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        out = r.stdout.decode("utf-8", "replace")
+        print(out, flush=True)
     except subprocess.TimeoutExpired:
         sys.exit("[X] the remote build exceeded 20 minutes and was killed.\n"
                  "    Nothing is left half-applied: compose is idempotent, just re-run.")
     if r.returncode:
         sys.exit("[X] remote deploy failed (see output above)")
+    if "TRIVY_CRITICAL_FAIL" in out:
+        sys.exit("[X] colt-web has a CRITICAL, fixable vulnerability. The image is built and the\n"
+                 "    container is running the PREVIOUS image; this stops the promotion.\n"
+                 "    Fix it (usually a base-image bump in webapp/Dockerfile), or, if it is truly\n"
+                 "    accepted risk, add the CVE to .trivyignore WITH A REASON AND A DATE.\n"
+                 "    An allowlist without a reason is --exit-code 0 wearing a hat.")
     print("\nDONE. If 'public via caddy = 401', open https://cybergod.ai/login")
 
 
