@@ -51,6 +51,13 @@ try:
 
     _telemetry.install(app, _session_user)
 
+    # AFTER telemetry ON PURPOSE. Starlette makes the LAST middleware added the OUTERMOST, so
+    # this one wraps the telemetry middleware and therefore also decorates the 404s that the
+    # shield and the bot gate return before the app is ever reached. Installed first, it would
+    # have left every blocked-scanner response bare. Asserted by tests/test_security_headers.py.
+    from . import security_headers as _sec
+    _sec.install(app)
+
     # daily "who used the platform and what did they run" report -> ALERT_EMAIL at 07:00 UTC.
     # In-app task on purpose: no cron inside the container, no systemd unit on the droplet that would
     # drift out of this repo.
@@ -99,8 +106,30 @@ try:
                 except Exception as exc:                    # a review must never kill the app
                     print('{"evt":"shield_panel_error","err":"%s"}' % repr(exc)[:160], flush=True)
 
+        async def _digest_loop():
+            """The DAILY digest: attacks per day, and what we could NOT classify.
+
+            This is a different question from the panel's. The panel reviews decisions the shield
+            already made, so it only ever sees traffic the detector understands; a genuinely new
+            technique scores nothing, is never blocked, never becomes evidence, and is invisible
+            exactly because it is new. attack_digest.unknowns() looks at the other side of that
+            line. Once a day is the right cadence: a new scanner family is not an hourly event,
+            and the four models cost tokens.
+            """
+            hour = max(0, min(23, int(os.environ.get("DIGEST_HOUR", 7))))
+            while True:
+                now = time.gmtime()
+                secs = ((hour - now.tm_hour) % 24) * 3600 - now.tm_min * 60 - now.tm_sec
+                await _aio.sleep(secs if secs > 60 else secs + 86400)
+                try:
+                    from . import attack_digest as _ad
+                    await _aio.get_event_loop().run_in_executor(None, _ad.send, None)
+                except Exception as exc:
+                    print('{"evt":"digest_error","err":"%s"}' % repr(exc)[:160], flush=True)
+
         _aio.create_task(_decisions_loop())
         _aio.create_task(_panel_loop())
+        _aio.create_task(_digest_loop())
 except Exception as _e:  # telemetry must never stop the app from booting
     print('{"evt":"telemetry_init","result":"error","err":"%s"}' % repr(_e)[:120], flush=True)
 

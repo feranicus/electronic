@@ -14,9 +14,29 @@ import path from "node:path";
 const file = process.argv[2] || "public/defense.html";
 const FRAMES = Number(process.argv[3] || 900);
 const html = fs.readFileSync(file, "utf8");
-const m = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
-if (!m.length) { console.error("no inline <script> in " + file); process.exit(1); }
-const js = m[m.length - 1][1];
+
+/* The script moved OUT of the page so the site can run script-src 'self' with no 'unsafe-inline'.
+   This gate has to follow it. Reading an inline block that no longer exists would have made the
+   check silently unable to see its subject, which is the single most repeated defect in this
+   repository. So: take whichever form the page uses, and FAIL if neither is there. */
+let js = null, src = null;
+const inline = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+const ext = html.match(/<script[^>]*\ssrc="\/([^"]+\.js)"/);
+if (inline.length) { js = inline[inline.length - 1][1]; src = "inline block"; }
+else if (ext) {
+  const p = path.join(path.dirname(file), ext[1]);
+  if (!fs.existsSync(p)) {
+    console.error("%s references /%s and that file does not exist", file, ext[1]);
+    process.exit(1);
+  }
+  js = fs.readFileSync(p, "utf8"); src = ext[1];
+}
+if (!js || js.trim().length < 500) {
+  console.error("no runnable script found in " + file + " (looked for an inline block and a "
+                + "same-origin src). A gate that reads nothing passes for the wrong reason.");
+  process.exit(1);
+}
+console.log("  smoke: %s -> %s (%d bytes)", path.basename(file), src, js.length);
 
 const errors = [];
 const COLOUR = /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\)|transparent|[a-z]+)$/;

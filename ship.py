@@ -1413,6 +1413,39 @@ def do_verify(web, bots):
                     _vfail("HTTP %s (expected 401)" % e.code); ok = False
             except Exception as e:
                 _vfail("unreachable: %r" % e); ok = False
+
+        # SECURITY HEADERS, MEASURED ON THE LIVE SITE. tests/test_security_headers.py proves the
+        # middleware sets them; only this proves the DEPLOYED response carries them. The two are
+        # different claims — the shared proxy sits in between, and a proxy can strip or override a
+        # header. Same doctrine as the engine-hash verify: check the artifact, not the intention.
+        if not DRY:
+            print("  $ security headers on https://%s/" % DOMAIN)
+            try:
+                _req = urllib.request.Request(
+                    "https://%s/" % DOMAIN,
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; cybergod-verify)"})
+                _h = urllib.request.urlopen(_req, timeout=20,
+                                            context=_ssl.create_default_context()).headers
+                _want = ("Content-Security-Policy", "Strict-Transport-Security",
+                         "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy",
+                         "Permissions-Policy")
+                _missing = [h for h in _want if not _h.get(h)]
+                if _missing:
+                    _vfail("live site is missing %s — the header set our own engine reports "
+                           "customers for not having" % ", ".join(_missing))
+                    ok = False
+                elif "'unsafe-inline'" in (_h.get("Content-Security-Policy") or "").split(
+                        "script-src")[-1].split(";")[0]:
+                    _vfail("the live CSP allows inline script, which defeats the policy")
+                    ok = False
+                else:
+                    print("  OK  all %d headers present, script-src has no 'unsafe-inline'"
+                          % len(_want))
+            except Exception as e:
+                # A browser UA is used above because BOT_404 serves an unrecognised agent a 404 on
+                # page routes. That exact blind spot let www.cybergod.ai report healthy while
+                # returning 404 for weeks, so it is worth restating rather than rediscovering.
+                _vfail("could not read the live security headers: %r" % e); ok = False
     return ok
 
 

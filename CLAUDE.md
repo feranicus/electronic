@@ -4634,3 +4634,81 @@ READ-ONLY, one ssh session per host, wired into ship.py as a building block, non
    cannot run is not a check — the oldest rule in this file, broken by me, in a security review.
 RULE FOR SCANNERS GENERALLY: **the scanner is a supply-chain dependency like any other.** Pin it,
 verify it, and make it able to fail — a scanner nobody gates on is a log file with a licence.
+
+## WE WERE SELLING THE FINDING AND NOT MAKING IT (2026-08-13, security headers)
+A visitor alert arrived: iOS Safari, page `/`, `Referrer: https://www.cybergod.ai/sw.js`. The
+operator asked why it was not treated as dangerous. **It was not an attack, and the shield was
+right to ignore it.** sw.js's install handler calls `cache.addAll(["/", "/app", ...])`, and a
+browser attributes a fetch made by a service worker to the SERVICE WORKER SCRIPT URL. It was our
+own code pre-caching the shell for a real person. `probe_shape("/sw.js")` is False, correctly:
+blocking it would have blocked a visitor, which is the failure mode the 439-404 and 362-404 real
+visitors in the 10 Aug log already taught us to avoid. The panel did nothing because there was
+nothing to do, and because it reviews decisions out of band every 6h - it does not classify visits.
+**BUT THE QUESTION WAS RIGHT AND THE ANSWER WAS EMBARRASSING.** cybergod.ai sent **no HSTS, no CSP,
+no X-Frame-Options, no X-Content-Type-Options, no Referrer-Policy, no Permissions-Policy** - the
+exact absence our own engine reported as a customer finding at abakus-tk.de, quoted in this file.
+A `Referrer-Policy` would also have stopped the sw.js referrer being sent at all, so the alert was
+literally an instance of the missing header.
+- `webapp/backend/app/security_headers.py`, **in the app, NOT the shared Caddyfile** - one bad edit
+  to that file took every domain on the box down for six hours on 6 Aug; a header belongs to the
+  app that knows what it serves, ships inside the image (so the engine-hash verify covers it), and
+  is testable with a TestClient in a second.
+- Installed **after** telemetry, because Starlette makes the LAST middleware the OUTERMOST - so it
+  also decorates the 404s the shield and bot gate return before the app runs, which is most of our
+  traffic. Asserted by test, since getting it backwards fails silently.
+- **`script-src 'self'` with no 'unsafe-inline'** is the only line here worth real money: an
+  injected `<script>` or `onclick=` does not execute. It cost one change - defense.html's 20KB
+  inline block became `/defense.js` - and that is why the extraction was worth doing.
+  `style-src` keeps 'unsafe-inline' because React writes `style="..."` ATTRIBUTES and a nonce
+  cannot apply to an attribute; inline CSS cannot call an API or read a cookie.
+- `Cache-Control: no-store` on `/api/`: sw.js already refuses to cache it, this binds the caches we
+  do NOT control (a corporate proxy, a CDN, a phone).
+**THE CENTRAL TEST DOES NOT CHECK THAT A POLICY EXISTS.** It reads index.html and styles.css,
+extracts every external origin the pages actually load, and requires the policy to permit each one
+AND to permit nothing else. A CSP written from memory either blocks a font the site needs or
+quietly allows an origin nobody reviewed.
+**AND THAT TEST WAS BLIND ON ITS FIRST RUN.** Its "this is a navigation, not a subresource"
+exclusion was `href="(https://...)"`, which also swallowed
+`<link href="https://fonts.googleapis.com/css2?..." rel="stylesheet">` - a SUBRESOURCE, and the
+single origin most likely to break the site. Removing the fonts origin from the policy changed
+nothing. Only an `<a href>` is a navigation: **anchor on the ELEMENT, never on the attribute.**
+Nth instance of a check aimed at the wrong subject. 12 negative tests, all caught after the fix.
+`ship.py` now also reads the headers off the LIVE site (with a browser UA - BOT_404 serves an
+unrecognised agent a 404, the blind spot that let www.cybergod.ai report healthy while returning
+404 for weeks). The middleware setting them and the deployed response carrying them are different
+claims, and a proxy sits in between.
+ON "VIEW SOURCE IS OPEN": that is not a defect and cannot be closed. Every SPA ships its JavaScript
+to the browser to run it; minification is not secrecy. The security boundary is the SERVER - the
+session cookie, `/api/me`, owner-scoped decks - and `/app`'s HTML shell contains no data. What was
+genuinely worth fixing is that the shell was served with no policy at all, which is now fixed.
+
+## A PANEL THAT REVIEWS ITS OWN DECISIONS CANNOT SEE A NEW ATTACK (2026-08-13, attack_digest.py)
+shield_panel answers "are the thresholds right" every 6h. It cannot answer "what is NEW", because
+it only ever sees traffic the classifier already understands: a technique our corpus does not name
+scores nothing, is never blocked, never becomes evidence, and is invisible **precisely because it
+is new**. A blind spot with a feedback loop.
+`attack_digest.unknowns()` looks at the other side of the line - sources that missed on many
+DISTINCT paths (evidence the classifier does not produce), minus everything the corpus already
+names. What survives is, by construction, a technique we cannot yet detect. Daily digest = attacks
+per day (sparkline), classes, origins, the unknowns, and what the four models propose; delivered by
+the Gmail API (SMTP is blocked outbound) and plain Telegram (an attacker controls the path text, so
+Markdown would let a stray `_` make Telegram reject the whole message).
+**THE MODELS PROPOSE, THEY NEVER INSTALL.** A model-authored regex on the blocking path could deny
+real visitors. `vet()` refuses, deterministically and before a human is asked: anything matching our
+own routes (verified: `.*`, `/app`, `^/api/`, `^/$`, `\.js$` all refused), anything that is not a
+valid regex, anything matching everything. Survivors need an operator tap, and then become
+DETECTION, never an automatic block. Two vendors agreeing outranks one.
+**VARIETY, NOT VOLUME.** The first cut flagged a simulated real visitor with 450 404s on our own
+routes - the 10 Aug shape exactly - because our routes are not probe shapes either and survived the
+"unrecognised" filter. `_ours()` reads `main._APP_ROUTES`, the same list `_is_probe` uses, so a new
+page cannot be a route for one and an anomaly for the other.
+**A NEGATIVE TEST THAT PASSES BECAUSE OF DEFENCE IN DEPTH MEASURES THE OTHER GUARD.** Removing the
+distinct-path floor changed nothing, because `_ours()` was also protecting that visitor. The floor
+needed its own fixture where it is the ONLY guard: two odd paths, neither ours, neither a probe
+shape, repeated 30 times - a stale inbound link, which is a support question and not an attack.
+Then removing the floor fails. 9 negative tests, all caught.
+ALSO: `sp.E` does not exist - shield_panel imports enrich INSIDE `_ask()`, so it is not a module
+attribute; and `notify.telegram(text, reply_markup=None)` has no `markdown=`. Tenth and eleventh
+invented signatures in this workstream. And `_time.gmtime()` in the new scheduler was a NameError
+(`time` is imported plain) sitting OUTSIDE the try, which would have killed the task silently -
+the angermann class, caught by the ruff F821 gate that exists because of it.

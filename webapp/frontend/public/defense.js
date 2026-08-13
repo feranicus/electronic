@@ -1,0 +1,475 @@
+/* Siege visual for /defense.html.
+ * EXTRACTED FROM THE PAGE so the site can run a strict Content-Security-Policy with
+ * script-src 'self' and NO 'unsafe-inline'. An inline block would have forced us to allow
+ * inline script everywhere, which is the permission an injected <script> needs.
+ * canvas_smoke.mjs executes this file's render loop against a stub 2D context.
+ */
+(function(){
+"use strict";
+
+/* =============================================================================================
+   SIEGE - attackers left, the estate right, every shot met.
+
+   WHY A FIXED 1600x900 STAGE. The previous attempt let a 3D globe fill whatever viewport it was
+   given, and the result was the operator's complaint, verbatim: "everything all over everything
+   with no distinguish between each attacker". A set piece needs a COMPOSITION, and a composition
+   needs known coordinates. Everything below is authored at 1600x900 and scaled to fit, so the
+   framing is identical on a laptop, a 4K monitor and a phone - and so it can be verified by
+   redrawing the same maths offline instead of being hoped at.
+
+   WHY NOT A MODEL IN THE RENDER LOOP. Drawing is deterministic; there is nothing here for an LLM
+   to decide, and a cloud GPU cannot help a canvas that runs on the viewer's own machine. Same
+   doctrine as the shield itself: code decides, models advise. The four models appear as a
+   CHARACTER in act five because that is what they actually do - review after the fact.
+
+   EVERY NUMBER IS MEASURED. analyse_attacks.py over colt-web's event log, 10-11 Aug 2026.
+============================================================================================= */
+
+var W=1600, H=900;                                   /* the authored stage */
+var cv=document.getElementById("c"), x=cv.getContext("2d");
+var DPR=Math.min(devicePixelRatio||1,2);
+
+function resize(){
+  var s=Math.min(innerWidth/W, innerHeight/H);
+  cv.width=W*DPR; cv.height=H*DPR;
+  cv.style.width=(W*s)+"px"; cv.style.height=(H*s)+"px";
+  x.setTransform(DPR,0,0,DPR,0,0);
+}
+resize(); addEventListener("resize",resize);
+
+/* ---- the estate -------------------------------------------------------------------------- */
+var CX=1348, CY=490, SHR=332;                        /* castle centre, shield radius */
+function shieldX(y){                                  /* left face of the dome at height y */
+  var dy=y-CY, k=SHR*SHR-dy*dy;
+  return k<=0 ? CX : CX-Math.sqrt(k);
+}
+
+/* ---- the attackers ----------------------------------------------------------------------- */
+var LANES=[
+ {k:"wordpress",   n:483, c:"#FF3B57", t:"WordPress hunters",   e:"/wp-login.php"},
+ {k:"php_probe",   n:481, c:"#FF7A33", t:"PHP webshell drops",  e:"/alfa.php"},
+ {k:"admin_panel", n:162, c:"#FFC33C", t:"Admin panel probes",  e:"/administrator/"},
+ {k:"shell_rce",   n:113, c:"#FF2D6F", t:"Shell / RCE chains",  e:"/cgi-bin/.%2e/bin/sh"},
+ {k:"template",    n:100, c:"#9E86FF", t:"Template placeholders",e:"/[workspace]/"},
+ {k:"env_secrets", n: 96, c:"#FF5CA8", t:"Secrets and .env",    e:"/.env"},
+ {k:"backup_file", n: 45, c:"#37C8FF", t:"Backups and dumps",   e:"/backup.sql"},
+ {k:"other",       n: 43, c:"#26D98A", t:"Docs, IoT, traversal",e:"/swagger.json"}
+];
+var TOP=196, GAP=76;
+LANES.forEach(function(L,i){ L.y=TOP+i*GAP; L.fired=0; L.blocked=0; });
+
+var MODELS=["deepseek-3.2","llama-4-maverick","gemma-4-31B-it","kimi-k2.6"];
+
+/* ---- state ------------------------------------------------------------------------------- */
+var shots=[], bursts=[], ripples=[], floats=[], embers=[], friends=[];
+var t0=performance.now(), T=0, act=0, shake=0, integrity=100, blocked=0, leaked=0;
+var sealed=false, panelIn=0, flash=0;
+var ACTS=[
+ {at:0,     name:"ACT I",   title:"First contact",        sub:"a normal Tuesday on the public internet"},
+ {at:4200,  name:"ACT II",  title:"The swarm",            sub:"eight classes, continuously, for free"},
+ {at:12500, name:"ACT III", title:"The gap",              sub:"19 classes we did not recognise"},
+ {at:19500, name:"ACT IV",  title:"We read the log",      sub:"48 of 48 - the wall closes"},
+ {at:26000, name:"ACT V",   title:"Four vendors review",  sub:"out of band, bounded, advisory"},
+ {at:32500, name:"ACT VI",  title:"The verdict",          sub:"and the two we almost got wrong"}
+];
+var END=41000;
+
+function reset(){
+  shots=[];bursts=[];ripples=[];floats=[];embers=[];friends=[];
+  t0=performance.now();T=0;act=0;shake=0;integrity=100;blocked=0;leaked=0;
+  sealed=false;panelIn=0;flash=0;
+  LANES.forEach(function(L){L.fired=0;L.blocked=0;});
+}
+document.getElementById("replay").onclick=reset;
+
+/* ---- spawning ---------------------------------------------------------------------------- */
+function fire(L,leak){
+  var y=L.y+(Math.random()-.5)*16;
+  shots.push({x:300,y:y,y0:y,L:L,sp:3.0+Math.random()*2.2,leak:!!leak,
+              tx:shieldX(y),trail:[]});
+  L.fired++;
+}
+function friendly(name){
+  var y=CY+(Math.random()-.5)*260;
+  friends.push({x:300,y:y,sp:2.4,name:name,through:false});
+}
+function burst(px,py,col,n,pow){
+  for(var i=0;i<n;i++){
+    var a=Math.random()*Math.PI*2, s=(0.6+Math.random()*2.4)*(pow||1);
+    bursts.push({x:px,y:py,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,col:col,r:1+Math.random()*2});
+  }
+}
+function say(px,py,txt,col){ floats.push({x:px,y:py,t:txt,c:col,life:1}); }
+
+/* ---- drawing helpers --------------------------------------------------------------------- */
+function glow(px,py,r,col,a){
+  var g=x.createRadialGradient(px,py,0,px,py,r);
+  g.addColorStop(0,col); g.addColorStop(1,"rgba(0,0,0,0)");
+  x.globalAlpha=a===undefined?1:a; x.fillStyle=g;
+  x.beginPath(); x.arc(px,py,r,0,6.283); x.fill(); x.globalAlpha=1;
+}
+function rr(px,py,w,h,r){
+  x.beginPath();
+  x.moveTo(px+r,py); x.arcTo(px+w,py,px+w,py+h,r); x.arcTo(px+w,py+h,px,py+h,r);
+  x.arcTo(px,py+h,px,py,r); x.arcTo(px,py,px+w,py,r); x.closePath();
+}
+
+/* ---- the castle -------------------------------------------------------------------------- */
+function castle(){
+  var hit=flash>0?flash:0;
+  x.save();
+  glow(CX+18,CY+80,340,"rgba(0,215,189,.11)",1);            /* the estate's own light */
+
+  var stone="#0E1A2A", edge=sealed?"#00F0D4":"#00A896", lit="#17293F";
+  function block(bx,by,bw,bh,cren){
+    x.fillStyle=stone; x.fillRect(bx,by,bw,bh);
+    x.fillStyle=lit;   x.fillRect(bx,by,6,bh);               /* the face turned to the attack */
+    x.strokeStyle=edge; x.lineWidth=1.7; x.globalAlpha=.9;
+    x.strokeRect(bx+.5,by+.5,bw-1,bh-1); x.globalAlpha=1;
+    if(cren){
+      var step=18, n=Math.floor(bw/step);
+      for(var i=0;i<n;i++){
+        if(i%2)continue;
+        x.fillStyle=stone; x.fillRect(bx+i*step,by-16,step-3,16);
+        x.strokeStyle=edge; x.globalAlpha=.8;
+        x.strokeRect(bx+i*step+.5,by-15.5,step-4,15); x.globalAlpha=1;
+      }
+    }
+  }
+  function windows(bx,by,bw,bh,rows){
+    for(var r=0;r<rows;r++){
+      var wy=by+34+r*46;
+      if(wy>by+bh-30) break;
+      x.fillStyle="rgba(0,240,212,"+(0.30+0.28*Math.sin(T/700+r+bx)).toFixed(3)+")";
+      x.fillRect(bx+bw*0.34,wy,7,15);
+      x.fillRect(bx+bw*0.60,wy,7,15);
+    }
+  }
+  block(1240,300,68,380,true);    windows(1240,300,68,380,6);   /* left tower  */
+  block(1452,300,68,380,true);    windows(1452,300,68,380,6);   /* right tower */
+  block(1308,356,144,324,true);   windows(1308,356,144,324,4);  /* the keep    */
+
+  x.fillStyle="#0B1524"; x.fillRect(1216,680,320,22);          /* plinth */
+  x.strokeStyle=edge; x.globalAlpha=.75; x.lineWidth=1.4;
+  x.strokeRect(1216.5,680.5,319,21); x.globalAlpha=1;
+
+  x.fillStyle="#060C16";                                        /* gate */
+  x.beginPath(); x.moveTo(1348,680); x.lineTo(1348,604);
+  x.arc(1380,604,32,Math.PI,0); x.lineTo(1412,680); x.closePath(); x.fill();
+  x.strokeStyle=edge; x.globalAlpha=.95; x.lineWidth=1.7; x.stroke(); x.globalAlpha=1;
+  for(var b=0;b<5;b++){
+    x.strokeStyle="rgba(0,215,189,.28)"; x.lineWidth=1;
+    x.beginPath(); x.moveTo(1354+b*14,680); x.lineTo(1354+b*14,590); x.stroke();
+  }
+
+  x.strokeStyle=edge; x.lineWidth=2.2;                          /* banner */
+  x.beginPath(); x.moveTo(1380,356); x.lineTo(1380,300); x.stroke();
+  var wav=Math.sin(T/380)*5;
+  x.fillStyle="rgba(0,215,189,.18)"; x.strokeStyle=edge; x.lineWidth=1.5;
+  x.beginPath(); x.moveTo(1380,304); x.lineTo(1478,316+wav); x.lineTo(1464,334);
+  x.lineTo(1478,352+wav); x.lineTo(1380,340); x.closePath(); x.fill(); x.stroke();
+
+  x.font='800 30px Unbounded, sans-serif'; x.textAlign="center";
+  x.fillStyle="#EAFBF8"; x.shadowColor="rgba(0,215,189,.9)"; x.shadowBlur=22;
+  x.fillText("cybergod.ai",CX+28,760); x.shadowBlur=0;
+  x.font='600 11.5px "JetBrains Mono", monospace'; x.fillStyle="#6F8398";
+  x.fillText("FRA1 · EU",CX+28,782);
+  x.textAlign="left";
+
+  if(hit>0){ x.globalAlpha=hit*.45; x.fillStyle="#FF3B57";
+    x.fillRect(1228,282,304,422); x.globalAlpha=1; }
+  x.restore();
+}
+
+/* ---- the shield -------------------------------------------------------------------------- */
+function shield(){
+  var a0=Math.PI/2, a1=Math.PI*1.5;                             /* the left-facing half */
+  var pulse=sealed?.55:.30;
+  x.save();
+  x.lineWidth=sealed?5:3;
+  var g=x.createLinearGradient(CX-SHR,0,CX,0);
+  g.addColorStop(0,"rgba(0,215,189,"+(pulse*0.25)+")");
+  g.addColorStop(.7,"rgba(0,215,189,"+pulse+")");
+  g.addColorStop(1,"rgba(55,200,255,"+(pulse*0.5)+")");
+  x.strokeStyle=g;
+  x.beginPath(); x.arc(CX,CY,SHR,a0,a1); x.stroke();
+  if(sealed){                                                   /* inner skin once closed */
+    x.lineWidth=1.2; x.strokeStyle="rgba(0,240,212,.30)";
+    x.beginPath(); x.arc(CX,CY,SHR-9,a0,a1); x.stroke();
+    x.fillStyle="rgba(0,215,189,.045)";
+    x.beginPath(); x.arc(CX,CY,SHR,a0,a1); x.closePath(); x.fill();
+  }
+  ripples.forEach(function(r){
+    x.globalAlpha=r.life*.9; x.lineWidth=2.6+r.life*2.6; x.strokeStyle=r.col;
+    var sp=0.30+(1-r.life)*0.55;
+    x.beginPath(); x.arc(CX,CY,SHR,r.a-sp,r.a+sp); x.stroke(); x.globalAlpha=1;
+  });
+  x.restore();
+}
+
+/* ---- the roster (left) ------------------------------------------------------------------- */
+function roster(){
+  LANES.forEach(function(L){
+    var pulse=0.55+0.45*Math.sin(T/240+L.y);
+    glow(232,L.y,34,hexa(L.c,.30),1);
+    x.fillStyle=L.c; x.globalAlpha=.55+pulse*.45;
+    x.beginPath(); x.arc(232,L.y,9,0,6.283); x.fill(); x.globalAlpha=1;
+    x.fillStyle="#fff"; x.beginPath(); x.arc(232,L.y,3.4,0,6.283); x.fill();
+
+    x.textAlign="left";
+    x.font='700 16px Unbounded, sans-serif'; x.fillStyle="#EDF4FF";
+    x.fillText(L.t,258,L.y+1);
+    x.font='400 11.5px "JetBrains Mono", monospace'; x.fillStyle="#71849B";
+    x.fillText(L.e,258,L.y+19);
+    x.textAlign="right";
+    x.font='700 15px "JetBrains Mono", monospace'; x.fillStyle=hexa(L.c,.95);
+    x.fillText(L.n,214,L.y+5);
+    x.textAlign="left";
+
+    /* lane guide */
+    var gr=x.createLinearGradient(300,0,shieldX(L.y),0);
+    gr.addColorStop(0,hexa(L.c,.20)); gr.addColorStop(1,hexa(L.c,.03));
+    x.strokeStyle=gr; x.lineWidth=1;
+    x.beginPath(); x.moveTo(300,L.y); x.lineTo(shieldX(L.y),L.y); x.stroke();
+  });
+  x.textAlign="left";
+  x.font='600 10.5px "JetBrains Mono", monospace'; x.fillStyle="#4E5F76";
+  x.fillText("DISTINCT SOURCES PER CLASS",118,TOP-34);
+}
+function hexa(h,a){
+  var n=parseInt(h.slice(1),16);
+  return "rgba("+((n>>16)&255)+","+((n>>8)&255)+","+(n&255)+","+a+")";
+}
+
+/* ---- HUD --------------------------------------------------------------------------------- */
+function hud(){
+  var bx=1180, by=40;
+  x.textAlign="right";
+  x.font='800 44px Unbounded, sans-serif';
+  x.fillStyle=sealed?"#00F0D4":"#E9F1FA";
+  x.fillText(blocked.toLocaleString("en-US"),1560,by+34);
+  x.font='600 10.5px "JetBrains Mono", monospace'; x.fillStyle="#6F8398";
+  x.fillText(LIVE?"PROBES MET · LIVE":"SHOTS MET AT THE WALL",1560,by+54);
+
+  x.font='800 30px Unbounded, sans-serif';
+  x.fillStyle=integrity>=100?"#26D98A":(integrity>70?"#FFC33C":"#FF3B57");
+  x.fillText(Math.round(integrity)+"%",1560,by+108);
+  x.font='600 10.5px "JetBrains Mono", monospace'; x.fillStyle="#6F8398";
+  x.fillText("ESTATE INTEGRITY",1560,by+128);
+
+  var st = LIVE ? "LIVE · " + (liveStats?(liveStats.sources+" SOURCES SEEN"):"CONNECTED")
+       : act>=3 ? (sealed?"SEALED · 48/48 CLASSES":"CLOSING") :
+           (act===2 ? "UNRECOGNISED CLASSES GETTING THROUGH" : "HOLDING");
+  var sc = act===2 ? "#FF3B57" : (sealed?"#00F0D4":"#FFC33C");
+  x.font='700 12px "JetBrains Mono", monospace'; x.fillStyle=sc;
+  x.fillText(st,1560,by+160);
+
+  x.font='800 22px Unbounded, sans-serif'; x.fillStyle="#26D98A";
+  x.fillText("0",1560,by+206);
+  x.font='600 10.5px "JetBrains Mono", monospace'; x.fillStyle="#6F8398";
+  x.fillText("REAL VISITORS BLOCKED",1560,by+224);
+  x.textAlign="left";
+}
+
+/* ---- act caption ------------------------------------------------------------------------- */
+function caption(){
+  var A=ACTS[act], age=T-A.at, fade=Math.min(1,age/500)*(age>4200?Math.max(0,1-(age-4200)/900):1);
+  if(fade<=0)return;
+  x.globalAlpha=fade;
+  x.textAlign="left";
+  x.font='700 11px "JetBrains Mono", monospace'; x.fillStyle="#00D7BD";
+  x.fillText(A.name,118,64);
+  x.font='800 30px Unbounded, sans-serif'; x.fillStyle="#EDF4FF";
+  x.fillText(A.title,118,100);
+  x.font='400 13px Inter, sans-serif'; x.fillStyle="#7E90A8";
+  x.fillText(A.sub,118,126);
+  x.globalAlpha=1;
+}
+
+/* ---- the four-model panel (act V) --------------------------------------------------------- */
+function panel(){
+  if(panelIn<=0.01)return;
+  x.save(); x.globalAlpha=panelIn;
+  var px=1160, py=752;
+  x.font='600 10.5px "JetBrains Mono", monospace'; x.fillStyle="#6F8398";
+  x.textAlign="left"; x.fillText("REVIEWING AFTER THE FACT · NOT IN THE REQUEST PATH",px,py-14);
+  MODELS.forEach(function(m,i){
+    var mx=px+(i%2)*210, my=py+Math.floor(i/2)*34;
+    rr(mx,my,198,26,7);
+    x.fillStyle="rgba(255,255,255,.04)"; x.fill();
+    x.strokeStyle="rgba(0,215,189,.35)"; x.lineWidth=1; x.stroke();
+    x.fillStyle="#00F0D4"; x.beginPath(); x.arc(mx+13,my+13,3.2,0,6.283); x.fill();
+    x.font='600 11px "JetBrains Mono", monospace'; x.fillStyle="#CFE0F2";
+    x.fillText(m,mx+24,my+17);
+  });
+  x.restore();
+}
+
+/* ---- main loop --------------------------------------------------------------------------- */
+/* ---- LIVE FEED --------------------------------------------------------------------------
+   Polls the public, REDACTED /api/siege. Addresses arrive already truncated to a /24, ordinary
+   visitor traffic is never in the feed at all, and a path is only ever present when it matched
+   the probe corpus with no query string. The page therefore cannot display something it should
+   not, because it is never sent it.
+   If the endpoint is absent (opened as a file, or an older server) LIVE silently stays off and
+   the scripted six acts play - the page must never be blank because a fetch failed.            */
+var LIVE=false, liveSeq=null, liveQ=[], liveStats=null, lastPoll=0, liveFails=0;
+var LANE_BY_KEY={}; LANES.forEach(function(L){ LANE_BY_KEY[L.k]=L; });
+
+function poll(){
+  var url="/api/siege"+(liveSeq!=null?("?since="+liveSeq):"");
+  fetch(url,{cache:"no-store"}).then(function(r){ return r.ok?r.json():null; }).then(function(j){
+    if(!j||!j.events){ liveFails++; return; }
+    liveFails=0;
+    if(!LIVE){ LIVE=true; document.getElementById("mode").textContent="LIVE"; }
+    liveSeq=j.seq; liveStats=j;
+    j.events.forEach(function(e){ liveQ.push(e); });
+    if(liveQ.length>240) liveQ=liveQ.slice(-240);
+  }).catch(function(){ liveFails++; });
+}
+
+function liveTick(now){
+  if(now-lastPoll>2500){ lastPoll=now; poll(); }
+  /* Drain a couple of queued events per frame so a burst of 50 looks like a volley, not a wall */
+  for(var i=0;i<2 && liveQ.length;i++){
+    var e=liveQ.shift();
+    var L=LANE_BY_KEY[e.lane]||LANES[LANES.length-1];
+    fire(L,false);
+    var s2=shots[shots.length-1];
+    if(s2){
+      s2.tag=(e.path||e.lane)+"  "+e.net+(e.cc?(" · "+e.cc):"");
+      s2.held=!!e.blocked;                       /* the source is under an active block */
+    }
+  }
+}
+
+var lastFire=0, lastFriend=0;
+function frame(now){
+  requestAnimationFrame(frame);
+  T=now-t0;
+  if(T>END){ reset(); return; }
+
+  /* act pointer */
+  for(var i=ACTS.length-1;i>=0;i--){ if(T>=ACTS[i].at){ act=i; break; } }
+  document.getElementById("prog").style.width=(T/END*100)+"%";
+  if(act>=3) sealed=true;
+  if(act>=4) panelIn=Math.min(1,panelIn+0.02);
+
+  liveTick(now);
+
+  /* --- spawn ------------------------------------------------------------------------- */
+  var rate = act===0?520 : act===1?95 : act===2?85 : act===3?70 : act===4?110 : 150;
+  if(!LIVE && now-lastFire>rate){
+    lastFire=now;
+    var pool = act===0 ? LANES.slice(0,3) : LANES;
+    var L=pool[(Math.random()*pool.length)|0];
+    /* ACT III is the honest beat: 19 classes were not recognised, so some shots got through. */
+    fire(L, act===2 && Math.random()<0.30);
+  }
+  /* the two real visitors, act VI - they MUST pass */
+  if(act===5 && now-lastFriend>1500 && friends.length<4){
+    lastFriend=now;
+    friendly(friends.length%2 ? "46.116.177.24 · IL" : "212.58.119.138 · DE");
+  }
+
+  /* --- update --------------------------------------------------------------------------- */
+  shots.forEach(function(s){
+    s.trail.push({x:s.x,y:s.y}); if(s.trail.length>9)s.trail.shift();
+    s.x+=s.sp*(1+ (act===2?0.25:0));
+    var dy=(CY-s.y)*0.0016; s.y+=dy*Math.max(0,(s.x-700)/500);   /* gentle convergence, late */
+    s.tx=shieldX(s.y);
+    if(!s.done && s.x>=s.tx){
+      s.done=true;
+      if(s.leak && !sealed){
+        leaked++; integrity=Math.max(58,integrity-1.15); flash=1; shake=9;
+        burst(s.tx+40,s.y,"#FF3B57",22,1.5);
+        say(s.tx+70,s.y-16,"THROUGH · "+s.L.e,"#FF6B82");
+      }else{
+        blocked++; s.L.blocked++;
+        ripples.push({a:Math.atan2(s.y-CY,s.tx-CX),life:1,
+                      col:s.held?"rgba(0,240,212,.95)":hexa(s.L.c,.95)});
+        burst(s.tx,s.y,s.held?"#00F0D4":s.L.c,s.held?16:10,s.held?1.3:1);
+        if(s.tag) say(s.tx-16,s.y-14,s.tag,hexa(s.L.c,.95));
+        else if(Math.random()<0.16) say(s.tx-16,s.y-14,s.L.e,hexa(s.L.c,.95));
+        shake=Math.max(shake,2.2);
+      }
+    }
+  });
+  shots=shots.filter(function(s){ return !s.done && s.x<CX+240 || (s.done && false); });
+
+  friends.forEach(function(f){
+    f.x+=f.sp;
+    if(!f.through && f.x>shieldX(f.y)){
+      f.through=true;
+      say(f.x+10,f.y-16,"ALLOWED · real visitor","#26D98A");
+      burst(f.x,f.y,"#26D98A",14,.8);
+    }
+  });
+  friends=friends.filter(function(f){ return f.x<CX+120; });
+
+  bursts.forEach(function(b){ b.x+=b.vx; b.y+=b.vy; b.vx*=.955; b.vy*=.955; b.life-=.022; });
+  bursts=bursts.filter(function(b){ return b.life>0; });
+  ripples.forEach(function(r){ r.life-=.035; });
+  ripples=ripples.filter(function(r){ return r.life>0; });
+  floats.forEach(function(f){ f.y-=.45; f.life-=.012; });
+  floats=floats.filter(function(f){ return f.life>0; });
+  if(flash>0)flash-=.05;
+  if(shake>0)shake*=.86;
+  if(sealed && integrity<100) integrity=Math.min(100,integrity+0.10);
+
+  /* --- draw ----------------------------------------------------------------------------- */
+  x.setTransform(DPR,0,0,DPR,0,0);
+  var sx=(Math.random()-.5)*shake, sy=(Math.random()-.5)*shake;
+  x.clearRect(0,0,W,H);
+  var bg=x.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,"#04060c"); bg.addColorStop(.55,"#070d18"); bg.addColorStop(1,"#04060c");
+  x.fillStyle=bg; x.fillRect(0,0,W,H);
+  x.translate(sx,sy);
+
+  roster();
+  shield();
+  castle();
+
+  /* shots */
+  x.lineCap="round";
+  shots.forEach(function(s){
+    for(var i=1;i<s.trail.length;i++){
+      var p=s.trail[i-1], q=s.trail[i], a=(i/s.trail.length)*0.55;
+      x.strokeStyle=hexa(s.L.c,a); x.lineWidth=1+i*0.30;
+      x.beginPath(); x.moveTo(p.x,p.y); x.lineTo(q.x,q.y); x.stroke();
+    }
+    glow(s.x,s.y,11,hexa(s.L.c,.55),1);
+    x.fillStyle="#fff"; x.beginPath(); x.arc(s.x,s.y,2.2,0,6.283); x.fill();
+    x.fillStyle=s.L.c;  x.beginPath(); x.arc(s.x,s.y,3.6,0,6.283); x.globalAlpha=.55; x.fill();
+    x.globalAlpha=1;
+  });
+  friends.forEach(function(f){
+    glow(f.x,f.y,16,"rgba(38,217,138,.55)",1);
+    x.fillStyle="#9affc9"; x.beginPath(); x.arc(f.x,f.y,4.4,0,6.283); x.fill();
+    x.font='600 10.5px "JetBrains Mono", monospace'; x.fillStyle="#26D98A"; x.textAlign="right";
+    x.fillText(f.name,f.x-12,f.y+4); x.textAlign="left";
+  });
+  bursts.forEach(function(b){
+    x.globalAlpha=Math.max(0,b.life); x.fillStyle=b.col;
+    x.beginPath(); x.arc(b.x,b.y,b.r*b.life,0,6.283); x.fill(); x.globalAlpha=1;
+  });
+  floats.forEach(function(f){
+    x.globalAlpha=Math.max(0,f.life); x.font='600 11px "JetBrains Mono", monospace';
+    x.fillStyle=f.c; x.fillText(f.t,f.x,f.y); x.globalAlpha=1;
+  });
+
+  hud(); caption(); panel();
+
+  /* act VI closing line */
+  if(act===5 && T-ACTS[5].at>1800){
+    var fade=Math.min(1,(T-ACTS[5].at-1800)/900);
+    x.globalAlpha=fade; x.textAlign="center";
+    x.font='400 14px Inter, sans-serif'; x.fillStyle="#8FA3BC";
+    x.fillText("The two loudest addresses in the log were real people. Variety, not volume, is "+
+               "what separates them from a scanner.",W/2,846);
+    x.globalAlpha=1; x.textAlign="left";
+  }
+  x.translate(-sx,-sy);
+}
+requestAnimationFrame(frame);
+})();
