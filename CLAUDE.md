@@ -4775,3 +4775,47 @@ own fault: a recursive `__pycache__` glob over the whole mounted repo) and left 
 replaced with `if False:` in agent.py. My first "the tree is clean" check looked at a diffstat and
 three greps and missed it; the next baseline run failed and found it. Scan for every marker the
 harness could have written, not a sample.
+
+## A FOURTH WASTED SHIP FROM THE SAME ROOT CAUSE — httpx (2026-08-13)
+`python ship.py` refused to deploy, correctly, on four failures:
+```
+RuntimeError: The starlette.testclient module requires the httpx package to be installed.
+4 failed, 176 passed
+```
+`starlette.testclient` imports **httpx**, which is NOT a dependency of this application — it is a
+dependency of starlette's TESTING helper. It happened to be installed in the Linux sandbox where
+the security-header tests were written, and is absent from the operator's Windows Python 3.13. So
+the tests were unrunnable on the only machine that matters, and I had verified them everywhere
+except there.
+CLAUDE.md ALREADY carries this exact root cause, under a heading that begins "A CHECK MUST RUN
+WHERE THE TOOLCHAIN IS CORRECT BY CONSTRUCTION (three wasted ships)". Writing the rule down a
+fourth time would not have helped, so it is now a TEST.
+**THE FIX IS NOT `pip install httpx`.** That is an operator step (operating principle 1), and
+putting a test-only library into requirements.txt would ship it in the production image. The
+harness now calls the ASGI app DIRECTLY with ~20 lines of stdlib asyncio: a scope dict, a
+`receive` that returns an empty body, a `send` that records the status and headers. It needs
+nothing beyond the standard library and the app, so it runs anywhere the app runs. It also does
+NOT run the lifespan, so the digest/panel background loops never start during tests — which
+TestClient did.
+**AND THE SECOND FAILURE THE FIRST FIX EXPOSED:** raw ASGI emits header names as LOWERCASE bytes.
+httpx had been quietly providing a case-insensitive mapping, so `headers.get(
+"Content-Security-Policy")` returned None while `content-security-policy` sat right there. The
+middleware was correct and the harness was not — worth stating, because a test failing for a
+harness reason looks exactly like one failing for a real reason. `_CIDict` now lowercases on
+lookup, which is what RFC 9110 §5.1 says a header table is anyway.
+GUARD: `test_no_test_imports_a_library_the_app_does_not_declare` parses every `tests/test_*.py`
+for real import statements (comments and docstrings excluded — the paragraph above would have
+tripped a naive version) and fails on anything outside the standard library, pytest,
+requirements.txt and this repo. Plus a second test asserting the ASGI harness itself imports only
+`asyncio` and `app`.
+VERIFICATION THAT ACTUALLY PROVES IT: a venv built WITHOUT httpx, reproducing the operator's
+machine rather than the dev's. 186 tests pass there, and also on the stack that does have httpx.
+Four negative tests, each reintroducing a real defect (the httpx import, the testclient import, a
+non-stdlib import inside the harness, dropping the case-insensitive headers), all caught.
+NOTE ON THE GUARD'S ONE BLIND SPOT, stated rather than hidden: if the offending import is in the
+SAME file as the guard, the module fails to collect and the guard never runs. The suite still
+fails loudly (pytest exit 2) so the ship is still blocked, but the message is a crash rather than
+a diagnosis. Verified separately that an offending import in ANOTHER file is caught and named.
+RULE, restated for the fourth time and now enforced: **before telling the operator to run
+anything, ask which machine and which toolchain.** A green run in the dev sandbox is not evidence
+about his box.
