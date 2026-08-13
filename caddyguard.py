@@ -226,6 +226,8 @@ python3 /opt/caddyguard/agent.py drift
 python3 /opt/caddyguard/agent.py roster
 echo '--- ADMIN API ---'
 python3 /opt/caddyguard/agent.py admin
+echo "   --- REFUSAL PATH (read-only: temp dir + throwaway container, live file untouched) ---"
+python3 /opt/caddyguard/agent.py selftest
 if python3 /opt/caddyguard/agent.py drift 2>/dev/null | grep -q '^DRIFT'; then
   echo "-> forcing a full admin-API load so the process matches the file"
   CT=$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)

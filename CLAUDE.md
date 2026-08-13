@@ -4712,3 +4712,66 @@ attribute; and `notify.telegram(text, reply_markup=None)` has no `markdown=`. Te
 invented signatures in this workstream. And `_time.gmtime()` in the new scheduler was a NameError
 (`time` is imported plain) sitting OUTSIDE the try, which would have killed the task silently -
 the angermann class, caught by the ruff F821 gate that exists because of it.
+
+## THE 2026-08-13 RUN — the two worst items were ones NO model flagged
+Gate 39/39, panel 4/4 GO. kimi raised three risks. Reviewed against the code:
+
+**RIGHT, and cheap.** *"config_change_propagates detail is truncated mid-word."* `stagegate.py`
+printed `c["detail"][:90]`, so FOUR checks were cut mid-sentence — "(that it is actually LOADED is
+p", "not by t", "probed from colt-web -> 1". The detail is where a check states WHAT it measured,
+so truncating it destroys exactly the evidence the check exists to provide, silently, on the
+PASSING path. It also feeds the panel, so a reviewer reads half the facts — which is how the same
+wrong call gets made three runs running. Now wrapped, never cut.
+
+**PARTLY RIGHT, and the safe version was buildable.** *"No check exercises the Caddyfile under
+ERROR conditions."* True. An earlier attempt at this wrote a broken fragment into the LIVE blocks
+directory and took staging down, which is why it was removed. But `validate(text)` writes a temp
+dir and runs a THROWAWAY container — it never touches the live file — so garbage can be fed to it
+with zero risk. New `agent.py selftest`: an unbalanced config and junk must be REFUSED, the LIVE
+config must still VALIDATE in the same breath (a validator that rejects everything passes a
+reject-the-garbage test perfectly and is useless), the empty-config refusal must be armed, and the
+live file's sha256 must be unchanged afterwards.
+
+**WRONG.** *"No check for partial reload failures leaving Caddy with mixed old/new config."*
+Caddy's `POST /load` replaces the whole config or fails; there is no mixed state to test.
+
+**AND THE TWO NOBODY MENTIONED, both visible in the log:**
+1. **`jhw:jobhuntwow 14 lines braces 3/2 <-- UNBALANCED`** — captured from the LIVE shared
+   Caddyfile. migrate splits whatever is currently live, so that is not a bad fragment: it is
+   proof the file on disk was damaged at that moment, which is the 6 Aug outage in its latent
+   phase. Caddy reads config only at start, so the process kept serving from memory and nothing
+   looked wrong. It was PRINTED, inside a table, and quietly repaired. **Silent repair of
+   recurring damage means the thing causing it is never found.** `cmd_migrate` now `notify()`s.
+   It still returns 0: restore fixes it, and failing a deploy over damage we just healed would
+   train the operator to reach for `--force`.
+2. **Trivy's three HIGH starlette CVEs, and OUR OWN PIN was what blocked the patch.**
+   `fastapi==0.115.*` caps `starlette<0.47.0`, so 0.46.2 was the maximum resolvable and every fix
+   needs >=0.49.1. CVE-2026-48818 (SSRF + NTLM credential theft via UNC paths in **StaticFiles**)
+   is NOT theoretical here — `main.py` mounts StaticFiles on /assets — and CVE-2025-62727 (Range
+   header merging) touches the FileResponse that serves the hero video. Verified both BEFORE
+   upgrading rather than assuming they applied. fastapi 0.141 removed the cap; the whole suite was
+   then run against fastapi 0.141.1 + starlette 1.6.0, because a green import is not a green app.
+   This is the scanner earning its keep on its first real run, one day after being made able to fail.
+3. **`patchwatch_timer: not-found` on STAGING, reported as OK.** `systemctl is-enabled` prints
+   `not-found` for a missing unit and my check only knew `absent` and `None`, so the audit said
+   "nothing queued" about a box where nothing applies security updates unattended. Anything not
+   positively enabled now warns. Nth instance of a check that cannot recognise its subject's own
+   answer.
+
+**FOUR DEFECTS IN MY OWN WORK, all found by measuring rather than trusting:**
+`socket` and `hashlib` were used and never imported (the ruff F821 gate caught both — it exists
+because of the angermann outage); `site_blocks()` returns a LIST and I compared it to an integer,
+which would have raised TypeError the first time the new check ran on the droplet; and
+`cmd_selftest` crashed instead of skipping when docker was absent.
+**AND FOUR WEAK ASSERTIONS OF MY OWN, each exposed by a negative test:** asserting
+`len(site_blocks(` was present *somewhere* passed when one of two calls was unwrapped; asserting a
+verdict name appeared *somewhere* passed when one of three branches was renamed; and grepping the
+raw stagegate source for `agent.py selftest` passed when the line was commented out AND when it
+was renamed, because **my own comment above it contains the same words**. Strip comments before
+grepping — the brand gate, recover.py and the caddyguard TAMPER check have each already taught
+this, and this is the fourth time.
+**A `finally` STILL CANNOT SURVIVE A KILL.** My negative-test harness was killed by a timeout (my
+own fault: a recursive `__pycache__` glob over the whole mounted repo) and left `if not live_ok:`
+replaced with `if False:` in agent.py. My first "the tree is clean" check looked at a diffstat and
+three greps and missed it; the next baseline run failed and found it. Scan for every marker the
+harness could have written, not a sample.

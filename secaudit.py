@@ -155,8 +155,15 @@ def verdict(name, f):
             warn.append("%s security package(s) queued" % f["security"])
     except ValueError:
         pass
-    if f["patchwatch"] in (None, "absent"):
-        warn.append("patchwatch timer absent (nothing applies updates unattended)")
+    # "not-found" is what `systemctl is-enabled` PRINTS for a unit that does not exist, and the
+    # first version of this check only knew about None and "absent". So the 2026-08-13 run
+    # reported STAGING as "OK, nothing queued" while printing `patchwatch_timer: not-found` two
+    # lines above it: nothing applies security updates to that box unattended, and the audit said
+    # it was fine. A check that cannot recognise its subject's own answer is not a check.
+    # Anything that is not positively enabled counts as absent.
+    if str(f["patchwatch"] or "").strip() not in ("enabled", "enabled-runtime", "static"):
+        warn.append("patchwatch timer %s (nothing applies updates unattended)"
+                    % (f["patchwatch"] or "unreadable"))
     return bad, warn
 
 

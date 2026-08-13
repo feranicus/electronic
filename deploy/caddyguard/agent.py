@@ -35,9 +35,11 @@ IN-PLACE WRITES ONLY. The mount is a single file, so the container is bound to i
 the target swaps the inode and the container silently keeps reading the OLD file forever. Every
 write here is truncate-and-write (`open(...,"w")`), which preserves the inode.
 """
+import hashlib
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -353,11 +355,39 @@ def cmd_migrate():
     for n, t in frags.items():
         write_inplace(name_to_file(n), t.rstrip() + "\n")
     print("migrated: base + %d fragments -> %s" % (len(frags), FRAG))
+    broken = []
     for n in sorted(frags):
         o, c = balance(frags[n])
         print("   %-22s %4d lines  braces %d/%d%s"
               % (n, frags[n].count("\n") + 1, o, c, "  <-- UNBALANCED" if o != c else ""))
+        if o != c:
+            broken.append((n, frags[n].count("\n") + 1, o, c))
     json.dump({"migrated": time.time(), "live": LIVE}, open(STATE, "w"))
+
+    # AN UNBALANCED BLOCK IN THE LIVE FILE IS THE 6 AUGUST OUTAGE, FOUND EARLY.
+    # migrate splits whatever is CURRENTLY live, so an unbalanced fragment is not a defect in the
+    # fragment - it is proof that the shared Caddyfile on disk is damaged right now. Caddy reads
+    # its config only at start, so the running process is still serving fine from memory and
+    # NOTHING WILL LOOK WRONG until the next reboot or reload detonates it. That is exactly the
+    # 12-hour gap that took every domain on this box down together.
+    # The 2026-08-13 run found `jhw:jobhuntwow 14 lines braces 3/2` and only PRINTED it, inside a
+    # table, in a deploy log nobody re-reads. cmd_restore then quietly repaired it. Silent repair
+    # of recurring damage means the thing DOING the damage is never found.
+    # It does not fail the run: restore fixes it, and failing a deploy over damage we just healed
+    # would train the operator to pass --force. But it must reach a human.
+    if broken:
+        detail = ["CADDY: the LIVE shared config is DAMAGED on %s" % socket.gethostname(),
+                  "",
+                  "%d block(s) have unbalanced braces in %s:" % (len(broken), LIVE)]
+        for n, lines, o, c in broken:
+            detail.append("  %-22s %d lines, %d open vs %d close" % (n, lines, o, c))
+        detail += ["",
+                   "Caddy is still serving from MEMORY, so nothing looks wrong yet. The next",
+                   "reboot or reload would fail and take EVERY domain on this host down together.",
+                   "caddyguard restores the committed block automatically; the open question is",
+                   "WHICH project wrote this, because it will do it again."]
+        print("   !! ALERTING: %d damaged block(s) in the live shared config" % len(broken))
+        notify("\n".join(detail))
     return 0
 
 
@@ -773,6 +803,74 @@ def cmd_drift():
     return 1
 
 
+def cmd_selftest():
+    """Prove the REFUSAL paths work, without ever touching live state.
+
+    kimi-k2.6, 2026-08-13: "No check exercises the Caddyfile under ERROR conditions ...
+    config_change_propagates only shows the happy path." Correct, and it had a reason: an earlier
+    negative test wrote a deliberately broken fragment into the LIVE blocks directory and
+    reassembled the running config, which took staging down. A negative test that mutates
+    production-shaped state is an outage with a pass/fail label.
+
+    This is the version that carries no such risk. validate() writes to a temp dir and runs a
+    THROWAWAY container; it never reads or writes /etc/caddy on the running proxy. So we can feed
+    it deliberate garbage and watch it say no.
+
+    THE SECOND ASSERTION IS THE ONE THAT MATTERS. A validator that rejects everything passes a
+    "does it reject garbage" test perfectly and is useless. So the live text must still VALIDATE
+    in the same breath. And the live file's hash is compared before and after, because the whole
+    point is that proving the refusal cost nothing.
+    """
+    before = read(LIVE)
+    h0 = hashlib.sha256(before.encode("utf-8", "replace")).hexdigest()[:12]
+    try:
+        c = container()
+    except Exception as e:
+        # docker absent (or unusable) is not a finding about the config. Say so and stop, rather
+        # than crashing: a check that dies is strictly worse than one that reports it could not
+        # look, because a traceback in a deploy log reads as "the system is broken".
+        print("SKIP cannot reach docker on this host (%s) - nothing to validate against"
+              % type(e).__name__)
+        return 0
+    if not c:
+        print("SKIP no caddy container on this host - nothing to validate against")
+        return 0
+
+    bad_ok, bad_msg = validate("example.com {\n  reverse_proxy nope:8000\n", c)   # missing brace
+    junk_ok, _ = validate("this is not a caddyfile at all %%%\n", c)
+    live_ok, live_msg = validate(before, c)
+    # site_blocks() returns the LIST of site headers, not a count. The first version of this
+    # compared the list against an integer, which would have raised TypeError the first time it
+    # ran on the droplet - inside a check written to prove other things fail safely. Read the
+    # helper; do not assume its return type.
+    empty_blocks = len(site_blocks(""))
+    live_blocks = len(site_blocks(before))
+
+    after = read(LIVE)
+    h1 = hashlib.sha256(after.encode("utf-8", "replace")).hexdigest()[:12]
+
+    fails = []
+    if bad_ok:
+        fails.append("an unbalanced config VALIDATED - the 6 Aug damage would pass the gate")
+    if junk_ok:
+        fails.append("arbitrary junk VALIDATED")
+    if not live_ok:
+        fails.append("the LIVE config does not validate: %s" % live_msg[:120])
+    if empty_blocks != 0:
+        fails.append("site_blocks('') = %d, so the empty-config refusal cannot fire" % empty_blocks)
+    if live_blocks < 1:
+        fails.append("site_blocks(live) = 0, so apply() would treat a healthy file as empty")
+    if h0 != h1:
+        fails.append("THE LIVE FILE CHANGED during a read-only selftest (%s -> %s)" % (h0, h1))
+
+    if fails:
+        print("FAIL " + " | ".join(fails))
+        return 1
+    print("OK   refuses an unbalanced config and junk, still accepts the live one "
+          "(%d site block(s)), live file untouched (%s)" % (live_blocks, h0))
+    return 0
+
+
 def main(argv):
     if not argv:
         return cmd_show()
@@ -795,6 +893,8 @@ def main(argv):
         return cmd_roster()
     if cmd == "admin":
         return cmd_admin()
+    if cmd == "selftest":
+        return cmd_selftest()
     if cmd == "show":
         return cmd_show()
     print(__doc__)

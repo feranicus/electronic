@@ -312,6 +312,18 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
     SKIP*) chk admin_api_closed no  "could not check the admin API: ${AD#SKIP }" ;;
     *)     chk admin_api_closed no  "$AD" ;;
   esac
+  # THE REFUSAL PATH. kimi-k2.6, 2026-08-13: every config check here exercises the HAPPY path, so
+  # nothing proves the validator can say no. An earlier attempt at this wrote a broken fragment
+  # into the live blocks directory and took staging down; agent.py selftest instead feeds garbage
+  # to validate(), which writes a temp dir and runs a THROWAWAY container, and then asserts the
+  # live file's hash is unchanged. It also requires the LIVE config to still validate in the same
+  # breath, because a validator that rejects everything passes "does it reject garbage" perfectly.
+  ST=$(python3 /opt/caddyguard/agent.py selftest 2>&1 | tr '\n|' '  ' | cut -c1-200)
+  case "$ST" in
+    OK*)   chk refuses_bad_config yes "${ST#OK }" ;;
+    SKIP*) chk refuses_bad_config no  "could not exercise the validator: ${ST#SKIP }" ;;
+    *)     chk refuses_bad_config no  "$ST" ;;
+  esac
   case "$RO" in
     OK*) chk vhost_roster yes "${RO}" ;;
     # We are inside `if docker ps | grep caddy`, so a SKIP here cannot mean "no proxy". It means
@@ -666,7 +678,19 @@ def run(reboot_test=True, quiet=False):
     checks = parse_checks(out)
     kernel_before = (sections(out).get("KERNEL") or "").splitlines()[:1]
     for c in checks:
-        say("  %-18s %s  %s" % (c["name"], "OK " if c["ok"] else "FAIL", c["detail"][:90]))
+        # WRAP, DO NOT TRUNCATE. This was [:90], which cut every long detail mid-word:
+        #   "...(that it is actually LOADED is p"      "...proven by mount_fresh + config_drift, not by t"
+        # kimi-k2.6 flagged it on 2026-08-13 and was right. The detail is where a check states
+        # WHAT it measured, so a truncated one destroys exactly the evidence the check exists to
+        # provide - and it does it silently, on the passing path, where nobody looks twice. It
+        # also feeds the review panel, so a reviewer reading half a sentence reasons from half the
+        # facts, which is how the same wrong call gets made three runs running.
+        _d = str(c["detail"] or "")
+        say("  %-18s %s  %s" % (c["name"], "OK " if c["ok"] else "FAIL", _d[:90]))
+        _rest = _d[90:]
+        while _rest:
+            say("  %-18s      %s" % ("", _rest[:90]))
+            _rest = _rest[90:]
 
     reboot = {}
     if reboot_test:

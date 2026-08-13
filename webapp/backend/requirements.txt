@@ -1,4 +1,16 @@
-fastapi==0.115.*
+# OUR OWN PIN WAS THE THING BLOCKING THE PATCH (2026-08-13). Trivy reported three HIGH,
+# FIXABLE starlette CVEs on the running colt-web image, and fastapi==0.115.* caps
+# `starlette<0.47.0` — so the maximum starlette we could resolve was 0.46.2 and every fix
+# needed 0.49.1 or later. The scanner was right and the requirement file was the reason.
+#   CVE-2026-48818  SSRF + NTLM credential theft via UNC paths in StaticFiles  (fixed 1.1.0)
+#   CVE-2025-62727  DoS via Range header merging                              (fixed 0.49.1)
+#   CVE-2026-54283  form() limits silently ignored -> DoS                     (fixed 1.3.1)
+# The first one is NOT theoretical here: main.py mounts StaticFiles on /assets, and
+# FileResponse serves Range requests for the hero video. Verified before upgrading rather
+# than assumed — and the whole suite was then run against the new stack, because a green
+# import is not a green app. fastapi 0.141 no longer caps starlette at all.
+fastapi==0.141.*
+starlette>=1.3.1
 uvicorn[standard]==0.30.*
 itsdangerous==2.*
 requests==2.*

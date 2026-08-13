@@ -578,3 +578,103 @@ def test_every_committed_caddy_block_is_checked_against_the_repo():
     assert "TAMPER" in live, (
         "a difference from the repo is not REPORTED as tampering on any line the operator sees "
         "(the word survives only in a comment)")
+
+
+# =============================================================================================
+# 2026-08-13 RUN REVIEW. Two of these came from the panel; the biggest came from reading the log.
+# =============================================================================================
+
+def _agent_src():
+    with open(os.path.join(ROOT, "deploy", "caddyguard", "agent.py"), encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_a_damaged_live_config_alerts_instead_of_printing_quietly():
+    """THE ITEM NO MODEL FLAGGED, and it was in the log in capital letters.
+
+    The 2026-08-13 run captured `jhw:jobhuntwow 14 lines braces 3/2 <-- UNBALANCED` from the LIVE
+    shared Caddyfile. migrate splits whatever is currently live, so that is not a bad fragment: it
+    is proof the file on disk was damaged at that moment. Caddy reads config only at start, so the
+    running process kept serving fine from memory and nothing looked wrong - which is precisely
+    the 12-hour latent gap that took every domain on the box down together on 6 August.
+    It was PRINTED, inside a table, in a deploy log nobody re-reads, and then quietly repaired.
+    Silent repair of recurring damage means whatever is causing it is never found.
+    """
+    body = _agent_src()
+    mig = body[body.index("def cmd_migrate"):body.index("def cmd_restore")]
+    assert "broken.append" in mig, "unbalanced blocks are printed but never collected"
+    assert "notify(" in mig, (
+        "a damaged LIVE shared config does not reach a human; it is invisible until a reboot")
+    assert mig.rstrip().endswith("return 0"), (
+        "migrate now fails the deploy on damage it repairs itself, which trains the operator "
+        "to reach for --force")
+
+
+def test_the_refusal_path_is_exercised_without_touching_live_state():
+    """kimi-k2.6: only the happy path is tested. True, and an earlier fix for it wrote a broken
+    fragment into the LIVE blocks directory and took staging down. agent.py selftest feeds garbage
+    to validate(), which uses a temp dir and a THROWAWAY container, then asserts the live file's
+    hash is unchanged."""
+    body = _agent_src()
+    st = body[body.index("def cmd_selftest"):body.index("def main(")]
+    assert "validate(" in st and "site_blocks(" in st
+    assert "h0 != h1" in st, "the selftest does not prove it left the live file alone"
+    assert "if not live_ok" in st, (
+        "nothing requires the LIVE config to still validate; a validator that rejects everything "
+        "would pass a reject-the-garbage test perfectly and be useless")
+    # EVERY use must be wrapped, not just one. The first version asserted `len(site_blocks(` was
+    # present somewhere, so unwrapping ONE of the two calls left it green - a check that passes
+    # because a sibling line is still correct is measuring the sibling.
+    bare = [ln.strip() for ln in st.splitlines()
+            if re.search(r"=\s*site_blocks\(", ln) and "len(site_blocks(" not in ln]
+    assert not bare, (
+        "site_blocks() returns a LIST; comparing it to an integer raises TypeError the first "
+        "time this runs on the droplet: %s" % bare)
+    assert 'if cmd == "selftest"' in body, (
+        "selftest is defined but never reachable from the command line")
+
+    with open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8") as fh:
+        sg = fh.read()
+    # STRIP THE COMMENTS FIRST. My comment above the invocation contains the words
+    # "agent.py selftest", so grepping the raw file passed even when the real command was renamed
+    # AND when the whole line was commented out. This repository has now paid for this exact
+    # lesson four times (the brand gate, recover.py, the caddyguard TAMPER check, this).
+    sg_live = "\n".join(ln for ln in sg.splitlines() if not ln.strip().startswith("#"))
+    # Two separate claims: the gate INVOKES the agent, and it RECORDS a verdict from it. Asserting
+    # only that the name appears somewhere passed even when one of three branches was renamed.
+    assert "agent.py selftest" in sg_live, "the staging gate never invokes the refusal check"
+    assert re.search(r"^\s*ST=\$\(python3", sg_live, re.M), (
+        "the refusal check's output is never captured, so no branch can read it")
+    assert len(re.findall(r"chk\s+refuses_bad_config\s+(yes|no)", sg)) >= 3, (
+        "the refusal check has no complete OK/SKIP/fallback verdict set, so an unrecognised "
+        "answer would fall through - the exact defect that scored a FAIL as a PASS on 11 Aug")
+
+
+def test_check_details_are_wrapped_not_truncated():
+    """kimi-k2.6, and it was right. The detail is where a check states WHAT it measured, so
+    cutting it mid-word destroys exactly the evidence the check exists to provide - silently, on
+    the passing path. It also feeds the review panel, so a reviewer reads half the facts."""
+    with open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8") as fh:
+        sg = fh.read()
+    line = [ln for ln in sg.splitlines() if 'c["name"], "OK "' in ln]
+    assert line, "could not find the check-printing line"
+    assert '_d[:90]' in sg and "_rest" in sg, (
+        "check details are still truncated with no continuation; a cut-off detail reads as a "
+        "logging bug and hides what the check actually proved")
+
+
+def test_an_unrecognised_patchwatch_state_is_never_read_as_healthy():
+    """`systemctl is-enabled` prints 'not-found' for a missing unit. The first version only knew
+    'absent' and None, so the 2026-08-13 run printed `patchwatch_timer: not-found` for STAGING and
+    then reported OK: nothing applies security updates to that box unattended and the audit said
+    it was fine."""
+    import importlib
+    sa = importlib.import_module("secaudit")
+    base = {"kernel_stale": "no", "reboot_required": "no", "security": "0",
+            "unattended": None, "running": "x", "distro": "x"}
+    for state in ("not-found", "absent", "disabled", "masked", None, ""):
+        _bad, warn = sa.verdict("t", dict(base, patchwatch=state))
+        assert any("patchwatch" in w for w in warn), (
+            "patchwatch=%r was treated as healthy" % state)
+    _bad, warn = sa.verdict("t", dict(base, patchwatch="enabled"))
+    assert not any("patchwatch" in w for w in warn), "an enabled timer must not warn"
