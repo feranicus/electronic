@@ -22,6 +22,7 @@ without ever doing it.
 """
 import os
 import re
+import sys
 
 import yaml
 
@@ -182,3 +183,116 @@ def test_an_unreadable_host_is_never_reported_as_healthy():
     s = _text(os.path.join(ROOT, "secaudit.py"))
     assert "could not read kernel state" in s, (
         "a host whose kernel state could not be read must be flagged, not passed")
+
+
+# ---------------------------------------------------------------------------------------------
+# 5. THE THREE WARNINGS FROM THE 2026-08-13 DEPLOY. Two were defects in my own new checks.
+# ---------------------------------------------------------------------------------------------
+
+def test_the_live_header_check_does_not_announce_itself_as_a_bot():
+    """It sent `Mozilla/5.0 (compatible; cybergod-verify)`. `(compatible;` is the classic crawler
+    marker, so visitors.classify() called it a bot, BOT_404 answered 404, and the check reported
+    "could not read the live security headers" about a site that was serving them perfectly.
+    CLAUDE.md records this exact blind spot - it is what let www.cybergod.ai report healthy while
+    returning 404 for weeks - and I wrote the warning comment and then walked into it.
+    """
+    sys.path.insert(0, ROOT)
+    sys.path.insert(0, os.path.join(ROOT, "webapp", "backend"))
+    import check_bot_gate as bg
+    from app import visitors
+
+    ship = _text(os.path.join(ROOT, "ship.py"))
+    body = "\n".join(ln for ln in ship.splitlines() if not ln.strip().startswith("#"))
+    assert "cybergod-verify" not in body, (
+        "the live header check still sends a bot-shaped user agent; the gate will 404 it")
+    assert "_bg2.BROWSER[1]" in body, (
+        "the header check should reuse check_bot_gate.BROWSER so there is ONE browser UA in "
+        "this repo and it cannot drift")
+
+    class _Req(object):
+        def __init__(self, ua):
+            self.headers = {"user-agent": ua}
+            self.url = type("U", (), {"path": "/"})()
+
+    assert visitors.classify(_Req(bg.BROWSER[1])).get("bot") is not True, (
+        "the shared browser UA is itself classified as a bot")
+
+
+def test_a_damaged_config_alert_can_actually_reach_a_human():
+    """The alert fired correctly on the real run and then printed "no telegram credentials".
+    An alert nobody receives is not an alert. The host has no token; colt-web does, and it already
+    resolves the chat the full way - so ask it, rather than giving the agent a SECOND home for a
+    credential."""
+    s = _text(os.path.join(ROOT, "deploy", "caddyguard", "agent.py"))
+    body = s[s.index("def notify("):s.index("def cmd_migrate")]
+    assert "docker" in body and "colt-web" in body, (
+        "notify() gives up when the host has no token instead of asking the app that has one")
+    assert "input=text.encode" in body, (
+        "the alert text must go over STDIN, not argv: it can contain an attacker-shaped path, "
+        "and argv has a length limit that already broke one payload in this repo")
+    # BOTH halves, not just the call. The first version asserted only `notify.telegram`, so
+    # deleting the import left a command that could never run and the check still passed - a
+    # check aimed at half its subject cannot fail for the right reason.
+    assert "from app import notify" in body, (
+        "the fallback never imports the app's notifier, so the command it runs would fail")
+    assert "notify.telegram" in body, "it should reuse the app's own notifier, not reimplement it"
+
+
+def test_the_patchwatch_warning_is_scoped_to_where_it_is_actionable():
+    """Staging is a DISPOSABLE TWIN, rebuilt every ship; an unattended patcher there could reboot
+    it mid-validation. A warning that fires benignly on every run trains the operator to ignore
+    the one that does not."""
+    sys.path.insert(0, ROOT)
+    import secaudit
+    base = {"kernel_stale": "no", "reboot_required": "no", "security": "0",
+            "unattended": None, "running": "6.8.0-137-generic", "distro": "x"}
+    _b, w = secaudit.verdict("production", dict(base, patchwatch="not-found"))
+    assert any("patchwatch" in x for x in w), "production with no patcher must still warn"
+    _b, w = secaudit.verdict("staging", dict(base, patchwatch="not-found"))
+    assert not any("patchwatch" in x for x in w), (
+        "staging warns about a patcher it should not have, on every single run")
+
+
+def test_a_drifted_twin_kernel_is_reported_by_the_real_code_path():
+    """THE QUESTION THE OLD WARNING WAS GROPING AT. staging exists to run the one test production
+    cannot: a real reboot. If its kernel has drifted, that reboot validates a kernel that will
+    never ship and the gate's strongest check becomes decorative.
+
+    This RUNS secaudit.main() against stubbed hosts rather than re-implementing the comparison -
+    the first version of this check re-computed the expression itself and therefore proved nothing
+    about the code that ships.
+    """
+    import contextlib
+    import io
+    sys.path.insert(0, ROOT)
+    import secaudit
+
+    def _fake(kernels):
+        def run(host, timeout=180):
+            k = kernels["production"] if host == secaudit.PROD else kernels["staging"]
+            return 0, ("#### HOST\ndistro: x\n#### KERNEL\nrunning: %s\nkernel_stale: no\n"
+                       "reboot_required: no\nsecurity: 0\nunattended-upgrades: enabled\n"
+                       "patchwatch_timer: enabled\n" % k)
+        return run
+
+    real, real_argv = secaudit.run, sys.argv
+    try:
+        sys.argv = ["secaudit.py"]        # main() parses argv, and pytest owns the real one
+        for kernels, expect_drift in (
+                ({"production": "6.8.0-137-generic", "staging": "6.8.0-137-generic"}, False),
+                ({"production": "6.8.0-137-generic", "staging": "6.8.0-131-generic"}, True)):
+            secaudit.run = _fake(kernels)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = secaudit.main()
+            out = buf.getvalue()
+            if expect_drift:
+                assert "TWIN DRIFT" in out, (
+                    "staging on a different kernel is not reported, so the reboot test silently "
+                    "validates something that will not ship:\n%s" % out[-400:])
+                assert rc >= 1, "a drifted twin does not raise the exit code"
+            else:
+                assert "TWIN DRIFT" not in out, "matching kernels were reported as drift"
+                assert "SAME kernel" in out, "the healthy twin case says nothing at all"
+    finally:
+        secaudit.run, sys.argv = real, real_argv

@@ -158,10 +158,18 @@ def verdict(name, f):
     # "not-found" is what `systemctl is-enabled` PRINTS for a unit that does not exist, and the
     # first version of this check only knew about None and "absent". So the 2026-08-13 run
     # reported STAGING as "OK, nothing queued" while printing `patchwatch_timer: not-found` two
-    # lines above it: nothing applies security updates to that box unattended, and the audit said
-    # it was fine. A check that cannot recognise its subject's own answer is not a check.
-    # Anything that is not positively enabled counts as absent.
-    if str(f["patchwatch"] or "").strip() not in ("enabled", "enabled-runtime", "static"):
+    # lines above it. A check that cannot recognise its subject's own answer is not a check.
+    #
+    # BUT THE WARNING IS ONLY MEANINGFUL ON PRODUCTION. Staging is a DISPOSABLE TWIN, rebuilt from
+    # production's sources on every ship, and giving it an unattended patcher would let it reboot
+    # itself in the middle of a validation run. What actually matters for the twin is whether its
+    # KERNEL MATCHES production's - because the reboot test is the whole reason staging exists,
+    # and a reboot on a different kernel validates something other than what will ship. That
+    # comparison is made in main(), across both hosts, where the answer is knowable.
+    # A warning that fires benignly on every run trains the operator to ignore the one that does
+    # not, so this one is scoped to the host where it is actionable.
+    enabled = str(f["patchwatch"] or "").strip() in ("enabled", "enabled-runtime", "static")
+    if not enabled and name != "staging":
         warn.append("patchwatch timer %s (nothing applies updates unattended)"
                     % (f["patchwatch"] or "unreadable"))
     return bad, warn
@@ -204,6 +212,24 @@ def main():
                       "nothing queued")
         if bad:
             rc = max(rc, 2)
+
+    # THE TWIN PROPERTY, and it is the only cross-host fact worth asserting.
+    # staging exists to run the ONE test production cannot: a real reboot. If its kernel has
+    # drifted from production's, that reboot validates a kernel that will never ship, and the
+    # gate's strongest check quietly becomes decorative. This is the question the per-host
+    # "is patchwatch installed" warning was groping at, asked directly.
+    p, s = results.get("production") or {}, results.get("staging") or {}
+    if p.get("reachable") and s.get("reachable") and p.get("running") and s.get("running"):
+        if p["running"] != s["running"]:
+            msg = ("staging kernel %s != production %s - the reboot test validates a kernel that "
+                   "will not ship" % (s["running"], p["running"]))
+            s.setdefault("warnings", []).append(msg)
+            if not a.json:
+                print("\n  [!] TWIN DRIFT: %s" % msg)
+            rc = max(rc, 1)
+        elif not a.json:
+            print("\n  OK  staging and production run the SAME kernel (%s) - the reboot test on "
+                  "the twin is testing what will ship" % p["running"])
 
     if a.json:
         print(json.dumps(results, indent=2))

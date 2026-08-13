@@ -334,7 +334,30 @@ def notify(text):
     tok = os.environ.get("BOT_TOKEN", tok)
     chat = os.environ.get("ALERT_TG_CHAT", chat)
     if not (tok and chat):
-        print("[warn] no telegram credentials — alert not sent")
+        # FALL BACK TO THE APP, WHICH ALREADY KNOWS HOW TO REACH THE OPERATOR.
+        # colt-web's notify.py resolves the chat the full way (ALERT_TG_CHAT, else every
+        # authenticated uid from the auth store) and it holds the credentials this host does not.
+        # Asking it is better than giving the agent a SECOND home for a token — the "one value,
+        # four homes" defect this repository has paid for before. Text goes over STDIN, never
+        # argv: an attacker-shaped path in the body must not reach a shell, and argv has a length
+        # limit that already broke one payload here.
+        # On the 2026-08-13 run this printed "no telegram credentials" while correctly detecting
+        # a DAMAGED live Caddyfile — an alert nobody received is not an alert.
+        try:
+            r = subprocess.run(
+                ["docker", "exec", "-i", "colt-web", "python3", "-c",
+                 "import sys;from app import notify;"
+                 "notify.telegram(sys.stdin.read())"],
+                input=text.encode("utf-8"), stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, timeout=30)
+            if r.returncode == 0:
+                print("   alert delivered via colt-web")
+                return True
+            print("[warn] colt-web could not send the alert: %s"
+                  % (r.stdout or b"").decode("utf-8", "replace").strip()[:160])
+        except Exception as e:
+            print("[warn] no telegram credentials on this host and colt-web is unreachable (%s)"
+                  % type(e).__name__)
         return False
     try:
         data = urllib.parse.urlencode({"chat_id": chat, "text": text[:3900],

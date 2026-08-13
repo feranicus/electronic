@@ -1421,9 +1421,16 @@ def do_verify(web, bots):
         if not DRY:
             print("  $ security headers on https://%s/" % DOMAIN)
             try:
+                # USE THE ONE BROWSER UA THIS REPO ALREADY DEFINES. The first version sent
+                # "Mozilla/5.0 (compatible; cybergod-verify)" — and `(compatible;` is the classic
+                # crawler marker, so visitors.classify() called it a bot and the gate answered 404.
+                # The check then reported "could not read the live security headers" about a site
+                # that was serving them perfectly. I wrote the comment below warning about this
+                # blind spot and then walked straight into it. Importing check_bot_gate.BROWSER
+                # means there is ONE browser UA in the repo and it cannot drift.
+                import check_bot_gate as _bg2
                 _req = urllib.request.Request(
-                    "https://%s/" % DOMAIN,
-                    headers={"User-Agent": "Mozilla/5.0 (compatible; cybergod-verify)"})
+                    "https://%s/" % DOMAIN, headers={"User-Agent": _bg2.BROWSER[1]})
                 _h = urllib.request.urlopen(_req, timeout=20,
                                             context=_ssl.create_default_context()).headers
                 _want = ("Content-Security-Policy", "Strict-Transport-Security",

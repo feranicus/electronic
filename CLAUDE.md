@@ -4880,3 +4880,42 @@ what proves the check measures real state rather than a cache — CLAUDE.md alre
 that reasoning for config_drift, which kimi itself made in an earlier run. Its proposed fix (write
 a nonce into the file) would mean MUTATING the live shared config to test it, which is the thing
 that took staging down in an earlier round.
+
+## THE THREE WARNINGS FROM A SUCCESSFUL DEPLOY — two were defects in my own new checks (2026-08-13)
+The ship worked: 41/41 staging checks, GO, production live, `refuses_bad_config` finally correct.
+It ended `FINISHED WITH WARNINGS`, and two of the three were mine.
+
+**1. THE HEADER CHECK ANNOUNCED ITSELF AS A BOT.** `could not read the live security headers:
+HTTPError 404`. It sent `Mozilla/5.0 (compatible; cybergod-verify)`, and `(compatible;` is the
+classic crawler marker, so `visitors.classify()` called it a bot and BOT_404 answered 404. The
+check then reported failure about a site that was serving every header perfectly. **CLAUDE.md
+already records this exact blind spot** — it is what let www.cybergod.ai report healthy while
+returning 404 for weeks — and I wrote the warning comment directly above the line and then walked
+into it. FIX: `import check_bot_gate; BROWSER[1]`. ONE browser UA in the repo, unable to drift.
+
+**2. THE DAMAGED-CONFIG ALERT FIRED AND NOBODY RECEIVED IT.** The new migrate alert correctly
+detected `jhw:jobhuntwow braces 3/2 <-- UNBALANCED` in the LIVE shared Caddyfile — the 6 Aug
+latent-outage shape, caught early, exactly as designed — and then printed
+`[warn] no telegram credentials - alert not sent`. **An alert nobody receives is not an alert.**
+The agent runs on the HOST, which has no token; colt-web has one AND resolves the chat the full
+way (ALERT_TG_CHAT, else every authenticated uid). So `notify()` now falls back to
+`docker exec -i colt-web python3 -c "from app import notify; notify.telegram(sys.stdin.read())"`.
+Text over STDIN, never argv: it can contain an attacker-shaped path, and argv has a length limit
+that already broke one payload here. Giving the agent its own copy of the token would have been a
+SECOND home for a credential, which is the defect this repo has paid for repeatedly.
+
+**3. `patchwatch timer not-found` ON STAGING — a true fact, and the wrong question.**
+Staging is a DISPOSABLE TWIN, rebuilt from production every ship; an unattended patcher there
+could reboot it mid-validation. A warning that fires benignly every run trains the operator to
+ignore the one that does not. What ACTUALLY matters is whether the twin's KERNEL MATCHES
+production's, because the reboot test is the entire reason staging exists and a reboot on a
+different kernel validates something that will never ship. So the per-host warning is now scoped
+to production, and `secaudit.main()` compares the two kernels across hosts and reports TWIN DRIFT.
+Ask the question that has consequences, not the one that is merely true.
+
+**AND TWO WEAK ASSERTIONS OF MINE, both exposed by the negative tests:** the notifier check
+asserted `notify.telegram` but not `from app import notify`, so deleting the import left a command
+that could never run and the test still passed; and my first verification of the twin comparison
+RE-IMPLEMENTED the expression in the test instead of calling `secaudit.main()`, proving nothing
+about the code that ships. The rewritten test stubs `run()` and `sys.argv` and executes the real
+path. Five negative tests, all caught after the fixes.
