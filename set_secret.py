@@ -14,7 +14,7 @@ that gets lost on the next deploy. So: one re-runnable script, no hand-editing, 
 The value is read with getpass and piped over stdin — it is never passed as an argv (argv is visible
 in `ps` and lands in your shell history), never echoed, and never logged.
 """
-import argparse, getpass, os, subprocess, sys
+import argparse, base64, getpass, os, subprocess, sys
 
 HOST = os.environ.get("DROPLET_HOST", "64.225.108.200")
 USER = os.environ.get("DROPLET_USER", "root")
@@ -76,10 +76,29 @@ def upsert_local(name, value):
         return False
 
 
+def remote_command(name):
+    """The command ssh runs on the droplet.
+
+    THE BUG THIS FIXES (2026-08-14): the old line was
+        subprocess.run(SSH + [host, "bash -s", "--", name], input=value)
+    `bash -s` reads its SCRIPT from stdin, but the code piped the VALUE into stdin - so the droplet
+    ran the API KEY as a command ("bash: line 1: <key>: command not found") and the REMOTE script
+    was never sent. The secret also reached the droplet's shell.
+    FIX: the script travels in ARGV (base64'd, into a temp file so no quoting layer can corrupt it);
+    stdin is left free for the VALUE, which is what `VALUE="$(cat)"` in the script reads. The value
+    therefore never appears in argv, in `ps`, or in any shell history - only the NAME and the
+    (non-secret) script do.
+    """
+    b64 = base64.b64encode(REMOTE.encode("utf-8")).decode("ascii")
+    # decode the script to a temp file, run it with NAME as $1, keep the exit code, clean up.
+    return ("S=$(mktemp) && printf %%s '%s' | base64 -d > \"$S\" && "
+            "bash \"$S\" '%s'; rc=$?; rm -f \"$S\"; exit $rc" % (b64, name))
+
+
 def run(name, value):
     upsert_local(name, value)                     # local first: it is what deploy.py ships
-    r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), "bash -s", "--", name],
-                       input=value.encode("utf-8"))
+    r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), remote_command(name)],
+                       input=value.encode("utf-8"))   # VALUE only on stdin, never in argv
     return r.returncode
 
 

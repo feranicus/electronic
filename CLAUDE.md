@@ -5370,3 +5370,23 @@ RULE: detection and reporting scale; retaliation is illegal and pointless. Class
 name the abuse desk, draft the complaint, let a human file it.
 Guarded by tests/test_ip_reputation.py (offline classify, fail-open on unknown, /24 folding,
 distinct-days-not-burst, drafter sends nothing, wiring order). Five mutations, all caught.
+
+## set_secret.py PIPED THE VALUE TO `bash -s`, WHICH READS ITS SCRIPT FROM STDIN (2026-08-14)
+`python set_secret.py ABUSEIPDB_KEY` printed, on the DROPLET:
+    bash: line 1: 02ff4d68...: command not found
+`run()` did `subprocess.run(SSH + [host, "bash -s", "--", name], input=value)`. **`bash -s` reads
+its SCRIPT from stdin** - and the code piped the VALUE (the API key) there. So the droplet executed
+the key as a command, the real REMOTE upsert script was never sent, and the secret reached the
+droplet's shell. The local .env WAS written (that half worked), so the key looked half-applied: set
+locally, absent on the droplet - which is exactly why AbuseIPDB showed the key "Never used".
+FIX: `remote_command(name)` embeds the REMOTE script in ARGV (base64'd into a temp file so no
+quoting layer corrupts it) and leaves stdin FREE for the value, which is what `VALUE="$(cat)"`
+reads. The value now travels only on stdin - never in argv, `ps`, or shell history - and only the
+NAME and the non-secret script are visible.
+RULE: `bash -s` and "pipe the value on stdin" are mutually exclusive; the script has to travel in
+argv. This is the same doctrine as caddyguard/dbbackup shipping their payload base64'd in argv with
+data on stdin.
+Guarded by tests/test_set_secret.py: the value never appears in the remote command, the embedded
+script reads it from stdin, an end-to-end bash run upserts it idempotently, AND run() itself is
+exercised with a stubbed subprocess to prove the WIRING (value on stdin, script in argv, no
+`bash -s`). Proven by reintroducing the exact `bash -s` line: caught.
