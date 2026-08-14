@@ -16,6 +16,8 @@ export const keyed = {
   "login.prog1": "Sign in",
   "login.prog2": "Verify",
   // ---- who we are / experience (added 7 Aug 2026) ---------------------------------------
+  "guard.title": "Content protected",
+  "guard.body": "Right-click and page-source shortcuts are disabled on this site. The assessment methodology, wording and visuals are the intellectual property of Cybergod LLC / S4Biz Group.",
   "nav.about": "Who we are",
   "nav.partners": "Who it is for",
   "prt.situation": "Situation",

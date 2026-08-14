@@ -36,6 +36,8 @@ export const keyed = {
   "login.prog1": "Logowanie",
   "login.prog2": "Weryfikacja",
   // ---- kim jesteśmy / doświadczenie (dodane 7 sierpnia 2026) ------------------------------
+  "guard.title": "Treść chroniona",
+  "guard.body": "Prawy przycisk myszy i skróty do podglądu źródła strony są wyłączone w tej witrynie. Metodyka oceny, teksty i grafika stanowią własność intelektualną Cybergod LLC / S4Biz Group.",
   "nav.about": "Kim jesteśmy",
   "nav.partners": "Dla kogo to jest",
   "prt.situation": "Sytuacja",

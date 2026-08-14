@@ -8,9 +8,14 @@ import Partners from "./pages/Partners.jsx";
 import Demo from "./pages/Demo.jsx";
 import Login from "./pages/Login.jsx";
 import Cabinet from "./pages/Cabinet.jsx";
+import ContentGuard from "./components/ContentGuard.jsx";
 
 export default function App() {
   return (
+    <>
+      {/* Mounted ABOVE the routes so it covers the public pages and the cabinet alike, and so a
+          route change never unmounts it. It renders one hidden status element until it fires. */}
+      <ContentGuard />
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/demo" element={<Demo />} />
@@ -22,5 +27,6 @@ export default function App() {
       <Route path="/experience" element={<Experience />} />
       <Route path="/app/*" element={<Cabinet />} />
     </Routes>
+    </>
   );
 }

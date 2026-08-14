@@ -14,6 +14,8 @@ export const keyed = {
   "login.prog1": "Anmelden",
   "login.prog2": "Best\u00e4tigen",
   // ---- wer wir sind / Erfahrung (added 7 Aug 2026) ---------------------------------------
+  "guard.title": "Inhalt geschützt",
+  "guard.body": "Rechtsklick und Tastenkürzel zum Anzeigen des Seitenquelltextes sind auf dieser Website deaktiviert. Bewertungsmethodik, Texte und Grafiken sind geistiges Eigentum der Cybergod LLC / S4Biz Group.",
   "nav.about": "Wer wir sind",
   "nav.partners": "Für wen es ist",
   "prt.situation": "Ausgangslage",

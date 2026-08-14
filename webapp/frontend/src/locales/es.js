@@ -27,6 +27,8 @@ export const keyed = {
   "login.prog1": "Acceso",
   "login.prog2": "Verificaci\u00f3n",
   // ---- qui\u00e9nes somos / experiencia (a\u00f1adido el 7 ago 2026) -------------------------------
+  "guard.title": "Contenido protegido",
+  "guard.body": "El clic derecho y los atajos para ver el código fuente están desactivados en este sitio. La metodología de evaluación, los textos y los gráficos son propiedad intelectual de Cybergod LLC / S4Biz Group.",
   "nav.about": "Qui\u00e9nes somos",
   "nav.partners": "Para quién es",
   "prt.situation": "Situación",

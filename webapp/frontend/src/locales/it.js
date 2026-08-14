@@ -23,6 +23,8 @@ export const keyed = {
   "login.prog1": "Accesso",
   "login.prog2": "Verifica",
   // ---- chi siamo / esperienza (added 7 Aug 2026) -----------------------------------------
+  "guard.title": "Contenuto protetto",
+  "guard.body": "Il tasto destro e le scorciatoie per il codice sorgente sono disattivati su questo sito. La metodologia di valutazione, i testi e la grafica sono proprietà intellettuale di Cybergod LLC / S4Biz Group.",
   "nav.about": "Chi siamo",
   "nav.partners": "Per chi è",
   "prt.situation": "Situazione",

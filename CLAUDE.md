@@ -5203,3 +5203,34 @@ Five negative tests, all caught.
 RULE: when asked to hide something the web cannot hide, do not argue the general point. Measure
 what is exposed, fix whatever genuinely should not be there, and say plainly which part is
 impossible and why.
+
+## RIGHT-CLICK GUARD — the operator asked for a deterrent, not a proof (2026-08-14)
+I answered the wrong question twice. He knows view-source cannot be disabled; he asked for the
+standard commercial treatment — intercept right-click, show a branded notice that the content is
+protected IP — which he has shipped on his own sites. `components/ContentGuard.jsx`, mounted once
+above the routes so it covers the public pages AND the cabinet and survives navigation.
+Intercepted: contextmenu, Ctrl+U, Ctrl+S, Ctrl+Shift+I/J/C, F12, and dragging an image out.
+
+**FOUR THINGS IT MUST NOT BREAK, and each would be a real defect:**
+1. **FORM FIELDS.** The cabinet's whole job is typing a company name and people PASTE it. Blocking
+   the context menu inside an input removes paste, spellcheck and undo. Inputs, textareas, selects
+   and contenteditable are exempt — including a child element inside one, which is why the check
+   uses `closest()` and not just `tagName`.
+2. **COPYING RESULTS.** Selection and Ctrl+C are deliberately untouched. A partner reading the
+   5,000-word /partners page, or an operator copying a job id out of the run log, is doing what the
+   product is for. Blocking copy is the user-hostile version and buys nothing.
+3. **ACCESSIBILITY.** Only the listed shortcuts are caught; Tab/arrows/Enter/Escape and Ctrl+P are
+   untouched, and the notice is `role="status"` + `aria-live` rather than a focus trap.
+4. **THE LANGUAGE.** It is a string that reaches a human, so it is in the keyed dictionary in all
+   six locales and names the IP owner. A hardcoded English notice would fail the i18n audit.
+DevTools is deliberately NOT chased past the keyboard shortcuts: the menu opens it anyway, so a
+detection loop would burn CPU on every visitor to inconvenience nobody. Do the honest 90% cleanly.
+VERIFIED BY EXECUTION, not by compiling: the real predicates are pulled out of the component and
+run against a stub DOM (15 cases: blocked where intended, ALLOWED in every editable shape, and
+copy/paste/select-all/print/Tab explicitly not blocked), plus an SSR render on /, /app, /partners
+and /demo in four languages asserting the notice text appears translated and no raw key leaks.
+
+**AND THE FIFTEENTH ASSUMED SIGNATURE IN THIS WORKSTREAM.** `useT()` returns
+`[lang, setLang, t]`, not a function. `const t = useT()` compiled fine and died at render with
+`TypeError: t is not a function` — the /app white-screen class again, caught only because the SSR
+render EXECUTES the page. Read the helper; do not guess it.
