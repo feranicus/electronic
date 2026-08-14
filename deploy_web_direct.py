@@ -135,10 +135,15 @@ def remote(proxy=True):
     " | sha256sum -c - &&"
     "  tar xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz trivy &&"
     "  install -m 0755 trivy /usr/local/bin/trivy && cd - >/dev/null; fi",
+    # --skip-version-check: the "a newer Trivy is available" banner printed TWICE per deploy and
+    # is pure noise. The version we run is PINNED and checksum-verified on purpose (the Feb-Mar
+    # 2026 supply-chain compromise), so an upgrade is a deliberate, reviewed change to
+    # TRIVY_VERSION - never something to be nudged into by a banner. The vulnerability DATABASE
+    # updates independently of the binary, so the findings are current either way.
     "trivy image --scanners vuln --severity HIGH --ignore-unfixed --exit-code 0"
-    " --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25 || true",
+    " --skip-version-check --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25 || true",
     "trivy image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1"
-    " --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25"
+    " --skip-version-check --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25"
     " || { echo 'TRIVY_CRITICAL_FAIL'; }",
     ]
     if not proxy:

@@ -5260,3 +5260,44 @@ VERIFICATION THAT ACTUALLY PROVES IT: `del os.uname` before importing the agent,
 failure path. That reproduces Windows precisely for this API rather than trusting the fix.
 RULE, now enforced: anything the test suite EXECUTES must be importable and runnable on Windows,
 even when it only ever ships to Linux.
+
+## THE BACKUP'S FIRST PRODUCTION RUN BACKED UP NOTHING AND EXITED 0 (2026-08-14)
+The deploy log, verbatim:
+```
+--- DATABASES ---   [!] volume colt_webdata not found
+                    [!] volume colt_events not found
+--- BACKUP ---      SKIP not present in volume colt_webdata (nothing to back up yet)
+```
+Both databases exist; the ledger holds 193 assessments. **Docker Compose PREFIXES volumes with the
+project name**, so the real volumes are `colt-stack_colt_webdata` and `colt-stack_colt_events` —
+and `docker-compose.web.yml` says exactly that in a comment I did not read. The agent looked up the
+unprefixed names, found nothing, and reported success. That is the worst possible outcome for a
+backup tool: the operator now believes the books of record are safe.
+TWO FIXES, and the second matters more than the first:
+1. **ASK THE CONTAINER, never assume a name.** `volume_path()` reads colt-web's own mount table
+   (`docker inspect .Mounts`) and maps `/var/log/colt/cost_ledger.sqlite` to its host path. That is
+   prefix-agnostic, so renaming the Compose project cannot break it again. Same rule caddyguard's
+   `mount_source()` already enforced, and I did not carry it across. The volume-name fallback (for
+   a stopped container) now matches by SUFFIX for the same reason.
+2. **FINDING NOTHING ON A LIVE BOX IS A FAILURE.** A fresh deployment legitimately has no databases
+   yet, so the discriminator is whether the APP IS RUNNING: if colt-web is up, those files exist by
+   definition and not finding them means the LOOKUP is broken, not the estate empty. It now exits 1
+   and alerts, naming the container and printing the `docker inspect` command that shows the truth.
+   My own test `test_a_missing_database_is_a_skip_not_a_failure` had encoded "missing = SKIP =
+   success", which is right on a fresh box and catastrophic on a live one.
+RULE: a tool that reports success for work it did not do is worse than one that crashes. When
+"nothing to do" and "I cannot see my subject" produce the same output, they must be distinguished
+by something external — here, whether the process that owns the data is running.
+Guarded by three FUNCTIONAL tests (mount-table resolution with the volume list deliberately
+useless; the Compose-prefixed fallback; nothing-found-while-running). The first replaced a static
+`".Mounts" in source` assertion that passed against a mutation which kept the string and disabled
+the branch — the wrong-subject defect again. Three mutations, all caught.
+
+## Trivy 0.69.3 vs 0.73.0 — the banner is noise, the pin is deliberate
+The "a newer Trivy is available" notice printed TWICE per deploy. `--skip-version-check` silences
+it. The pin is NOT stale-by-accident: 0.69.3 is the last release Aqua confirmed clean after the
+Feb–Mar 2026 supply-chain compromise, and the install verifies the tarball's sha256 against the
+signed checksums file before executing it. The VULNERABILITY DATABASE updates independently of the
+binary, so findings are current on either version. An upgrade is therefore a deliberate, reviewed
+change to `TRIVY_VERSION` in deploy.yml / security.yml / deploy_web_direct.py — never something to
+be nudged into by a banner printed by the tool asking to update itself.

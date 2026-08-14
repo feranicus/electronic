@@ -63,8 +63,10 @@ def _fixture():
     c.commit()
     c.close()
     ag = _agent(os.path.join(work, "backups"))
-    ag.volume_path = lambda v, n: (os.path.join(vol, n)
-                                   if os.path.exists(os.path.join(vol, n)) else None)
+    ag.volume_path = lambda cont, inside, v: (
+        os.path.join(vol, os.path.basename(inside))
+        if os.path.exists(os.path.join(vol, os.path.basename(inside))) else None)
+    ag.container_running = lambda name: False        # no docker in the test environment
     return work, vol, ag
 
 
@@ -309,3 +311,95 @@ def test_the_agent_does_not_use_a_deprecated_utc_clock():
     src = open(AGENT, encoding="utf-8").read()
     assert "utcnow(" not in src, (
         "datetime.utcnow() is deprecated - use datetime.now(datetime.timezone.utc)")
+
+
+def test_finding_no_database_while_the_app_is_RUNNING_is_a_failure():
+    """THE FIRST PRODUCTION RUN'S DEFECT, and the worst outcome a backup tool can have.
+
+    Docker Compose prefixes volumes with the project name, so `colt_webdata` matched nothing and
+    the real volume is `colt-stack_colt_webdata`. The run printed "volume not found" twice, backed
+    up NOTHING, and exited 0 - after which the operator believes the books of record are safe.
+
+    A fresh deployment legitimately has no databases yet, so the discriminator is whether the APP
+    IS RUNNING: if colt-web is up those files exist by definition, and not finding them means the
+    lookup is broken, not that the system is empty.
+    """
+    work, vol, ag = _fixture()
+    try:
+        ag.volume_path = lambda c, i, v: None            # reproduce the name mismatch
+        ag.container_running = lambda name: True         # ...on a box where colt-web is UP
+        rc = ag.cmd_backup()
+        assert rc == 1, "backing up NOTHING on a live box was reported as success"
+        assert ag.sent, "and it was silent - the operator would never learn"
+        assert "colt-web is running" in ag.sent[0], (
+            "the alert does not explain WHY this is a failure: %s" % ag.sent[0][:160])
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def test_a_fresh_deployment_with_nothing_running_is_still_a_clean_skip():
+    """The other direction: do not fail a box that genuinely has no databases yet."""
+    work, vol, ag = _fixture()
+    try:
+        ag.volume_path = lambda c, i, v: None
+        ag.container_running = lambda name: False
+        rc = ag.cmd_backup()
+        assert rc == 0 and not ag.sent, "a genuinely empty system was treated as broken"
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def test_the_path_lookup_resolves_through_the_containers_mount_table():
+    """RUN it, do not grep for it. Greping the source for ".Mounts" passed against a mutation that
+    kept the string and disabled the branch - the wrong-subject defect this repo keeps paying for.
+
+    This gives the agent a REAL container mount table and NO usable volume list, so the only way
+    to find the file is by asking the container. That is what makes it immune to Compose's
+    project prefix, which is what broke the first production run.
+    """
+    work = tempfile.mkdtemp(prefix="dbbmount-")
+    try:
+        data = os.path.join(work, "some", "docker", "path", "_data")
+        os.makedirs(data)
+        _ledger(os.path.join(data, "cost_ledger.sqlite"))
+        ag = _agent(os.path.join(work, "backups"))
+
+        def fake_sh(cmd, timeout=120):
+            if ".Mounts" in cmd:
+                return 0, "/var/log/colt|%s" % data, ""
+            if "volume ls" in cmd:
+                return 0, "totally_unrelated_volume", ""      # the fallback CANNOT help here
+            return 1, "", ""
+        ag.sh = fake_sh
+        got = ag.volume_path("colt-web", "/var/log/colt/cost_ledger.sqlite", "colt_events")
+        assert got == os.path.join(data, "cost_ledger.sqlite"), (
+            "the file was not resolved through the container's mount table: %r" % got)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def test_the_volume_fallback_tolerates_the_compose_project_prefix():
+    """When the container is stopped, the volume list is the only source - and Compose names it
+    `colt-stack_colt_events`, not `colt_events`. That mismatch is the original bug."""
+    work = tempfile.mkdtemp(prefix="dbbvol-")
+    try:
+        mp = os.path.join(work, "vols", "colt-stack_colt_events", "_data")
+        os.makedirs(mp)
+        _ledger(os.path.join(mp, "cost_ledger.sqlite"))
+        ag = _agent(os.path.join(work, "backups"))
+
+        def fake_sh(cmd, timeout=120):
+            if ".Mounts" in cmd:
+                return 1, "", "container is not running"
+            if "volume ls" in cmd:
+                return 0, "colt-stack_colt_events\nvideodead_data", ""
+            if "volume inspect" in cmd and "colt-stack_colt_events" in cmd:
+                return 0, mp, ""
+            return 1, "", ""
+        ag.sh = fake_sh
+        got = ag.volume_path("colt-web", "/var/log/colt/cost_ledger.sqlite", "colt_events")
+        assert got == os.path.join(mp, "cost_ledger.sqlite"), (
+            "the Compose-prefixed volume was not found - this is the exact first-run defect: %r"
+            % got)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

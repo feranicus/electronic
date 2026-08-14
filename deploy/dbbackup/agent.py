@@ -52,11 +52,21 @@ PW_ENV = "/etc/patchwatch/patchwatch.env"
 # and identical on the droplet.
 HOSTNAME = socket.gethostname()
 
-# volume -> path inside it. Resolved to a host path via `docker volume inspect`, so this works
-# whether or not the containers are running: the online backup API only needs the FILE.
+# (container, path INSIDE the container, logical volume, description)
+#
+# RESOLVED FROM THE CONTAINER'S MOUNT TABLE, not from a volume name.
+# The first version looked up `colt_webdata` and `colt_events` directly and both came back "not
+# found", so the very first production run backed up NOTHING and exited 0 - the worst possible
+# outcome, because the operator now believes the books of record are safe. Docker Compose PREFIXES
+# volumes with the project name, so the real names are `colt-stack_colt_webdata` and
+# `colt-stack_colt_events`; docker-compose.web.yml even says so in a comment I did not read.
+# Asking the CONTAINER where its own mounts come from is the same rule caddyguard's mount_source()
+# already enforces: never assume a path, ask docker. It is also prefix-agnostic, so renaming the
+# compose project cannot break the backup again.
 DATABASES = [
-    ("colt_webdata", "colt.sqlite", "jobs - who ran what"),
-    ("colt_events", "cost_ledger.sqlite", "cost ledger - the books of record"),
+    ("colt-web", "/data/colt.sqlite", "colt_webdata", "jobs - who ran what"),
+    ("colt-web", "/var/log/colt/cost_ledger.sqlite", "colt_events",
+     "cost ledger - the books of record"),
 ]
 
 
@@ -90,14 +100,51 @@ def notify(text):
     return False
 
 
-def volume_path(vol, name):
-    """Ask DOCKER where the volume lives. Never assume /var/lib/docker/volumes/... - that is the
-    same 'hardcoded path' defect that made cmd_selftest fail on staging."""
-    rc, out, _ = sh("docker volume inspect -f '{{.Mountpoint}}' %s" % vol)
-    if rc != 0 or not out:
+def container_running(name):
+    rc, out, _ = sh("docker inspect -f '{{.State.Running}}' %s 2>/dev/null" % name)
+    return rc == 0 and out.strip() == "true"
+
+
+def volume_path(container, inside, vol):
+    """Where does `inside` live on the HOST?
+
+    Ask the CONTAINER for its own mount table first. That is prefix-agnostic, so Compose naming
+    (`colt-stack_colt_events`) cannot break it - which is exactly what broke the first run.
+    Falls back to matching a volume whose name ENDS WITH the logical name, so the backup still
+    works when the container is stopped.
+    """
+    rc, out, _ = sh("docker inspect -f '{{range .Mounts}}{{.Destination}}|{{.Source}}{{\"\\n\"}}"
+                    "{{end}}' %s 2>/dev/null" % container)
+    if rc == 0 and out:
+        best = None
+        for line in out.splitlines():
+            if "|" not in line:
+                continue
+            dest, src = line.split("|", 1)
+            dest, src = dest.strip(), src.strip()
+            # the mount is a DIRECTORY; the file sits under it
+            if dest and src and (inside == dest or inside.startswith(dest.rstrip("/") + "/")):
+                if best is None or len(dest) > len(best[0]):
+                    best = (dest, src)
+        if best:
+            dest, src = best
+            p = os.path.join(src, os.path.relpath(inside, dest))
+            if os.path.exists(p):
+                return p
+
+    # FALLBACK: the container may be stopped. Match the volume by SUFFIX, because Compose prefixes
+    # every volume with the project name and the unprefixed name matches nothing.
+    rc, out, _ = sh("docker volume ls --format '{{.Name}}'")
+    if rc != 0:
         return None
-    p = os.path.join(out, name)
-    return p if os.path.exists(p) else None
+    cands = [v for v in out.split() if v == vol or v.endswith("_" + vol)]
+    for v in cands:
+        rc, mp, _ = sh("docker volume inspect -f '{{.Mountpoint}}' %s" % v)
+        if rc == 0 and mp:
+            p = os.path.join(mp, os.path.basename(inside))
+            if os.path.exists(p):
+                return p
+    return None
 
 
 def table_counts(path):
@@ -203,13 +250,15 @@ def cmd_backup():
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
     made, failed = [], []
 
-    for vol, name, what in DATABASES:
+    for cont, inside, vol, what in DATABASES:
+        name = os.path.basename(inside)
         log("   %-22s (%s)" % (name, what))
-        src = volume_path(vol, name)
+        src = volume_path(cont, inside, vol)
         if not src:
-            # ABSENCE OF EVIDENCE IS NOT A FINDING, and it is not a success either. A database
-            # that is not there yet (fresh deployment) is normal; say so and move on.
-            log("      SKIP not present in volume %s (nothing to back up yet)" % vol)
+            # A database that does not exist yet (fresh deployment) is normal. A database that
+            # exists but cannot be FOUND is a broken backup wearing a green tick - see the
+            # "found nothing at all" check below, which is what turns this into a failure.
+            log("      SKIP %s not found (container %s, %s)" % (inside, cont, vol))
             continue
         raw = os.path.join(BACKUP_DIR, "%s.%s" % (name, stamp))
         try:
@@ -265,8 +314,26 @@ def cmd_backup():
         except Exception as e:
             log("   [warn] remote prune skipped: %s" % e)
 
+    # ---- FINDING NOTHING ON A LIVE BOX IS A FAILURE, NOT A SUCCESS ----------------------------
+    # The first production run printed "volume colt_webdata not found" twice, backed up NOTHING,
+    # and exited 0. That is the worst possible outcome for a backup tool: the operator now
+    # believes the books of record are safe. A fresh deployment legitimately has no databases yet,
+    # so the discriminator is whether the APP IS RUNNING - if colt-web is up, those files exist by
+    # definition and failing to find them means the resolution is broken, not the estate empty.
+    if not made and not failed:
+        live = sorted({c for c, _, _, _ in DATABASES if container_running(c)})
+        if live:
+            failed.append(
+                "NOT ONE database was found, yet %s is running - so the files exist and the "
+                "lookup is broken. Nothing was backed up. Check the container mount table: "
+                "docker inspect -f '{{range .Mounts}}{{.Destination}} {{.Source}}\n{{end}}' %s"
+                % (", ".join(live), live[0]))
+            log("   [X] nothing found while %s is RUNNING - this is a broken backup, not an "
+                "empty system" % ", ".join(live))
+
     # ---- rotate local --------------------------------------------------------------------------
-    for _, name, _ in DATABASES:
+    for _, inside, _, _ in DATABASES:
+        name = os.path.basename(inside)
         old = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith(name + "."))
         for f in old[:-KEEP_LOCAL]:
             os.unlink(os.path.join(BACKUP_DIR, f))
@@ -294,7 +361,8 @@ def cmd_verify_restore():
         log("   no backup directory yet: %s" % BACKUP_DIR)
         return 1
     rc = 0
-    for vol, name, _ in DATABASES:
+    for _c, inside, _v, _w in DATABASES:
+        name = os.path.basename(inside)
         cands = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith(name + ".") and f.endswith(".gz"))
         if not cands:
             log("   %-22s no backup to restore" % name)
@@ -322,10 +390,22 @@ def cmd_verify_restore():
 
 
 def cmd_restore(path, target_vol, target_name):
-    """Deliberate, explicit restore over a LIVE database. Never automatic."""
-    dst = volume_path(target_vol, target_name)
+    """Deliberate, explicit restore over a LIVE database. Never automatic.
+
+    Resolves the target through the same DATABASES table the backup uses, so restore and backup
+    can never disagree about where a file lives - the "one home for a value" rule.
+    """
+    entry = next((d for d in DATABASES
+                  if d[2] == target_vol and os.path.basename(d[1]) == target_name), None)
+    if not entry:
+        log("   unknown target %s / %s. Known:" % (target_vol, target_name))
+        for c, i, v, _w in DATABASES:
+            log("     %-14s %s" % (v, os.path.basename(i)))
+        return 1
+    dst = volume_path(entry[0], entry[1], entry[2])
     if not dst:
-        log("   target not found in volume %s" % target_vol); return 1
+        log("   target not found: %s in %s (container %s)" % (entry[1], target_vol, entry[0]))
+        return 1
     bak = dst + ".before-restore-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
     shutil.copy2(dst, bak)                                   # keep what we are about to replace
     tmp = tempfile.mkdtemp(prefix="dbrestore-")
