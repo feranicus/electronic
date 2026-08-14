@@ -238,6 +238,24 @@ def render_text(stats, unk, proposals=None):
         L.append("")
         L.append("  origin       " + "  ".join("%s %d" % (c, n) for c, n in top))
     L.append("")
+
+    # RETURNING ACTORS. Variety across days, not volume in one burst, is what marks an actor that
+    # keeps coming back (45.148.10.x probed on 21 Jul and again 10 Aug). One line each, with the
+    # infrastructure verdict, so the operator sees "this is the same hosting block, again".
+    try:
+        from . import ip_reputation as _rep
+        rpt = _rep.repeat_offenders(min_days=2)
+        if rpt:
+            L.append("  returning actors (seen hostile on >=2 days)")
+            for r in rpt[:6]:
+                k = _rep.classify((r.get("ips") or [""])[0]).get("kind", "unknown")
+                L.append("    %-20s %d day(s), %d probe(s)  [%s]"
+                         % (r["net"], len(r.get("days", [])), r.get("hostile", 0), k))
+            L.append("    -> abuse complaints are drafted for review, never auto-sent "
+                     "(abuse_report.complaints_for_repeat_offenders)")
+            L.append("")
+    except Exception:
+        pass
     if unk["sources"]:
         L.append("  NEW OR UNRECOGNISED  (behaviour the corpus cannot name yet)")
         for r in unk["sources"][:6]:

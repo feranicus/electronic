@@ -5330,3 +5330,43 @@ the script (never retyped, comments stripped so the explanation of the removed l
 false-positive), runs them against a monolith built from the REAL committed blocks, and asserts
 every other project's block is byte-identical afterwards - plus that no range delete is unbounded,
 and that our own block is still genuinely replaced. Proven by reintroducing the exact line: caught.
+
+## IP REPUTATION — a visit from infrastructure is not a person (2026-08-14, 45.148.10.x)
+The visitor alert said "A person just opened cybergod.ai" for 45.148.10.5 — AS48090 (TECHOFF SRV
+LIMITED) / DMZHOST Amsterdam, bulletproof hosting + VPN exit, the SAME /24 that had probed /.env
+and /aws-ses.json on 21 Jul and again 10 Aug. Calling it a person is the spoofed-trust bug again,
+this time on the SOURCE rather than the user agent. The operator asked for four lawful capabilities;
+all four shipped, and the offensive parts he also asked for were declined with reasons (below).
+- **`ip_reputation.py`** — passive classifier at TWO speeds. `classify(ip)` is OFFLINE (a committed
+  ASN/CIDR list of known hoster/VPN/bulletproof/cloud/scanner ranges) and safe on the request path;
+  `enrich(ip)` adds the live RIPEstat ASN holder for the digest/report path only. It FAILS OPEN:
+  `unknown` is treated as a person, so a real residential visitor is never silently dropped.
+- **visitors.py mislabel fix** — `note_visit` now suppresses the "a person" alert when the source
+  classifies as infrastructure, logging `visit_suppressed reason="infrastructure not a person"`.
+  The check runs BEFORE the alert is composed (asserted).
+- **alerts.py** — every security alert records the source /24 as HOSTILE in the reputation store,
+  so a returning actor is recognised across days. Best-effort, never affects whether the alert fires.
+- **repeat-offender memory** — keyed on the /24 (or /48), persisted on the shared colt_events volume
+  like the cost ledger, so a rotating single address in one hosting block is still ONE actor.
+  `repeat_offenders(min_days=2)` counts DISTINCT DAYS, not burst volume (guarded).
+- **attack_digest** — surfaces returning actors as one line each with the infra verdict.
+- **abuse_report.draft_complaint / complaints_for_repeat_offenders** — the four models draft a
+  human-reviewed evidence package (IP/24, ASN holder + abuse desk from enrich(), first/last seen,
+  paths, MITRE T1595) for the operator to FILE. Nothing is auto-sent; the drafter reaches no
+  network at all (guarded). AbuseIPDB auto-submission stays the existing opt-in `abuse_report`
+  path (needs ABUSEIPDB_KEY).
+
+**WHAT WAS DECLINED, AND WHY IT IS NOT CLOSE.** Hacking back, active-scanning the attacker to find
+"the real IP", or anything meant to harm/expose them: criminal where we operate — StGB §202a/§202b
+(access/interception without authorisation), §303a/§303b (data alteration / computer sabotage), and
+§202c which criminalises even POSSESSING/BUILDING the tooling with that intent; EU Directive
+2013/40, US CFAA. It is also technically impossible: traceroute/nmap cannot see "behind" a VPN or
+hoster — the packets terminate at the provider, so the only lawful path to the human is a complaint
+to that provider, which enrich() names but never sends. VirusTotal is for files/URLs, not IP abuse
+reports. BSI/CISA/CERTs act on evidence packages from a named reporter, not automated pings, and a
+server that mass-mails abuse desks gets its own domain blocklisted — fatal when that domain sends
+the login OTP.
+RULE: detection and reporting scale; retaliation is illegal and pointless. Classify passively,
+name the abuse desk, draft the complaint, let a human file it.
+Guarded by tests/test_ip_reputation.py (offline classify, fail-open on unknown, /24 folding,
+distinct-days-not-burst, drafter sends nothing, wiring order). Five mutations, all caught.

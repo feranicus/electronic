@@ -93,3 +93,67 @@ if __name__ == "__main__":
     print(json.dumps(report_digest(d, dry_run=dry), indent=2))
     if dry:
         print("\n(dry-run — add --send and set ABUSEIPDB_KEY to actually submit)")
+
+
+# =================================================================================================
+# HUMAN-REVIEWED ABUSE COMPLAINT DRAFTER.
+# The four models draft an evidence package for a REPEAT offender; a HUMAN files it. Nothing here
+# is sent automatically. BSI, CISA and national CERTs act on evidence packages from a named
+# reporter, not on automated pings - and a server that mass-mails abuse desks gets its own domain
+# blocklisted, which is fatal when the same domain sends the login OTP. So this produces text; the
+# operator reviews it and sends it to the hoster's abuse desk (which enrich() names) or attaches it
+# to a formal complaint. Lawful, and it does not send one packet to the attacker.
+# =================================================================================================
+def draft_complaint(record, holder=None, abuse_email=None):
+    """`record` is an ip_reputation repeat-offender dict. Returns plain text for a human to file."""
+    net = record.get("net", "?")
+    ips = ", ".join(record.get("ips", [])[:10]) or net
+    days = record.get("days", [])
+    paths = ", ".join(record.get("paths", [])[:12]) or "(various probe paths)"
+    first = time.strftime("%Y-%m-%d", time.gmtime(record.get("first", time.time())))
+    last = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(record.get("last", time.time())))
+    lines = [
+        "Subject: Abuse report - automated vulnerability scanning of cybergod.ai",
+        "",
+        "To: %s" % (abuse_email or "the network's published abuse contact"),
+        "From: security@cybergod.ai (Cybergod LLC / S4Biz Group)",
+        "",
+        "We operate cybergod.ai (Frankfurt, DE). The addresses below, on your network%s, have"
+        % ((" (%s)" % holder) if holder else ""),
+        "repeatedly probed our service for exposed secrets and known vulnerable paths. This is",
+        "unsolicited automated scanning, not legitimate traffic.",
+        "",
+        "Network      : %s" % net,
+        "Addresses    : %s" % ips,
+        "First seen   : %s" % first,
+        "Last seen    : %s" % last,
+        "Distinct days: %d  (%s)" % (len(days), ", ".join(days[-8:])),
+        "Total probes : %d" % record.get("hostile", 0),
+        "Sample paths : %s" % paths,
+        "Technique    : MITRE ATT&CK T1595.003 (active scanning: wordlist), T1595.001.",
+        "",
+        "No data was exposed - every probe received an HTTP 404. We are reporting so you can act",
+        "on your customer under your acceptable-use policy. Full request logs are available on",
+        "request. This report is filed under GDPR Art. 6(1)(f) (network and information security).",
+        "",
+        "-- Cybergod LLC / S4Biz Group, security@cybergod.ai",
+    ]
+    return "\n".join(lines)
+
+
+def complaints_for_repeat_offenders(min_days=2, enrich=True):
+    """Build one complaint per returning actor. enrich() names the hoster + abuse desk (one RIPE
+    lookup each); pass enrich=False for a fully offline draft."""
+    import importlib
+    rep = importlib.import_module("ip_reputation") if __package__ is None \
+        else importlib.import_module(".ip_reputation", __package__)
+    out = []
+    for r in rep.repeat_offenders(min_days=min_days):
+        holder = abuse = None
+        if enrich and r.get("ips"):
+            info = rep.enrich(r["ips"][0])
+            holder = info.get("provider")
+            abuse = rep.abuse_desk(info)
+        out.append({"net": r["net"], "holder": holder, "abuse_email": abuse,
+                    "complaint": draft_complaint(r, holder, abuse)})
+    return out

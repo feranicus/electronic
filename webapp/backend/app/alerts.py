@@ -100,6 +100,15 @@ def fire(rule, subject, title, lines, severity="HIGH"):
                title, stamp, rule, body)
     notify._log(evt="security_alert", rule=rule, severity=severity, subject=str(subject)[:120],
                 title=title[:160], detail=body[:600])
+    # Record the source /24 as hostile so a returning actor is recognised across days. Best-effort
+    # and offline; the subject is an IP for the IP-keyed rules. Never affects whether the alert fires.
+    try:
+        import ipaddress as _ip
+        from . import ip_reputation as _rep
+        _ip.ip_address(str(subject))            # only when the subject really is an address
+        _rep.observe(str(subject), hostile=True, path=rule)
+    except Exception:
+        pass
     return notify.both("%s — %s" % (severity, title), full)
 
 

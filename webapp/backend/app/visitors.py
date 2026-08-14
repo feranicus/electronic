@@ -185,6 +185,25 @@ def note_visit(ev, cls):
             notify._log(evt="visit_suppressed", reason="probe path (spoofed UA)",
                         ip=ev.get("ip", "-"), path=path, ua=(ev.get("ua") or "")[:120])
             return
+        # A VISIT FROM INFRASTRUCTURE IS NOT "A PERSON". 45.148.10.5 in AS48090 (TECHOFF /
+        # DMZHOST, bulletproof hosting + VPN exit) triggered "A person just opened cybergod.ai" -
+        # from the same /24 that had already probed /.env and /aws-ses.json. A residential ISP is
+        # a plausible human; a hoster, VPN, cloud or scanner address is not, and announcing it as
+        # one is the spoofed-trust bug again with the SOURCE rather than the user agent. This is
+        # OFFLINE (no lookup on the request path) and it FAILS OPEN: `unknown` is treated as a
+        # person, so a real visitor is never silently dropped. The sighting is still logged.
+        try:
+            from . import ip_reputation as _rep
+            _cls = _rep.classify(ev.get("ip"))
+            if _rep.is_infrastructure(_cls):
+                _rep.observe(ev.get("ip"), hostile=False, path=path)
+                notify._log(evt="visit_suppressed",
+                            reason="infrastructure not a person (%s)" % _cls.get("kind"),
+                            ip=ev.get("ip", "-"), path=path,
+                            provider=_cls.get("provider") or "-", kind=_cls.get("kind"))
+                return
+        except Exception:
+            pass
         ip = ev.get("ip", "-")
         now = time.time()
         k = _key(ip, cls)
