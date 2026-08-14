@@ -5062,3 +5062,57 @@ second check measuring the same fault through a weaker signal is noise.
 `(name, detail)` and not the detail string. Two TypeErrors before I read six lines of the function
 I was calling. Thirteenth in this workstream; the fix is always the same and always cheaper than
 the guess.
+
+## THE GATEWAY MADE structured-output AND max_tokens MUTUALLY EXCLUSIVE (2026-08-14)
+Three vendors returned the same 400 in ONE release-notes run — deepseek-3.2, llama-4-maverick AND
+gemma-4-31B-it — so this is DO's gateway, not a model. Verbatim:
+```
+max_tokens cannot be set when response_format type is 'json_object';
+omit max token limits for structured outputs to avoid truncated JSON responses
+```
+Nothing broke: the 400-retry recovered. But it cost THREE wasted round-trips on every call, and
+**the retry repaired the wrong field.** `if "response_format" in body` matched first (the message
+names both), so it dropped the JSON contract and KEPT the ceiling the server had just objected to —
+the exact inverse of the advice, and it re-creates our own worst failure mode: a max_tokens cut
+lands MID-JSON (`finish_reason=length` -> JSONDecodeError at char 13,290 and char 30,117, both
+already in this file).
+FIX, in the direction the server named: keep `response_format`, drop `max_tokens`. We lose only the
+FEASIBILITY bound; wall clock is still held by the per-call timeout, and a timeout is a CLEAN
+failover while truncated JSON is a dirty one that wastes the slice AND yields garbage. The 400 is
+also PRE-EMPTED in the payload builder, so the three wasted round-trips are gone. Kimi is
+unaffected — it has `response_format` in `_drop`, so it keeps its ceiling.
+RULE, restated for the third time: when an API rejects a request, repair WHAT IT NAMED, in the
+direction it named it — never whichever field the first regex happens to hit.
+Guarded by test_recall.py §25 (pre-empted for all three · JSON kept · kimi untouched · the retry
+drops max_tokens when named · a body naming response_format alone still drops response_format).
+
+## THE WORST "CHECK THAT CANNOT FAIL" YET: 73 OF THEM, INCLUDING THE budget.gov.ru GUARD
+Found while adding §25. `test_recall.py`'s ONLY `sys.exit(1)` sat in the MIDDLE of the file, at
+line 253 of 761. Everything below it — S18 and sections [19] to [25], **including [22], the
+public-suffix guard that stopped the whole-Russian-government blow-out** — printed FAIL and the
+script still exited 0, so `python ship.py` deployed anyway.
+MEASURED, NOT INFERRED. Breaking [22] so that two Russian ministries resolve to the same owner (the
+literal incident) gave `FAIL lines=1, rc=0`. Breaking an EARLY check gave rc=1. The mid-file banner
+also printed "ALL CHECKS PASSED" with 73 checks still to come.
+This is the worst shape of the recurring disease because new sections are APPENDED: the checks it
+silently stopped enforcing were always the newest and least proven.
+FIX: the real gate is now the LAST thing in the file, `check()` counts what it ran, and the
+mid-file block is labelled a fail-fast for sections 1-13 rather than a completion banner.
+GENERALISED so it cannot recur anywhere: `tests/test_gate_integrity.py` walks every
+`hermes-skills/.../test_*.py` and fails if the last exit precedes the last check. Negative-tested
+in both directions — deleting the final gate is caught, and appending one new check after it is
+caught, which is exactly how this would rot again.
+NOTE: test_run_path.py LOOKED broken to a naive grep for `sys.exit(1)` (13 checks after it) but is
+fine — that hit is a fail-fast inside an exception handler and its real gate, `sys.exit(1 if FAILS
+else 0)`, is last. Grep for the CONCEPT, not one spelling.
+
+**FIVE MISTAKES OF MINE IN THIS ONE CHANGE, all the same family:**
+1. I appended the new section using `s.rindex('print("=" * 78)')` and it landed BEFORE `enrich` is
+   imported, so the file crashed at `E._post` and every section after it — including [22] — never
+   ran. My first mutation test therefore measured nothing.
+2. `ok_` does not exist in test_recall.py; that file's runner is `check`. Fourteenth invented name.
+3. `TOTAL_CHECKS` did not exist either — I referenced a counter instead of adding one.
+4. `timeout ... python3 x.py | tail; echo "rc=$?"` reads TAIL's status, not Python's. I read rc=0
+   off a crashed run and nearly concluded the opposite of the truth. Redirect to a file, then echo.
+5. My cross-file scan grepped the literal `sys.exit(1)` and so misclassified two files. The
+   property is "the last exit follows the last check", and that is what the guard now asserts.

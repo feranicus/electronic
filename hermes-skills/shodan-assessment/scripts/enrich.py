@@ -356,6 +356,22 @@ def _call(text, model=None, timeout=None, max_tokens=None):
     for _k in _over.pop("_drop", []):        # ...and rejects response_format outright
         payload.pop(_k, None)
     payload.update(_over)
+
+    # STRUCTURED OUTPUT AND A TOKEN CEILING ARE NOW MUTUALLY EXCLUSIVE ON THIS ENDPOINT.
+    # Observed 2026-08-14 on deepseek-3.2, llama-4-maverick AND gemma-4-31B-it in the same run —
+    # three vendors at once, so this is DO's gateway, not a model. Verbatim:
+    #     "max_tokens cannot be set when response_format type is 'json_object'; omit max token
+    #      limits for structured outputs to avoid truncated JSON responses"
+    # WE KEEP THE STRUCTURED OUTPUT AND DROP THE CEILING, which is what the server advises and is
+    # the right way round on our own evidence: a max_tokens cut lands MID-JSON (that is exactly the
+    # `finish_reason=length` -> JSONDecodeError at char 13,290 / char 30,117 failures already in
+    # CLAUDE.md), and a dirty truncated answer wastes the slice AND yields garbage. Losing the
+    # ceiling costs us only the FEASIBILITY bound; wall-clock is still bounded by the per-call
+    # timeout, and a timeout is a CLEAN failure that fails over to the next model.
+    # Kimi is unaffected: it has response_format in `_drop`, so it keeps its ceiling.
+    # Pre-empting the 400 here saves three wasted round-trips on every single assessment.
+    if "response_format" in payload:
+        payload.pop("max_tokens", None)
     try:
         d = _post(payload, timeout)
     except urllib.error.HTTPError as e:
@@ -390,7 +406,17 @@ def _call(text, model=None, timeout=None, max_tokens=None):
                     payload["temperature"] = float(_m.group(1)); _fix.append("temperature=" + _m.group(1))
                 except ValueError:
                     pass
-            if "response_format" in (_b or "") or not _fix:
+            # WHEN THE SERVER NAMES max_tokens, DROP max_tokens - not response_format.
+            # The 2026-08-14 body was "max_tokens cannot be set when response_format type is
+            # 'json_object'; omit max token limits for structured outputs to avoid truncated JSON".
+            # Both fields are named, so the old `if "response_format" in body` matched first and
+            # removed the JSON contract while KEEPING the ceiling the server had just objected to -
+            # the exact inverse of the advice, and it re-creates the truncated-mid-JSON failure.
+            # Same doctrine as the ecolines fix: repair WHAT THE SERVER NAMED, in the direction it
+            # named it, never whichever field the first regex happens to hit.
+            if "max_tokens" in (_b or ""):
+                payload.pop("max_tokens", None); _fix.append("dropped max_tokens (kept JSON mode)")
+            elif "response_format" in (_b or "") or not _fix:
                 payload.pop("response_format", None); _fix.append("dropped response_format")
             # `chat_template_kwargs` is dropped ONLY if the server names it. Never speculatively:
             # removing it turns thinking back on, which is a far worse failure than a 400.

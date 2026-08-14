@@ -26,8 +26,12 @@ import shodan_recon as R
 FAILED = []
 
 
+RAN = []
+
+
 def check(cond, label):
     print(("  PASS  " if cond else "  FAIL  ") + label)
+    RAN.append(label)
     if not cond:
         FAILED.append(label)
 
@@ -255,7 +259,13 @@ if FAILED:
     for f in FAILED:
         print("   - " + f)
     sys.exit(1)
-print("  ALL CHECKS PASSED — recall keeps owned assets; client/white-label domains stay OUT")
+# NOT the end of the file - roughly 73 more checks follow. This used to say "ALL CHECKS PASSED"
+# here, which was false, and the sys.exit above was the ONLY exit-code enforcement in the file:
+# every section after this point (S18 co-tenant, [19]-[25], and crucially [22], the public-suffix
+# guard that stopped the budget.gov.ru whole-government blow-out) printed FAIL and the script still
+# exited 0, so `python ship.py` deployed anyway. Measured, not assumed: breaking [22] gave
+# "FAIL lines=1, rc=0". The real gate is now at the END of this file.
+print("  sections 1-13 passed — recall keeps owned assets; client/white-label domains stay OUT")
 # ---------------------------------------------------------------------------------------------
 # S18 - angermann.de: the brand-token gate failed in BOTH directions at once (2026-07)
 #   too tight -> netbid.com / nordleasing.com / leaseback.de / buerosuche.de were unreachable
@@ -655,3 +665,97 @@ def test_ct_names_are_resolved():
 
 
 test_ct_names_are_resolved()
+
+
+# =============================================================================================
+# [25] THE GATEWAY MADE structured-output AND a token ceiling MUTUALLY EXCLUSIVE (2026-08-14)
+# Three vendors returned the same 400 in ONE run - deepseek-3.2, llama-4-maverick and
+# gemma-4-31B-it - so this is DO's gateway, not a model:
+#     "max_tokens cannot be set when response_format type is 'json_object'; omit max token
+#      limits for structured outputs to avoid truncated JSON responses"
+# We keep the JSON contract and drop the ceiling, which is what the server advises AND what our
+# own history argues for: a max_tokens cut lands MID-JSON (finish_reason=length -> JSONDecodeError
+# at char 13,290 and char 30,117, both already in CLAUDE.md), while losing the ceiling costs only
+# the feasibility bound - wall clock is still held by the per-call timeout, and a timeout is a
+# CLEAN failover instead of a parsed-garbage one.
+# =============================================================================================
+print("")
+print("=" * 78)
+print("[25] structured output vs the token ceiling (the 2026-08-14 gateway change)")
+
+import urllib.error as _ue
+import io as _io25
+import contextlib as _ctx25
+import json as _json25
+
+_MT_BODY = ('{"message":"max_tokens cannot be set when response_format type is \'json_object\'; '
+            'omit max token limits for structured outputs to avoid truncated JSON responses"}')
+
+
+def _mk(body=None):
+    """A fake endpoint. With `body`, the FIRST call 400s with it."""
+    sent, st = [], {"n": 0}
+
+    def post(payload, timeout=None):
+        sent.append(dict(payload)); st["n"] += 1
+        if body and st["n"] == 1:
+            raise _ue.HTTPError("u", 400, "Bad Request", {}, _io25.BytesIO(body.encode()))
+        return {"choices": [{"message": {"content": _json25.dumps(
+            {"exec_summary": "x" * 200, "findings": [{"id": "H1", "what": "y" * 80}]})},
+            "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 900}}
+    return sent, post
+
+
+_orig_post = _E._post
+try:
+    # the three chained models must not pay a wasted round-trip at all
+    for _m in ("deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it"):
+        _sent, _E._post = _mk()
+        with _ctx25.redirect_stderr(_io25.StringIO()):
+            _E._call("prompt", model=_m, timeout=120)
+        check(len(_sent) == 1, "%s: the 400 is PRE-EMPTED, not paid for on every assessment" % _m)
+        check("max_tokens" not in _sent[0], "%s: no ceiling is sent alongside json_object" % _m)
+        check(bool(_sent[0].get("response_format")),
+            "%s: the JSON contract is KEPT (dropping it is what truncates mid-JSON)" % _m)
+
+    # kimi has response_format in _drop, so nothing about it should change
+    _sent, _E._post = _mk()
+    with _ctx25.redirect_stderr(_io25.StringIO()):
+        _E._call("prompt", model="kimi-k2.6", timeout=120)
+    check(bool(_sent[0].get("max_tokens")),
+        "kimi keeps its feasibility ceiling - it never sends response_format")
+
+    # and if the gateway ever objects again, repair WHAT IT NAMED
+    _sent, _E._post = _mk(_MT_BODY)
+    _err = _io25.StringIO()
+    with _ctx25.redirect_stderr(_err):
+        _E._call("prompt", model="kimi-k2.6", timeout=120)
+    check("max_tokens" not in _sent[1],
+        "a body naming max_tokens drops max_tokens on the retry")
+    check("dropped max_tokens" in _err.getvalue(), "...and says so")
+
+    # the older constraint must still behave exactly as before
+    _sent, _E._post = _mk('{"message":"response_format type \'json_object\' is not supported"}')
+    with _ctx25.redirect_stderr(_io25.StringIO()):
+        _E._call("prompt", model="deepseek-3.2", timeout=120)
+    check(not _sent[1].get("response_format"),
+        "a body naming response_format alone still drops response_format")
+finally:
+    _E._post = _orig_post
+
+
+# =============================================================================================
+# THE REAL GATE. It must be the LAST thing in this file.
+# A test file whose only sys.exit sits in the middle silently stops enforcing everything below
+# it - and that is where the newest, least-proven checks live, because new sections get appended.
+# So the exit belongs at the end, and a test that appends a section inherits enforcement for free.
+# =============================================================================================
+print("\n" + "=" * 78)
+if FAILED:
+    print("  %d CHECK(S) FAILED" % len(FAILED))
+    for f in FAILED:
+        print("   - " + f)
+    sys.exit(1)
+print("  ALL %d CHECKS PASSED - every section, not just the ones above the old mid-file exit"
+      % len(RAN))
+print("=" * 78)

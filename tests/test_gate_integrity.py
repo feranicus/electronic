@@ -835,3 +835,58 @@ def test_the_filter_is_a_named_function_not_an_inline_phrase_list():
     assert body.count('startswith(("[X]", "[!]", "OK "))') == 1, (
         "the marker list has more than one home again - the copy ship.py uses will drift from the "
         "copy the test checks")
+
+
+# =================================================================================================
+# A TEST FILE'S EXIT MUST COME AFTER ITS LAST CHECK.
+# test_recall.py had its only `sys.exit(1)` in the MIDDLE. Everything below it - 73 checks, the
+# whole of S18 and sections [19]-[25], including [22], the public-suffix guard that stopped the
+# budget.gov.ru whole-Russian-government blow-out - printed FAIL and the script still exited 0, so
+# `python ship.py` deployed anyway. Measured, not inferred: breaking [22] gave "FAIL lines=1, rc=0".
+# It is the worst shape of the recurring disease in this repo, because new sections are APPENDED,
+# so the checks it silently stopped enforcing were always the newest and least proven.
+# =================================================================================================
+def _engine_test_scripts():
+    d = os.path.join(ROOT, "hermes-skills", "shodan-assessment", "scripts")
+    return sorted(os.path.join(d, f) for f in os.listdir(d)
+                  if f.startswith("test_") and f.endswith(".py"))
+
+
+def _last_line(lines, needles):
+    hit = 0
+    for n, ln in enumerate(lines, 1):
+        s = ln.split("#", 1)[0]
+        if any(x in s for x in needles):
+            hit = n
+    return hit
+
+
+def test_every_engine_test_enforces_its_own_last_check():
+    scripts = _engine_test_scripts()
+    assert len(scripts) >= 8, "the engine test suite has shrunk unexpectedly: %d" % len(scripts)
+    bad = []
+    for p in scripts:
+        lines = open(p, encoding="utf-8").read().splitlines()
+        last_check = _last_line(lines, ("check(", "ok_("))
+        last_exit = _last_line(lines, ("sys.exit", "raise SystemExit"))
+        if not last_check:
+            continue                       # a file with no checks has nothing to enforce
+        if last_exit < last_check:
+            bad.append("%s: last check line %d, last exit line %d - %d line(s) of checks run "
+                       "AFTER the exit and can never fail the build"
+                       % (os.path.basename(p), last_check, last_exit, last_check - last_exit))
+    assert not bad, (
+        "a test file stops enforcing partway through; everything below its exit prints FAIL and "
+        "still exits 0:\n  " + "\n  ".join(bad))
+
+
+def test_the_recall_suite_actually_counts_and_reports_every_check():
+    """The mid-file summary used to print "ALL CHECKS PASSED" with ~73 checks still to come."""
+    src = open(os.path.join(ROOT, "hermes-skills", "shodan-assessment", "scripts",
+                            "test_recall.py"), encoding="utf-8").read()
+    assert src.count('print("  ALL') == 1, (
+        "more than one 'ALL ... PASSED' banner - one of them is claiming completion too early")
+    tail = src[src.rindex("if FAILED:"):]
+    assert "sys.exit(1)" in tail, "the final block does not enforce anything"
+    assert src.rstrip().endswith('print("=" * 78)'), (
+        "something was appended after the final gate, so it is no longer last")
