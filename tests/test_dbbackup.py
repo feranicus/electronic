@@ -260,3 +260,52 @@ def test_ship_py_invokes_it_as_a_building_block():
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+def test_no_posix_only_api_in_code_the_tests_exercise():
+    """FIFTH occurrence of the same root cause, so it is a check now rather than a note.
+
+    `os.uname()` does not exist on Windows. The agent RUNS on the Linux droplet, so production was
+    never affected - but the tests run on the operator's Windows box, and the call sat on the
+    FAILURE path, which is the one place a backup tool has to be reliable. `python ship.py` died
+    with `AttributeError: module 'os' has no attribute 'uname'` after a clean deploy.
+
+    The rule this enforces is the one CLAUDE.md already carries: a check that cannot run on the
+    invoking platform is not a check. Anything the test suite executes must be importable and
+    runnable on Windows, even when it only ever ships to Linux.
+    """
+    import ast
+    src = open(AGENT, encoding="utf-8").read()
+    tree = ast.parse(src)
+    POSIX_ONLY = {
+        ("os", "uname"): "socket.gethostname()",
+        ("os", "getuid"): "not needed, or guard it",
+        ("os", "geteuid"): "not needed, or guard it",
+        ("os", "fork"): "subprocess",
+        ("os", "getpwuid"): "not needed",
+    }
+    bad = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            key = (node.value.id, node.attr)
+            if key in POSIX_ONLY:
+                bad.append("%s.%s (line %d) - use %s"
+                           % (key[0], key[1], node.lineno, POSIX_ONLY[key]))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [a.name for a in getattr(node, "names", [])] + [getattr(node, "module", "")]
+            for n in names:
+                if (n or "").split(".")[0] in {"pwd", "grp", "fcntl", "termios", "resource"}:
+                    bad.append("imports %s, which does not exist on Windows (line %d)"
+                               % (n, node.lineno))
+    assert not bad, (
+        "the agent uses a POSIX-only API, so the tests cannot run on the operator's machine:\n  "
+        + "\n  ".join(bad))
+
+
+def test_the_agent_does_not_use_a_deprecated_utc_clock():
+    """datetime.utcnow() is deprecated and emits a warning per call. Six of them per run buried
+    the real output in the operator's terminal."""
+    src = open(AGENT, encoding="utf-8").read()
+    assert "utcnow(" not in src, (
+        "datetime.utcnow() is deprecated - use datetime.now(datetime.timezone.utc)")

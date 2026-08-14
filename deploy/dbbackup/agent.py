@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -45,6 +46,11 @@ BACKUP_DIR = os.environ.get("DBBACKUP_DIR", "/var/backups/cybergod-db")
 KEEP_LOCAL = int(os.environ.get("DBBACKUP_KEEP_LOCAL", "14"))
 KEEP_REMOTE = int(os.environ.get("DBBACKUP_KEEP_REMOTE", "60"))
 PW_ENV = "/etc/patchwatch/patchwatch.env"
+# POSIX-ONLY APIs ARE A TESTABILITY BUG EVEN WHEN PRODUCTION IS LINUX. This used to be
+# os.uname()[1], which does not exist on Windows, so the operator's test run died in the
+# failure path - the one place a backup tool must be reliable. socket.gethostname() is stdlib
+# and identical on the droplet.
+HOSTNAME = socket.gethostname()
 
 # volume -> path inside it. Resolved to a host path via `docker volume inspect`, so this works
 # whether or not the containers are running: the online backup API only needs the FILE.
@@ -194,7 +200,7 @@ def cmd_backup():
         log("    systemd runs this as root. To run it by hand elsewhere, set DBBACKUP_DIR to a")
         log("    path you can write, e.g. DBBACKUP_DIR=/tmp/dbb python3 agent.py backup")
         return 1
-    stamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
     made, failed = [], []
 
     for vol, name, what in DATABASES:
@@ -244,7 +250,7 @@ def cmd_backup():
         log("       SPACES_KEY/SPACES_SECRET/SPACES_BUCKET in %s to close this." % PW_ENV)
     else:
         for m in made:
-            key = "%s/%s/%s" % (prefix, os.uname()[1], os.path.basename(m["file"]))
+            key = "%s/%s/%s" % (prefix, HOSTNAME, os.path.basename(m["file"]))
             try:
                 cl.upload_file(m["file"], bucket, key)
                 m["remote"] = key
@@ -253,7 +259,7 @@ def cmd_backup():
                 failed.append("%s: upload failed: %s" % (m["name"], e))
                 log("   [!] upload FAILED for %s: %s" % (m["name"], e))
         try:                                           # prune old remote copies
-            objs = cl.list_objects_v2(Bucket=bucket, Prefix="%s/%s/" % (prefix, os.uname()[1]))
+            objs = cl.list_objects_v2(Bucket=bucket, Prefix="%s/%s/" % (prefix, HOSTNAME))
             for o in sorted(objs.get("Contents", []), key=lambda x: x["LastModified"])[:-KEEP_REMOTE]:
                 cl.delete_object(Bucket=bucket, Key=o["Key"])
         except Exception as e:
@@ -266,7 +272,7 @@ def cmd_backup():
             os.unlink(os.path.join(BACKUP_DIR, f))
 
     if failed:
-        notify("cybergod DB BACKUP FAILED on %s\n\n%s" % (os.uname()[1], "\n".join(failed)))
+        notify("cybergod DB BACKUP FAILED on %s\n\n%s" % (HOSTNAME, "\n".join(failed)))
         log("\n   %d FAILURE(S)" % len(failed))
         return 1
     if not made:
@@ -320,7 +326,7 @@ def cmd_restore(path, target_vol, target_name):
     dst = volume_path(target_vol, target_name)
     if not dst:
         log("   target not found in volume %s" % target_vol); return 1
-    bak = dst + ".before-restore-" + datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    bak = dst + ".before-restore-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
     shutil.copy2(dst, bak)                                   # keep what we are about to replace
     tmp = tempfile.mkdtemp(prefix="dbrestore-")
     out = os.path.join(tmp, target_name)

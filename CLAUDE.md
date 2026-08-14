@@ -5234,3 +5234,29 @@ and /demo in four languages asserting the notice text appears translated and no 
 `[lang, setLang, t]`, not a function. `const t = useT()` compiled fine and died at render with
 `TypeError: t is not a function` — the /app white-screen class again, caught only because the SSR
 render EXECUTES the page. Read the helper; do not guess it.
+
+## `os.uname()` — THE FIFTH WASTED SHIP FROM THE SAME ROOT CAUSE (2026-08-14)
+`python ship.py` refused to deploy, correctly, after a clean 198-check engine run:
+```
+AttributeError: module 'os' has no attribute 'uname'. Did you mean: 'name'?
+2 failed, 205 passed
+```
+**`os.uname()` is POSIX-only.** The agent RUNS on the Linux droplet, so production was never
+affected — but the TESTS run on the operator's Windows box, and the call sat on the FAILURE path
+(the alert line), which is the one place a backup tool has to be reliable. Both failing tests were
+the two that exercise a failed backup.
+This is the same root cause as the httpx incident and the esbuild incident before it, and
+CLAUDE.md already carries the rule in two places: *a check that cannot run on the invoking platform
+is not a check*, and *before telling the operator to run anything, ask which machine and which
+toolchain*. Writing it down a fifth time would not help, so it is a TEST now.
+FIX: `HOSTNAME = socket.gethostname()` (stdlib, identical on the droplet), plus
+`datetime.utcnow()` -> `datetime.now(timezone.utc)` because six deprecation warnings per run were
+burying the real output.
+GUARD: `test_no_posix_only_api_in_code_the_tests_exercise` walks the AST for `os.uname/getuid/
+geteuid/fork/getpwuid` and for `pwd/grp/fcntl/termios/resource` imports. AST rather than grep, so
+a comment discussing the removed call cannot false-positive — the mistake already made four times
+in this repo. Negative-tested in three directions, all caught.
+VERIFICATION THAT ACTUALLY PROVES IT: `del os.uname` before importing the agent, then run the
+failure path. That reproduces Windows precisely for this API rather than trusting the fix.
+RULE, now enforced: anything the test suite EXECUTES must be importable and runnable on Windows,
+even when it only ever ships to Linux.
