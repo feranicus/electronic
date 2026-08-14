@@ -1665,6 +1665,34 @@ def main():
         except Exception as _e:
             print("  [!] caddyguard skipped (%s)" % type(_e).__name__)
 
+    # ---- THE BOOKS OF RECORD ------------------------------------------------------------------
+    #      dbbackup.py is a BUILDING BLOCK, not a second command (operating principle 7).
+    #      WHY IT EXISTS: colt.sqlite (who ran what) and cost_ledger.sqlite (the TRUE all-time
+    #      cost, deliberately outliving Loki retention) are the only things here that cannot be
+    #      regenerated. git backs up the code; NOTHING backed up these. patchwatch tars the
+    #      volumes before an upgrade, but it `tar`s a LIVE file - which for SQLite in WAL mode can
+    #      capture a torn write - and nothing has ever opened one to find out.
+    #      This installs a daily systemd timer that uses the sqlite3 ONLINE BACKUP API, VERIFIES
+    #      the copy (integrity_check plus a row-count window, because the source is live), pushes
+    #      off-box when Spaces credentials are present, and PROVES a restore.
+    #      NON-BLOCKING: a backup problem is information for the operator, not a reason to refuse
+    #      a verified deploy. Same doctrine as caddyguard, secaudit and the review panel.
+    try:
+        _bk = subprocess.run([sys.executable, os.path.join(HERE, "dbbackup.py")],
+                             capture_output=True, text=True, timeout=600)
+        _bkout = ((_bk.stdout or "") + (_bk.stderr or "")).rstrip()
+        print("")
+        for _l in _bkout.splitlines():
+            _s = _l.strip()
+            if (_s.startswith(("---", "[X]", "[!]", "OK ", "verified:", "uploaded"))
+                    or "FAIL" in _s or "SKIP" in _s or "restored" in _s or "bytes" in _s):
+                print("  " + _s)
+        if _bk.returncode != 0:
+            print("  [!] the database backup did not complete. The deploy is fine; the BOOKS are")
+            print("      the risk. Run: python dbbackup.py --verify")
+    except Exception as _e:
+        print("  [!] dbbackup skipped (%s) - never blocks a deploy" % type(_e).__name__)
+
     # ---- PATCH CADENCE ON BOTH DROPLETS ------------------------------------------------------
     #      secaudit.py is a BUILDING BLOCK, not a second command (operating principle 7).
     #      WHY IT EXISTS: the kernel CVE team published 432 CVEs across one weekend in July 2026.

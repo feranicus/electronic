@@ -5116,3 +5116,50 @@ else 0)`, is last. Grep for the CONCEPT, not one spelling.
    off a crashed run and nearly concluded the opposite of the truth. Redirect to a file, then echo.
 5. My cross-file scan grepped the literal `sys.exit(1)` and so misclassified two files. The
    property is "the last exit follows the last check", and that is what the guard now asserts.
+
+## THE BOOKS OF RECORD HAD NO BACKUP — `dbbackup.py` (2026-08-14)
+Two SQLite files hold the only things this system cannot regenerate: `colt.sqlite` (who ran what,
+when, in which language) and `cost_ledger.sqlite` (the TRUE all-time cost, which exists precisely
+BECAUSE Loki ages out). `git` is the backup for code; NOTHING backed up these.
+patchwatch is not a counter-argument. It tars the docker volumes before an upgrade, which is
+better than nothing, but (a) it runs only before a patch, (b) it `tar`s a LIVE file and SQLite in
+WAL mode can be mid-transaction, so the copy inside may be torn, and (c) nobody has ever opened one
+to find out. A backup nobody has restored is a folder.
+WHAT SHIPPED: `deploy/dbbackup/agent.py` on a daily systemd timer (03:17 UTC + 5 min after boot,
+`Persistent=true` so a droplet that was off still runs the missed one), installed by `dbbackup.py`
+in ONE ssh session with the payload on stdin in BINARY mode. It is a BUILDING BLOCK of ship.py, not
+a second command, and non-blocking: a backup problem is information, not a reason to refuse a
+verified deploy.
+  * sqlite3's ONLINE BACKUP API (`Connection.backup()`), never cp/tar. Guarded by a test.
+  * VERIFIES THE COPY: `PRAGMA integrity_check` plus per-table row counts. A copy that fails is
+    DELETED and alerted, because a corrupt backup is worse than none: it buys false confidence.
+  * OFF-BOX or it says so, loudly. Credentials come from `/etc/patchwatch/patchwatch.env`, which
+    already exists and is chmod 600 — NOT a second credential home.
+  * `verify-restore` performs a real restore into a temp dir every run, and `restore` is explicit,
+    keeps the file it replaces, and refuses a backup that fails integrity_check.
+  * Alerts through colt-web (`docker exec -i`, text over STDIN), because the host has no token.
+
+**THE DESIGN BUG THE MEASUREMENT CAUGHT, and it would have been worse than no backup.** The first
+version compared the copy's row counts to a SINGLE pre-backup read. The source is LIVE, so rows
+commit between the count and the copy: on a busy night that comparison fails, the good backup is
+deleted and an alert fires. A check that false-alarms on a healthy system is worse than no check,
+because it trains you to ignore the one that matters. The invariant is now a WINDOW — the copy must
+hold at least what existed before the copy and no more than what exists after — which is sound
+because both tables are append-mostly.
+**AND THE ONE FUNCTION EXISTS FOR THE CASE IT CRASHED ON:** a badly corrupt file does not return a
+non-"ok" `integrity_check`, it RAISES `sqlite3.DatabaseError: database disk image is malformed`.
+`verify()` let that propagate, so the exact scenario it was written for produced a traceback rather
+than a report. Everything is wrapped now.
+
+**THREE OF MY OWN TESTS WERE VACUOUS, and only the mutation run exposed them:**
+1. The live-writer test caught the exact-equality defect ONLY WHEN THE RACE HAPPENED, so on a fast
+   machine it passed against broken code. Now the window is forced deterministically: commit rows
+   BETWEEN reading `before` and taking the copy. **A test that depends on a race is not a test.**
+2. Nothing asserted that a copy failing verification is DELETED. Removing the `os.unlink` went
+   unnoticed, leaving exactly the file you would reach for in an incident.
+3. The ship.py wiring check grepped for the bare string `dbbackup.py`, which also appears in a
+   `print()` line, so breaking the real call site passed. Anchor on the CALL
+   (`os.path.join(HERE, "dbbackup.py")`), never on a filename that appears in prose.
+Seven mutations, all verified to fail and then restored.
+ALSO: running it by hand as non-root died with a raw `PermissionError`. A traceback is not a
+diagnosis; it now names the cause and the fix.
