@@ -5163,3 +5163,43 @@ than a report. Everything is wrapped now.
 Seven mutations, all verified to fail and then restored.
 ALSO: running it by hand as non-root died with a raw `PermissionError`. A traceback is not a
 diagnosis; it now names the cause and the fix.
+
+## VIEW-SOURCE CANNOT BE DISABLED — so measure what is IN the source (2026-08-14)
+The operator asked, twice, why view-source still works on cybergod.ai including /app. The honest
+answer has two halves, and the second one is the actionable one.
+
+**IT CANNOT BE TURNED OFF, BY ANYONE.** view-source shows bytes the browser ALREADY HAS. There is
+no header, no CSP directive and no server setting that removes it; curl, DevTools, the disk cache,
+or any proxy return the same bytes, and blocking right-click is theatre that Ctrl+U defeats. Every
+SPA on the internet ships its JavaScript to the browser in order to run it — Gmail, banks,
+Salesforce. Minification is not secrecy.
+
+**SO THE SECURITY BOUNDARY IS THE SERVER, AND IT IS WHERE IT SHOULD BE.** `main.py::spa()` returns
+the SAME `index.html` for `/` and for `/app`: a 4.7 KB shell with meta tags, JSON-LD and a script
+tag. MEASURED: zero customer data, zero job ids, zero emails. Every assessment, deck and history
+row arrives over `/api/*` behind the session cookie, and `/api/me` answers 401 to anonymous callers
+on every deploy verify. Somebody reading /app's source learns the marketing copy and a bundle
+filename.
+
+**WHAT WAS ACTUALLY WORTH FIXING, found by measuring rather than arguing:**
+  * NO SOURCE MAPS (verified: vite's build default is false, and 0 `.map` files in dist). This is
+    the one that would have been a real finding — a shipped `.map` hands over the entire original
+    source, comments included.
+  * NO SECRETS in the bundle (verified against droplet IPs, OpenAI/GitHub/Grafana/Telegram/AWS key
+    shapes). The only "Shodan" strings are the GDPR data-source disclosure on /privacy, which is
+    required to be there.
+  * **HTML COMMENTS DID SHIP, and they were mine.** `index.html` explained the bot gate by name —
+    `BOT_404=1` and "See visitors.py" — delivered to every visitor including the scanners that gate
+    exists to keep out. Not a vulnerability; free information handed to an attacker for nothing.
+FIX: a `transformIndexHtml` plugin with `apply: "build"` strips HTML comments on the way into
+dist/. The comments STAY in the source, because explaining WHY is the point of them and the dev
+server still shows them. `<script type="application/ld+json">` is an ELEMENT, not a comment, so the
+structured data that earns the rich search result survives — asserted, because a greedy strip there
+would silently cost the SEO work.
+GATE: `tools/shipped_shell.mjs` measures dist/ — no maps, no secrets, no comments, JSON-LD and the
+meta tags intact — wired into ship.py AND `webapp/Dockerfile` after `npm run build`, so it runs on
+the toolchain that is correct by construction. Exit 2 (no dist/) is a NOTE, exit 1 is a defect.
+Five negative tests, all caught.
+RULE: when asked to hide something the web cannot hide, do not argue the general point. Measure
+what is exposed, fix whatever genuinely should not be there, and say plainly which part is
+impossible and why.

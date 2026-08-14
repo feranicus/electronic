@@ -24,6 +24,13 @@ RUN node tools/canvas_smoke.mjs public/defense.html 900 \
     && node tools/contrast_gate.mjs && node tools/partners_gate.mjs \
     && node tools/i18n_catalogue.mjs --check && node tools/run_i18n_audit.mjs
 RUN npm run build
+# WHAT THE WORLD CAN READ. View-source cannot be disabled - it shows bytes the browser already
+# has, and curl or DevTools give the same thing - so the only question that matters is what is in
+# those bytes. This runs AFTER the build because it measures dist/, not the source: no source maps
+# (a shipped .map hands over the entire original source), no secrets or droplet IPs in the bundle,
+# no HTML comments in the shell (ours named the bot-gate mechanism and its file), and the JSON-LD
+# must survive. Inside the image, so it runs on a toolchain that is correct by construction.
+RUN node tools/shipped_shell.mjs
 
 # ---- stage 2: FastAPI backend + the deck engine, serving the built SPA ----
 FROM python:3.12-slim

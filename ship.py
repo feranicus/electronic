@@ -937,6 +937,16 @@ def do_tests():
                   "ENFORCED in the frontend image build, see webapp/Dockerfile")
         elif _audit != 0:
             i18n_ok = False
+        # WHAT THE WORLD CAN READ. view-source cannot be disabled - it shows bytes the browser
+        # already holds, and curl or DevTools give the same - so the only question is what is IN
+        # them. Measured on dist/: no source maps, no secrets or droplet IPs, no HTML comments in
+        # the shell, JSON-LD intact. Exit 2 means dist/ is not built on this machine, which is a
+        # toolchain fact, not a defect; the image build enforces it either way.
+        _shell = run(["node", "tools/shipped_shell.mjs"], check=False, cwd=_fe)
+        if _shell == 2:
+            print("    shipped-shell check skipped locally (no dist/) - ENFORCED in the image build")
+        elif _shell != 0:
+            i18n_ok = False
     except SystemExit:
         raise
     except Exception as _e:
