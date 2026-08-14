@@ -286,6 +286,14 @@ def cmd_backup():
         with open(raw, "rb") as fi, gzip.open(gz, "wb") as fo:
             shutil.copyfileobj(fi, fo)
         os.unlink(raw)
+        # Opening the copy read-only creates WAL sidecars (-wal/-shm) next to it. They are not
+        # backups, but they share the timestamped prefix, so leaving them would let rotation count
+        # them and drop real .gz files early. Remove them here.
+        for side in ("-wal", "-shm"):
+            try:
+                os.unlink(raw + side)
+            except OSError:
+                pass
         sha = hashlib.sha256(open(gz, "rb").read()).hexdigest()
         size = os.path.getsize(gz)
         log("      %s  %d bytes  sha256 %s" % (os.path.basename(gz), size, sha[:12]))

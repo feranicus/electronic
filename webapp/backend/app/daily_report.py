@@ -179,8 +179,32 @@ async def scheduler():
             from . import threat_intel as _ti, abuse_report as _ar
             res = _ar.report_digest(_ti.build(24))
             notify._log(evt="abuse_report", **{k: res[k] for k in ("status", "reported") if k in res})
+            # If reporting is DISABLED because the key is unset, say so once - a key that shows
+            # "Never used" on AbuseIPDB is exactly this: created but not set in colt-web's env.
+            if res.get("status") == "disabled":
+                notify._log(evt="abuse_report_hint",
+                            hint="ABUSEIPDB_KEY not set on the droplet; run set_secret.py ABUSEIPDB_KEY")
         except Exception as e:
             notify._log(evt="abuse_report", result="error", err=repr(e)[:160])
+        # Human-review abuse complaints for RETURNING actors, emailed for the operator to file with
+        # the hoster / BSI. Drafted by the deterministic package (the 4-model prose is optional
+        # colour on top). Nothing is sent to the attacker or to any abuse desk automatically.
+        try:
+            from . import abuse_report as _ar2
+            drafts = _ar2.complaints_for_repeat_offenders(min_days=2)
+            if drafts:
+                nets = ", ".join(d["net"] for d in drafts[:6])
+                blob = ("\n\n" + "=" * 60 + "\n").join(
+                    "%s  (%s)\n\n%s" % (d["net"], d.get("holder") or "holder unknown", d["complaint"])
+                    for d in drafts[:6])
+                notify.email("cybergod.ai - abuse complaints ready to file (%d returning actor(s))"
+                             % len(drafts),
+                             "These returning actors probed cybergod.ai on 2+ days. Review and file "
+                             "with the named abuse desk. Nothing has been sent automatically.\n\n"
+                             "Networks: %s\n\n%s" % (nets, blob))
+                notify._log(evt="abuse_complaints_drafted", count=len(drafts), nets=nets[:200])
+        except Exception as e:
+            notify._log(evt="abuse_complaints_drafted", result="error", err=repr(e)[:160])
 
 
 if __name__ == "__main__":
