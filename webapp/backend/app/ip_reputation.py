@@ -111,10 +111,22 @@ def classify(ip):
 
 
 def is_infrastructure(cls):
-    """True when the address is NOT a plausible human visitor. Used to suppress the 'a person'
-    alert. `unknown` is deliberately NOT infrastructure: absence of evidence is not a finding, and
-    a residential visitor must never be silently dropped."""
+    """True when the address is a hoster/VPN/cloud/scanner rather than a residential ISP. Used to
+    LABEL a visit and to record it - NOT to suppress it. `unknown` is deliberately NOT
+    infrastructure: absence of evidence is not a finding."""
     return cls.get("kind") in ("hoster", "vpn", "bulletproof", "cloud", "scanner")
+
+
+def never_human(cls):
+    """True ONLY for kinds that never carry a real browsing person - bulletproof hosting and
+    research/vuln scanners. THIS is what suppresses the 'a person just opened' alert.
+
+    WHY NOT vpn/cloud: the first cut suppressed those too, and it blinded the operator to every
+    visitor behind a consumer VPN (Kaspersky/Nord exit through M247, GB Network Solutions, etc.) -
+    including the operator's own tests and real privacy-conscious prospects. A VPN visit is still a
+    person; it is just labelled 'via VPN' so it is not mistaken for a residential visitor. A
+    bulletproof-hosting or scanner hit (45.148.10.5) is not a person and stays suppressed."""
+    return cls.get("kind") in ("bulletproof", "scanner")
 
 
 def _ripestat(url, timeout=6):

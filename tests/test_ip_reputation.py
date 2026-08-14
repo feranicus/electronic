@@ -45,6 +45,22 @@ def test_a_research_scanner_is_named_and_a_residential_ip_is_left_alone():
     assert not rep.is_infrastructure(home), "a real visitor would be suppressed"
 
 
+def test_only_bulletproof_and_scanners_are_never_a_person():
+    """The suppression rule. A VPN or cloud visit IS often a real person (Kaspersky/Nord exit
+    through M247 etc.) - suppressing those blinds the operator to their own tests and to every
+    privacy-conscious prospect. Only bulletproof hosting and research scanners never carry one."""
+    rep = _rep()
+    assert rep.never_human({"kind": "bulletproof"}), "45.148.10.5 must stay suppressed"
+    assert rep.never_human({"kind": "scanner"}), "a research scanner is not a person"
+    # the ones the first cut wrongly suppressed:
+    assert not rep.never_human({"kind": "vpn"}), "a Kaspersky/Nord VPN visit is still a person"
+    assert not rep.never_human({"kind": "cloud"}), "a cloud-egress visit is still a person"
+    assert not rep.never_human({"kind": "hoster"}), "a hoster-egress visit is still a person"
+    assert not rep.never_human({"kind": "unknown"}), "a residential visitor must never be dropped"
+    # but every one of those IS still labelled infrastructure, so the alert can say 'via VPN'
+    assert rep.is_infrastructure({"kind": "vpn"}) and rep.is_infrastructure({"kind": "cloud"})
+
+
 def test_internal_and_garbage_addresses_do_not_crash_or_flag():
     rep = _rep()
     assert rep.classify("127.0.0.1")["kind"] == "internal"
@@ -131,11 +147,21 @@ def test_classify_makes_no_network_call():
         "classify() reaches the network - it cannot run inline on every request"
 
 
-def test_visitors_suppresses_the_person_alert_for_infrastructure():
-    """The wiring, not just the classifier: note_visit must consult ip_reputation and suppress."""
+def test_visitors_suppresses_only_never_human_and_labels_the_rest():
+    """The wiring, not just the classifier. note_visit must:
+      - consult ip_reputation,
+      - suppress ONLY never_human (bulletproof/scanner), so a VPN/cloud visit still alerts,
+      - and the decision must happen BEFORE the person alert is composed."""
     src = open(os.path.join(APP, "visitors.py"), encoding="utf-8").read()
     body = "\n".join(l.split("#", 1)[0] for l in src.splitlines())
-    assert "ip_reputation" in body and "is_infrastructure" in body, \
-        "note_visit does not check whether the visitor is infrastructure"
-    assert body.index("is_infrastructure") < body.index("A person just opened"), \
-        "the infrastructure check runs AFTER the person alert is composed - too late"
+    assert "ip_reputation" in body, "note_visit does not consult ip_reputation at all"
+    assert "never_human" in body, \
+        "note_visit no longer gates suppression on never_human - it will over-suppress VPN visits"
+    # the return that suppresses must be gated on never_human, not on is_infrastructure
+    assert "if _rep.never_human(_cls):" in body, \
+        "suppression is not gated on never_human - a Kaspersky VPN visit would be dropped"
+    person = body.index("A person just opened")
+    assert body.index("never_human") < person, \
+        "the never_human check runs AFTER the person alert is composed - too late to suppress"
+    # is_infrastructure is still used, but to LABEL (via VPN), never to return/suppress
+    assert "_infra_label" in body, "VPN/cloud visits are not labelled - they look residential"

@@ -185,23 +185,28 @@ def note_visit(ev, cls):
             notify._log(evt="visit_suppressed", reason="probe path (spoofed UA)",
                         ip=ev.get("ip", "-"), path=path, ua=(ev.get("ua") or "")[:120])
             return
-        # A VISIT FROM INFRASTRUCTURE IS NOT "A PERSON". 45.148.10.5 in AS48090 (TECHOFF /
-        # DMZHOST, bulletproof hosting + VPN exit) triggered "A person just opened cybergod.ai" -
-        # from the same /24 that had already probed /.env and /aws-ses.json. A residential ISP is
-        # a plausible human; a hoster, VPN, cloud or scanner address is not, and announcing it as
-        # one is the spoofed-trust bug again with the SOURCE rather than the user agent. This is
-        # OFFLINE (no lookup on the request path) and it FAILS OPEN: `unknown` is treated as a
-        # person, so a real visitor is never silently dropped. The sighting is still logged.
+        # ONLY BULLETPROOF HOSTING AND SCANNERS ARE SUPPRESSED - THEY ARE NEVER A PERSON.
+        # 45.148.10.5 (AS48090 TECHOFF / DMZHOST, bulletproof) triggered "A person just opened
+        # cybergod.ai" from the same /24 that had probed /.env: that stays suppressed. But a VPN or
+        # cloud address IS often a real person (Kaspersky/Nord exit through M247, GB Network
+        # Solutions, ...), so we do NOT suppress those - we LABEL them, or the operator (and every
+        # privacy-conscious prospect) becomes invisible. OFFLINE, and fails open: `unknown` is a
+        # person. `_infra_label` is threaded into the alert body below.
+        _infra_label = ""
         try:
             from . import ip_reputation as _rep
             _cls = _rep.classify(ev.get("ip"))
-            if _rep.is_infrastructure(_cls):
-                _rep.observe(ev.get("ip"), hostile=False, path=path)
+            _rep.observe(ev.get("ip"), hostile=False, path=path)     # record every sighting
+            if _rep.never_human(_cls):
                 notify._log(evt="visit_suppressed",
-                            reason="infrastructure not a person (%s)" % _cls.get("kind"),
+                            reason="not a person (%s)" % _cls.get("kind"),
                             ip=ev.get("ip", "-"), path=path,
                             provider=_cls.get("provider") or "-", kind=_cls.get("kind"))
                 return
+            if _rep.is_infrastructure(_cls):
+                _infra_label = " (via %s%s)" % (
+                    _cls.get("kind"),
+                    (": %s" % _cls.get("provider")) if _cls.get("provider") else "")
         except Exception:
             pass
         ip = ev.get("ip", "-")
@@ -224,11 +229,11 @@ def note_visit(ev, cls):
                     browser=cls.get("browser"), os=cls.get("os"), device=cls.get("device"),
                     ref=ev.get("ref"))
         body = "\n".join([
-            "A person just opened cybergod.ai.",
+            "A person just opened cybergod.ai.%s" % _infra_label,
             "",
             "When    : %s" % time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now)),
             "Page    : %s" % path,
-            "IP      : %s%s" % (ip, (" (%s)" % ev.get("country")) if ev.get("country") not in (None, "", "-") else ""),
+            "IP      : %s%s%s" % (ip, (" (%s)" % ev.get("country")) if ev.get("country") not in (None, "", "-") else "", _infra_label),
             "Client  : %s / %s / %s" % (cls.get("browser"), cls.get("os"), cls.get("device")),
             "Referrer: %s" % (ev.get("ref") or "direct"),
             "Language: %s" % (ev.get("lang") or "-"),
