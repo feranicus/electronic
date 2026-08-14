@@ -5021,3 +5021,44 @@ a read-only run cannot restart the proxy and blip every vhost on the box.
 Six mutations, all verified to fail and then restored: no drift comparison · drift dropped from the
 verdict · detected-but-not-alerted · cmd_drift not called · mount check removed · read-only run
 made destructive.
+
+## THE PANEL, 13 Aug 2026 (post-deploy): the roster was RIGHT and its OUTPUT was not
+Deploy clean, 41/41, three of four GO. kimi returned NO-GO on one line it read literally:
+```
+  vhost_roster  OK  all 1 expected domain(s) are served (2 host(s) total)
+```
+Its conclusion — *"a defect in the check logic: it verifies expected hosts exist but does NOT flag
+unexpected hosts as an error"* — is WRONG about the code. `cmd_roster` has warned about surplus
+vhosts since 9 Aug, when kimi itself made the symmetry argument that produced the feature. The
+second host was `www.cybergod.ai` (production's eleventh was `www.klimaanlage-preise.de`), both
+`www.` variants of committed domains, which the exemption three lines above allows deliberately.
+**BUT THE OUTPUT NEVER SAID SO, AND THAT PART IS MINE.** A count that legitimately differs from
+its expectation, printed with no explanation, is indistinguishable from a check that is simply not
+looking. It has now cost a review slot twice in three days — the model-authored GEOPOL artifact's
+varying SIZE was the identical shape on 11 Aug. FIX: the roster names the exempted variants
+(`+1 www/subdomain variant(s) of committed domains, expected: www.cybergod.ai`). The logic is
+untouched: a foreign vhost is still named and warned, a disappeared one still fails. Guarded by
+test_drift.py against the exact shape both boxes printed, negative-tested in three directions
+(count unexplained again · foreign vhost no longer named · a www variant wrongly warned about).
+RULE: print the explanation next to the number, not in the source comment. The reader of a deploy
+log — human or model — has only the line.
+
+**KIMI'S SECOND RISK WAS ALREADY FIXED, AND MY OWN DETAIL STRING HID IT.** *"No check verifies
+that the explicit caddy reload actually succeeds... an external edit is unverified for staging."*
+The watchdog gained exactly that comparison in the previous commit, and staging's `proxy_config`
+runs `agent.py check`, so staging HAS been covering hops 1-3 including the external-edit case. Its
+detail still read *"(that it is actually LOADED is proven by config_drift, not here)"*, which was
+true before the change and false after it. **A stale detail underclaims as badly as a name
+overclaims** — same family as `config_reread` -> `config_write_ordering`, one direction over.
+Rewritten to say what it now measures, and checked against `self_contradictory()` so a correct
+pass cannot be demoted by its own wording (the 13 Aug NO-GO class).
+
+**THIRD RISK, NOT ACTED ON, WITH THE REASON.** *"restart_count reads Docker's counter, not whether
+caddy restarted internally or a signal-based reload failed."* True and already covered elsewhere:
+a failed reload leaves the OLD config running, which is precisely what `config_drift` compares. A
+second check measuring the same fault through a weaker signal is noise.
+
+**AND A SIGNATURE I GUESSED TWICE IN ONE MINUTE.** `self_contradictory` takes the check DICT, not
+`(name, detail)` and not the detail string. Two TypeErrors before I read six lines of the function
+I was calling. Thirteenth in this workstream; the fix is always the same and always cheaper than
+the guess.

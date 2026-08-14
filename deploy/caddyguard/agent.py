@@ -799,7 +799,18 @@ def cmd_roster():
     extra = sorted(h for h in hosts
                    if h not in known and h.lower() not in _INTERNAL
                    and not any(h == "www." + d or h.endswith("." + d) for d in known))
+    # EXPLAIN THE COUNT. Printing "all 1 expected domain(s) are served (2 host(s) total)" and
+    # nothing else makes a benign exemption indistinguishable from a blind check: kimi-k2.6 read
+    # exactly that line on 2026-08-13 and concluded the roster "does NOT flag unexpected hosts",
+    # which is wrong - the extra was www.cybergod.ai, deliberately exempted three lines above.
+    # It cost a review slot, for the second time (the model-authored artifact SIZE was the same
+    # shape on 11 Aug). A number that legitimately differs must carry its own explanation.
+    allowed = sorted(h for h in hosts
+                     if h not in known and h.lower() not in _INTERNAL and h not in extra)
     print("OK all %d expected domain(s) are served (%d host(s) total)" % (len(EXPECT), len(hosts)))
+    if allowed:
+        print("   (+%d www/subdomain variant(s) of committed domains, expected: %s)"
+              % (len(allowed), ", ".join(allowed[:6])))
     if extra:
         print("   [!] %d host(s) served that are NOT on the committed roster: %s"
               % (len(extra), ", ".join(extra[:8])))

@@ -145,7 +145,7 @@ if [ -f /opt/caddyguard/agent.py ] && docker ps --format '{{.Names}}' | grep -qi
   # NEVER truncate a failure detail to the last 2 lines: the line that names the cause is usually
   # not the last one. Show the whole diagnosis (minus the alerting noise) — that omission turned a
   # port mismatch into "FAIL ... structural: ok validate: ok", which reads as a contradiction.
-  [ $? -eq 0 ] && chk proxy_config yes "caddyguard: staging proxy config VALID + healthy on :8080 (that it is actually LOADED is proven by config_drift, not here)" \
+  [ $? -eq 0 ] && chk proxy_config yes "caddyguard watchdog (agent.py check, the SAME code the 10-minute timer runs on production): config valid, proxy running, :8080 bound, bind mount fresh, AND the running config compared to the file - so an external edit that was never reloaded is caught here too" \
                 || chk proxy_config no "caddyguard: $(grep -v -i 'telegram' /tmp/cg.out | tr '\n' ' | ')"
   P=$(curl -s -A "$UA" -o /dev/null -w '%{http_code}' --max-time 15 -H 'Host: cybergod.ai' http://127.0.0.1:8080/api/me)
   [ "$P" = "401" ] && chk proxy_routes yes "proxy -> colt-web -> 401 (the production path)" \

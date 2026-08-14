@@ -397,6 +397,54 @@ ok_("fix=bool(heal)" in _chk,
     "and it only repairs the mount under --heal - a read-only run must not blip every vhost")
 
 
+
+# =============================================================================================
+# THE ROSTER MUST EXPLAIN ITS OWN ARITHMETIC.
+# kimi-k2.6 read "OK all 1 expected domain(s) are served (2 host(s) total)" on 2026-08-13 and
+# concluded the check "does NOT flag unexpected hosts as an error". That is wrong - it does, and
+# has since 9 Aug - but the extra was www.cybergod.ai, a deliberate exemption, and the output
+# never said so. A number that legitimately differs and does not carry its explanation is
+# indistinguishable from a blind check. It has now cost a review slot twice (the model-authored
+# artifact SIZE was the same shape on 11 Aug).
+# =============================================================================================
+print("\nTHE VHOST ROSTER - does the count explain itself?")
+
+
+def _roster(expect, served):
+    _sp = importlib.util.spec_from_file_location("cg_agent_rt", AGENT)
+    a = importlib.util.module_from_spec(_sp)
+    _sp.loader.exec_module(a)
+    a.EXPECT = expect
+    a.container = lambda: "c"
+
+    class R(object):
+        returncode, stderr = 0, ""
+        stdout = json.dumps({"apps": {"http": {"servers": {"s": {"routes": [
+            {"match": [{"host": served}], "handle": [{"handler": "static_response"}]}]}}}}})
+    a.sh = lambda cmd, **kw: R()
+    b = _io.StringIO()
+    with _ctx.redirect_stdout(b):
+        rc = a.cmd_roster()
+    return rc, b.getvalue()
+
+
+# the exact shape both real boxes printed tonight
+_rc, _o = _roster(["cybergod.ai"], ["cybergod.ai", "www.cybergod.ai"])
+ok_(_rc == 0, "a www variant of a committed domain is not a failure")
+ok_("www.cybergod.ai" in _o,
+    "the extra host is NAMED, so the count cannot be mistaken for a blind check")
+ok_("NOT on the committed roster" not in _o, "and it is not warned about - it is expected")
+
+# a genuinely foreign vhost is the thing this check exists for
+_rc, _o = _roster(["cybergod.ai"], ["cybergod.ai", "www.cybergod.ai", "attacker-owned.example"])
+ok_("attacker-owned.example" in _o.split("NOT on the committed roster")[-1],
+    "a foreign vhost on the SHARED proxy is still named and warned")
+ok_(_rc == 0, "...but it warns rather than failing - launching a site is a normal operation")
+
+# and the original premise still holds
+_rc, _o = _roster(["cybergod.ai", "godeyes.ai"], ["cybergod.ai"])
+ok_(_rc == 1 and "godeyes.ai" in _o, "a DISAPPEARED domain is still a failure, named")
+
 print("=" * 78)
 if FAILED:
     print("  %d CHECK(S) FAILED" % len(FAILED))
