@@ -49,26 +49,36 @@ def test_the_embedded_script_reads_the_value_from_stdin():
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_end_to_end_the_value_lands_in_the_env_file_from_stdin_only():
+    """Run the REAL embedded upsert script and confirm the value arrives from stdin and upserts
+    idempotently.
+
+    NO WINDOWS PATH IS EVER HANDED TO BASH. The first version wrote a temp .sh file and ran
+    `bash C:\\Users\\...\\s.sh`; Git Bash mangled the backslashes ("C:UsersferanAppData...") and
+    the test failed on the operator's box while passing in a Linux sandbox - the exact
+    'a check that cannot run on the invoking platform is not a check' trap. Fix: the script goes
+    to bash INLINE via `bash -c`, the env file is a RELATIVE name written in a cwd set through
+    subprocess (which handles the platform path), and the value goes on stdin. Nothing bash sees
+    is an absolute native path.
+    """
     ss = _mod()
     work = tempfile.mkdtemp(prefix="setsecret-")
     try:
         cmd = ss.remote_command("ABUSEIPDB_KEY")
         b64 = re.search(r"'([A-Za-z0-9+/=]{40,})'", cmd).group(1)
         script = base64.b64decode(b64).decode()
-        envf = os.path.join(work, ".env")
-        # emulate the droplet up to the docker restart (which we cannot run here)
-        script = script.replace(ss.ENVF, envf).split("cd /opt/colt-stack")[0]
-        sf = os.path.join(work, "s.sh")
-        with open(sf, "w", newline="\n") as fh:
-            fh.write(script)
+        # emulate the droplet up to the docker restart, and write to a RELATIVE .env in cwd
+        script = script.replace(ss.ENVF, "envtest.env").split("cd /opt/colt-stack")[0]
+        envf = os.path.join(work, "envtest.env")
+
         value = "02ffdeadbeefcafe0011223344556677"
-        r = subprocess.run(["bash", sf, "ABUSEIPDB_KEY"], input=value.encode(),
-                           capture_output=True, timeout=30)
+        r = subprocess.run(["bash", "-c", script, "bash", "ABUSEIPDB_KEY"],
+                           input=value.encode(), cwd=work, capture_output=True, timeout=30)
         assert r.returncode == 0, r.stderr.decode()[:200]
         got = open(envf, encoding="utf-8").read().strip()
         assert got == "ABUSEIPDB_KEY=%s" % value, "the value did not upsert from stdin: %r" % got
         # and idempotent: a second run replaces, never duplicates
-        subprocess.run(["bash", sf, "ABUSEIPDB_KEY"], input=b"newvalue123456789", timeout=30)
+        subprocess.run(["bash", "-c", script, "bash", "ABUSEIPDB_KEY"],
+                       input=b"newvalue123456789", cwd=work, timeout=30)
         lines = open(envf, encoding="utf-8").read().strip().splitlines()
         assert sum(l.startswith("ABUSEIPDB_KEY=") for l in lines) == 1, "the upsert duplicated"
     finally:
