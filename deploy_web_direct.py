@@ -161,8 +161,23 @@ def remote(proxy=True):
     "CADDY_CT=\"$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)\"",
     "CF=\"$(docker inspect \"$CADDY_CT\" --format '{{range .Mounts}}{{if eq .Destination \"/etc/caddy/Caddyfile\"}}{{.Source}}{{end}}{{end}}')\"",
     "cp \"$CF\" \"$CF.bak.$(date +%s)\"",
+    # THE MARKER DELETE IS THE ONLY CORRECT ONE. It removes exactly our block and nothing else.
+    #
+    # There used to be a second, blunt line here:
+    #     sed -i '/cybergod/,/^}/d' "$CF"
+    # which deletes from the FIRST line containing "cybergod" to the next `}` at column 0. It was
+    # belt-and-braces for a legacy unmarked block that has not existed for months, and it was
+    # silently destroying somebody else's config on EVERY deploy: jobhuntwow.caddy line 14 is a
+    # COMMENT reading "1:1 with cybergod.ai's traffic board", so the range started inside jhw's
+    # block and ran to the closing brace of `jobhuntwow.com {`. Reproduced exactly: 26 lines ->
+    # 14, braces unbalanced, which is the "CADDY: the LIVE shared config is DAMAGED" alert that
+    # fired after every single ship. caddyguard then repaired it, so the damage was invisible
+    # except as a recurring alert - and an alert that is benign-looking every time is how the one
+    # that matters gets ignored.
+    #
+    # RULE: never delete a RANGE from a shared file using a word that can appear in prose. The
+    # markers exist precisely so the boundaries are unambiguous.
     "sed -i '/# colt:cybergod BEGIN/,/# colt:cybergod END/d' \"$CF\"",
-    "sed -i '/cybergod/,/^}/d' \"$CF\"",
     "cat deploy/caddy/cybergod.caddy >> \"$CF\"",
     "sed -i 's#^cybergod.ai,.*{$#cybergod.ai, www.cybergod.ai {#' \"$CF\"",
     "docker exec \"$CADDY_CT\" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile",

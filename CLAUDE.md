@@ -5301,3 +5301,32 @@ signed checksums file before executing it. The VULNERABILITY DATABASE updates in
 binary, so findings are current on either version. An upgrade is therefore a deliberate, reviewed
 change to `TRIVY_VERSION` in deploy.yml / security.yml / deploy_web_direct.py — never something to
 be nudged into by a banner printed by the tool asking to update itself.
+
+## THE RECURRING "SHARED CONFIG IS DAMAGED" ALERT WAS US, EVERY DEPLOY (2026-08-14)
+The alert fired after every single `python ship.py`:
+```
+CADDY: the LIVE shared config is DAMAGED
+jhw:jobhuntwow 14 lines, 3 open vs 2 close
+... the open question is WHICH project wrote this, because it will do it again.
+```
+It was `deploy_web_direct.py`. After the CORRECT marker-based delete it also ran a blunt
+```
+sed -i '/cybergod/,/^}/d' "$CF"
+```
+which deletes from the FIRST line containing "cybergod" to the next `}` at column 0. **Line 14 of
+`deploy/caddy/jobhuntwow.caddy` is a COMMENT** reading *"1:1 with cybergod.ai's traffic board"*, so
+the range opened inside another project's block and ran to the closing brace of `jobhuntwow.com {`.
+Reproduced exactly against the real committed blocks: 26 lines -> 14, braces unbalanced. That is
+the reported symptom, to the line.
+The blunt sed was belt-and-braces for a legacy UNMARKED cybergod block that has not existed for
+months. Deleted; the marker delete is bounded, unambiguous and sufficient.
+**WHY IT SURVIVED SO LONG:** caddyguard repaired it seconds later on every run, so the only symptom
+was an alert that looked benign each time. An alert that is benign every time is exactly how the
+one that matters gets ignored - which is the whole reason this alert exists.
+RULE: never delete a RANGE from a shared file using a word that can appear in prose. Markers exist
+so the boundaries are unambiguous; a keyword match will eventually start inside somebody's comment.
+Guarded by `tests/test_caddy_wiring.py`, which EXTRACTS the deploy's real `sed -i` commands from
+the script (never retyped, comments stripped so the explanation of the removed line cannot
+false-positive), runs them against a monolith built from the REAL committed blocks, and asserts
+every other project's block is byte-identical afterwards - plus that no range delete is unbounded,
+and that our own block is still genuinely replaced. Proven by reintroducing the exact line: caught.
