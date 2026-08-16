@@ -674,11 +674,16 @@ def _served(cfg):
 # leaves both sides agreeing on an estate that is missing a customer's domain.
 # Override per-host with CADDY_EXPECT="a.com,b.com"; empty disables the check rather than failing
 # a box that legitimately serves something else (staging serves one vhost, production eleven).
+# 2026-08: s4biz.io joined the box as a SIXTH project (container s4biz-web, published on
+# 127.0.0.1:8091, fragment s4biz__site.caddy). It was serving traffic while absent from this list,
+# which is the half of the roster that matters: an unexpected vhost only WARNS, but a vhost that
+# is not expected can never be reported as MISSING. Its disappearance was invisible.
 EXPECT = [d for d in os.environ.get(
     "CADDY_EXPECT",
     "cybergod.ai,www.cybergod.ai,godeyes.ai,jobhuntwow.com,www.jobhuntwow.com,"
     "klimaanlage-preise.de,klimaanlage-montieren.de,www.klimaanlage-montieren.de,"
-    "jev.best,www.jev.best"
+    "jev.best,www.jev.best,"
+    "s4biz.io,www.s4biz.io"
 ).split(",") if d.strip()]
 
 
@@ -735,7 +740,7 @@ def cmd_admin():
     ip = (sh(["docker", "inspect", "-f",
               "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", c]).stdout or "").split()
     probe_from = None
-    for cand in ("colt-web", "jhw-web", "polara-web"):
+    for cand in ("colt-web", "jhw-web", "polara-web", "s4biz-web"):
         if (sh(["docker", "inspect", "-f", "{{.State.Running}}", cand]).stdout or "").strip() == "true":
             probe_from = cand
             break

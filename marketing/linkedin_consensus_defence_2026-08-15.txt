@@ -1,0 +1,35 @@
+Over four days in July, an AI system mapped 21 Taiwanese government systems, cracked 85 accounts and pulled 2,500 personnel records. Up to eight agents ran at once, picking their own next move, no human in the loop. When one route failed, an agent went off and researched a different one.
+
+Dream, the Israeli firm that found it, put it plainly: the cost of running a competent attack has collapsed, but the cost of defending against one has not.
+
+Two days later Cisco's CEO told his earnings call that customers are ripping out unsupported kit because Anthropic's Mythos model finds bugs faster than vendors patch them. The Linux kernel team published 432 CVEs in two days.
+
+So the attacker is automated, tireless and costs almost nothing to run. Most defence is still one model answering one question, with a human reading the output at 9am.
+
+We built cybergod.ai around a consensus algorithm, and we point it at ourselves first.
+
+The shield decides in arithmetic, not in a model. Scoring, tarpit, block: plain code, microseconds, on the request path. A model call takes 300ms to a minute. Put one in front of a request that IS the attack and you have handed the attacker a slower target.
+
+Four models sit behind that, out of band. Every cycle, deepseek, llama, gemma and kimi review what the shield actually did and argue about it. Four different vendors, deliberately, so one provider's rate limit or blind spot cannot silence the panel.
+
+They advise. They never act.
+
+Yesterday's review shows it. One IP reached 12 points across repeated directory brute-forcing and took a 900 second block. Three models said leave the thresholds alone. Llama proposed cutting the block to 600. The system refused: one vote of four is below the quorum of three, so nothing changed. The bounds it was arguing inside are committed in code, and no model can widen them.
+
+Cisco disclosed that its internal assistant routes each task to the appropriate model to manage token spend. That is sensible optimisation. It is also one model answering, chosen for cost. Asking four the same question and treating their disagreement as evidence is a different thing entirely.
+
+What we do differently:
+
+The auditor is never the author, and never from the same vendor. Nothing marks its own work.
+
+Code decides, models explain. A 429 from one provider cannot block a release. An agreeable model cannot wave through a dead container.
+
+Every proposed change is bounded, needs a quorum, and takes the median, so one confident model cannot drag the result.
+
+We run it on ourselves. 229 tests, 11 regression suites, a staging twin that gets rebooted before production sees anything.
+
+Honest limit: we have not benchmarked this against any named product, so we do not claim to beat one. The argument is architectural, and every part of it is checkable.
+
+The attacker adapts on its own now. A defence that needs someone awake, or trusts one model's confidence, is the wrong shape.
+
+What is reviewing your alerts tonight?

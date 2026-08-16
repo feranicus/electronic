@@ -246,7 +246,7 @@ echo "-- listeners:"
 echo "-- proxy:"
 docker ps -a --filter name=caddy --format '{{.Names}}\t{{.Status}}'
 echo "-- TLS certificate expiry (a lapsed cert takes EVERY domain down together):"
-for d in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de; do
+for d in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de s4biz.io; do
   END=$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null \
         | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
   if [ -n "$END" ]; then
@@ -263,7 +263,7 @@ done
 # Caddy renews at 30 days; still under 7 means renewal has been FAILING for three weeks.
 if [ -n "$CERTBAD" ]; then echo "   [X] CERT GATE FAILED — renewal is not working, this is days from an outage"; fi
 echo "-- local probes (code + BYTES: an empty 200 is what 'the site is dead' looks like):"
-for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.com/ https://jobhuntwow.com/ https://klimaanlage-preise.de/; do
+for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.com/ https://jobhuntwow.com/ https://klimaanlage-preise.de/ https://s4biz.io/api/health; do
   R=$(curl -sk -o /tmp/body -w '%%{http_code} %%{size_download}' --max-time 12 "$u")
   CODE=${R%% *}; BYTES=${R##* }
   FLAG=""

@@ -1,0 +1,59 @@
+PUBLISHED: comment 1 (architecture split)
+
+===== COMMENT 2 =====
+
+Since a signature is off the table, the interesting question is what the shield will accept as evidence.
+
+Four signals, weighted, inside a rolling window.
+
+Honeytokens carry the most weight. A handful of paths are listed in robots.txt as Disallow and linked from nowhere. A request for one is either a deliberate scan or a crawler ignoring robots. Neither is a visitor, so that signal has no false positives by construction.
+
+User agent rotation is the one an attacker cannot engineer away. Rotating agents to beat per-client rate limiting produces the thing a real person never produces: several distinct browser and OS fingerprints from one address within seconds. On 10 August one IP announced six different browsers inside two seconds. The evasion was the evidence.
+
+Rotation alone still does not convict. Our own deploy verifier sends twelve agents from one address to test the bot gate, and the first version blocked it. Automation is not attack, so rotation scores only when something else is wrong too.
+
+Same logic on 404s. Two real visitors produced 439 and 362 misses on our own routes. A person misses the same few stale paths. A scanner misses hundreds of different ones, so variety counts and volume does not.
+
+
+===== COMMENT 3 =====
+
+The reason most platforms stop at detection is that inline blocking can take your own site down. So the rails matter more than the detection does.
+
+It never touches the firewall. Enforcement is HTTP layer, inside one process. VPN, SSH and the other sites on the same host never pass through it, and a test fails the build if an iptables, nft or ufw call ever appears in that file.
+
+It fails open. Any exception anywhere in the module lets the request through, because a control that breaks the site is a worse outage than the scanning it prevents.
+
+Nothing is permanent. Every block, hold and mode expires on its own.
+
+Two path prefixes can never be blocked. /.well-known/ carries certificate renewal, so blocking a scanner there would take TLS down for every domain on the box. The exemption is not a hiding place, though: request shape is always scored, and the exemption only decides whether we may act on it. An attacker who prefixed every probe with an exempt path was once invisible, which is how we learned to separate the two.
+
+A blast cap then refuses to act when acting would reach too much of the traffic. An automatic control that can block everybody is worse than no control at all.
+
+
+===== COMMENT 4 =====
+
+Last piece: who is allowed to pull the trigger.
+
+Three tiers, split by reach rather than by confidence.
+
+Automatic, no question asked: tarpit, a 15 minute block, an alert. Waiting for a human to approve a 15 minute block means the scan has finished before the phone is unlocked.
+
+Ask first, one tap in Telegram, expiring after two hours if nobody answers: a 24 hour hold, widening to the whole /24, strict mode across the site, banning a path permanently, filing an abuse report, or calling it a false alarm and releasing the address. A /24 is up to 256 addresses and can be an office or a mobile carrier, so the shield will honour that state and never decide it.
+
+Never, at any tier: scanning back, connecting to their host, anything resembling hack-back. Criminal under StGB 202a and 303b, EU Directive 2013/40 and the CFAA. The address is usually a compromised third party anyway, and a test fails the build if an offensive action is ever added.
+
+Confirmations are read back out of live state after the write instead of printed hopefully, and a failed action says so. The bot records the decision, the web app enforces it, so a bug in one cannot block anyone.
+
+
+===== COMMENT 5 (Saturday, light) =====
+
+It is Saturday morning ☕ and something was already brute-forcing directories on our site before I finished the first coffee. The attacker's agent has no idea it is the weekend. Taiwan logged an average of 2.6 million attacks a day last year and I promise not one of them checked the calendar.
+
+That is the unglamorous case for automating this tier. Not because people are bad at it, but because people sleep, and the weekend is 28% of the week 📅
+
+What it sits beside rather than replaces: a WAF still inspects payloads, a CDN still soaks up volume, a rate limiter still handles the crude stuff, and TLS still terminates somewhere. None of that goes away.
+
+What it does replace is the gap between an alert firing and somebody deciding. The classic pattern is an IDS or SIEM rule that detects the scan perfectly, emails you about it, and then waits. Ours once sent six emails about one scanner in two seconds and took no other action. A very well informed way to be scanned. 🙃
+
+So: arithmetic for speed, four models for judgement, a human for anything with real reach. The shield works Saturdays. I do not.
+

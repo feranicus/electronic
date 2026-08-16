@@ -42,6 +42,15 @@ jobs:
             "jobhuntwow.com|https://jobhuntwow.com/|^(200|301|302|308)$"
             "www.jobhuntwow.com|https://www.jobhuntwow.com/|^(200|301|302|308)$"
             "klimaanlage-preise.de|https://klimaanlage-preise.de/|^(200|301|302|308)$"
+            # s4biz.io is NOT probed here. It owns its own repository and its own
+            # .github/workflows/uptime.yml, which is the single source of truth for that site.
+            # Duplicating the targets would give two homes for one list, and the second copy is
+            # always the one that goes stale.
+            #
+            # What DOES stay here is the shared-proxy concern: s4biz.io is on the caddyguard vhost
+            # roster and in its certificate loop, because a missing vhost or a lapsed certificate
+            # on that proxy takes every domain on the box down together, and caddyguard owns the
+            # proxy.
           )
           FAIL=""
           for t in "${TARGETS[@]}"; do
