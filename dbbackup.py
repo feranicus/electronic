@@ -79,16 +79,37 @@ python3 -c 'import boto3' 2>/dev/null || pip3 install --quiet --break-system-pac
 python3 -c 'import boto3' 2>/dev/null && echo '   boto3 ok' || echo '   [!] boto3 STILL missing - local-only backups'
 
 echo '#### DATABASES'
+# ASK THE CONTAINER WHERE ITS DATA LIVES. This inventory used to run
+#   docker volume inspect colt_webdata
+# and print "[!] volume colt_webdata not found" on EVERY run, because Compose PREFIXES volume names
+# (the real one is colt-stack_colt_webdata). deploy/dbbackup/agent.py was fixed to resolve through
+# the container mount table and I did not carry the fix across - so the agent found and backed up
+# both databases correctly while the inventory printed a scary warning about them being missing.
+# Two homes for "where does this database live", one of them fixed: the same defect as ENRICH_MODELS
+# having four homes, one level down. The suffix match is the fallback for a stopped container.
+for c in colt-web; do
+  docker inspect -f '{{range .Mounts}}{{.Destination}}|{{.Source}}{{"\\n"}}{{end}}' "$c" 2>/dev/null
+done | awk -F'|' 'NF==2 {print $2}' | sort -u > /tmp/dbmounts
 for v in colt_webdata colt_events; do
-  mp=$(docker volume inspect -f '{{.Mountpoint}}' $v 2>/dev/null || true)
-  if [ -n "$mp" ]; then
-    for f in "$mp"/colt.sqlite "$mp"/cost_ledger.sqlite; do
-      [ -f "$f" ] && printf '   %%-46s %%10d bytes\\n' "$f" "$(stat -c%%s "$f")"
-    done
-  else
-    echo "   [!] volume $v not found"
-  fi
+  docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E "(^|_)${v}$" \
+    | while read -r n; do docker volume inspect -f '{{.Mountpoint}}' "$n" 2>/dev/null; done
+done >> /tmp/dbmounts
+FOUND=0
+for mp in $(sort -u /tmp/dbmounts); do
+  for f in "$mp"/colt.sqlite "$mp"/cost_ledger.sqlite; do
+    if [ -f "$f" ]; then printf '   %%-46s %%10d bytes\\n' "$f" "$(stat -c%%s "$f")"; FOUND=$((FOUND+1)); fi
+  done
 done
+# Only NOW is silence worth reporting, and only when the app that owns the data is running -
+# the same discriminator the agent uses to turn "nothing to do" into "I cannot see my subject".
+if [ "$FOUND" -eq 0 ]; then
+  if docker ps --format '{{.Names}}' | grep -qx colt-web; then
+    echo "   [X] no database found while colt-web is RUNNING - the lookup is broken, not the estate empty"
+  else
+    echo "   [i] no database found and colt-web is not running (fresh box?)"
+  fi
+fi
+rm -f /tmp/dbmounts
 
 echo '#### BACKUP'
 %s

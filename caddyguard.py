@@ -267,8 +267,24 @@ for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.c
   R=$(curl -sk -o /tmp/body -w '%%{http_code} %%{size_download}' --max-time 12 "$u")
   CODE=${R%% *}; BYTES=${R##* }
   FLAG=""
+  # ZERO bytes is the definitive symptom and the one that produced this check: jobhuntwow answered
+  # `200 OK` with `Content-Length: 0` for weeks while every status-code probe called it healthy.
+  #
+  # `< 200 bytes` was too blunt and false-positived on its first real encounter: s4biz.io/api/health
+  # legitimately returns 47 bytes of JSON and was labelled "the upstream is not answering" on a
+  # working upstream. A health endpoint is SUPPOSED to be small, so size alone cannot judge it -
+  # and a warning that is wrong every single run is how the operator learns to skip this section,
+  # which costs far more than the check ever buys.
+  # So: 0 bytes always fails. A small body on a PAGE path is suspicious and says so in weaker words.
+  # A small body under /api/ is normal and is reported as a plain number, which is the actual signal.
   case "$CODE" in
-    2*)      [ "$BYTES" -lt 200 ] && FLAG="   <- EMPTY BODY, the upstream is not answering" ;;
+    2*)
+      if [ "$BYTES" -eq 0 ]; then
+        FLAG="   <- EMPTY BODY, the upstream is not answering"
+      elif [ "$BYTES" -lt 200 ] && ! printf '%%s' "$u" | grep -q '/api/'; then
+        FLAG="   <- suspiciously small for a page - check it renders"
+      fi
+      ;;
     3*|401)  : ;;   # a redirect legitimately has no body; 401 is the healthy answer for /api/me
     *)       FLAG="   <- FAILED" ;;
   esac

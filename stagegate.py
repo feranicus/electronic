@@ -459,6 +459,35 @@ _BENIGN = re.compile(r"(?i)(no silent drift|not stale|nothing to compare|no drif
                      r"zero undefined|not just exit 0|single-file mount not in use)")
 
 
+def say_check(say, c, pad=18, width=90):
+    """Print ONE check, WRAPPING the detail rather than truncating it.
+
+    `say` is passed in because it is a LOCAL built in run() (quiet mode swaps it for a no-op), the
+    same way deploy_to_staging(say) takes it. My first version assumed it was module scope and died
+    with NameError the moment it ran - read the helper, do not guess its binding.
+
+    ONE implementation, because there were two and only one of them was fixed. The pre-reboot loop
+    was corrected to wrap on 2026-08-13 (kimi-k2.6 flagged the mid-word cuts and was right); the
+    POST-reboot loop twelve lines below it kept `detail[:80]` and went on truncating every
+    `post_reboot_*` line for three more releases, in the same function, under a comment explaining
+    why truncating is wrong.
+
+    Why it matters at all: the detail is where a check states WHAT it measured. Cutting it destroys
+    exactly the evidence the check exists to provide, silently, on the PASSING path where nobody
+    looks twice. It also feeds the review panel, so a reviewer reading half a sentence reasons from
+    half the facts - which is how the same wrong call gets made three runs running.
+
+    Fixing a formatting defect in one of two copies is the "one home for a value" rule wearing a
+    different hat. There is now one copy.
+    """
+    d = str(c.get("detail") or "")
+    say("  %-*s %s  %s" % (pad, c["name"], "OK " if c["ok"] else "FAIL", d[:width]))
+    rest = d[width:]
+    while rest:
+        say("  %-*s      %s" % (pad, "", rest[:width]))
+        rest = rest[width:]
+
+
 def self_contradictory(c):
     """A check that says PASS while its detail describes a failure is a BROKEN CHECK.
 
@@ -689,19 +718,7 @@ def run(reboot_test=True, quiet=False):
     checks = parse_checks(out)
     kernel_before = (sections(out).get("KERNEL") or "").splitlines()[:1]
     for c in checks:
-        # WRAP, DO NOT TRUNCATE. This was [:90], which cut every long detail mid-word:
-        #   "...(that it is actually LOADED is p"      "...proven by mount_fresh + config_drift, not by t"
-        # kimi-k2.6 flagged it on 2026-08-13 and was right. The detail is where a check states
-        # WHAT it measured, so a truncated one destroys exactly the evidence the check exists to
-        # provide - and it does it silently, on the passing path, where nobody looks twice. It
-        # also feeds the review panel, so a reviewer reading half a sentence reasons from half the
-        # facts, which is how the same wrong call gets made three runs running.
-        _d = str(c["detail"] or "")
-        say("  %-18s %s  %s" % (c["name"], "OK " if c["ok"] else "FAIL", _d[:90]))
-        _rest = _d[90:]
-        while _rest:
-            say("  %-18s      %s" % ("", _rest[:90]))
-            _rest = _rest[90:]
+        say_check(say, c)
 
     reboot = {}
     if reboot_test:
@@ -729,7 +746,7 @@ def run(reboot_test=True, quiet=False):
                       "kernel_before": kernel_before, "kernel_after": now[1]}
             for c in post:
                 c["name"] = "post_reboot_" + c["name"]
-                say("  %-28s %s  %s" % (c["name"], "OK " if c["ok"] else "FAIL", c["detail"][:80]))
+                say_check(say, c, pad=28)
             checks += post
 
     evidence = {"host": STAGING, "role": "staging twin of %s" % PROD,

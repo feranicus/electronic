@@ -666,14 +666,34 @@ def test_the_refusal_path_is_exercised_without_touching_live_state():
 def test_check_details_are_wrapped_not_truncated():
     """kimi-k2.6, and it was right. The detail is where a check states WHAT it measured, so
     cutting it mid-word destroys exactly the evidence the check exists to provide - silently, on
-    the passing path. It also feeds the review panel, so a reviewer reads half the facts."""
-    with open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8") as fh:
-        sg = fh.read()
-    line = [ln for ln in sg.splitlines() if 'c["name"], "OK "' in ln]
-    assert line, "could not find the check-printing line"
-    assert '_d[:90]' in sg and "_rest" in sg, (
-        "check details are still truncated with no continuation; a cut-off detail reads as a "
-        "logging bug and hides what the check actually proved")
+    the passing path. It also feeds the review panel, so a reviewer reads half the facts.
+
+    THIS TEST WAS ITSELF THE PROBLEM UNTIL 2026-08-16, and it is worth keeping the reason. The
+    first version asserted `'_d[:90]' in sg and "_rest" in sg` - the literal strings of the fix I
+    had just written. That checks THE IMPLEMENTATION IS STILL PRESENT, never that a detail is not
+    truncated. So when the POST-reboot loop twelve lines below kept `detail[:80]`, this guard could
+    not see it: it was looking for the good pattern, never for the bad one, and went green for
+    three releases while every `post_reboot_*` line in the deploy log was cut mid-word.
+
+    Doctrine rule 2, on my own test: a check aimed at the wrong subject cannot fail. Assert the
+    PROPERTY (nothing slices a detail; all printing goes through one helper), not the fix.
+    """
+    src = open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read()
+    body = "\n".join(l.split("#", 1)[0] for l in src.splitlines())   # comments discuss the defect
+
+    sliced = re.findall(r'\[.detail.\]\s*\[:\s*\d+\s*\]', body)
+    assert not sliced, (
+        "a check detail is being truncated with a slice (%s). Print it through say_check(), which "
+        "WRAPS. A truncated detail is lost evidence on the path nobody reads twice." % sliced)
+
+    assert "def say_check(" in body, "the single check-printing helper is gone"
+
+    # Every place that prints a check must go through that helper. Two printers is how the two
+    # copies diverged in the first place, and only one of them ever got fixed.
+    inline = [ln.strip() for ln in body.splitlines()
+              if 'c["name"]' in ln and '"OK "' in ln and "def say_check" not in ln]
+    assert len(inline) <= 1, (
+        "a check is formatted inline instead of via say_check(): %s" % inline)
 
 
 def test_an_unrecognised_patchwatch_state_is_never_read_as_healthy():
