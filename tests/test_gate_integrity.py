@@ -37,6 +37,21 @@ sys.modules["stagegate"] = sg
 _s.loader.exec_module(sg)
 
 
+def _code_only(s):
+    """Strip COMMENT LINES, not everything after the first '#' on a line.
+
+    The naive `l.split("#", 1)[0]` destroys any string literal containing a '#', which is exactly
+    what happened here: the sentinel enforcement reads `"#### HEALTH_END" not in out`, and the
+    stripper removed it, so the assertion searched for something it had just deleted and failed a
+    correct file. A comment-stripper that also eats code is the wrong-subject defect in the tool
+    meant to prevent the wrong-subject defect.
+
+    Removing whole comment lines is enough for both layers here: Python comments and the bash
+    comments inside the HEALTH string are all on their own lines.
+    """
+    return "\n".join("" if l.lstrip().startswith("#") else l for l in s.splitlines())
+
+
 # ---------------------------------------------------------------- 1. the self-contradiction rule
 def test_the_exact_line_that_shipped_is_now_a_failure():
     """Verbatim from the 2026-08-07 run. It reported PASS; it must now be a FAILURE."""
@@ -107,13 +122,44 @@ def test_unanimous_no_go_against_a_green_gate_halts(monkeypatch=None):
     assert "HALTED" in d and "OVERRIDE_PANEL" in d
 
 
-def test_a_split_panel_does_not_block():
-    """Models must NOT get a veto. One dissenter, or two, cannot stop a green gate."""
+def test_one_dissenter_still_never_blocks():
+    """Models must NOT get a veto. ONE reviewer cannot stop a green gate, because one 429, one
+    timeout or one model in a bad mood must never be able to halt a good release.
+
+    The threshold used to be UNANIMITY and the operator lowered it to 2+ on 2026-08-16 (see
+    _decide_from_verdict). This test pins the half that did NOT change: a single voice is not a
+    quorum, in any form.
+    """
     os.environ.pop("OVERRIDE_PANEL", None)
-    for vs in (["go", "no-go", "go", "go"], ["no-go", "no-go", "go", "unsure"],
-               ["go", "go", "go", "unsure"]):
+    for vs in (["go", "no-go", "go", "go"],          # one hard NO-GO
+               ["go", "go", "go", "unsure"],          # one hesitation
+               ["go", "go", "go", "go"]):
         g, _ = sg._decide_from_verdict(_verdict("GO", vs))
-        assert g == "GO", "a split panel blocked the release: %s" % vs
+        assert g == "GO", "a single dissenter blocked the release: %s" % vs
+
+
+def test_two_dissenters_halt_and_the_2026_08_16_shape_is_the_case():
+    """THE RUN THAT PROMPTED THE CHANGE. gemma UNSURE + kimi NO-GO against a gate reporting
+    "35/35 passed" - while SIX post-reboot checks had silently never reported, and the previous
+    run had counted 41. kimi named the missing checks explicitly. 2 of 4 was not unanimous, so
+    nothing fired and it went to production."""
+    os.environ.pop("OVERRIDE_PANEL", None)
+    for vs in (["go", "go", "unsure", "no-go"],       # the exact 2026-08-16 panel
+               ["no-go", "no-go", "go", "unsure"],
+               ["no-go", "no-go", "go", "go"]):
+        g, d = sg._decide_from_verdict(_verdict("GO", vs))
+        assert g == "NO-GO", "2+ dissent against a green gate still promoted: %s" % vs
+        assert "HALTED" in d and "OVERRIDE_PANEL" in d
+        assert "CHECK COUNT" in d, "the halt does not tell the operator what to look at"
+
+
+def test_hesitation_alone_is_not_a_finding():
+    """Two UNSUREs and no outright objection is a panel that could not convince itself, not a
+    panel that found something. Halting on that would make every quiet run an interruption, and a
+    gate that stops you for nothing is a gate you learn to override by reflex."""
+    os.environ.pop("OVERRIDE_PANEL", None)
+    g, _ = sg._decide_from_verdict(_verdict("GO", ["go", "go", "unsure", "unsure"]))
+    assert g == "GO", "two hesitations blocked a release with nobody actually objecting"
 
 
 def test_an_unavailable_panel_never_blocks():
@@ -679,7 +725,7 @@ def test_check_details_are_wrapped_not_truncated():
     PROPERTY (nothing slices a detail; all printing goes through one helper), not the fix.
     """
     src = open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read()
-    body = "\n".join(l.split("#", 1)[0] for l in src.splitlines())   # comments discuss the defect
+    body = _code_only(src)   # comments discuss the defect
 
     sliced = re.findall(r'\[.detail.\]\s*\[:\s*\d+\s*\]', body)
     assert not sliced, (
@@ -938,3 +984,56 @@ def test_the_recall_suite_actually_counts_and_reports_every_check():
     assert "sys.exit(1)" in tail, "the final block does not enforce anything"
     assert src.rstrip().endswith('print("=" * 78)'), (
         "something was appended after the final gate, so it is no longer last")
+
+
+# ---------------------------------------------------------------- 5. missing evidence is not a pass
+def test_a_truncated_health_run_fails_instead_of_counting_a_smaller_denominator():
+    """2026-08-16: the gate printed "GATE: GO (35/35 deterministic checks passed)" while SIX
+    post-reboot checks never arrived. The previous run counted 41. It reported 100% of what it
+    HAPPENED TO RECEIVE, so a shrinking denominator read as success.
+
+    MECHANISM: ssh_script returns partial stdout when a connection drops with rc 255 (it only
+    retries when stdout is EMPTY), and the post-reboot call site discarded the return code. sshd
+    was throttling at that moment - the next step logged "no answer (attempt 1/3)".
+
+    Same disease as the mid-file sys.exit in test_recall.py, which printed "ALL CHECKS PASSED" with
+    73 checks still to come. A gate must know what it EXPECTS, not count what it got.
+    """
+    src = open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read()
+    body = _code_only(src)
+
+    # 1. HEALTH must end with a sentinel, so a cut-short run is detectable with nothing to compare.
+    health = re.search(r'HEALTH\s*=\s*r?"""(.*?)"""', src, re.S).group(1)
+    assert "HEALTH_END" in health, "the health script has no terminal sentinel"
+    assert health.rstrip().endswith('echo "#### HEALTH_END"'), (
+        "the sentinel is not the LAST thing emitted, so output after it would be lost unnoticed")
+
+    # 2. BOTH call sites must require it. Requiring it only pre-reboot leaves the post-reboot run -
+    #    the one that actually lost six checks - unguarded.
+    assert body.count('"#### HEALTH_END" not in') == 2, (
+        "the sentinel is not enforced at both health-run call sites (found %d)"
+        % body.count('"#### HEALTH_END" not in'))
+
+    # 3. The post-reboot set must be compared to the pre-reboot set by NAME.
+    assert "post_reboot_evidence_complete" in body, (
+        "nothing compares the post-reboot checks against the pre-reboot ones, so a check that "
+        "silently stops reporting still counts as a pass")
+    assert "expected - got" in body or "expected-got" in body, (
+        "the completeness check does not compute what is MISSING")
+
+    # 4. The return code must not be discarded on the post-reboot run.
+    m = re.search(r"^\s*(\S+), (\S+), (\S+) = ssh_script\(HEALTH,", body, re.M)
+    assert m, "could not find the post-reboot health call"
+    assert m.group(3) != "_", (
+        "the post-reboot ssh return code is discarded with `_`, so a dropped connection that "
+        "returned partial output is invisible - that is exactly how the six checks were lost")
+
+
+def test_the_completeness_check_names_what_went_missing():
+    """A diagnostic that does not name its subject sends the next investigation down the wrong
+    road. The failure must list the checks that vanished, not just say a count differs."""
+    src = open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read()
+    blk = src[src.index("post_reboot_evidence_complete"):]
+    blk = blk[:blk.index("checks += post")]
+    assert '", ".join(lost)' in blk, "the failure does not name the missing checks"
+    assert "ok\": False" in blk or '"ok": False' in blk, "missing evidence does not FAIL"

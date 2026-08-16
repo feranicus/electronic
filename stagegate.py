@@ -441,6 +441,12 @@ D=$(df --output=pcent / | tail -1 | tr -dc '0-9')
 echo "#### KERNEL"
 uname -r
 [ -f /var/run/reboot-required ] && echo "reboot-required: YES" || echo "reboot-required: no"
+
+# TERMINAL SENTINEL. If this line is absent the script did not run to completion, and every
+# check above it is PARTIAL EVIDENCE rather than a smaller pass. ssh_script hands back partial
+# stdout when a connection drops with rc 255, which is exactly what happened on 2026-08-16
+# while sshd was throttling: six post-reboot checks never arrived and the gate said 35/35.
+echo "#### HEALTH_END"
 """
 
 REBOOT = r"""
@@ -525,29 +531,44 @@ def self_contradictory(c):
 def _decide_from_verdict(verdict):
     """(gate, digest) — the FINAL promotion decision. Pure: no ssh, no droplet, fully testable.
 
-    UNANIMOUS PANEL DISSENT AGAINST A GREEN GATE IS ITSELF EVIDENCE.
+    PANEL DISSENT AGAINST A GREEN GATE IS ITSELF EVIDENCE.
     The deterministic checks still DECIDE. Models must never veto a good release over a 429 or a
     bad mood, and an agreeable model must never wave through a dead container — both directions
-    are asserted in the tests. But on 2026-08-07 all four reviewers said NO-GO, all four named
-    config_drift, all four were RIGHT (the check was scoring a failure as a pass), and the run
-    promoted to production anyway with a one-line note. When EVERY independent reviewer
-    contradicts a green gate, the gate is the thing under suspicion, and that has to reach a human
-    BEFORE production rather than in a paragraph after it. So: halt, and require an explicit
-    override. A quorum is >= 3 reviewers, so a single answer is never enough to stop a release.
+    are asserted in the tests.
+
+    THE THRESHOLD WAS UNANIMITY AND IT WAS TOO HIGH (operator decision, 2026-08-16). Twice now the
+    panel has contradicted a green gate and been RIGHT about a real defect:
+      · 2026-08-07 — all four named config_drift; the check was scoring a failure as a pass.
+      · 2026-08-16 — gemma UNSURE + kimi NO-GO, kimi naming the missing post-reboot checks. SIX
+        checks had silently failed to report and the gate printed "35/35 passed" (it had printed
+        41/41 the run before). 2 of 4 is not unanimous, so nothing fired and it promoted.
+    A single reviewer still cannot stop a release, which is what protects against one rate-limited
+    or grumpy model. TWO OR MORE now halt and ask a human. UNSURE counts as dissent: a reviewer
+    that cannot convince itself the evidence is complete is making the same point as a NO-GO.
     """
     gate = verdict.get("gate", "NO-GO")
     revs = verdict.get("reviews") or []
-    dissent = [r for r in revs if str(r.get("verdict", "")).lower().replace("_", "-") == "no-go"]
-    verdict["unanimous_dissent"] = bool(revs) and len(dissent) == len(revs) and len(revs) >= 3
-    if gate == "GO" and verdict["unanimous_dissent"] and not os.environ.get("OVERRIDE_PANEL"):
-        names = ", ".join(str(r.get("model", "?")) for r in revs)
+
+    def _v(r):
+        return str(r.get("verdict", "")).lower().replace("_", "-").strip()
+
+    dissent = [r for r in revs if _v(r) in ("no-go", "unsure")]
+    hard = [r for r in revs if _v(r) == "no-go"]
+    # >= 2 dissenters AND at least one outright NO-GO. Two UNSUREs alone are hesitation, not a
+    # finding; requiring one hard NO-GO keeps the bar at "somebody actually objects".
+    verdict["panel_dissent"] = len(dissent) >= 2 and len(hard) >= 1
+    verdict["unanimous_dissent"] = bool(revs) and len(hard) == len(revs) and len(revs) >= 3
+    if gate == "GO" and verdict["panel_dissent"] and not os.environ.get("OVERRIDE_PANEL"):
+        who = ", ".join("%s=%s" % (r.get("model", "?"), _v(r) or "?") for r in dissent)
         verdict["gate"] = gate = "NO-GO"
         verdict["digest"] = (
-            "HALTED: every deterministic check passed, but ALL %d reviewers (%s) said NO-GO.\n"
-            "A unanimous panel against a green gate usually means a CHECK is lying, not that the "
-            "system is fine - that is exactly what happened on 2026-08-07.\n"
-            "Read their reasons above. To promote anyway: set OVERRIDE_PANEL=1 and re-run.\n\n"
-            % (len(revs), names)) + verdict.get("digest", "")
+            "HALTED: every deterministic check passed, but %d of %d reviewers dissented (%s).\n"
+            "A panel contradicting a green gate has twice meant a CHECK IS LYING rather than the "
+            "system being fine - 2026-08-07 (config_drift scored a failure as a pass) and "
+            "2026-08-16 (six post-reboot checks never reported and the gate counted 35/35).\n"
+            "Read their reasons above, and check the CHECK COUNT against the previous run.\n"
+            "To promote anyway: set OVERRIDE_PANEL=1 and re-run.\n\n"
+            % (len(dissent), len(revs), who)) + verdict.get("digest", "")
     return gate, verdict.get("digest", "")
 
 
@@ -726,8 +747,14 @@ def run(reboot_test=True, quiet=False):
               "docker exec colt-web mkdir -p /opt/stagegate 2>/dev/null || true\n"
               "docker cp /opt/stagegate/quorum.py colt-web:/opt/stagegate/quorum.py "
               "2>/dev/null || true\n" % q)
-    out, _, _ = ssh_script(ship_q + HEALTH, timeout=600)
+    out, _err, _rc = ssh_script(ship_q + HEALTH, timeout=600)
     checks = parse_checks(out)
+    if "#### HEALTH_END" not in out:
+        checks.append({"name": "health_run_complete", "ok": False,
+                       "detail": "the health script did not reach its terminal sentinel (ssh "
+                                 "rc=%s, %d check(s) received). Everything above is PARTIAL "
+                                 "evidence - a cut-short run must never be counted as a smaller "
+                                 "pass." % (_rc, len(checks))})
     kernel_before = (sections(out).get("KERNEL") or "").splitlines()[:1]
     for c in checks:
         say_check(say, c)
@@ -751,14 +778,52 @@ def run(reboot_test=True, quiet=False):
             checks.append({"name": "reboot_recovery", "ok": True,
                            "detail": "new boot_id after %ds, kernel %s, uptime %ss"
                                      % (waited, now[1], now[2])})
-            out2, _, _ = ssh_script(HEALTH, timeout=600)
+            out2, _err2, _rc2 = ssh_script(HEALTH, timeout=600)
             post = parse_checks(out2)
+            if "#### HEALTH_END" not in out2:
+                post.append({"name": "health_run_complete", "ok": False,
+                             "detail": "the POST-REBOOT health script did not reach its terminal "
+                                       "sentinel (ssh rc=%s, %d check(s) received) - the run was "
+                                       "cut short" % (_rc2, len(post))})
             reboot = {"came_back": True, "seconds": waited,
                       "boot_id_before": (was[0] if was else None), "boot_id_after": now[0],
                       "kernel_before": kernel_before, "kernel_after": now[1]}
             for c in post:
                 c["name"] = "post_reboot_" + c["name"]
                 say_check(say, c, pad=28)
+
+            # ---- MISSING EVIDENCE IS NOT PASSING EVIDENCE ---------------------------------
+            # 2026-08-16: this printed "GATE: GO (35/35 deterministic checks passed)" while SIX
+            # post-reboot checks - refuses_bad_config, vhost_roster, config_drift,
+            # guard_write_path_reloads, memory, disk - never arrived at all. The previous run had
+            # counted 41. The gate reported 100% of what it HAPPENED TO RECEIVE and called that a
+            # pass, so a shrinking denominator read as success.
+            #
+            # HOW THE EVIDENCE GOT LOST: ssh_script returns partial stdout when a connection drops
+            # with rc 255 (it only retries when stdout is EMPTY), and this call site discarded the
+            # return code entirely. sshd was demonstrably throttling at that moment - the very next
+            # step logged "no answer (attempt 1/3) - sshd may be throttling". So the health script
+            # was cut off mid-run and nothing noticed.
+            #
+            # Same disease as the mid-file sys.exit in test_recall.py, which printed "ALL CHECKS
+            # PASSED" with 73 checks still to come. A gate must know what it EXPECTS, not merely
+            # count what it got. kimi-k2.6 named this in the same run ("there is NO post-reboot
+            # config_drift or vhost_roster check in the evidence") and was right.
+            expected = {c["name"] for c in checks if not c["name"].startswith("post_reboot_")
+                        and c["name"] != "reboot_recovery"}
+            got = {c["name"][len("post_reboot_"):] for c in post}
+            lost = sorted(expected - got)
+            if lost:
+                checks.append({"name": "post_reboot_evidence_complete", "ok": False,
+                               "detail": "%d check(s) ran BEFORE the reboot and never reported "
+                                         "after it: %s. The health run was cut short (ssh rc=%s), "
+                                         "so this is missing evidence, not a smaller pass."
+                                         % (len(lost), ", ".join(lost), _rc2)})
+                say_check(say, checks[-1], pad=28)
+            else:
+                checks.append({"name": "post_reboot_evidence_complete", "ok": True,
+                               "detail": "every one of the %d pre-reboot checks reported again "
+                                         "after the reboot" % len(expected)})
             checks += post
 
     evidence = {"host": STAGING, "role": "staging twin of %s" % PROD,
