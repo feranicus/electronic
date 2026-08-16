@@ -114,7 +114,19 @@ UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 # ONE CHECK = ONE LINE, ALWAYS. The parser splits on newlines, so a stray newline inside a detail
 # does not just look untidy — it truncates the record and the rest is silently lost. Squash any
 # embedded newline/pipe here rather than trusting every call site to be careful.
-chk() { printf 'CHECK|%s|%s|%s\n' "$1" "$2" "$(printf '%s' "$3" | tr '\n|' '  ' | cut -c1-200)"; }
+#
+# `tr` IS THE PROTOCOL PROTECTION. `cut` IS ONLY A RUNAWAY GUARD, AND IT WAS SET FAR TOO LOW.
+# It was `cut -c1-200`, which silently amputated every long detail AT THE SOURCE:
+#     "...without restarting the contain|er, and the live fil"     (exactly 200 chars)
+#     "...the running config compa|red to the file - so"           (exactly 200 chars)
+# I "fixed" this truncation on the PYTHON side by wrapping instead of slicing, told the operator it
+# was fixed, and the very next run printed the same amputated sentences - because the printer was
+# never where the cut happened. kimi-k2.6 flagged it for a THIRD time and was right every time.
+# Same disease as the three config hops: I fixed the hop I could see, and the fix's own test could
+# only see that hop too.
+# The cap stays, because `agent.py ... 2>&1` on a crash can dump a whole traceback into $3 and one
+# CHECK line should not become 50 KB. It is now far above any real detail (longest measured ~300).
+chk() { printf 'CHECK|%s|%s|%s\n' "$1" "$2" "$(printf '%s' "$3" | tr '\n|' '  ' | cut -c1-1000)"; }
 echo "#### HEALTH"
 
 S=$(docker inspect -f '{{.State.Status}}' "$C" 2>/dev/null)
@@ -292,7 +304,7 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
 fi
 
 if docker ps --format '{{.Names}}' | grep -qi caddy; then
-  D=$(python3 /opt/caddyguard/agent.py drift 2>&1 | tr '\n|' '  ' | cut -c1-200)
+  D=$(python3 /opt/caddyguard/agent.py drift 2>&1 | tr '\n|' '  ' | cut -c1-800)
   # THE ROSTER CHECK USED TO BE INERT ON STAGING, and both auditors on the panel said so
   # (kimi-k2.6 and gemma-4-31B-it, 8 Aug 2026). It was invoked with CADDY_EXPECT="", and
   # agent.py::cmd_roster returns SKIP when the expected list is empty — so on the ONE box whose
@@ -302,11 +314,11 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
   #
   # Staging serves exactly one vhost: the committed deploy/caddy/cybergod.caddy block on :8080,
   # which is why the probes above send `Host: cybergod.ai`. So that IS the expected roster here.
-  RO=$(CADDY_EXPECT="cybergod.ai" python3 /opt/caddyguard/agent.py roster 2>&1 | tr '\n|' '  ' | cut -c1-160)
+  RO=$(CADDY_EXPECT="cybergod.ai" python3 /opt/caddyguard/agent.py roster 2>&1 | tr '\n|' '  ' | cut -c1-800)
   # ADMIN API EXPOSURE. Raised by kimi-k2.6 and checked by nobody: every drift/roster check READS
   # the admin API and the deploy WRITES through it, so if it were ever bound off-loopback or the
   # port published, whoever reached it would own the shared proxy while every check stayed green.
-  AD=$(python3 /opt/caddyguard/agent.py admin 2>&1 | tr '\n|' '  ' | cut -c1-160)
+  AD=$(python3 /opt/caddyguard/agent.py admin 2>&1 | tr '\n|' '  ' | cut -c1-800)
   case "$AD" in
     OK*)   chk admin_api_closed yes "${AD#OK }" ;;
     SKIP*) chk admin_api_closed no  "could not check the admin API: ${AD#SKIP }" ;;
@@ -318,7 +330,7 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
   # to validate(), which writes a temp dir and runs a THROWAWAY container, and then asserts the
   # live file's hash is unchanged. It also requires the LIVE config to still validate in the same
   # breath, because a validator that rejects everything passes "does it reject garbage" perfectly.
-  ST=$(python3 /opt/caddyguard/agent.py selftest 2>&1 | tr '\n|' '  ' | cut -c1-200)
+  ST=$(python3 /opt/caddyguard/agent.py selftest 2>&1 | tr '\n|' '  ' | cut -c1-800)
   case "$ST" in
     OK*)   chk refuses_bad_config yes "${ST#OK }" ;;
     SKIP*) chk refuses_bad_config no  "could not exercise the validator: ${ST#SKIP }" ;;

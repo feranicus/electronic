@@ -695,6 +695,34 @@ def test_check_details_are_wrapped_not_truncated():
     assert len(inline) <= 1, (
         "a check is formatted inline instead of via say_check(): %s" % inline)
 
+    # ---- AND THE LAYER THE PYTHON-SIDE ASSERTION COULD NOT SEE -------------------------------
+    # The version above shipped, was reported as fixed, and the NEXT run printed the same amputated
+    # sentences - because the cut is in the BASH that PRODUCES the detail, not the Python that
+    # prints it. `chk()` had `cut -c1-200` and four agent captures had `cut -c1-160/200`, all of
+    # them upstream of anything Python can observe. A guard aimed at one layer of a pipeline cannot
+    # fail on a defect in another, which is the same lesson as the three config hops.
+    #
+    # `md5sum | cut -c1-12` is a HASH PREFIX and is legitimate; only cuts on a detail path count.
+    #
+    # SCAN `body`, NOT `src`. The comment above this check quotes the retired `cut -c1-200` to
+    # explain the defect, and the first version of this assertion matched its own explanation and
+    # failed a correct file. Fourth occurrence of that mistake in this repository. `body` strips
+    # Python comments AND the bash `#` comments inside the HEALTH string, because both layers
+    # legitimately discuss the thing being banned.
+    for m in re.finditer(r"cut -c1-(\d+)", body):
+        n = int(m.group(1))
+        # SLICE THE CONTEXT FROM THE SAME STRING THE MATCH CAME FROM. The first version searched
+        # `body` and then indexed `src` with `body` offsets, so every "context" was read from a
+        # different position in a different string and the md5sum exemption could never match.
+        ctx = body[max(0, m.start() - 90):m.start()]
+        if "md5sum" in ctx or "sha256sum" in ctx:
+            continue                                   # a 12-char hash prefix, not a detail
+        assert n >= 400, (
+            "a check detail is capped at %d characters in the shell, which amputates it before it "
+            "is ever printed. The cap exists only to stop a crashing command dumping a traceback "
+            "into one CHECK line; `tr` is what protects the parser. Context: ...%s"
+            % (n, ctx[-60:].strip()))
+
 
 def test_an_unrecognised_patchwatch_state_is_never_read_as_healthy():
     """`systemctl is-enabled` prints 'not-found' for a missing unit. The first version only knew
