@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Custody observability — how a $925,426 insider theft is caught in minutes, not eighteen months</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* S4BIZ.IO, READ OFF THE LIVE SITE. The first attempt at this took the palette out of the
+       capability deck and got the accents right and the SURFACES wrong: the deck's neutral
+       charcoals (#14161F, #1B1F2C) are nothing like the site's blue-purple (#111A45, #182254),
+       and the deck never showed the two things that make s4biz look like s4biz at all, the
+       MAGENTA and the bright indigo hero field. A palette is not a list of hues, it is hues on
+       surfaces. So these are the site's own custom properties, verbatim. */
+    --bg:#0C1233;          /* body */
+    --bg2:#111A45;         /* raised */
+    --panel:#182254;       /* card, and the site really does use a hairline border on it */
+    --line:rgba(255,255,255,.14); --line2:rgba(255,255,255,.08);
+    --ink:#F2F3FF; --dim:#AEB8E0; --faint:#98A3CE;
+    --cyan:#22D3EE; --cyanbr:#67E8F9;
+    --violet:#8B5CF6; --indigo:#4F46E5;
+    --magenta:#C026D3; --magentalt:#E879F9;
+    --red:#FF4D6D;
+    --cta:var(--cyan); --ctaink:#04102A;
+    --grad:linear-gradient(100deg, var(--cyan) 0%, var(--violet) 55%, var(--indigo) 100%);
+    /* THE HERO FIELD. This is the identity. Cyan radial top-left, magenta radial bottom-right,
+       over an indigo ramp, white text on top. Everything below it sits on the dark navy. */
+    --field:radial-gradient(900px 520px at 10% -12%, rgba(34,211,238,.34), transparent 62%),
+            radial-gradient(760px 540px at 108% 118%, rgba(192,38,211,.44), transparent 58%),
+            linear-gradient(150deg, #4F46E5 0%, #5B3BD4 52%, #3B2E9E 100%);
+    /* accents that fail 4.5:1 as small text on #182254 route through a lighter sibling */
+    --violetink:#C4B5FD; --indigoink:#A5B4FC; --magentaink:#E879F9;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:"Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  body{background:var(--bg2);}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;opacity:.22;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/></svg>");
+    mix-blend-mode:overlay}
+  .wrap{position:relative;z-index:3;max-width:1280px;margin:0 auto;padding:0 22px 70px}
+  header{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;
+    padding:13px 26px;background:rgba(12,18,51,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .brand{font-family:"Unbounded";font-weight:800;letter-spacing:.05em;font-size:14px}
+  .brand b{color:var(--cyan)}
+  .tag{font-family:"JetBrains Mono";font-size:10px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase}
+
+  .field{position:relative;margin:56px -22px 0;padding:48px 22px 44px;background:var(--field);
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .field::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.32;
+    background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);
+    background-size:44px 44px}
+  .field>*{position:relative;z-index:2}
+  .field h2{margin-top:0}
+  .field .lede{color:rgba(255,255,255,.9)}
+  .field .lede b{color:#fff}
+  .field .tcell{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.22)}
+  .field .tcell p{color:rgba(255,255,255,.88)}
+  .field .tcell p b{color:#fff}
+  .close{text-align:left}
+  .close .big{font-family:"Unbounded";font-weight:800;font-size:clamp(22px,3vw,34px);
+    line-height:1.15;margin:0 0 14px;max-width:900px}
+  .close .sm{color:rgba(255,255,255,.9);max-width:780px;line-height:1.62;font-weight:300;margin:0}
+  .hero{position:relative;margin:0 -22px 0;padding:52px 22px 46px;background:var(--field);
+    border-bottom:1px solid var(--line)}
+  .hero::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;
+    background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);
+    background-size:44px 44px}
+  .hero>*{position:relative;z-index:2}
+  .hero .eyebrow{color:rgba(255,255,255,.82)}
+  .hero .sub{color:rgba(255,255,255,.9)}
+  .hero .sub b{color:#fff}
+  .hero .stat{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.20)}
+  .hero .stat .k{color:rgba(255,255,255,.78)}
+  .gr{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .eyebrow{font-family:"JetBrains Mono";font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--cyan);margin:46px 0 12px}
+  h1{font-family:"Unbounded";font-weight:800;font-size:clamp(28px,4.6vw,52px);line-height:1.06;margin:0 0 16px;
+    letter-spacing:-.01em}
+  h1 .hl{color:var(--cyan)}
+  h1 .rd{color:var(--red)}
+  .sub{font-size:clamp(15px,1.5vw,18.5px);color:var(--dim);max-width:820px;line-height:1.62;font-weight:300}
+  .sub b{color:var(--ink);font-weight:600}
+
+  .statbar{display:flex;flex-wrap:wrap;gap:10px;margin:30px 0 8px}
+  .stat{flex:1 1 165px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 17px}
+  .stat .v{font-family:"Unbounded";font-weight:800;font-size:23px;line-height:1}
+  .stat .k{font-family:"JetBrains Mono";font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--faint);margin-top:8px;line-height:1.5}
+
+  h2{font-family:"Unbounded";font-weight:600;font-size:clamp(19px,2.3vw,27px);margin:64px 0 8px;letter-spacing:-.01em}
+  .lede{color:var(--dim);max-width:840px;line-height:1.62;font-weight:300;margin:0 0 22px}
+
+  .stage{position:relative;border:1px solid var(--line);border-radius:18px;overflow:hidden;
+    background:
+      radial-gradient(720px 420px at 12% -10%, rgba(34,211,238,.16), transparent 62%),
+      radial-gradient(620px 420px at 105% 112%, rgba(192,38,211,.15), transparent 58%),
+      linear-gradient(165deg,#1B2660 0%,#141C4C 100%);}
+  canvas{display:block;width:100%}
+  .cap{min-height:64px;display:flex;align-items:center;gap:14px;padding:15px 20px;border-top:1px solid var(--line);
+    background:rgba(24,34,84,.62)}
+  .cap .step{font-family:"JetBrains Mono";font-size:10px;letter-spacing:.14em;color:var(--faint);
+    border:1px solid var(--line);border-radius:999px;padding:5px 10px;white-space:nowrap}
+  .cap .txt{font-size:15px;color:var(--ink);line-height:1.5}
+  .controls{display:flex;flex-wrap:wrap;gap:9px;padding:0 20px 16px;background:rgba(24,34,84,.62)}
+  .btn{font-family:"JetBrains Mono";font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    background:transparent;color:var(--dim);border:1px solid var(--line);border-radius:999px;
+    padding:8px 15px;cursor:pointer;transition:.18s}
+  .btn:hover{color:var(--ink);border-color:var(--cyan)}
+  .btn.on{color:var(--ctaink);background:var(--cta);border-color:var(--cyan);font-weight:600}
+
+  .legend{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0 0}
+  .lg{display:flex;align-items:center;gap:8px;font-family:"JetBrains Mono";font-size:10px;
+    letter-spacing:.1em;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+  .dot{width:8px;height:8px;border-radius:50%}
+
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:14px;margin-top:22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:19px 20px}
+  .card h3{font-family:"Unbounded";font-weight:600;font-size:14.5px;margin:0 0 9px}
+  .card p{margin:0;color:var(--dim);font-size:14px;line-height:1.6;font-weight:300}
+  .card .num{font-family:"JetBrains Mono";font-size:10px;letter-spacing:.16em;color:var(--faint);
+    display:block;margin-bottom:9px}
+
+  .tri{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:20px}
+  .tcell{border:1px solid var(--line);border-radius:14px;padding:19px 20px;background:var(--panel);position:relative;
+    overflow:hidden}
+  .tcell .lvl{font-family:"Unbounded";font-weight:800;font-size:31px;line-height:1}
+  .tcell .nm{font-family:"JetBrains Mono";font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    margin:9px 0 10px}
+  .tcell p{margin:0;color:var(--dim);font-size:13.5px;line-height:1.55;font-weight:300}
+  .tcell .bars{display:flex;gap:5px;margin-bottom:14px}
+  .tcell .bars i{height:5px;flex:1;border-radius:3px;background:var(--line)}
+
+  .tl{border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:20px;background:var(--panel)}
+  .tlrow{display:flex;align-items:center;gap:16px;padding:19px 22px}
+  .tlrow+.tlrow{border-top:1px solid var(--line)}
+  .tlrow .lab{font-family:"JetBrains Mono";font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);width:118px;flex:0 0 118px;line-height:1.5}
+  .track{position:relative;flex:1;height:12px;border-radius:7px;background:#0C1233;overflow:hidden}
+  .fill{position:absolute;left:0;top:0;bottom:0;border-radius:7px}
+  .tlrow .val{font-family:"Unbounded";font-weight:800;font-size:16px;width:130px;text-align:right;flex:0 0 130px}
+
+  .foot{margin-top:60px;padding-top:24px;border-top:1px solid var(--line);color:var(--faint);
+    font-size:12.5px;line-height:1.75;font-weight:300}
+  .foot b{color:var(--dim);font-weight:600}
+
+  /* ---- the named stack -------------------------------------------------------------- */
+  .stack{border:1px solid var(--line);border-radius:18px;overflow:hidden;margin-top:22px;
+    background:linear-gradient(180deg,#111A45 0%,#0C1233 100%)}
+  .band{display:flex;gap:0;border-bottom:1px solid var(--line);transition:background .5s}
+  .band:last-child{border-bottom:none}
+  .band.on{background:rgba(34,211,238,.07)}
+  .bl{flex:0 0 156px;padding:17px 16px;border-right:1px solid var(--line);position:relative}
+  .bl .bn{font-family:"JetBrains Mono";font-size:9.5px;letter-spacing:.16em;color:var(--faint)}
+  .bl .bt{font-family:"Unbounded";font-weight:600;font-size:12.5px;margin-top:7px;line-height:1.3;
+    transition:color .4s}
+  .band.on .bl .bt{color:var(--cyan)}
+  .bl .bar{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line);transition:background .4s}
+  .band.on .bl .bar{background:var(--cyan);box-shadow:0 0 14px rgba(34,211,238,.65)}
+  .chips{flex:1;display:flex;flex-wrap:wrap;gap:7px;padding:16px 17px;align-content:center}
+  .chip{border:1px solid var(--line);border-radius:9px;padding:7px 11px;background:rgba(24,34,84,.7);
+    transition:.35s;min-width:0}
+  .chip b{display:block;font-family:"Inter";font-weight:600;font-size:12px;color:var(--ink);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chip i{display:block;font-family:"JetBrains Mono";font-size:9px;letter-spacing:.06em;
+    color:var(--faint);font-style:normal;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .band.on .chip{border-color:rgba(34,211,238,.45);background:rgba(34,211,238,.085)}
+  .band.on .chip i{color:var(--dim)}
+  .iface{display:flex;align-items:center;gap:9px;padding:6px 17px 6px 172px;
+    border-bottom:1px solid var(--line);background:rgba(12,18,51,.55)}
+  .iface span{font-family:"JetBrains Mono";font-size:9.5px;letter-spacing:.13em;color:var(--faint);
+    text-transform:uppercase;transition:color .4s}
+  .iface.on span{color:var(--magentalt)}
+  .iface .ar{color:var(--line);font-size:11px;transition:color .4s}
+  .iface.on .ar{color:var(--magentalt)}
+  @media(max-width:760px){
+    .band{flex-direction:column}
+    .bl{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);padding:12px 16px}
+    .chips{padding:12px 14px}
+    .iface{padding-left:16px}
+  }
+  @media(max-width:720px){
+    .cap{flex-direction:column;align-items:flex-start;gap:9px}
+    .tlrow{flex-wrap:wrap}.tlrow .lab{width:auto;flex:1 1 100%}.tlrow .val{width:auto;flex:0 0 auto;text-align:left}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">&#10095; CUSTODY <b>OBSERVABILITY</b></div>
+  <div class="tag">reference architecture &middot; 2026</div>
+</header>
+
+<div class="wrap">
+
+  <div class="hero">
+  <div class="eyebrow">What you cannot see, you cannot protect</div>
+  <h1>A wallet under investigation moved.<br/><span class="gr">Nobody asked who said it could.</span></h1>
+  <p class="sub">An FBI counterintelligence agent is charged with taking <b>$925,426</b> from a crypto wallet
+  he was investigating. He memorised the seed phrases, so there was no file to exfiltrate and nothing for
+  data-loss tooling to catch. The theft went unnoticed for <b>roughly eighteen months</b>, until he confessed.
+  Chain analytics alone could never have named him. Two ordinary signals, correlated, would have raised an
+  alarm the same day.</p>
+
+  <div class="statbar">
+    <div class="stat"><div class="v" style="color:#fff">$925,426</div><div class="k">taken from a monitored wallet</div></div>
+    <div class="stat"><div class="v" style="color:#fff">~10</div><div class="k">separate transfers, ten chances</div></div>
+    <div class="stat"><div class="v" style="color:#fff">18 mo</div><div class="k">undetected, ended by a confession</div></div>
+    <div class="stat"><div class="v" style="color:var(--cyanbr)">2</div><div class="k">sensors needed to catch it</div></div>
+    <div class="stat"><div class="v" style="color:var(--cyanbr)">0</div><div class="k">employees surveilled to get there</div></div>
+  </div>
+
+  </div>
+
+  <h2>The stack, running</h2>
+  <p class="lede">Six sensors you already pay for, one graph, one rule. The models sit beside the decision and
+  never inside it. Press <b>Run the trace</b> to watch the actual case move through it.</p>
+
+  <div class="stage">
+    <canvas id="map" height="760"></canvas>
+    <div class="cap"><div class="step" id="stepn">IDLE</div><div class="txt" id="captxt">Six sensors feeding one graph. Nothing is alarming yet, which is what a normal day looks like.</div></div>
+    <div class="controls">
+      <button class="btn on" id="run">&#9654; Run the trace</button>
+      <button class="btn" id="pause">Pause</button>
+      <button class="btn" id="reset">Reset</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="lg"><i class="dot" style="background:var(--cyan)"></i>SEE &middot; sensors</span>
+    <span class="lg"><i class="dot" style="background:var(--violet)"></i>CONNECT &middot; graph</span>
+    <span class="lg"><i class="dot" style="background:var(--magentalt)"></i>TRIANGULATE &middot; the rule</span>
+    <span class="lg"><i class="dot" style="background:var(--red)"></i>DECIDE &middot; deterministic</span>
+    <span class="lg"><i class="dot" style="background:var(--indigo)"></i>IDENTIFY &middot; legal process only</span>
+  </div>
+
+
+  <h2>The stack, named</h2>
+  <p class="lede">The same seven layers, with one credible implementation per role. Thirty-eight
+  components, and not one of them is exotic. Every organisation holding seized assets already runs
+  most of this; what is usually missing is the join between the third row and the fourth.</p>
+
+  <div class="stack" id="stack">
+
+    <div class="band" data-b="0">
+      <div class="bl"><div class="bar"></div><div class="bn">01 / SEE</div><div class="bt">Sensors and ingest</div></div>
+      <div class="chips">
+        <div class="chip"><b>Chainalysis KYT</b><i>wallet movement · alerts API</i></div>
+        <div class="chip"><b>TRM Labs</b><i>second chain vendor · corroboration</i></div>
+        <div class="chip"><b>Elliptic Lens</b><i>third opinion on attribution</i></div>
+        <div class="chip"><b>Exchange APIs</b><i>Kraken / Coinbase Prime · legal only</i></div>
+        <div class="chip"><b>Case management</b><i>authorisations, seizure orders</i></div>
+        <div class="chip"><b>CyberArk / Delinea</b><i>PAM · vault + session events</i></div>
+        <div class="chip"><b>Entra ID / Okta</b><i>who authenticated, from where</i></div>
+        <div class="chip"><b>CrowdStrike Falcon</b><i>EDR · process and USB</i></div>
+        <div class="chip"><b>Splunk / Elastic</b><i>existing SIEM as a source</i></div>
+        <div class="chip"><b>Travel + OGE 278e</b><i>foreign trips, disclosure</i></div>
+        <div class="chip"><b>Maltego</b><i>OSINT link expansion</i></div>
+        <div class="chip"><b>MISP</b><i>shared indicators</i></div>
+      </div>
+    </div>
+    <div class="iface" data-i="0"><span class="ar">&#9660;</span><span>webhook &middot; REST poll &middot; syslog &middot; CDC</span></div>
+
+    <div class="band" data-b="1">
+      <div class="bl"><div class="bar"></div><div class="bn">02 / MOVE</div><div class="bt">Transport</div></div>
+      <div class="chips">
+        <div class="chip"><b>Kafka</b><i>one topic per source, replayable</i></div>
+        <div class="chip"><b>Schema Registry</b><i>Avro · a sensor cannot change shape silently</i></div>
+        <div class="chip"><b>Debezium</b><i>CDC from the case database</i></div>
+        <div class="chip"><b>Dead-letter queue</b><i>nothing is dropped quietly</i></div>
+      </div>
+    </div>
+    <div class="iface" data-i="1"><span class="ar">&#9660;</span><span>avro over kafka</span></div>
+
+    <div class="band" data-b="2">
+      <div class="bl"><div class="bar"></div><div class="bn">03 / AGREE</div><div class="bt">Normalise and resolve</div></div>
+      <div class="chips">
+        <div class="chip"><b>Flink</b><i>stream jobs · windowing</i></div>
+        <div class="chip"><b>STIX 2.1</b><i>one vocabulary for observables</i></div>
+        <div class="chip"><b>Senzing / Zingg</b><i>entity resolution · one person, many records</i></div>
+        <div class="chip"><b>dbt</b><i>tested transforms, versioned</i></div>
+      </div>
+    </div>
+    <div class="iface" data-i="2"><span class="ar">&#9660;</span><span>bolt &middot; sql &middot; s3 put</span></div>
+
+    <div class="band" data-b="3">
+      <div class="bl"><div class="bar"></div><div class="bn">04 / HOLD</div><div class="bt">Stores</div></div>
+      <div class="chips">
+        <div class="chip"><b>Neo4j</b><i>property graph · person, case, wallet, grant</i></div>
+        <div class="chip"><b>PostgreSQL</b><i>authorisations · system of record</i></div>
+        <div class="chip"><b>ClickHouse</b><i>event timeseries at volume</i></div>
+        <div class="chip"><b>MinIO + object lock</b><i>evidence blobs, WORM</i></div>
+        <div class="chip"><b>Redis</b><i>the hot correlation window</i></div>
+      </div>
+    </div>
+    <div class="iface" data-i="3"><span class="ar">&#9660;</span><span>cypher traversal &middot; policy query</span></div>
+
+    <div class="band" data-b="4">
+      <div class="bl"><div class="bar"></div><div class="bn">05 / DECIDE</div><div class="bt">Correlation and rule</div></div>
+      <div class="chips">
+        <div class="chip"><b>Cypher</b><i>the second hop · who else touched this</i></div>
+        <div class="chip"><b>Rule service</b><i>moved AND not authorised · plain code</i></div>
+        <div class="chip"><b>Open Policy Agent</b><i>was this action permitted, as data</i></div>
+        <div class="chip"><b>Temporal</b><i>durable workflow · nothing lost mid-incident</i></div>
+      </div>
+    </div>
+    <div class="iface" data-i="4"><span class="ar">&#9660;</span><span>incident json &middot; out of band from here</span></div>
+
+    <div class="band" data-b="5">
+      <div class="bl"><div class="bar"></div><div class="bn">06 / EXPLAIN</div><div class="bt">Model panel</div></div>
+      <div class="chips">
+        <div class="chip"><b>Four vendors</b><i>no shared failure domain</i></div>
+        <div class="chip"><b>Quorum + median</b><i>3 of 4 agree · outlier cannot drag it</i></div>
+        <div class="chip"><b>Qdrant</b><i>prior incidents for context</i></div>
+      </div>
+    </div>
+    <div class="iface" data-i="5"><span class="ar">&#9660;</span><span>https &middot; oidc</span></div>
+
+    <div class="band" data-b="6">
+      <div class="bl"><div class="bar"></div><div class="bn">07 / SHOW</div><div class="bt">Serve and audit</div></div>
+      <div class="chips">
+        <div class="chip"><b>FastAPI</b><i>the board and the queue</i></div>
+        <div class="chip"><b>Keycloak</b><i>OIDC · who may see which case</i></div>
+        <div class="chip"><b>React + Vite</b><i>assets against authorisations</i></div>
+        <div class="chip"><b>Cytoscape.js</b><i>click amber, get the subgraph</i></div>
+        <div class="chip"><b>Grafana + Loki</b><i>is the pipeline itself alive</i></div>
+        <div class="chip"><b>Hash-chained audit</b><i>append only · who looked at what</i></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="lg">38 components</span>
+    <span class="lg">7 layers</span>
+    <span class="lg">1 rule that decides</span>
+    <span class="lg">0 models in the decision path</span>
+  </div>
+
+  <div class="field">
+  <h2>Why triangulation, and not more alerts</h2>
+  <p class="lede">Every one of these sensors fires constantly on its own. A monitoring programme dies the week
+  its queue stops being readable. The rule is not "alert on anything unusual". It is "alert when two
+  independent sources point at the same object".</p>
+
+  <div class="tri">
+    <div class="tcell" style="border-color:var(--line)">
+      <div class="bars"><i style="background:var(--indigo)"></i><i></i><i></i></div>
+      <div class="lvl" style="color:var(--faint)">1</div>
+      <div class="nm" style="color:var(--faint)">Signal &middot; noise</div>
+      <p>A wallet moved. An agent travelled. A file was opened. Each of these happens hundreds of times a day
+      and means nothing alone. Alert on this and you will be muted by Friday.</p>
+    </div>
+    <div class="tcell" style="border-color:rgba(232,121,249,.35)">
+      <div class="bars"><i style="background:var(--magentalt)"></i><i style="background:var(--magentalt)"></i><i></i></div>
+      <div class="lvl" style="color:var(--magentalt)">2</div>
+      <div class="nm" style="color:var(--magentalt)">Alarm &middot; look now</div>
+      <p>Two independent sensors landing on the <b style="color:var(--ink)">same</b> wallet, case or person.
+      The wallet moved <b style="color:var(--ink)">and</b> no authorisation exists. That is not a coincidence,
+      it is a contradiction.</p>
+    </div>
+    <div class="tcell" style="border-color:rgba(255,77,109,.4)">
+      <div class="bars"><i style="background:var(--red)"></i><i style="background:var(--red)"></i><i style="background:var(--red)"></i></div>
+      <div class="lvl" style="color:var(--red)">3</div>
+      <div class="nm" style="color:var(--red)">Incident &middot; open a file</div>
+      <p>A third source agrees. Movement, no authorisation, and a privileged read of the key material outside
+      any authorised window. Now you have a person, and you never had to watch one.</p>
+    </div>
+  </div>
+
+  </div>
+
+  <h2>What it would have cost to know</h2>
+  <p class="lede">The alarm does not need to identify anybody. It only needs to notice that nobody was supposed
+  to move that money.</p>
+
+  <div class="tl">
+    <div class="tlrow">
+      <div class="lab">As it happened</div>
+      <div class="track"><div class="fill" id="f1" style="background:linear-gradient(90deg,var(--red),var(--magenta))"></div></div>
+      <div class="val" style="color:var(--red)">~18 months</div>
+    </div>
+    <div class="tlrow">
+      <div class="lab">Two sensors correlated</div>
+      <div class="track"><div class="fill" id="f2" style="background:linear-gradient(90deg,var(--cyan),var(--cyanbr))"></div></div>
+      <div class="val" style="color:var(--cyan)">minutes</div>
+    </div>
+    <div class="tlrow">
+      <div class="lab">Named, via KYC and subpoena</div>
+      <div class="track"><div class="fill" id="f3" style="background:linear-gradient(90deg,var(--indigo),var(--cyanbr))"></div></div>
+      <div class="val" style="color:var(--indigo)">days</div>
+    </div>
+  </div>
+
+  <div class="grid3">
+    <div class="card"><span class="num">01 / THE DESIGN CHOICE</span>
+      <h3>Monitor the evidence, not the people</h3>
+      <p>No employee is watched. The system watches assets under custody and the authorisations that should
+      accompany them. A person only enters the picture when an asset moves and no authorisation explains it.
+      That is the same standard an evidence locker has had for a century.</p></div>
+    <div class="card"><span class="num">02 / WHERE THE MODELS SIT</span>
+      <h3>Beside the decision, never inside it</h3>
+      <p>The rule is arithmetic and runs in microseconds. Four models from four vendors read the queue out of
+      band, rank what deserves a human and write the narrative. A rate limit cannot block an alarm, and an
+      agreeable model cannot dismiss one.</p></div>
+    <div class="card"><span class="num">03 / WHY A GRAPH</span>
+      <h3>The second hop is the whole argument</h3>
+      <p>"Did the wallet move without authorisation" is one table. "Did anyone who opened this key material do
+      anything else worth a look" is four joins in SQL and one traversal in a graph. Only the second question
+      finds a person without watching everybody.</p></div>
+  </div>
+
+  <div class="field close">
+    <div class="big">They were watching that wallet to catch him.<br/>Nobody was watching it to catch us.</div>
+    <p class="sm">Custody observability is not a new category and it is not surveillance. It is the
+    control an evidence locker has had for a century, applied to an asset that can be moved from a
+    kitchen at three in the morning without the door making a sound.</p>
+  </div>
+
+  <div class="foot">
+    <b>Sources and scope.</b> Case facts are taken from public reporting and the charging affidavit as reported
+    in August 2026. The individual is charged, not convicted. Figures cited: $925,426.07 transferred, about ten
+    transfers, seed phrases memorised rather than exported.<br/>
+    <b>What this is.</b> A reference architecture, not a product claim and not a description of any agency's
+    actual systems. Every component named is a category with commercially available implementations. Identity
+    resolution through exchange KYC happens only under legal process.
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var C = {bg:"#0C1233", panel:"#182254", line:"#3A4478", ink:"#F2F3FF", dim:"#AEB8E0",
+           faint:"#98A3CE", teal:"#22D3EE", green:"#4F46E5", amber:"#E879F9", red:"#FF4D6D",
+           violet:"#8B5CF6", mint:"#67E8F9", orange:"#C026D3"};
+
+  /* A TEXT-SAFE TONE PER ACCENT, measured on the SITE's card colour #182254. Violet #8B5CF6 is
+     3.55:1 there, indigo #4F46E5 is 2.39:1 and magenta #C026D3 is 3.20:1, so none of the three may
+     carry the small mono subtitle. Each routes to its lighter sibling (8.15, 7.55 and 6.11), which
+     is why the accent still draws the border, the glow and the particles, where contrast is not a
+     legibility question. Measured against the live site, not against the capability deck: the deck
+     gave the right hues on the wrong surfaces, which is how the first pass came out looking like a
+     dark technical page rather than like s4biz.io. */
+  var TXT = {"#8B5CF6":"#C4B5FD", "#4F46E5":"#A5B4FC", "#C026D3":"#E879F9"};
+  function ink(c){ return TXT[c] || c; }
+
+  /* Alpha on a hex colour, done properly. A half-written version of exactly this helper once
+     produced the string "rgba(FF3B57" and threw inside every single frame, leaving a black
+     canvas that still passed a syntax check. Parse, then rebuild. */
+  function rgba(hex, a){
+    var h = String(hex).replace("#","");
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var n = parseInt(h, 16);
+    if (isNaN(n)) { n = 0; }
+    var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+  }
+
+  var VW = 1260, VH = 760;
+  var N = {
+    chain : {x:132, y:86,  w:216, h:58, n:"1", t:"CHAIN ANALYTICS",   s:"monitored wallets · movement", c:C.teal},
+    chain2: {x:132, y:194, w:216, h:58, n:"1", t:"SECOND CHAIN SOURCE",s:"independent vendor · corroborates", c:C.teal},
+    cases : {x:132, y:302, w:216, h:58, n:"1", t:"CASE SYSTEM",        s:"open authorisations, orders", c:C.teal},
+    pam   : {x:132, y:410, w:216, h:58, n:"1", t:"PRIVILEGED ACCESS",  s:"who opened key material", c:C.teal},
+    edr   : {x:132, y:518, w:216, h:58, n:"1", t:"ENDPOINT / EDR",     s:"what left the device", c:C.teal},
+    hr    : {x:132, y:626, w:216, h:58, n:"1", t:"TRAVEL + DISCLOSURE",s:"the slow signals", c:C.teal},
+    graph : {x:470, y:356, w:206, h:70, n:"2", t:"CORRELATION GRAPH",  s:"person · case · wallet · grant", c:C.violet},
+    tri   : {x:714, y:356, w:190, h:70, n:"3", t:"TRIANGULATION",      s:"1 noise · 2 alarm · 3 incident", c:C.amber},
+    rule  : {x:944, y:232, w:200, h:70, n:"4", t:"DETERMINISTIC RULE", s:"moved AND not authorised", c:C.red},
+    kyc   : {x:714, y:634, w:190, h:58, n:"5", t:"EXCHANGE KYC",       s:"identity · legal request only", c:C.green},
+    panel : {x:944, y:500, w:200, h:70, n:"6", t:"FOUR-MODEL PANEL",   s:"4 vendors · ranks, never decides", c:C.violet},
+    board : {x:1150,y:356, w:180, h:70, n:"7", t:"REACT BOARD",        s:"assets vs authorisations", c:C.teal}
+  };
+  var E = [
+    ["chain","graph"],["chain2","graph"],["cases","graph"],["pam","graph"],["edr","graph"],["hr","graph"],
+    ["graph","tri"],["tri","rule"],["rule","panel"],["panel","board"],["rule","board"],["kyc","rule"]
+  ];
+
+  var STEPS = [
+    {n:"IDLE",   hot:[], edge:[], txt:"Six sensors feeding one graph. Nothing is alarming yet, which is what a normal day looks like."},
+    {n:"STEP 1", hot:["chain"], edge:[], txt:"Early 2025. A wallet under active investigation moves. On its own this is routine: monitored wallets move constantly."},
+    {n:"STEP 2", hot:["cases"], edge:[], txt:"The case system is asked a single question and holds no answer. No seizure order, no authorisation, nothing on file."},
+    {n:"STEP 3", hot:["chain","cases","graph"], edge:["chain>graph","cases>graph"], txt:"Two independent sensors land on the same wallet, in the same case, minutes apart. The graph joins them."},
+    {n:"STEP 4", hot:["graph","tri"], edge:["graph>tri"], txt:"One signal is noise. Two independent sources pointing at one object is an alarm. This is the part most programmes skip."},
+    {n:"STEP 5", hot:["tri","rule"], edge:["tri>rule"], txt:"Asset moved and no authorisation exists. That is an incident, decided in plain code, in microseconds, with no opinions."},
+    {n:"STEP 6", hot:["pam","graph","rule"], edge:["pam>graph"], txt:"The access log names who opened the key material for that case, outside any authorised window. A third source agrees."},
+    {n:"STEP 7", hot:["kyc","rule"], edge:["kyc>rule"], txt:"The funds landed at a regulated exchange. One subpoena turns a deposit address into a name. Legal process, not analytics."},
+    {n:"STEP 8", hot:["rule","panel"], edge:["rule>panel"], txt:"Four models from four vendors rank it against everything else in the queue and write it up. They never decide anything."},
+    {n:"STEP 9", hot:["panel","board","rule"], edge:["panel>board","rule>board"], txt:"An amber row appears on a board that is otherwise green. Minutes, not eighteen months, and not one employee was surveilled."}
+  ];
+
+  var cv = document.getElementById("map");
+  if (!cv) return;
+  var ctx = cv.getContext("2d");
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var scale = 1, ox = 0, oy = 0, t = 0, step = 0, playing = true, auto = true, tStep = 0;
+
+  function size(){
+    var w = cv.clientWidth || 1100;
+    var h = Math.max(430, Math.min(760, w * 0.605));
+    cv.width = w * dpr; cv.height = h * dpr;
+    cv.style.height = h + "px";
+    scale = Math.min(w / VW, h / VH);
+    ox = (w - VW * scale) / 2; oy = (h - VH * scale) / 2;
+  }
+  function X(v){ return ox + v * scale; }
+  function Y(v){ return oy + v * scale; }
+  function S(v){ return v * scale; }
+
+  function rr(x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function anchor(a, b){
+    var ax = a.x + a.w / 2, ay = a.y;
+    var bx = b.x - b.w / 2, by = b.y;
+    if (b.x < a.x){ ax = a.x - a.w / 2; bx = b.x + b.w / 2; }
+    if (Math.abs(b.x - a.x) < 40){ ax = a.x; ay = a.y + a.h / 2; bx = b.x; by = b.y - b.h / 2; }
+    return [ax, ay, bx, by];
+  }
+
+  function hot(id){ return STEPS[step].hot.indexOf(id) >= 0; }
+  function hotEdge(k){ return STEPS[step].edge.indexOf(k) >= 0; }
+
+  function drawEdge(a, b, key, col, live){
+    var p = anchor(N[a], N[b]);
+    var x1 = X(p[0]), y1 = Y(p[1]), x2 = X(p[2]), y2 = Y(p[3]);
+    var mx = (x1 + x2) / 2;
+    ctx.save();
+    ctx.setLineDash([S(4), S(7)]);
+    ctx.lineDashOffset = -t * (live ? 1.7 : 0.5);
+    ctx.strokeStyle = live ? rgba(col, .62) : rgba(C.line, .95);
+    ctx.lineWidth = live ? S(1.9) : S(1.15);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(mx, y1, mx, y2, x2, y2);
+    ctx.stroke();
+    ctx.restore();
+
+    var count = live ? 3 : 2;
+    for (var i = 0; i < count; i++){
+      var ph = ((t * (live ? 0.0072 : 0.0026)) + i / count) % 1;
+      var u = 1 - ph, uu = u * u, pp = ph * ph;
+      var px = uu * u * x1 + 3 * uu * ph * mx + 3 * u * pp * mx + pp * ph * x2;
+      var py = uu * u * y1 + 3 * uu * ph * y1 + 3 * u * pp * y2 + pp * ph * y2;
+      var rad = S(live ? 3.1 : 1.9);
+      var g = ctx.createRadialGradient(px, py, 0, px, py, rad * 3.4);
+      g.addColorStop(0, rgba(col, live ? .95 : .5));
+      g.addColorStop(1, rgba(col, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(px, py, rad * 3.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = rgba(col, live ? 1 : .62);
+      ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  function drawNode(id){
+    var d = N[id], on = hot(id);
+    var x = X(d.x - d.w / 2), y = Y(d.y - d.h / 2), w = S(d.w), h = S(d.h), r = S(13);
+    if (on){
+      ctx.save();
+      ctx.shadowColor = rgba(d.c, .55); ctx.shadowBlur = S(26);
+      rr(x, y, w, h, r); ctx.fillStyle = rgba(d.c, .10); ctx.fill();
+      ctx.restore();
+    }
+    rr(x, y, w, h, r);
+    ctx.fillStyle = on ? rgba(d.c, .085) : rgba(C.panel, .92);
+    ctx.fill();
+    ctx.strokeStyle = on ? rgba(d.c, .92) : rgba(C.line, 1);
+    ctx.lineWidth = S(on ? 1.7 : 1.1);
+    ctx.stroke();
+
+    /* THE BADGE IS A RING, NOT A FILL, AND THAT IS A MEASURED DECISION. Filling it with the
+       accent and putting a numeral on top works for cyan, amber and red, and is impossible for
+       violet: #8B5CF6 is a mid-tone that fails 4.5:1 against dark navy (4.31), white (4.23) and
+       both of the deck's pale inks (3.57, 3.30). There is no text colour that sits on it legibly
+       at 11px. The alternatives were to invent a darker violet, which would leave the counted
+       S4biz palette, or to stop filling the badge. So: panel fill, accent ring, accent-ink
+       numeral. One rule for all five accents, every one between 5.1:1 and 13.8:1, no exceptions
+       to remember. The active state is already carried by the node's glow, border and tint. */
+    var bx = x + S(15), by = y - S(1);
+    ctx.beginPath(); ctx.arc(bx, by, S(11), 0, Math.PI * 2);
+    ctx.fillStyle = C.panel;
+    ctx.fill();
+    ctx.strokeStyle = on ? rgba(d.c, 1) : rgba(C.line, 1);
+    ctx.lineWidth = S(on ? 1.9 : 1.2); ctx.stroke();
+    ctx.fillStyle = on ? ink(d.c) : C.faint;
+    ctx.font = "600 " + S(11) + "px 'JetBrains Mono', monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(d.n, bx, by + S(0.5));
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = on ? C.ink : rgba(C.ink, .82);
+    ctx.font = "800 " + S(12.5) + "px 'Unbounded', 'Inter', sans-serif";
+    ctx.fillText(d.t, x + S(17), y + S(24));
+    ctx.fillStyle = on ? rgba(ink(d.c), .97) : C.faint;
+    ctx.font = "400 " + S(10.5) + "px 'JetBrains Mono', monospace";
+    ctx.fillText(d.s, x + S(17), y + S(42));
+  }
+
+  function frame(){
+    if (playing) t += 1;
+    var w = cv.clientWidth, h = parseFloat(cv.style.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.strokeStyle = rgba(C.line, .34); ctx.lineWidth = 1;
+    for (var gx = 0; gx < w; gx += 42){ ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke(); }
+    for (var gy = 0; gy < h; gy += 42){ ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+
+    var i, e, key, live;
+    for (i = 0; i < E.length; i++){
+      e = E[i]; key = e[0] + ">" + e[1];
+      live = hotEdge(key);
+      if (!live) drawEdge(e[0], e[1], key, N[e[0]].c, false);
+    }
+    for (i = 0; i < E.length; i++){
+      e = E[i]; key = e[0] + ">" + e[1];
+      if (hotEdge(key)) drawEdge(e[0], e[1], key, N[e[1]].c, true);
+    }
+    for (var id in N){ if (Object.prototype.hasOwnProperty.call(N, id)) drawNode(id); }
+
+    if (playing && auto){
+      tStep += 1;
+      if (tStep > 175){ tStep = 0; step = (step + 1) % STEPS.length; paint(); }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function paint(){
+    var s = STEPS[step];
+    var a = document.getElementById("stepn"), b = document.getElementById("captxt");
+    if (a) a.textContent = s.n;
+    if (b) b.textContent = s.txt;
+  }
+
+  var rb = document.getElementById("run"), pb = document.getElementById("pause"), xb = document.getElementById("reset");
+  if (rb) rb.addEventListener("click", function(){ step = 1; tStep = 0; auto = true; playing = true; paint(); });
+  if (pb) pb.addEventListener("click", function(){ playing = !playing; pb.textContent = playing ? "Pause" : "Resume"; });
+  if (xb) xb.addEventListener("click", function(){ step = 0; tStep = 0; playing = true; paint(); });
+
+  window.addEventListener("resize", size);
+  size(); paint(); frame();
+
+  var seen = false;
+  function bars(){
+    if (seen) return;
+    var tl = document.getElementById("f1");
+    if (!tl || typeof tl.getBoundingClientRect !== "function") return;
+    var r = tl.getBoundingClientRect();
+    if (r.top < window.innerHeight - 40){
+      seen = true;
+      var f1 = document.getElementById("f1"), f2 = document.getElementById("f2"), f3 = document.getElementById("f3");
+      [[f1, "100%", 0], [f2, "3%", 260], [f3, "11%", 460]].forEach(function(p){
+        if (!p[0]) return;
+        p[0].style.transition = "width 1.5s cubic-bezier(.22,1,.36,1)";
+        p[0].style.width = "0%";
+        setTimeout(function(){ p[0].style.width = p[1]; }, p[2]);
+      });
+    }
+  }
+
+  /* The stack pulse. DOM, not canvas: 38 chips of small text stay crisp and selectable, and a
+     layered diagram is a list of bands, not a scene. The canvas above is a scene, so it is canvas.
+     Use the right one for each. */
+  var qsa = (typeof document.querySelectorAll === "function")
+          ? function(s){ return [].slice.call(document.querySelectorAll(s)); }
+          : function(){ return []; };
+  var bands = qsa(".band"), ifaces = qsa(".iface");
+  var bi = -1;
+  if (bands.length){
+    setInterval(function(){
+      bands.forEach(function(b){ b.classList.remove("on"); });
+      ifaces.forEach(function(f){ f.classList.remove("on"); });
+      bi = (bi + 1) % (bands.length + 1);
+      if (bi < bands.length){
+        bands[bi].classList.add("on");
+        if (ifaces[bi]) ifaces[bi].classList.add("on");
+      }
+    }, 900);
+  }
+
+  window.addEventListener("scroll", bars); bars();
+})();
+</script>
+</body>
+</html>

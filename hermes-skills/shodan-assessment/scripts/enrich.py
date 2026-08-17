@@ -217,6 +217,19 @@ PROMPT = """%s
 3. Money figures in precedents: only well-documented public numbers. If it was a proposed/reduced
    fine, say so (e.g. "urspruenglich angekuendigt, spaeter reduziert").
 4. Never state a vulnerability is exploited/present when the evidence only shows a version banner.
+5. NEVER INFER THE CUSTOMER'S SECTOR, COUNTRY OR REGULATOR FROM INFRASTRUCTURE HOLDER NAMES.
+   The ASN/operator inventory lists the owners of the ADDRESS SPACE the estate is observed on —
+   hosting providers, CDNs, carriers and, when a false positive slips through, entirely unrelated
+   companies. Those names describe SUPPLIERS, never the customer. This cost a real engagement: a
+   Swiss digital-asset bank (FINMA-regulated, Zug) received a deck reading "lower quartile of DACH
+   manufacturing peers" with "NIS2 Article 21 obligations for KRITIS operators", and a geopolitical
+   deck citing BaFin/BAIT and arms-to-Ukraine — because one inventory row read "Peri llc", the UAE
+   subsidiary of a German formwork manufacturer whose netblock had been scanned in error. One bad
+   row became the sector, the jurisdiction and the threat model of three decks.
+   So: if the RAW FINDINGS do not state the sector or the regulator, DO NOT NAME ONE. Write about
+   the observed exposure in sector-neutral terms and reference only frameworks that apply
+   everywhere (ISO/IEC 27001, NIST CSF). Naming the wrong regulator tells the reader the document
+   was not written for them, which discredits every correct finding beside it.
 
 Now return ONLY the strict JSON from the OUTPUT CONTRACT above. No text around it."""
 

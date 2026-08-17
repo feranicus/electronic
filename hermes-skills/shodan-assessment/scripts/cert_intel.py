@@ -228,7 +228,7 @@ def onprem_exchange(resolved, apexes, cert_names=(), is_saas=None, mx_hosts=()):
             "addresses": sorted({ip for v in hits.values() for ip in v})[:6]}
 
 
-def uncovered_names(resolved, issuances, apexes=()):
+def uncovered_names(resolved, issuances, apexes=(), is_saas=None):
     """Live hostnames that NO unexpired certificate covers.
 
     Every visitor to such a name gets a browser trust warning, which is a real operational finding
@@ -239,6 +239,17 @@ def uncovered_names(resolved, issuances, apexes=()):
 
     FAILS CLOSED: with no issuances at all the CT lookup failed or returned nothing, and absence of
     evidence is never a finding.
+
+    SKIPS SaaS TENANCIES (aminagroup.com, 2026-08). `autodiscover.aminagroup.io` is a CNAME to
+    `autodiscover.outlook.com`: the Microsoft-documented configuration used by millions of tenants,
+    where Microsoft terminates TLS under ITS OWN certificate. The customer therefore has no
+    certificate for that name and is not supposed to have one, so "no certificate covers this name"
+    is not a defect -- it is what correct Microsoft 365 configuration looks like. The run had ALREADY
+    decided this five log lines earlier ("SaaS tenancy NOT pinned: autodiscover.aminagroup.io") and
+    then raised a MEDIUM finding on it anyway, because `ident["saas_tenancies"]` was written and
+    never read by anything. The sibling call `onprem_exchange(..., is_saas=...)` on the line above
+    this one's call site already took the predicate; this one did not. Two homes for one decision,
+    one of them wired up.
     """
     if not issuances:
         return []
@@ -258,6 +269,12 @@ def uncovered_names(resolved, issuances, apexes=()):
             continue
         if n in covered:
             continue
+        if is_saas is not None:
+            try:
+                if is_saas(n):
+                    continue                 # provider terminates TLS under its own certificate
+            except Exception:
+                pass                         # a broken predicate must not suppress a real finding
         parent = n.split(".", 1)[1] if "." in n else ""
         if parent in wildcards:                      # *.example.com covers vpn.example.com
             continue

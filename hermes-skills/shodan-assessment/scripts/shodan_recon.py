@@ -2545,11 +2545,41 @@ def run(ident, F, audience, limit_per_query=500):
     # RULE: pinning proves the ADDRESS is theirs. It does not make every OBSERVATION on it theirs.
     # On provider/multi-tenant infrastructure a record may only become a finding if it identifies
     # itself with one of the customer's names.
-    # Fails OPEN in the one case where we genuinely cannot tell: a record carrying NO names at all
-    # cannot be shown to be a co-tenant's either, so it is kept. That is the same doctrine the
-    # co-tenant guard already uses ("no org recorded -> no evidence -> keep"), and it is what
-    # protects the S-KON WatchGuard, whose only anchor is a self-signed certificate.
+    #
+    # THE FAIL-OPEN, AND THE TWO CASES WHERE IT IS WRONG (aminagroup.com, 2026-08).
+    # A record carrying NO names at all cannot be shown to be a co-tenant's either, so it USED to be
+    # kept unconditionally. That single line shipped a Swiss crypto bank a CRITICAL finding on
+    # 83.111.84.114 -- netname PERI-EMIRNET, "Peri llc", Dubai, Etisalat AS5384: a German formwork
+    # manufacturer's UAE subsidiary. It also produced the HIGH (smartTrade Technologies' own trading
+    # cloud) and the LOW (a WHM port on WPEngine shared hosting). All three are nameless records:
+    # a FortiGate on :541 has no HTTP host, no certificate names and -- verified -- no PTR at all,
+    # so `_record_names` returns the empty set and the gate waved it through.
+    # It is now refused in two situations, each an independent barrier:
+    #
+    #   1. THE TARGET OWNS NO ADDRESS SPACE. This gate's own reasoning, four lines up, is that when
+    #      a customer owns no ASN and no prefix "identity -- a name or a certificate -- is the ONLY
+    #      evidence available". A record with no names carries no identity, so on such a target it is
+    #      not evidence of anything. Keeping it contradicted the rule the same block had just stated.
+    #   2. THE ADDRESS HAS ALREADY BEEN PROVEN MULTI-TENANT. On 141.193.213.21 the gate dropped 323
+    #      records for naming strangers (nwpewaf.com and friends) and then kept a nameless one on the
+    #      very same IP. If somebody else's names are on this address, a nameless record here is far
+    #      more likely theirs than the customer's -- and "the gate is applied unevenly" is exactly
+    #      what the false-positive review said.
+    #
+    # THE FAIL-OPEN SURVIVES WHERE IT WAS EARNED: a customer that DOES own address space, on an
+    # address where nobody else has been seen. That is the S-KON WatchGuard -- a self-signed Firebox
+    # on S-KON's own Colt /29 -- whose only anchor is a certificate carrying no dotted name.
     _attr_dropped = []
+    _no_space0 = not (ident.get("asns") or ident.get("nets"))
+    # PASS 1: which addresses carry somebody else's names? Computed BEFORE any decision, because a
+    # per-record loop cannot know what the rest of the address looks like -- and a guard whose
+    # baseline is computed while it is still consuming untrusted input is not a guard.
+    _stranger_on = {}
+    for ip in list(hosts.keys()):
+        for m in hosts[ip]:
+            _nm0 = _record_names(m)
+            if _nm0 and not _names_the_target(m, _own_aps):
+                _stranger_on.setdefault(ip, set()).update(_nm0)
     for ip in list(hosts.keys()):
         _kept = []
         for m in hosts[ip]:
@@ -2564,12 +2594,22 @@ def run(ident, F, audience, limit_per_query=500):
             # customer has any address space of its own: if they own NO ASN and NO prefixes, then
             # nothing can be attributed to them by IP, and identity — a name or a certificate — is
             # the ONLY evidence available. That is exactly what the S-KON playbook has always said.
-            _no_space = not (ident.get("asns") or ident.get("nets"))
-            _shared = _no_space or _is(_org_m, CDNS) or _looks_like_provider(_org_m)
+            _shared = _no_space0 or _is(_org_m, CDNS) or _looks_like_provider(_org_m)
             if not _shared:
                 _kept.append(m); continue            # not provider space -> the IP itself attributes
             _nm = _record_names(m)
             if not _nm:
+                # No identity on the record. Keep it ONLY where the fail-open was earned: the
+                # customer owns address space, and nobody else has been seen on this address.
+                if _no_space0:
+                    _attr_dropped.append((ip, m.get("port"),
+                                          "<no name; target owns no address space>"))
+                    continue
+                if ip in _stranger_on:
+                    _attr_dropped.append((ip, m.get("port"),
+                                          "<no name; %s also on this address>"
+                                          % sorted(_stranger_on[ip])[0][:26]))
+                    continue
                 _kept.append(m); continue            # no names at all -> cannot disprove ownership
             if _names_the_target(m, _own_aps):
                 _kept.append(m); continue            # the record names the customer
@@ -2808,7 +2848,8 @@ def run(ident, F, audience, limit_per_query=500):
 
         try:
             _gap = cert_intel.uncovered_names(ident.get("resolved") or {}, _ct_issuances,
-                                              ident.get("domains") or [])
+                                              ident.get("domains") or [],
+                                              is_saas=_is_saas_tenancy)
         except Exception as _e:
             _gap = []
             print("[warn] certificate coverage check failed: %s" % _e, file=sys.stderr)
@@ -3010,11 +3051,28 @@ def run(ident, F, audience, limit_per_query=500):
     # The estate's dominant country. The deck builders bind the FRAMEWORK set to it: citing NIS2,
     # GDPR and automotive TISAX at an Emirati police force told that reader the document was not
     # written for them (adpolice.gov.ae, 2026-08 — the third recurrence of this defect).
+    #
+    # THE HOSTER'S COUNTRY IS NOT THE CUSTOMER'S (aminagroup.com, 2026-08). AMINA is a Swiss bank
+    # regulated by FINMA. Its entire estate is other people's infrastructure -- Cloudflare (US/IE),
+    # WPEngine (IE/US), ti&m (CH), Microsoft (CH), plus two false positives in GB and AE -- so the
+    # "dominant country" of the ASN inventory is a fact about its suppliers and nothing about the
+    # customer. This is the same rule already enforced for whois-org, cert-O and netblock holders,
+    # one level over: a name that arrives from infrastructure the customer merely RENTS is evidence
+    # about the PROVIDER. When they own no address space, the ccTLD is the only country signal that
+    # is actually theirs -- and when that is generic (.com/.io) the honest answer is that we do not
+    # know, which makes the deck fall back to ISO 27001 / NIST CSF instead of naming a regulator that
+    # does not supervise them. Citing the wrong regulator tells the reader the document was not
+    # written for them.
     _cc = ""
-    if countries:
+    _own_space = bool(ident.get("asns") or ident.get("nets"))
+    if countries and _own_space:
         _cc = sorted(countries, key=lambda c: -sum(1 for _e in inv.values() if c in _e["cc"]))[0]
     elif ident.get("tld_cc"):
         _cc = str(ident["tld_cc"]).upper()
+    elif countries and not _own_space:
+        print("[auto] country NOT inferred from the estate: every host is on provider space, so "
+              "those countries belong to the suppliers (%s). Frameworks fall back to the "
+              "jurisdiction-neutral set." % ",".join(sorted(countries)[:6]), file=sys.stderr)
     return {"target": {"company": company_name(ident), "audience": audience or "Internal — Cybergod LLC · S4Biz Group",
                        "date": datetime.date.today().isoformat(),
                        "country": _cc,

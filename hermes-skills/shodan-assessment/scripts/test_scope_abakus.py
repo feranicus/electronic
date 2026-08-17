@@ -94,6 +94,7 @@ check(D.is_denied("wa.me") and not D.is_denied("wa-me.de"),
 # =============================================================== 3. the ownership gate
 print("\n== 3. the ownership gate refuses a denied apex even when discovery vouches for it ==")
 import shodan_recon as R
+import cert_intel
 
 # ---------------------------------------------------------------------------------------------
 # HERMETIC BY DEFAULT. run() now performs three NETWORK lookups that the older tests never had to
@@ -377,15 +378,57 @@ check(any("bboca" in n for n in _names), "bboca.de dropped - co-tenant")
 check("217.160.0.136" in set(ATTR.get("scanned_ips") or []),
       "the IP itself is KEPT: the record naming abakus-tk.de survives the gate")
 
-# Fail-open case: a record with no names at all cannot be shown to be somebody else's. This is what
-# protects the S-KON WatchGuard, whose only anchor is a self-signed certificate.
+# THE FAIL-OPEN, CORRECTED (aminagroup.com, 2026-08). This assertion used to read "a record with NO
+# names is kept - absence of evidence is never a finding", on a fixture with asns=[] and nets=[].
+# It is DELIBERATELY INVERTED, and the original reasoning is kept here because deleting it would
+# lose why.
+# What it encoded was right in general and wrong here. When the customer owns NO address space, the
+# gate's own rule is that identity -- a name or a certificate -- is the only evidence available; a
+# record carrying no names carries no identity, so keeping it is not "absence of evidence", it is
+# absence of ANY basis for attribution. Shipped consequence: a Swiss crypto bank received a CRITICAL
+# finding on a FortiGate belonging to PERI LLC (a German formwork manufacturer's UAE subsidiary, on
+# Etisalat), plus a HIGH on smartTrade Technologies' trading cloud and a LOW on a WPEngine control
+# port. All three were nameless records waved through by this exact branch.
 NONAME = [_rec("85.158.4.40", 443, "ScaleUp Technologies GmbH")]
 _install_routing_shodan([("abakus-tk.de", NONAME)], default=[])
 ATTR2 = dict(ATTR); ATTR2.update({"pinned": ["85.158.4.40"], "related_unscoped": []})
 ATTR2.pop("scanned_ips", None); ATTR2.pop("records_unattributable", None)
 R.run(ATTR2, R.build_filters(ATTR2), audience="internal", limit_per_query=500)
-check("85.158.4.40" in set(ATTR2.get("scanned_ips") or []),
-      "a record with NO names is kept - absence of evidence is never a finding")
+check("85.158.4.40" not in set(ATTR2.get("scanned_ips") or []),
+      "NO address space + a record with NO names -> DROPPED (nothing attributes it to the customer)")
+
+# ...and the fail-open SURVIVES where it was earned: the customer owns address space, and no one
+# else has been seen on this address. That is the S-KON WatchGuard - a self-signed Firebox whose
+# only anchor is a certificate carrying no dotted name, sitting on S-KON's own Colt /29.
+OWNSPACE = [_rec("213.61.141.198", 4443, "Colt Technology Services")]
+_install_routing_shodan([("skon.de", OWNSPACE), ("213.61.141", OWNSPACE)], default=[])
+ATTR3 = dict(ATTR)
+ATTR3.update({"pinned": ["213.61.141.198"], "related_unscoped": [], "domains": ["skon.de"],
+              "asns": ["AS8220"], "nets": ["213.61.141.196/30"], "seed": "skon.de",
+              "brand_tokens": ["skon"]})
+ATTR3.pop("scanned_ips", None); ATTR3.pop("records_unattributable", None)
+R.run(ATTR3, R.build_filters(ATTR3), audience="internal", limit_per_query=500)
+check("213.61.141.198" in set(ATTR3.get("scanned_ips") or []),
+      "OWNS address space + no stranger on the IP -> the nameless self-signed appliance is KEPT")
+
+# The second, independent barrier: 141.193.213.21 (WPEngine) had 323 records dropped for naming
+# strangers, and the gate then kept a nameless one on the SAME address. If somebody else's names are
+# on this IP, a nameless record here is more likely theirs than the customer's.
+# NOTE ON THE FIXTURE: the org must be recognisable as provider space for the gate to engage at
+# all, because barrier 2 is being tested in ISOLATION on a customer that DOES own address space
+# (otherwise barrier 1 fires and this proves nothing about barrier 2). "WPEngine, Inc." carries no
+# hosting/datacenter marker and announces few prefixes, so `_looks_like_provider` does not catch it
+# by name — in the real run the gate engaged because AMINA owns no space at all. A CDN org is the
+# honest way to exercise this path, and it is also AMINA's actual shape: most of that estate is
+# Cloudflare.
+MIXED = [_rec("104.18.9.92", 2083, "Cloudflare, Inc.", host="nwpewaf.com"),
+         _rec("104.18.9.92", 2087, "Cloudflare, Inc.")]            # <- nameless, same address
+_install_routing_shodan([("skon.de", MIXED), ("104.18.9", MIXED)], default=[])
+ATTR4 = dict(ATTR3); ATTR4.update({"pinned": ["104.18.9.92"]})
+ATTR4.pop("scanned_ips", None); ATTR4.pop("records_unattributable", None)
+R.run(ATTR4, R.build_filters(ATTR4), audience="internal", limit_per_query=500)
+check("104.18.9.92" not in set(ATTR4.get("scanned_ips") or []),
+      "a stranger's name on the address stops the nameless record failing open (even with own space)")
 
 
 
@@ -564,6 +607,104 @@ _install_routing_shodan([("217.110.51", OWNED_MIX), ("angermann.de", OWNED_MIX)]
 R.run(OWN2, R.build_filters(OWN2), audience="internal", limit_per_query=500)
 check(bool(OWN2.get("cotenants_refused")),
       "a target that OWNS address space still gets the mass-drop refusal (lotto24 doctrine intact)")
+
+
+# =============================================================== 14. aminagroup.com
+print("\n== 14. a SaaS tenancy is not a certificate gap, and the hoster's country is not theirs ==")
+# AMINA Bank AG (Zug, CH; FINMA-regulated crypto bank) received a deck in which four of six findings
+# were false positives and the narrative described a German manufacturer. Two defects beyond the
+# attribution gate, both provable from the run log alone.
+
+# (a) The run log decided this five lines before it contradicted itself:
+#       [auto] SaaS tenancy NOT pinned: autodiscover.aminagroup.io (CNAME into a provider platform)
+#       [auto] 1 live name(s) covered by NO certificate: autodiscover.aminagroup.io
+#     autodiscover CNAMEs to autodiscover.outlook.com; Microsoft terminates TLS under its OWN
+#     certificate, so the customer has no certificate for that name and is not meant to have one.
+#     ident["saas_tenancies"] was written and read by nothing, and uncovered_names() was the one
+#     call in the pair that never received the is_saas predicate its sibling already took.
+_ISS = [{"dns_names": ["aminagroup.com", "www.aminagroup.com"], "not_after": "2027-01-01T00:00:00Z"}]
+_RESOLVED = {"www.aminagroup.com": ["104.18.9.92"],
+             "autodiscover.aminagroup.io": ["2603:1026:c0d:1010::8"],
+             "vpn.aminagroup.com": ["203.0.113.7"]}
+_saas = lambda n: n.startswith("autodiscover.")                                        # noqa: E731
+_gap_names = {g["name"] for g in cert_intel.uncovered_names(
+    _RESOLVED, _ISS, ["aminagroup.com", "aminagroup.io"], is_saas=_saas)}
+check("autodiscover.aminagroup.io" not in _gap_names,
+      "a SaaS tenancy is NOT a certificate gap - the provider terminates TLS under its own cert")
+check("vpn.aminagroup.com" in _gap_names,
+      "a genuinely uncovered name of the customer's own is still raised: %s" % sorted(_gap_names))
+# ...and the predicate is OPTIONAL: omitting it must not change the old behaviour, and a predicate
+# that throws must never suppress a real finding.
+check("autodiscover.aminagroup.io" in {g["name"] for g in cert_intel.uncovered_names(
+          _RESOLVED, _ISS, ["aminagroup.com", "aminagroup.io"])},
+      "without the predicate the check is unchanged (no silent behaviour change)")
+def _boom(_n):
+    raise RuntimeError("predicate exploded")
+check("vpn.aminagroup.com" in {g["name"] for g in cert_intel.uncovered_names(
+          _RESOLVED, _ISS, ["aminagroup.com", "aminagroup.io"], is_saas=_boom)},
+      "a broken predicate fails OPEN - it cannot suppress a real finding")
+# WIRING, not just behaviour. Everything above proves cert_intel BEHAVES; none of it would notice
+# shodan_recon dropping the argument again - which is the whole defect (the predicate existed and
+# this one call site never took it). A control that is correct and unreachable is not a control.
+_rc_src = open(os.path.join(os.path.dirname(os.path.abspath(R.__file__)),
+                            "shodan_recon.py"), encoding="utf-8").read()
+_rc_code = "\n".join(l for l in _rc_src.splitlines() if not l.lstrip().startswith("#"))
+_call_at = _rc_code.find("cert_intel.uncovered_names(")
+check(_call_at > 0 and "is_saas=" in _rc_code[_call_at:_call_at + 320],
+      "shodan_recon actually PASSES is_saas= to uncovered_names (the call, not a comment)")
+
+# (b) The estate was entirely other people's infrastructure, so the "dominant country" of the ASN
+#     inventory described AMINA's suppliers. The deck then addressed a Swiss bank as a German
+#     manufacturer under KRITIS/BaFin. A country we inferred from a hoster is not the customer's.
+CCREC = [_rec("104.18.9.92", 443, "Cloudflare, Inc.", host="www.aminagroup.com",
+              hostnames=["www.aminagroup.com"])]
+for _m in CCREC:
+    _m["location"] = {"country_code": "US"}                      # Cloudflare's country, not AMINA's
+_install_routing_shodan([("aminagroup.com", CCREC)], default=[])
+CC = dict(BRANDY)
+CC.update({"domains": ["aminagroup.com"], "seed": "aminagroup.com", "brand_tokens": ["aminagroup"],
+           "pinned": ["104.18.9.92"], "brand_variants": [], "related_unscoped": [],
+           "asns": [], "nets": [], "resolved": {}})
+CC.pop("scanned_ips", None)
+_cc_out = R.run(CC, R.build_filters(CC), audience="internal", limit_per_query=500)
+check((_cc_out.get("target") or {}).get("country") != "US",
+      "no address space -> the provider's country is NOT adopted as the customer's (got %r)"
+      % (_cc_out.get("target") or {}).get("country"))
+# ...but a customer that OWNS its space still gets its country, because then the inventory really
+# does describe them. Removing this would trade one wrong answer for another.
+OWNCC = [_rec("217.110.51.2", 443, "Horst F.G. Angermann GmbH", host="angermann.de",
+              hostnames=["angermann.de"])]
+for _m in OWNCC:
+    _m["location"] = {"country_code": "DE"}
+    _m["asn"] = "AS8220"
+_install_routing_shodan([("angermann.de", OWNCC), ("217.110.51", OWNCC)], default=[])
+OCC = dict(BRANDY)
+OCC.update({"domains": ["angermann.de"], "seed": "angermann.de", "brand_tokens": ["angermann"],
+            "pinned": ["217.110.51.2"], "brand_variants": [], "related_unscoped": [],
+            "asns": ["AS8220"], "nets": ["217.110.51.0/24"], "resolved": {}})
+OCC.pop("scanned_ips", None)
+_occ = R.run(OCC, R.build_filters(OCC), audience="internal", limit_per_query=500)
+check((_occ.get("target") or {}).get("country") == "DE",
+      "a customer that OWNS address space still gets its own country (got %r)"
+      % (_occ.get("target") or {}).get("country"))
+
+# (c) The FP audit was structurally incapable of catching any of this. llama-4-maverick returned
+#     verdict=dirty, flagged=4, dropped=0, refused=4 -- it flagged the false positives CORRECTLY and
+#     every flag was refused, because `scanned_ips` grants immunity and the false positives were in
+#     scanned_ips. A backstop that inherits the premise of the thing it backstops is not a backstop.
+import audit_fp as _AFP
+_SKON_OWNED = {"scanned_ips": ["213.61.141.198"], "pinned": [], "domains": ["skon.de"],
+               "brand_tokens": ["skon"], "asns": [], "nets": ["213.61.141.196/30"]}
+check(_AFP._host_is_off_estate(["213.61.141.198:4443 WatchGuard"], _SKON_OWNED) is False,
+      "OWNS space (a Colt /29, ASN refused as carrier): a scanned host stays immune to the auditor")
+_AM_OWNED = {"scanned_ips": ["83.111.84.114"], "pinned": ["104.18.9.92"],
+             "domains": ["aminagroup.com"], "brand_tokens": ["aminagroup"], "asns": [], "nets": []}
+check(_AFP._host_is_off_estate(["83.111.84.114:541 Fortinet FortiGate"], _AM_OWNED) is True,
+      "NO space: 'recon scanned it' is no longer proof, so the auditor CAN drop the PERI host")
+check(_AFP._host_is_off_estate(["104.18.9.92:443 nginx"], _AM_OWNED) is False,
+      "a PINNED host keeps its immunity unconditionally - their own DNS resolving there IS evidence")
+check(_AFP._host_is_off_estate(["www.aminagroup.com -> 1.2.3.4"], _AM_OWNED) is False,
+      "evidence naming an owned domain is never dropped")
 
 
 print("\n" + ("FAILED: %d" % len(FAILS) if FAILS else "ALL ABAKUS SCOPE CHECKS PASSED"))

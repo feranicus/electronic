@@ -609,6 +609,11 @@ def main():
             "scanned_ips": list(ident.get("scanned_ips") or []),   # every host recon's gate kept = owned
             "brand_tokens": list(ident.get("brand_tokens") or []),
             "asns": list(ident.get("asns") or []),
+            # nets matters on its own: on a target whose ASN is refused as carrier space (S-KON's
+            # hosts sit on a Colt /29, and Colt is a carrier) `asns` can be empty while the customer
+            # demonstrably owns address space. audit_fp needs both to answer "does recon actually
+            # have ownership evidence here, or only the fact that it scanned the host".
+            "nets": list(ident.get("nets") or []),
             "cert_org": ident.get("cert_org_seen"),
             "related_unscoped": list(ident.get("related_unscoped") or []),
             "cert_names": list(ident.get("cert_names_found") or []),

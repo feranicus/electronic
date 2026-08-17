@@ -134,7 +134,17 @@ def _host_is_off_estate(ev, owned):
     # scanned_ips = every host recon's ownership gate already vetted and KEPT. Recon is the ownership
     # authority; the LLM auditor is a backstop. A host recon scanned is owned by definition, so the
     # auditor may NOT drop it (this is what wrongly deleted skon.de's real nginx-CVE critical).
-    vetted = set(owned.get("scanned_ips") or [])
+    #
+    # ...BUT ONLY WHERE RECON HAD OWNERSHIP EVIDENCE TO BE AUTHORITATIVE WITH (aminagroup.com,
+    # 2026-08). On a target owning no ASN and no prefix, recon's gate had nothing to attribute by:
+    # it kept a nameless FortiGate belonging to PERI LLC on Etisalat, wrote it into scanned_ips, and
+    # that entry then made the host IMMUNE to the auditor. llama-4-maverick returned
+    # `verdict=dirty flagged=4 dropped=0 refused=4` -- it flagged the false positives correctly and
+    # every single flag was refused by this line. A backstop that inherits the premise of the thing
+    # it is backstopping is not a backstop.
+    # Pins keep their immunity unconditionally: the customer's own DNS resolving there IS evidence.
+    _has_space = bool(owned.get("asns") or owned.get("nets"))
+    vetted = set(owned.get("scanned_ips") or []) if _has_space else set()
     pins = set(owned.get("pinned") or [])
     doms = [str(d).lower().lstrip(".") for d in (owned.get("domains") or [])]
     toks = [t for t in (owned.get("brand_tokens") or []) if t]

@@ -5390,3 +5390,87 @@ Guarded by tests/test_set_secret.py: the value never appears in the remote comma
 script reads it from stdin, an end-to-end bash run upserts it idempotently, AND run() itself is
 exercised with a stubbed subprocess to prove the WIRING (value on stdin, script in argv, no
 `bash -s`). Proven by reintroducing the exact `bash -s` line: caught.
+
+## aminagroup.com — ONE `if not _nm:` SHIPPED ANOTHER COMPANY'S FIREWALL AS THE CRITICAL (2026-08-17)
+AMINA Bank AG (Zug, FINMA-regulated digital-asset bank, formerly SEBA) received a deck where **four
+of six findings were false positives, including the CRITICAL and the HIGH**, and the narrative
+described a German manufacturer. An independent review re-verified every finding from RIR registry
+data; I re-verified its central claim before changing anything:
+```
+83.111.84.114 -> inetnum 83.111.84.112/28  netname PERI-EMIRNET  descr "Peri llc"
+                 P.O. Box 27933, Dubai, UAE   mnt-by ETISALAT-MNT   origin AS5384
+114.84.111.83.in-addr.arpa -> NXDOMAIN (no PTR at all)
+```
+A German formwork manufacturer's UAE subsidiary, on Etisalat. C1 was their FortiGate.
+
+**ROOT CAUSE, one line — `shodan_recon.run()`'s attribution gate:**
+```python
+_nm = _record_names(m)
+if not _nm:
+    _kept.append(m); continue     # no names at all -> cannot disprove ownership
+```
+`_record_names` requires a dot, so a record with no rDNS, no HTTP Host and no certificate names
+returns the empty set. That is precisely what a FortiGate on :541, a bare Apache and a cPanel
+:2087 look like — so C1 (PERI), H1 (smartTrade's own trading cloud) and L1 (a WHM port on WPEngine
+shared hosting) were all waved through by the same branch.
+**The block CONTRADICTED ITS OWN COMMENT FOUR LINES UP**, which says that when a customer owns no
+ASN and no prefix "identity — a name or a certificate — is the ONLY evidence available". A record
+with no names carries no identity. Keeping it is not "absence of evidence is never a finding"; it is
+absence of any basis for attribution.
+FIX — the fail-open now survives only where it was EARNED, behind two independent barriers:
+  1. **No address space -> a nameless record is dropped.** (`asns` and `nets` both empty.)
+  2. **A stranger's name already seen on this address -> no fail-open**, computed in a FIRST PASS
+     before any decision. On 141.193.213.21 the gate dropped **323** records for naming strangers
+     (nwpewaf.com and friends) and then kept a nameless one on the same IP. A guard whose baseline
+     is computed while it is still consuming the untrusted input is not a guard.
+It still protects the S-KON WatchGuard — a self-signed Firebox (cert `Firebox webCA`, no dotted
+name) on S-KON's own Colt /29, i.e. a customer that DOES own space with no stranger on the address.
+
+**THREE MORE DEFECTS, EACH A "TWO HOMES, ONE WIRED UP":**
+* `ident["saas_tenancies"]` was written and **read by nothing**. The log decided
+  `SaaS tenancy NOT pinned: autodiscover.aminagroup.io` and five lines later raised M2,
+  `1 live name(s) covered by NO certificate: autodiscover.aminagroup.io`. It CNAMEs to
+  `autodiscover.outlook.com`; Microsoft terminates TLS under its own certificate, so the customer
+  has no certificate for it and is not supposed to. The sibling call `onprem_exchange(..., is_saas=)`
+  already took the predicate; `uncovered_names()` on the next line never did.
+* **THE HOSTER'S COUNTRY IS NOT THE CUSTOMER'S.** `_cc` was the dominant country of the ASN
+  inventory — which, for an estate that is entirely Cloudflare/WPEngine/ti&m/Microsoft, describes
+  the SUPPLIERS. Same rule already enforced for whois-org, cert-O and netblock holders, one level
+  over. When the customer owns no space the ccTLD is the only country signal that is theirs, and a
+  generic TLD means we do not know — which is honest, and makes the deck fall back to
+  ISO 27001 / NIST CSF instead of naming a regulator that does not supervise them.
+* **THE FP AUDIT WAS STRUCTURALLY INCAPABLE OF CATCHING ANY OF IT.** llama-4-maverick returned
+  `verdict=dirty flagged=4 dropped=0 refused=4` — it flagged the false positives CORRECTLY and every
+  flag was refused, because `audit_fp` grants immunity to anything in `scanned_ips` ("recon is the
+  ownership authority") and the false positives were in `scanned_ips`. That premise holds only where
+  recon HAD ownership evidence; on a no-space target it is circular. `vetted` is now empty unless
+  the customer owns address space. Pins keep immunity unconditionally — their own DNS resolving
+  there IS evidence. (`owned` gained `nets`: S-KON's ASN is refused as carrier space, so `asns` can
+  be empty while the customer demonstrably owns address space.)
+
+**THE PROMPT IS A STRING THAT REACHES A HUMAN, VIA THE MODEL** — recorded before, and this is the
+sharpest instance yet. The asset-inventory slide lists ASN holders, so slide 5 read `Peri llc`. The
+model recognised PERI as a German industrial manufacturer and built the sector, the jurisdiction and
+the threat model on it: *"lower quartile of DACH manufacturing peers"*, *"NIS2 Article 21 for KRITIS
+operators"*, GEOPOL driver *"German finance / KRITIS-adjacent"*, jurisdiction **BaFin/BAIT**,
+rationale *"arms-to-Ukraine"* — at a Swiss bank. **One bad attribution became the narrative of three
+decks.** `enrich.PROMPT` guardrail 5 now forbids inferring sector, country or regulator from
+infrastructure holder names, and says to write sector-neutral prose naming only ISO 27001 / NIST CSF
+when the findings do not state the sector. Citing the wrong regulator discredits every correct
+finding beside it.
+
+**WHAT THE ENGINE GOT RIGHT, for the record:** `onlinebanking.aminagroup.com` ->
+**91.198.58.148** (Hypothekarbank Lenzburg, AMINA's Finstar core-banking provider — verified) was
+filed as "resolves with no observable service" and NOT raised. That is the standing rule working:
+Shodan holding no record is absence of evidence. The supply-chain concentration it implies is a
+genuine gap in what we SAY, not a bug in what we claim.
+
+Guarded by test_scope_abakus.py §14 plus a corrected §9. **§9's assertion was DELIBERATELY
+INVERTED** — it read *"a record with NO names is kept - absence of evidence is never a finding"* on
+a fixture with `asns=[] nets=[]`, i.e. it encoded exactly this defect. The old reasoning is kept in
+the file, because deleting it would lose why. Five mutations run, each verified to fail with the
+RIGHT assertion and then restored; 233 pytest + 7 engine suites green.
+FIXTURE LESSON: my first barrier-2 fixture used org `"WPEngine, Inc."`, which carries no
+hosting/datacenter marker and announces few prefixes — so `_looks_like_provider` never matched, the
+gate never engaged, and the test failed against correct code. In the real run the trigger was
+`_no_space`. A fixture that does not reproduce the condition under test is a test of the fixture.
