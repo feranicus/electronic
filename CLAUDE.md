@@ -5746,3 +5746,40 @@ finishes is the original defect wearing a different hat.
 RULE: any handler that sets a busy flag before an `await` must clear it on EVERY path, including a
 rejected promise. And any operation that can exceed a few seconds needs a phase feed, not a spinner
 — the operator cannot tell "working" from "stuck", and neither can you.
+
+## A DECLARED DEPENDENCY THE OPERATOR'S PYTHON DID NOT HAVE — the SIXTH instance (2026-08-20)
+`python ship.py` refused to deploy on 21 failures, every one of them:
+```
+RuntimeError: Form data requires "python-multipart" to be installed.
+```
+White Label's upload needs multipart, it is declared in `webapp/backend/requirements.txt`, and the
+DROPLET has it because the Dockerfile pip-installs that file. Nothing ever installed it on the
+machine that runs the tests — and the test suite IMPORTS the FastAPI app, so every test that
+touches main.py died on a message that reads like a code defect and is not.
+I installed it in my own sandbox and never on his. Green here, red there.
+SAME ROOT CAUSE AS: the httpx incident, the esbuild/win32 incident, the `os.uname()` incident, and
+the three wasted ships already recorded under "A CHECK MUST RUN WHERE THE TOOLCHAIN IS CORRECT BY
+CONSTRUCTION". The rule was written down four times and broken a fifth, so it is now CODE.
+FIX — `ship.py::ensure_app_requirements()`, called at the TOP of the test phase, before any test
+can import the app. It is the same remedy ship.py already applies to ruff, and for the same reason:
+telling the operator to run pip is a manual step (operating principle 1) and will be forgotten by
+whoever clones this next.
+  * DELIBERATELY NARROW: only packages MISSING ENTIRELY are installed, never upgraded. A blanket
+    `pip install -r requirements.txt` on a developer machine can move fastapi or starlette under
+    whatever else lives in that interpreter — a bigger problem than the one being solved. Version
+    drift is answered by the image build, which installs from a clean base every time.
+  * `tests/test_security_headers.py` gained a companion assertion so a BARE `pytest` run fails
+    legibly, naming the package and the fix, instead of raising from four frames inside a route
+    decorator.
+**AND MY FIX HAD THE REPO'S FAVOURITE BUG IN IT.** The first version called `importlib.metadata`
+in ship.py's OWN interpreter — which measures the wrong subject. A negative test in a clean venv
+proved it: it reported `google-auth` missing (true only in my sandbox) and MISSED
+`python-multipart`, which was the entire point of the change. It now runs the probe INSIDE the
+target interpreter with `subprocess`. Same defect class as validating a temp copy instead of the
+mounted file, and as `cmd_selftest` reading the production path on staging.
+VERIFICATION THAT ACTUALLY PROVES IT: a clean venv with the app's dependencies EXCEPT
+python-multipart — i.e. the operator's box reproduced — then app import fails with his exact error,
+`ensure_app_requirements(py)` installs exactly one package, app import succeeds, and a second call
+prints nothing.
+RULE, now enforced rather than written down: when a change adds a runtime dependency, the machine
+that runs the tests has to get it automatically. Ask "which interpreter?" before every probe.

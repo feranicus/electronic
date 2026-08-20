@@ -292,3 +292,38 @@ def test_the_asgi_harness_needs_nothing_beyond_the_standard_library():
     for mod in re.findall(r"^\s*(?:from|import)\s+([A-Za-z_][\w.]*)", code, re.M):
         assert mod.split(".")[0] in ("asyncio", "app"), (
             "the ASGI harness imports %s; it must need only the stdlib and the app itself" % mod)
+
+
+def test_every_declared_runtime_dependency_is_installed_here():
+    """A bare `pytest` run must fail LEGIBLY when the local interpreter is missing an app dependency.
+
+    THE SIXTH INSTANCE OF ONE ROOT CAUSE. The suite imports the FastAPI app, so the app's own
+    dependencies have to be importable on whatever machine runs the tests — but they are installed
+    on the DROPLET by the Dockerfile and nothing installed them here. Adding `python-multipart` for
+    the White Label upload gave the author a green run and the operator 21 failures, every one of
+    them reading "Form data requires python-multipart", which looks like a code defect and is not.
+    Same shape as the httpx incident, the esbuild incident and the os.uname() incident.
+
+    `python ship.py` now installs anything missing before the tests run. This test is for the
+    person who runs pytest directly: it names the package and the fix instead of letting fastapi
+    raise from four frames deep inside a route decorator.
+    """
+    from importlib import metadata as md
+    req = os.path.join(ROOT, "webapp", "backend", "requirements.txt")
+    missing = []
+    for raw in open(req, encoding="utf-8"):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name = line
+        for sep in ("[", "<", ">", "=", "!", "~", ";", " "):
+            name = name.split(sep, 1)[0]
+        try:
+            md.distribution(name.strip())
+        except Exception:
+            missing.append(line)
+    assert not missing, (
+        "webapp/backend/requirements.txt declares %d package(s) this interpreter does not have: %s\n"
+        "The tests import the app, so they cannot pass without them. `python ship.py` installs them "
+        "automatically; to do it by hand: pip install %s"
+        % (len(missing), ", ".join(missing), " ".join('"%s"' % m for m in missing)))

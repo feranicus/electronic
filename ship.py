@@ -174,6 +174,87 @@ def _test_python():
 # deployed engine is the only honest proof of a deploy: bibeltv.de was re-run against a 3-day-old
 # colt-web because the CI deploy failed, ship_web.py still printed DONE, and the verify step only
 # checked that /api/me returned 401 — which a stale container answers perfectly well.
+def ensure_app_requirements(py=None):
+    """Install any DECLARED runtime dependency the operator's Python is missing, once.
+
+    WHY THIS EXISTS, and it is the sixth instance of one root cause. The test suite imports the
+    FastAPI app, so the app's own dependencies have to be importable here — but they are installed
+    on the DROPLET by the Dockerfile, and nothing ever installed them on the machine that runs the
+    tests. Adding `python-multipart` for the White Label upload therefore produced a green run in
+    the author's environment and 21 failures in the operator's, with a message
+    ("Form data requires python-multipart") that looks like a code defect and is not.
+    The same shape as the httpx incident, the esbuild incident and the os.uname() incident:
+    A CHECK THAT CANNOT RUN ON THE INVOKING PLATFORM IS NOT A CHECK.
+
+    The fix is NOT to tell the operator to run pip — that is a manual step, which is operating
+    principle 1, and it will be forgotten by whoever clones this next. ship.py already does exactly
+    this for ruff. requirements.txt is the declared contract; anything named there and absent here
+    is installed, one package at a time.
+
+    DELIBERATELY NARROW: only packages that are MISSING ENTIRELY are installed, never upgraded.
+    A blanket `pip install -r requirements.txt` on a developer machine can move fastapi or starlette
+    underneath whatever else lives in that interpreter, which is a bigger problem than the one being
+    solved. Version drift is a different question and is answered by the image build, which installs
+    from a clean base every time.
+    """
+    py = py or sys.executable
+    req = os.path.join(HERE, "webapp", "backend", "requirements.txt")
+    if not os.path.exists(req):
+        return
+    specs = []
+    for raw in open(req, encoding="utf-8"):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        # "fastapi==0.141.*" / "starlette>=1.3.1" / "uvicorn[standard]==0.30.*" -> the dist name.
+        # No regex: this helper is defined above ship.py's own imports, and depending on `re`
+        # being bound at that point is the kind of assumption the F821 gate exists to catch — it
+        # caught exactly that here.
+        name = line
+        for sep in ("[", "<", ">", "=", "!", "~", ";", " "):
+            name = name.split(sep, 1)[0]
+        name = name.strip()
+        if name:
+            specs.append((name, line))
+    if not specs:
+        return
+
+    # ASK THE INTERPRETER THAT WILL RUN THE TESTS, not this one. The first version of this helper
+    # used importlib.metadata HERE, which measures ship.py's own environment — a different subject.
+    # A negative test in a clean venv proved it: it reported a package missing that was only missing
+    # locally, and MISSED python-multipart, which was the entire point. Same defect class as a
+    # validator run against a temp copy instead of the mounted file.
+    probe = ("import sys\n"
+             "from importlib import metadata as m\n"
+             "out = []\n"
+             "for n in sys.argv[1:]:\n"
+             "    try:\n"
+             "        m.distribution(n)\n"
+             "    except Exception:\n"
+             "        out.append(n)\n"
+             "print('\\n'.join(out))\n")
+    r = subprocess.run([py, "-c", probe] + [n for n, _ in specs],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        return                                    # a probe we cannot run must not block the ship
+    absent = {ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()}
+    missing = [(n, spec) for n, spec in specs if n in absent]
+    if not missing:
+        return
+    print("  %d declared dependency(ies) missing from this Python: %s"
+          % (len(missing), ", ".join(n for n, _ in missing)))
+    print("  installing them so the tests exercise the same stack the image builds...")
+    for name, spec in missing:
+        r = subprocess.run([py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+                            spec], capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            print((r.stdout or "") + (r.stderr or ""))
+            sys.exit("[X] could not install %s, which webapp/backend/requirements.txt declares. "
+                     "The tests import the app and would fail for a reason that is not a code "
+                     "defect. Install it and re-run: python ship.py" % spec)
+        print("    installed %s" % spec)
+
+
 ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
                 "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py",
@@ -309,6 +390,11 @@ def do_tests():
                               capture_output=True).returncode != 0:
                 bad.append(os.path.relpath(p, HERE))
     print("  compile check: %d file(s) broken" % len(bad))
+
+    # BEFORE any test runs. The suite imports the FastAPI app, so a dependency declared in
+    # requirements.txt but absent from THIS interpreter fails with a message that looks like a code
+    # defect. Installing it here is the same remedy ship.py already applies to ruff.
+    ensure_app_requirements()
     if bad:
         for b in bad:
             print("    [X] " + b)
