@@ -122,6 +122,28 @@ def _ms(t0):
 BRAND_MIN_CHROMA = float(os.environ.get("BRAND_MIN_CHROMA", "0.35"))
 BRAND_LUM_LO, BRAND_LUM_HI = 0.05, 0.85
 
+# A SURFACE IS NOT AN ACCENT, and asking one question of both is what produced the dark teal.
+# is_brandable() rejects anything below BRAND_LUM_LO, which is correct for "is this the company's
+# colour" and wrong for "what does the company put behind white text". So S4biz's own #2B3042 (57
+# uses) was never collected, the dark fill was synthesised by pushing their cyan down to OUR
+# reference luminance, and the result — #0D525D — differs from the RETIRED cybergod dark #0C544E by
+# (1, -2, 15). A branded deck therefore looked like an unbranded one, in the colour that covers most
+# of it: 182 uses of the synthesised teal against 58 of the real cyan.
+# CHROMA IS THE DISCRIMINATOR HERE TOO. Plain black and #1A1A1A are text, not surfaces, and they
+# have zero chroma; a brand's dark ground is nearly always tinted (#2B3042 is 0.35, #0C1233 is 0.77).
+# 0.08, not 0.12: at 0.12 the S4biz indigo #4F46E5 (luminance 0.117) qualified as a "surface". It is
+# a bright accent and calling it one would have been a confident wrong label even though the ranking
+# happened to pick the right colour anyway. The real grounds measure 0.008 to 0.030.
+SURFACE_LUM_MAX = 0.08
+SURFACE_MIN_CHROMA = 0.20
+
+
+def is_surface(h):
+    """A dark ground the partner actually paints with, as opposed to body text."""
+    if not _hex(h):
+        return False
+    return luminance(h) <= SURFACE_LUM_MAX and chroma(h) >= SURFACE_MIN_CHROMA
+
 
 def chroma(h):
     """HSV saturation. The discriminator between a BRAND colour and the furniture.
@@ -251,6 +273,70 @@ def ramp(brand):
         toward = "FFFFFF" if want[k] > lb else "000000"
         out[k] = _to_luminance(brand, want[k], toward)
     return out
+
+
+def family(brand, f=None, overrides=None):
+    """The three stops, taken from the FILE wherever the file supplies them.
+
+    ramp() is arithmetic: one hue pushed to three luminances. That is the right answer only when the
+    file offers nothing else, and on a design-led deck it usually does. The S4biz brief carries
+    #22D3EE (77 uses), #8B5CF6 (62) and #4F46E5 (41) — a real three-colour family that was extracted,
+    named in the heuristic as `secondary`, and then thrown away because build_theme only ever read
+    `brand`. Meanwhile the large dark surfaces came from ramp and looked like our old palette.
+
+    THE ASSIGNMENT IS MUTUAL-NEAREST, not a ranking. A candidate takes a slot only when that slot is
+    the one its OWN luminance is closest to, so a bright accent can never be forced into the dark
+    fill just because the dark fill happened to be free. Anything the file does not supply is still
+    derived, so the result is always a complete, ordered, readable ramp.
+
+    Returns (stops, why) where `why` records, per stop, where the colour came from. That provenance
+    is shown to the partner and is the difference between "we read your deck" and "trust us".
+    """
+    stops = ramp(brand)
+    want = {k: luminance(v) for k, v in REF.items()}
+    brand_slot = min(want, key=lambda k: abs(want[k] - luminance(brand)))
+    why = {k: ("derived from your primary colour" if k != brand_slot else "your primary colour")
+           for k in stops}
+
+    used = [(u.get("hex"), u.get("n", 0)) for u in ((f or {}).get("used") or [])]
+    taken = {_hex(brand)}
+    for hexv, n in used:
+        h = _hex(hexv)
+        if not h or h in taken or not is_brandable(h):
+            continue
+        slot = min(want, key=lambda k: abs(want[k] - luminance(h)))
+        if slot == brand_slot or why[slot] != "derived from your primary colour":
+            continue                                  # already spoken for
+        stops[slot] = h
+        why[slot] = "used %d times in your deck" % n
+        taken.add(h)
+
+    # The dark fill is the biggest painted area in every layout, so it is the one stop worth taking
+    # from the partner's own surfaces rather than from an accent. Skipped when the brand colour is
+    # ITSELF dark: overwriting it would mean the primary never appears at full strength anywhere.
+    surf = [(s.get("hex"), s.get("n", 0)) for s in ((f or {}).get("surfaces") or [])]
+    if surf and brand_slot != "dark":
+        h, n = surf[0]
+        if _hex(h):
+            stops["dark"] = _hex(h)
+            why["dark"] = "your own dark surface, used %d times" % n
+
+    # ORDER IS THE INVARIANT. `light` carries dark text and `dark` carries light text in every
+    # builder, so a family that arrives out of order would put dark text on a dark fill across whole
+    # decks at once. Checked BEFORE the hand-set values, because what is being validated here is the
+    # machine's reading of the file. A human who types three colours is asserting a fact and is not
+    # overruled — build_theme measures the contrast of whatever they chose and warns.
+    if not (luminance(stops["light"]) > luminance(stops["mid"]) > luminance(stops["dark"])):
+        stops = ramp(brand)
+        why = {k: "derived: your deck's colours do not form a light-to-dark ramp" for k in stops}
+        why[brand_slot] = "your primary colour"
+
+    for k, key in (("light", "brandLight"), ("mid", "brandMid"), ("dark", "brandDark")):
+        v = _hex((overrides or {}).get(key))
+        if v:
+            stops[k] = v
+            why[k] = "set by hand"
+    return stops, why
 
 
 # --------------------------------------------------------------------------- image sniffing
@@ -465,6 +551,7 @@ def extract(path_or_bytes):
                 continue
             _cnt.update(x.upper() for x in re.findall(r'srgbClr val="([0-9A-Fa-f]{6})"', blob))
     out["used"] = [{"hex": h, "n": n} for h, n in _cnt.most_common() if is_brandable(h)][:12]
+    out["surfaces"] = [{"hex": h, "n": n} for h, n in _cnt.most_common() if is_surface(h)][:6]
     out["used_all"] = sum(_cnt.values())
 
     _fnt = collections.Counter()
@@ -720,7 +807,7 @@ def judge(f, models=None, ask=None, on=None):
 
 
 # --------------------------------------------------------------------------- the rails
-def _fonts_for(f, warn):
+def _fonts_for(f, warn, overrides=None):
     """The partner's typography, or ours — never a system default dressed up as theirs.
 
     A stock Office theme names Calibri Light / Calibri. Presenting that as "read from your template"
@@ -728,10 +815,16 @@ def _fonts_for(f, warn):
     palette. So a theme face is used only when it is DISTINCTIVE; otherwise the slides are asked;
     otherwise we keep our own and say the file carried no brand typography.
     """
+    ov = overrides or {}
     th = f.get("fonts") or {}
     used = [u["face"] for u in (f.get("used_fonts") or [])]
     heading = th.get("major") if is_distinctive_face(th.get("major")) else None
     body = th.get("minor") if is_distinctive_face(th.get("minor")) else None
+    if str(ov.get("heading") or "").strip() or str(ov.get("body") or "").strip():
+        # A face the partner types is theirs by assertion. It still has to EXIST on the machine that
+        # opens the deck, and we cannot know that, so it is recorded and not validated.
+        return {"heading": str(ov.get("heading") or "").strip() or None,
+                "body": str(ov.get("body") or "").strip() or None}
     if not heading and used:
         heading = used[0]
     if not body and used:
@@ -740,19 +833,34 @@ def _fonts_for(f, warn):
         warn.append("this file carries no brand typeface — its fonts are the ones the tool that "
                     "made it defaults to — so the artifacts keep their own, which are chosen to "
                     "fit the layouts")
-    return {"heading": heading or "Georgia", "body": body or "Calibri"}
+    # NULL, NOT A NAME. This line used to read `heading or "Georgia", body or "Calibri"`, which
+    # contradicted the docstring directly above it: instead of keeping the builders' faces it
+    # substituted a serif and Calibri into every branded deck, and the page reported them as "read
+    # from your template". Measured on a delivered deck: 1,500 Calibri runs and 96 Georgia, in
+    # layouts written for Segoe UI. brand.js does `f.heading || defaults.FH`, so null is exactly the
+    # instruction to keep what the builder chose.
+    return {"heading": heading or None, "body": body or None}
 
 
-def build_theme(f, j, logo_name=None, powered_by=None, logo_wh=None):
-    """Facts + judgement -> the theme the builders consume. Every rail is applied HERE."""
+def build_theme(f, j, logo_name=None, powered_by=None, logo_wh=None, overrides=None):
+    """Facts + judgement -> the theme the builders consume. Every rail is applied HERE.
+
+    `overrides` is the human's word, keyed exactly as the palette is (brandLight/brandMid/brandDark)
+    plus `wordmark`, `heading`, `body`. It is applied after the file is read and before the rails are
+    measured, so a partner can correct a wrong reading and still be told if what they chose is
+    unreadable. Same doctrine as the assessment's clarify/refine loop: the machine proposes, the
+    human asserts, and the assertion is recorded rather than argued with.
+    """
     warn = []
-    brand = _hex(j.get("brand")) or REF["light"]
-    stops = ramp(brand)
+    ov = overrides or {}
+    brand = _hex(ov.get("brandLight")) or _hex(j.get("brand")) or REF["light"]
+    stops, why = family(brand, f, ov)
 
     # RAIL 1 — the ink on each stop is MEASURED, not chosen.
     on_light = ink_for(stops["light"])
+    on_mid = ink_for(stops["mid"])
     on_dark = ink_for(stops["dark"])
-    for k, ink in (("light", on_light), ("dark", on_dark)):
+    for k, ink in (("light", on_light), ("mid", on_mid), ("dark", on_dark)):
         c = contrast(stops[k], ink)
         if c < 4.5:
             warn.append("neither black nor white reaches 4.5:1 on %s (%s, best %.1f:1) — text on it "
@@ -791,7 +899,8 @@ def build_theme(f, j, logo_name=None, powered_by=None, logo_wh=None):
     # NOT dc:title. That is the DECK's title, and using it produced the wordmark
     # "Why Redevco Needs Breach & Attack Simula[tion]" on a real file. Only <Company> means the
     # organisation; anything else is a guess dressed as a fact, on a customer's title slide.
-    suggested = _clean_name(j.get("name")) or _clean_name(f.get("company"))
+    suggested = _clean_name(ov.get("wordmark")) or _clean_name(j.get("name")) \
+        or _clean_name(f.get("company"))
     if not suggested:
         warn.append("the file does not say which company it belongs to — type the name that should "
                     "appear on the artifacts")
@@ -814,11 +923,16 @@ def build_theme(f, j, logo_name=None, powered_by=None, logo_wh=None):
             "brandMid": stops["mid"],
             "brandDark": stops["dark"],
             "onBrandLight": on_light,
+            "onBrandMid": on_mid,
             "onBrandDark": on_dark,
             "ink": ink,
             "paper": paper,
         },
-        "fonts": _fonts_for(f, warn),
+        # WHERE EACH STOP CAME FROM. Shown to the partner beside the swatch, so "read from your
+        # template" is a claim they can check rather than one they have to accept.
+        "palette_why": {"brandLight": why["light"], "brandMid": why["mid"],
+                        "brandDark": why["dark"]},
+        "fonts": _fonts_for(f, warn, ov),
         "powered_by": powered_by if powered_by is not None else POWERED_BY,
         "source": {"sha256": f.get("sha256"), "slides": f.get("slides"),
                    "colors": f.get("colors"), "company": f.get("company")},

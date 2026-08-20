@@ -13,7 +13,7 @@ import { useT } from "../i18n";
 // The palette swatches are rendered from the RETURNED theme, not from anything typed here, so what
 // is on screen is what the deck builders will use.
 
-function Sw({ hex, label, ink }) {
+function Sw({ hex, label, ink, why }) {
   if (!hex) return null;
   return (
     <div className="wl-sw">
@@ -22,9 +22,15 @@ function Sw({ hex, label, ink }) {
       </div>
       <div className="wl-swl">{label}</div>
       <code>#{hex}</code>
+      {/* PROVENANCE, next to the swatch. "Colours read from your template" is a claim, and the
+          partner can only check it if we say WHICH colour came from where — their deck, their own
+          dark surface, derived, or typed by them. */}
+      {why ? <div className="wl-why">{why}</div> : null}
     </div>
   );
 }
+
+const HEX = /^[0-9A-Fa-f]{6}$/;
 
 export default function WhiteLabel() {
   const [, , t] = useT();
@@ -41,6 +47,11 @@ export default function WhiteLabel() {
   // Cache-busts the logo preview after an upload: the URL never changes, so without this the
   // browser shows the PREVIOUS partner's mark and everyone concludes the upload failed.
   const [v, setV] = useState(0);
+  // The three stops as the partner may edit them, and a nonce that reloads the preview <img>.
+  // Held separately from `data` so typing does not mutate the saved brand: nothing is committed
+  // until Apply, which is the whole point of having a preview at all.
+  const [edit, setEdit] = useState({ brandLight: "", brandMid: "", brandDark: "" });
+  const [pv, setPv] = useState(0);
 
   async function load() {
     setErr("");
@@ -48,6 +59,12 @@ export default function WhiteLabel() {
       const body = await getBrand();          // getJSON-backed: the parsed body
       setData(body);
       if (body && body.brand && body.brand.name) setName(body.brand.name);
+      const p = (body && body.brand && body.brand.palette) || null;
+      if (p) {
+        setEdit({ brandLight: p.brandLight || "", brandMid: p.brandMid || "",
+                  brandDark: p.brandDark || "" });
+        setPv((n) => n + 1);
+      }
     } catch (e) {
       setErr(t("wl.loadFail"));
     }
@@ -60,12 +77,37 @@ export default function WhiteLabel() {
   // what happened the first time this page was used. The upload now returns a JOB and this polls
   // it, so every phase is visible: which model answered, which one is still out, and what was
   // decided. The same reasoning as the assessment progress bar.
+  // ONLY SEND WHAT THE PARTNER ACTUALLY CHANGED, and only if it is a colour.
+  //
+  // Sending the three stops unconditionally would pin them on every save, so uploading a NEW
+  // template would silently keep the previous template's palette — the overrides would beat the
+  // file they were meant to correct. A stop is therefore an override only when it differs from
+  // what is on screen for the saved brand.
+  function pinned() {
+    const p = (data && data.brand && data.brand.palette) || {};
+    const out = {};
+    for (const k of ["brandLight", "brandMid", "brandDark"]) {
+      const v = String(edit[k] || "").trim().replace(/^#/, "");
+      if (HEX.test(v) && v.toUpperCase() !== String(p[k] || "").toUpperCase()) out[k] = v;
+    }
+    // A new template is a fresh reading and the old stops must not survive it.
+    return tpl ? {} : out;
+  }
+
+  const previewUrl = (slide) => {
+    const p = pinned();
+    const q = Object.keys(p).map((k) =>
+      k.replace(/([A-Z])/g, (m) => "_" + m.toLowerCase()) + "=" + encodeURIComponent(p[k]));
+    q.push("slide=" + slide, "v=" + pv);
+    return "/api/brand/preview?" + q.join("&");
+  };
+
   async function submit(ev) {
     ev.preventDefault();
     setBusy(true); setErr(""); setWarnings([]); setLog([]); setPct(0);
     let r;
     try {
-      r = await setBrand({ template: tpl, logo, name: name.trim(), panel });
+      r = await setBrand({ template: tpl, logo, name: name.trim(), panel, ...pinned() });
     } catch (e) {
       // A REJECTED FETCH IS THE CASE THAT USED TO HANG FOR EVER. Without this the button sat on
       // "Reading your template…" with no way to say that the request never left the machine.
@@ -112,6 +154,7 @@ export default function WhiteLabel() {
 
   const b = (data && data.brand) || null;
   const pal = (b && b.palette) || {};
+  const why = (b && b.palette_why) || {};
   const maxKb = (data && data.max_logo_kb) || 150;
 
   return (
@@ -186,10 +229,44 @@ export default function WhiteLabel() {
 
           <h2>{t("wl.palette")}</h2>
           <div className="wl-swatches">
-            <Sw hex={pal.brandLight} label={t("wl.stopLight")} ink={pal.onBrandLight} />
-            <Sw hex={pal.brandMid} label={t("wl.stopMid")} />
-            <Sw hex={pal.brandDark} label={t("wl.stopDark")} ink={pal.onBrandDark} />
+            <Sw hex={pal.brandLight} label={t("wl.stopLight")} ink={pal.onBrandLight}
+                why={why.brandLight} />
+            <Sw hex={pal.brandMid} label={t("wl.stopMid")} ink={pal.onBrandMid}
+                why={why.brandMid} />
+            <Sw hex={pal.brandDark} label={t("wl.stopDark")} ink={pal.onBrandDark}
+                why={why.brandDark} />
           </div>
+
+          <div className="card wl-tune">
+            <div className="wl-h">{t("wl.tune")}</div>
+            <div className="assess-row">
+              {[["brandLight", t("wl.stopLight")], ["brandMid", t("wl.stopMid")],
+                ["brandDark", t("wl.stopDark")]].map(([k, lbl]) => (
+                <div className="fld" key={k}>
+                  <div className="label">{lbl}</div>
+                  <input className="input mono" value={edit[k]} maxLength={7}
+                         onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} />
+                </div>
+              ))}
+              <button type="button" className="btn ghost" disabled={busy}
+                      onClick={() => setPv((n) => n + 1)}>{t("wl.refresh")}</button>
+            </div>
+            <div className="hint">{t("wl.tuneHint")}</div>
+          </div>
+
+          <h2>{t("wl.previewH")}</h2>
+          {/* AN <img> ON A GET, not a fetch into a blob. The endpoint is session-scoped and returns
+              SVG, so the browser's own credentialed request is the simplest correct thing; `v`
+              changes on every refresh because the URL is otherwise identical and the previous
+              slide would be served from cache, which reads exactly like the button doing nothing. */}
+          {/* THE COVER AND A CONTENT SLIDE. Measured on a real branded deck, the cover carries 5
+              branded colour uses and slide 3 carries 21 — the large dark fill only exists on the
+              content layouts, so showing the cover alone would be a mostly-white page that does not
+              answer what a partner is actually asking. */}
+          <img className="wl-preview" src={previewUrl(1)} alt={t("wl.previewH")} />
+          <img className="wl-preview" src={previewUrl(3)} alt={t("wl.previewH")} />
+          <p className="hint">{t("wl.previewHint")}</p>
+
           <p className="hint">{t("wl.severityNote")}</p>
           <p className="hint">{t("wl.poweredNote")}</p>
 
@@ -216,8 +293,14 @@ export default function WhiteLabel() {
               </table>
             </div>
           ) : null}
+          {/* NULL MEANS "WE READ NOTHING", and it must not be printed as if it were a finding.
+              This line used to render "Georgia / Calibri" under the heading "Colours read from your
+              template" for a file whose fonts are simply Microsoft's defaults — a stock theme
+              reported as the partner's typography. */}
           <p className="hint">
-            {t("wl.fonts")}: {(b.fonts && b.fonts.heading) || "—"} / {(b.fonts && b.fonts.body) || "—"}
+            {(b.fonts && (b.fonts.heading || b.fonts.body))
+              ? t("wl.fonts") + ": " + [(b.fonts.heading), (b.fonts.body)].filter(Boolean).join(" / ")
+              : t("wl.fontsKept")}
           </p>
         </>
       )}

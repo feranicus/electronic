@@ -73,9 +73,22 @@ function draw(pres, s, o) {
   // rather than added to each builder in turn — five copies of an attribution line is five chances
   // for one deck to ship without it, which is precisely the drift this module was created to stop.
   // Returns "" when no partner theme is active, so an unbranded deck is byte-identical to before.
+  // BESIDE THE QUOTE, NOT BELOW THE CREED — and the position was MEASURED, not chosen.
+  //
+  // It used to sit under the second creed line, where it landed at y=3.940 against the findings
+  // cover's date box at y=3.950: printed on top of each other on every branded cover since this
+  // shipped. Dumping the real emitted geometry for all three covers showed there is no band below
+  // the creed that is free in all of them (cbiq puts its four column labels 0.18in under the creed,
+  // geopol 0.20in), so moving it down could only ever fix one layout and break another.
+  //
+  // The quote line IS free on the right in every layout: it is ~60 italic characters at 9.5pt, so
+  // it occupies roughly the left 4in of a 7.7in box and nothing else is drawn in that row. A narrow
+  // right-aligned box there works for all five builders with no per-builder geometry, which is the
+  // whole reason this line lives in ONE place.
   const by = BRAND.poweredBy();
   if (by) {
-    s.addText(by, { x, y: y + dy2 + h2 + 0.04, w, h: 0.20,
+    const bw = Math.min(2.6, w * 0.34);
+    s.addText(by, { x: x + w - bw, y: y + 0.09, w: bw, h: 0.20, align: "right",
       fontSize: 7.5, fontFace: FF, color: col, margin: 0, transparency: 35 });
   }
 }

@@ -751,8 +751,9 @@ def _brand_public(t):
     partner should be able to read WHY their colour was chosen and disagree with it — but nothing
     here is a secret and nothing here is another user's."""
     return {k: t.get(k) for k in
-            ("name", "wordmark", "palette", "fonts", "logo", "logo_w", "logo_h", "mode",
-             "powered_by", "decided_by", "why", "votes", "warnings", "updated_ts", "has_logo")}
+            ("name", "wordmark", "palette", "palette_why", "fonts", "logo", "logo_w", "logo_h",
+             "mode", "powered_by", "decided_by", "why", "votes", "warnings", "updated_ts",
+             "has_logo")}
 
 
 @app.post("/api/brand")
@@ -760,7 +761,12 @@ async def brand_set(request: Request,
                     template: UploadFile = File(None),
                     logo: UploadFile = File(None),
                     name: str = Form(""),
-                    panel: str = Form("1")):
+                    panel: str = Form("1"),
+                    brand_light: str = Form(""),
+                    brand_mid: str = Form(""),
+                    brand_dark: str = Form(""),
+                    heading: str = Form(""),
+                    body: str = Form("")):
     email = _require_ready(request)
     # Read with a hard ceiling rather than trusting Content-Length: the cap has to be enforced on
     # the bytes we actually took, not on a number the client sent.
@@ -800,10 +806,19 @@ async def brand_set(request: Request,
         st["lines"].append({"pct": st["pct"], "msg": str(msg)[:300], "t": time.time() - st["started"]})
         del st["lines"][:-200]
 
+    # The partner's own word about their palette. Everything the machine reads out of a deck is a
+    # PROPOSAL; these fields are the human correcting it, and the same doctrine as the assessment's
+    # clarify/refine loop applies — the assertion wins and is recorded. Validated in proteus, which
+    # ignores anything that is not a six-digit hex, so a junk value cannot reach a slide.
+    ov = {"brandLight": brand_light, "brandMid": brand_mid, "brandDark": brand_dark,
+          "heading": heading, "body": body, "wordmark": name}
+    ov = {k: v for k, v in ov.items() if str(v or "").strip()}
+
     def work():
         try:
             theme, warnings = brand.save(email, template=tpl or None, logo=lg or None,
-                                         name=name, use_panel=str(panel) != "0", on=say)
+                                         name=name, use_panel=str(panel) != "0", on=say,
+                                         overrides=ov or None)
             st["brand"] = _brand_public(theme)
             st["warnings"] = warnings
             _log(evt="brand_set", user=email, name=theme.get("name", ""),
@@ -857,6 +872,51 @@ def brand_job(job: str, request: Request, since: int = 0):
     return {"pct": st["pct"], "done": st["done"], "error": st["error"],
             "brand": st["brand"], "warnings": st["warnings"],
             "lines": st["lines"][max(0, int(since or 0)):], "total": len(st["lines"])}
+
+
+@app.get("/api/brand/preview")
+def brand_preview(request: Request, brand_light: str = "", brand_mid: str = "",
+                  brand_dark: str = "", slide: int = 1):
+    """The partner's own cover slide, as SVG, before anything is committed.
+
+    NO EXTRACTOR IS RIGHT FOR EVERY DECK, and two wrong readings reached the operator before anyone
+    looked at a slide: Microsoft's default blue on the first pass, and a synthesised dark fill within
+    (1,-2,15) of the palette we had just retired on the second. The durable fix is not a cleverer
+    heuristic, it is showing the artifact and letting a human say no.
+
+    The three query parameters let the page preview an EDIT that has not been saved, so the loop is
+    change -> look -> change, rather than save-and-hope. They go through proteus like any other
+    override, which drops anything that is not a colour.
+    """
+    email = _require_ready(request)
+    t = brand.get(email)
+    if not t or t.get("broken"):
+        raise HTTPException(status_code=404, detail="no brand to preview yet")
+    ov = {"brandLight": brand_light, "brandMid": brand_mid, "brandDark": brand_dark}
+    ov = {k: v for k, v in ov.items() if str(v or "").strip()}
+    if ov:
+        import proteus
+        pal = dict(t.get("palette") or {})
+        for k, v in ov.items():
+            h = proteus._hex(v)
+            if h:
+                pal[k] = h
+        # The ink is MEASURED against whatever they typed, here as everywhere else. Echoing back a
+        # preview with white text on a colour that cannot carry it would be a lie in the one place
+        # the partner is relying on us to be literal.
+        pal["onBrandLight"] = proteus.ink_for(pal["brandLight"])
+        pal["onBrandMid"] = proteus.ink_for(pal["brandMid"])
+        pal["onBrandDark"] = proteus.ink_for(pal["brandDark"])
+        t = dict(t, palette=pal)
+    try:
+        svg = brand.preview(email, theme=t, slide=max(1, min(int(slide or 1), 12)))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        _log(evt="brand_error", user=email, error=repr(e)[:200])
+        raise HTTPException(status_code=500, detail="the preview could not be rendered")
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.delete("/api/brand")

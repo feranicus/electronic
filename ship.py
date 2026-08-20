@@ -269,7 +269,10 @@ ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts
                 # either would silently ship the wrong branding — or our colours — to a partner's
                 # customer, with every check still green. Same reasoning as scope_deny.py: prove
                 # the hash is deployed rather than assuming the image picked it up.
-                "scripts/proteus.py", "scripts/brand.js"]
+                # pptx_preview renders the partner's real cover on the White Label page. It is the
+                # ONLY thing standing between a wrong reading and a customer-facing deck, so a
+                # container running a stale copy would show a preview that is not what it builds.
+                "scripts/proteus.py", "scripts/brand.js", "scripts/pptx_preview.py"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 

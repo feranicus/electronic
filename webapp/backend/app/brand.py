@@ -27,11 +27,18 @@ import time
 
 # The engine tree is COPYed into every image at /opt/shodan-skill; proteus lives there so that the
 # bots can use it too. Same path handling as the rest of the engine imports in this app.
-_SKILL = os.environ.get("SHODAN_SKILL", "/opt/shodan-skill")
-for _p in (os.path.join(_SKILL, "scripts"),
-           os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-               os.path.dirname(os.path.abspath(__file__))))),
-               "hermes-skills", "shodan-assessment", "scripts")):
+_SKILL_CANDIDATES = (
+    os.environ.get("SHODAN_SKILL", "/opt/shodan-skill"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))), "hermes-skills", "shodan-assessment"),
+)
+# RESOLVE THE ROOT, don't just extend sys.path from it. The import path used to be built from every
+# candidate while _SKILL stayed pinned to the container path, so proteus imported fine on a checkout
+# and anything reading a FILE under _SKILL (the sample findings, the deck builder) looked for it at
+# /opt/shodan-skill and reported the builder as unavailable. One resolved root, used for both.
+_SKILL = next((c for c in _SKILL_CANDIDATES if os.path.isdir(os.path.join(c, "scripts"))),
+              _SKILL_CANDIDATES[0])
+for _p in (os.path.join(c, "scripts") for c in _SKILL_CANDIDATES):
     if os.path.isdir(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -105,7 +112,70 @@ def precheck(template=None, logo=None):
             raise ValueError("logo rejected: " + why)
 
 
-def save(email, template=None, logo=None, name=None, powered_by=None, use_panel=True, on=None):
+def preview(email, theme=None, slide=1, timeout=90):
+    """Render the partner's REAL cover slide as SVG, so they can look before they commit.
+
+    THE PREVIEW IS THE ARTIFACT. The cheap alternative is a React mock of the cover using the theme
+    colours, and it is the wrong answer for the reason this repo keeps rediscovering: it is a second
+    implementation of the cover, it will drift from the builder, and it would then reassure a partner
+    about a slide that does not exist. So the actual builder writes an actual .pptx with this theme
+    and pptx_preview reads the shapes back out of slide1.xml.
+
+    It earned that on its first run: `Powered by cybergod.ai` was being drawn at y=3.940 and the
+    findings cover's date box at y=3.950, on top of each other, on every branded cover since the
+    feature shipped. Nothing in the palette arithmetic could have found that.
+
+    `theme` is a candidate that has NOT been saved — that is the whole point — so it is written to a
+    scratch directory with a copy of the logo beside it, exactly as BRAND_THEME expects.
+    """
+    import subprocess
+    import tempfile
+    import pptx_preview                                    # same sys.path as proteus, above
+
+    t = theme or get(email)
+    if not t:
+        raise ValueError("nothing to preview yet")
+    problems = proteus.verify(t)
+    if problems:
+        raise ValueError("; ".join(problems))
+
+    sample = os.path.join(_SKILL, "sample", "findings.sample.json")
+    builder = os.path.join(_SKILL, "scripts", "build_findings_deck.js")
+    for p in (sample, builder):
+        if not os.path.isfile(p):
+            raise ValueError("the deck builder is not available in this container (%s)" % p)
+
+    tmp = tempfile.mkdtemp(prefix="brandpv-")
+    try:
+        t = dict(t)
+        lp = logo_path(email)
+        if t.get("logo") and lp:
+            shutil.copyfile(lp, os.path.join(tmp, "logo.png"))
+            t["logo"] = "logo.png"
+        else:
+            t["logo"] = None                               # never point at a file that is not there
+        tp = os.path.join(tmp, "theme.json")
+        with open(tp, "w", encoding="utf-8") as fh:
+            json.dump(t, fh)
+        out = os.path.join(tmp, "cover.pptx")
+        env = dict(os.environ, BRAND_THEME=tp)
+        r = subprocess.run(["node", builder, sample, out], cwd=_SKILL, env=env,
+                           capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0 or not os.path.isfile(out):
+            raise ValueError("the cover could not be built: %s"
+                             % (r.stderr or r.stdout or "").strip()[:200])
+        # TWO SLIDES ARE OFFERED, and the second one is the point. Measured on a real branded deck:
+        # the COVER carries 5 branded colour uses (the accent tick and the rule) while slide 3 has
+        # 21, because the large dark fill only appears on the content layouts. A preview that showed
+        # the cover alone would be a mostly-white page and would not answer the question the partner
+        # is actually asking, which is what their report looks like.
+        return pptx_preview.render(out, max(1, int(slide or 1)))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def save(email, template=None, logo=None, name=None, powered_by=None, use_panel=True, on=None,
+         overrides=None):
     """Extract a theme from the partner's own deck and store it. Returns (theme, problems).
 
     ORDER MATTERS: everything is validated and the theme is fully built BEFORE anything is written.
@@ -142,6 +212,14 @@ def save(email, template=None, logo=None, name=None, powered_by=None, use_panel=
                      old["palette"]["brandMid"],
                      "name": old.get("name"), "logo": "", "mode": old.get("mode", "light"),
                      "decided_by": old.get("decided_by", ""), "votes": []}
+        # WITHOUT THIS, EDITING THE NAME WOULD SILENTLY RE-COLOUR THE BRAND. This branch rebuilds
+        # `facts` from the stored theme, which has no `used`/`surfaces`, so family() would find no
+        # evidence and fall back to the derived ramp — turning a palette read from the partner's own
+        # deck back into three shades of one hue. The stored stops ARE the decision that was already
+        # made, so they are carried as overrides unless the caller is deliberately changing them.
+        overrides = dict(overrides or {})
+        for k in ("brandLight", "brandMid", "brandDark"):
+            overrides.setdefault(k, (old.get("palette") or {}).get(k))
 
     # The logo: either one the partner uploaded explicitly, or the one the panel picked out of the
     # template. An explicit upload WINS — they know which image is their logo and we are guessing.
@@ -162,7 +240,7 @@ def save(email, template=None, logo=None, name=None, powered_by=None, use_panel=
             blob = None                                  # a logo we cannot use is not a failure
 
     theme = proteus.build_theme(facts, judgement, logo_name="logo.png" if blob else None,
-                                powered_by=powered_by, logo_wh=wh)
+                                powered_by=powered_by, logo_wh=wh, overrides=overrides)
     if name and str(name).strip():
         theme["name"] = str(name).strip()[:80]
         theme["wordmark"] = theme["name"][:40]

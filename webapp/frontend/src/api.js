@@ -53,12 +53,18 @@ export const getBrand = () => getJSON("/api/brand");
 // browser must set the boundary itself, which means NEVER setting Content-Type by hand here.
 // It returns the SAME { ok, status, data } shape as postJSON deliberately: a third return contract
 // is a third thing to remember, and api_contract.mjs exists because this file already had two.
-export async function setBrand({ template, logo, name = "", panel = true }) {
+export async function setBrand({ template, logo, name = "", panel = true,
+                                 brandLight = "", brandMid = "", brandDark = "" }) {
   const fd = new FormData();
   if (template) fd.append("template", template);
   if (logo) fd.append("logo", logo);
   fd.append("name", name);
   fd.append("panel", panel ? "1" : "0");
+  // The partner's own corrections. Sent only when they set one, because an empty field means
+  // "leave it to the reading" and not "make it blank".
+  if (brandLight) fd.append("brand_light", brandLight);
+  if (brandMid) fd.append("brand_mid", brandMid);
+  if (brandDark) fd.append("brand_dark", brandDark);
   const r = await fetch("/api/brand", { method: "POST", credentials: "include", body: fd });
   let data = {};
   try { data = await r.json(); } catch { /* empty body ok */ }

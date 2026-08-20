@@ -1242,6 +1242,13 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .wl-chip{width:104px;height:52px;border-radius:10px;border:1px solid var(--line);
   display:grid;place-items:center;font-weight:700;font-size:15px}
 .wl-swl{color:var(--mut)}
+.wl-why{color:var(--mut);font-size:11.5px;max-width:190px;line-height:1.35;margin-top:2px}
+.wl-tune{margin:14px 0 6px}
+/* The preview is a 16:9 slide. Capped by WIDTH so it scales on a phone, and given a hairline plus
+   a white ground because the cover itself is white: without them the slide bleeds into the page and
+   the reader cannot see where their artifact ends. */
+.wl-preview{display:block;width:100%;max-width:720px;height:auto;border:1px solid var(--line);
+  border-radius:10px;background:#fff;margin:8px 0 4px}
 .wl-live{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}
 .wl-logo{max-height:34px;max-width:170px;object-fit:contain}
 .wl-form input[type=file]{padding:7px 9px;font-size:13px}

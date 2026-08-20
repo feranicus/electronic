@@ -473,7 +473,14 @@ def test_a_stock_font_scheme_is_not_presented_as_the_partners_typography():
     the same false claim as reading a brand colour out of a stock palette."""
     f = P.extract(make_generated())          # stock theme, generic faces on the slides
     t = P.build_theme(f, P._heuristic(f))
-    assert t["fonts"] == {"heading": "Georgia", "body": "Calibri"}, (
+    # THIS ASSERTION WAS DELIBERATELY INVERTED, and the reasoning is kept because deleting it would
+    # lose why. It used to require {"heading": "Georgia", "body": "Calibri"} — the exact hardcoded
+    # fallback _fonts_for returned — so it certified as correct the thing the docstring above says
+    # must not happen: a name reported to the partner as read from their template when nothing was
+    # read. Georgia and Calibri also happen to be the BUILDERS' own defaults, so naming them here
+    # gave the value a second home, which is the defect this repo pays for most often.
+    # NULL is the instruction brand.js needs: `f.heading || defaults.FH` keeps the builder's face.
+    assert t["fonts"] == {"heading": None, "body": None}, (
         "a system default was adopted as the partner's typeface")
     assert any("no brand typeface" in w for w in t["warnings"])
     assert P.is_distinctive_face("Calibri Light") is False
@@ -487,3 +494,79 @@ def test_a_real_brand_typeface_is_used_when_the_file_has_one():
     t = P.build_theme(f, P._heuristic(f))
     assert t["fonts"]["heading"] == "Gill Sans MT"
     assert not any("no brand typeface" in w for w in t["warnings"])
+
+
+# ---------------------------------------------------------------- the family, from the file
+# WHY THESE EXIST. The second White Label release read the partner's cyan #22D3EE correctly and then
+# shipped decks whose dominant surface was #0D525D — a colour ramp() synthesised by pushing that hue
+# down to OUR reference luminance, landing within (1,-2,15) of the palette we had just retired. The
+# file contained a real three-colour family (#22D3EE 77 uses, #8B5CF6 62, #4F46E5 41) and a real
+# dark ground (#2B3042, 57), all of it extracted and none of it used.
+
+def _family_fixture():
+    """The measured shape of the operator's own S4biz brief: stock theme, brand in the shapes."""
+    stock = sorted(P._OFFICE_DEFAULT_ACCENTS)[0]
+    return {"colors": {"accent%d" % (i + 1): v for i, v in enumerate(stock)},
+            "used": [{"hex": "22D3EE", "n": 77}, {"hex": "8B5CF6", "n": 62},
+                     {"hex": "4F46E5", "n": 41}],
+            "surfaces": [{"hex": "2B3042", "n": 57}, {"hex": "14161F", "n": 35}],
+            "fonts": {}, "media": [], "company": "", "sha256": "x"}
+
+
+def test_the_second_and_third_stops_come_from_the_file_not_from_arithmetic():
+    stops, why = P.family("22D3EE", _family_fixture())
+    assert stops["light"] == "22D3EE"
+    assert stops["mid"] == "8B5CF6", "the partner's real secondary was discarded for a derived shade"
+    assert "used 62 times" in why["mid"]
+
+
+def test_the_dark_fill_is_the_partners_own_surface():
+    stops, why = P.family("22D3EE", _family_fixture())
+    assert stops["dark"] == "2B3042"
+    assert "dark surface" in why["dark"]
+    # And the specific regression: it must not be the synthesised shade of our own retired palette.
+    d = sum((a - b) ** 2 for a, b in zip(P._rgb(stops["dark"]), P._rgb("0C544E"))) ** 0.5
+    assert d > 24, "the dark fill is still a shade of the cybergod palette"
+
+
+def test_a_file_with_no_evidence_still_gets_a_complete_ramp():
+    stops, why = P.family("22D3EE", {"used": [], "surfaces": []})
+    assert set(stops) == {"light", "mid", "dark"}
+    assert all(P._hex(v) for v in stops.values())
+    assert stops == P.ramp("22D3EE"), "with no evidence the derived ramp is the honest answer"
+    assert "derived" in why["dark"]
+
+
+def test_the_family_is_always_ordered_light_to_dark():
+    # A stop out of order puts dark text on a dark fill across whole decks at once, so a file whose
+    # colours do not form a ramp must fall back rather than be used.
+    bad = {"used": [{"hex": "FFE94D", "n": 90}], "surfaces": [{"hex": "F5F0A0", "n": 90}]}
+    stops, why = P.family("22D3EE", bad)
+    assert P.luminance(stops["light"]) > P.luminance(stops["mid"]) > P.luminance(stops["dark"])
+
+
+def test_a_hand_set_colour_beats_the_file():
+    stops, why = P.family("22D3EE", _family_fixture(), {"brandDark": "#0c1233"})
+    assert stops["dark"] == "0C1233"
+    assert why["dark"] == "set by hand"
+    # ...and junk is ignored rather than reaching a slide.
+    stops2, _ = P.family("22D3EE", _family_fixture(), {"brandDark": "not-a-colour"})
+    assert stops2["dark"] == "2B3042"
+
+
+def test_a_surface_is_dark_and_tinted_but_body_text_is_not():
+    assert P.is_surface("2B3042") is True          # the S4biz card navy
+    assert P.is_surface("0C1233") is True          # the S4biz site ink
+    assert P.is_surface("000000") is False         # black text has no chroma
+    assert P.is_surface("1A1A1A") is False         # neither does near-black
+    assert P.is_surface("4F46E5") is False         # a bright accent is not a ground
+    assert P.is_surface("22D3EE") is False
+
+
+def test_the_builders_keep_their_own_face_when_the_theme_names_none():
+    """NULL is not "no font", it is "you choose" — brand.js does `f.heading || defaults.FH`."""
+    js = open(os.path.join(ROOT, "hermes-skills", "shodan-assessment", "scripts", "brand.js"),
+              encoding="utf-8").read()
+    assert "f.heading || defaults.FH" in js and "f.body || defaults.FB" in js, (
+        "brand.js no longer falls back to the builder's own face, so a null theme font would "
+        "render as undefined")

@@ -49,7 +49,7 @@ def multipart(fields, files):
     return out, "multipart/form-data; boundary=" + BOUNDARY
 
 
-def req(path, method="GET", email=None, body=b"", ctype="application/json"):
+def req(path, method="GET", email=None, body=b"", ctype="application/json", query=b""):
     from app import main
     from app.auth import make_session
     headers = [(b"host", b"testserver"), (b"content-type", ctype.encode()),
@@ -57,7 +57,7 @@ def req(path, method="GET", email=None, body=b"", ctype="application/json"):
     if email:
         headers.append((b"cookie", ("colt_session=" + make_session(email)).encode()))
     scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method,
-             "scheme": "http", "path": path, "raw_path": path.encode(), "query_string": b"",
+             "scheme": "http", "path": path, "raw_path": path.encode(), "query_string": query,
              "root_path": "", "headers": headers,
              "client": ("127.0.0.1", 1), "server": ("testserver", 80)}
     got = {"status": 0, "body": b"", "headers": {}}
@@ -267,3 +267,72 @@ def test_since_returns_only_the_new_lines(brands):
     assert total > 2
     later = req("/api/brand/job/x", email=ME)  # 404 path, just to be explicit it is not reused
     assert later["status"] == 404
+
+
+# ------------------------------------------------------------------ the cover preview
+# WHY THIS IS TESTED THROUGH THE APP AND NOT AS A UNIT. The preview exists because two wrong
+# readings reached the operator before anyone looked at a slide, so what matters is that a partner
+# can SEE their cover from the cabinet — not that a renderer function works in isolation. It is also
+# owner-scoped, and a grep proves a gate is written while only a request proves it is reached.
+
+def test_the_preview_renders_the_partners_real_cover(brands):
+    assert req("/api/brand/preview")["status"] == 401, "anonymous callers get nothing"
+    assert req("/api/brand/preview", email=ME)["status"] == 404, "nothing to preview yet"
+
+    assert finish()["error"] == ""
+    r = req("/api/brand/preview", email=ME)
+    assert r["status"] == 200, r["body"][:200]
+    assert r["headers"].get("content-type", "").startswith("image/svg+xml")
+    svg = r["body"].decode("utf-8")
+    assert svg.startswith("<svg") and "</svg>" in svg
+    # It is the ARTIFACT: the partner's own accent has to appear in the drawn shapes, and ours
+    # must not. A mock-up drawn from the theme JSON would pass a "does it contain the colour" test
+    # while proving nothing about what the builder emits.
+    stops = [req("/api/brand", email=ME)["json"]["brand"]["palette"][k]
+             for k in ("brandLight", "brandMid", "brandDark")]
+    assert any(("#" + h) in svg for h in stops), (
+        "not one of the partner's three stops reached their own cover")
+    assert "#00D7BD" not in svg and "#0C544E" not in svg, "a cybergod stop survived into the cover"
+    assert "Powered by cybergod.ai" in svg
+    # ...and it does not leak into another partner's cabinet.
+    assert req("/api/brand/preview", email=OTHER)["status"] == 404
+
+
+def test_the_preview_shows_an_edit_that_has_not_been_saved(brands):
+    """The loop has to be change -> look -> change. If the preview could only show the SAVED brand,
+    the partner would have to commit a colour to their live artifacts in order to find out it was
+    wrong, which is the situation this whole feature exists to end."""
+    assert finish()["error"] == ""
+    # brand_light, because the COVER is where the light accent is drawn: the dark fill only
+    # appears on the content layouts, which is why the page previews slide 3 as well.
+    r = req("/api/brand/preview", email=ME, query=b"brand_light=66E0FF&slide=1")
+    assert r["status"] == 200, r["body"][:200]
+    svg = r["body"].decode("utf-8")
+    assert "#66E0FF" in svg, "the unsaved edit did not reach the rendered cover"
+    # AND IT IS STILL UNSAVED. A preview that quietly committed would be worse than none.
+    assert req("/api/brand", email=ME)["json"]["brand"]["palette"]["brandLight"] == "EDAFB9"
+
+    # AN EDIT THAT INVERTS THE RAMP IS REFUSED WITH A REASON rather than rendered. `brandLight`
+    # carries dark text and `brandDark` carries light text in every builder, so a near-black light
+    # stop is dark-on-dark across whole decks. Showing it would be showing something we will not
+    # build, which is the one thing a preview must never do.
+    bad = req("/api/brand/preview", email=ME, query=b"brand_light=123456")
+    assert bad["status"] == 400
+    assert "ordered" in bad["json"].get("detail", ""), bad["json"]
+
+    # The content slide is where the dark fill lives, and it must be previewable too.
+    r3 = req("/api/brand/preview", email=ME, query=b"slide=3")
+    assert r3["status"] == 200 and r3["body"].startswith(b"<svg")
+
+
+def test_a_hand_set_colour_survives_the_save(brands):
+    assert finish()["error"] == ""
+    b, ct = multipart({"name": "Acme Security GmbH", "panel": "0", "brand_dark": "#123456"}, [])
+    r = req("/api/brand", "POST", email=ME, body=b, ctype=ct)
+    assert r["status"] == 200, r["json"]
+    j = _drain(r["json"]["job"])
+    assert j["error"] == "", j["error"]
+    assert j["brand"]["palette"]["brandDark"] == "123456"
+    assert j["brand"]["palette_why"]["brandDark"] == "set by hand"
+    # The ink is re-measured against what they typed rather than carried over from the old colour.
+    assert j["brand"]["palette"]["onBrandDark"] == "FFFFFF"
