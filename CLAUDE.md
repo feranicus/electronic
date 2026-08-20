@@ -5589,3 +5589,38 @@ not), calls them "non-production" from a hostname inference presented as an obse
 remediation tells AMINA to put ZTNA in front of infrastructure it does not control. The title says
 "(3 hosts)" while the evidence lists two and the prose says "three ... on the IP 172.97.126.45" —
 three statements of the count, none agreeing.
+
+## THE ADMINISTRATION PAGE COULD NOT ADD ANYONE — the gate refused its own purpose (2026-08-20)
+First real use of the new page, and creating `feranicus@gmail.com` returned:
+```
+feranicus@gmail.com is not on the access list. Add the address or its domain to
+colt_auth.PARTNER_EMAILS / PARTNER_DOMAINS first.
+```
+That refusal was mine, deliberate, and wrong. It meant the page whose entire purpose is to grant
+access could only ever grant it to somebody a committed Python set ALREADY allowed — so adding a
+genuinely new user was: edit code, commit, ship, come back. Operating principle 1 (no manual steps)
+and principle 7 (one command) both, in the one screen built to avoid them. The test file even
+encoded the mistake as doctrine: *"per-user passwords are a SECOND factor of authorisation, not a
+replacement for the first"* — true as a sentence, and it made the feature useless.
+It is also the "two homes for one decision" defect that this file keeps paying for (ENRICH_MODELS
+had four; the language set had six). "Who may log in" was answered in `colt_auth.PARTNER_EMAILS`
+AND in the credential store, and the newer home lost.
+FIX: **`email_allowed()` gains a fourth source — an ENABLED account in `user_store`.** An
+administrator deliberately creating a named account is a STRONGER and better-audited authorisation
+act than the domain rule beside it: the row records who granted it and when, it names one person
+instead of admitting everyone at a domain forever, and it is revoked on the same screen. The
+committed lists are unchanged and still carry the bulk cases.
+FOUR PROPERTIES, each negative-tested:
+  * **disabled != authorised.** `_has_enabled_account()` reads `disabled`; `has_account()`
+    deliberately does NOT (it counts a disabled row so that person cannot fall back to the shared
+    password). The two look interchangeable and are opposites — using the wrong one turns "disable"
+    into "take the password away and leave them authorised".
+  * **fails CLOSED.** An unreadable store grants nothing; the committed lists still apply. The new
+    source can only ever ADD, so a database problem cannot become a bypass in either direction.
+  * **deleting withdraws access** for an address that is not otherwise listed.
+  * **it does not weaken anything.** attacker@gmail.com, a suffix attack on a partner domain and a
+    non-listed address at a partner's domain are all still refused.
+The pre-check in `admin_create_user` is gone, with a test asserting `email_allowed` does not
+reappear in that function — if it returns, the page stops being able to add anyone new.
+RULE: before shipping a screen that grants something, try to grant something with it. The gate that
+protects a feature must not be the thing that makes the feature impossible.

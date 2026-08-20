@@ -172,14 +172,77 @@ def test_an_extra_administrator_can_be_added_without_a_code_change(tmp_path, mon
         _restore_modules()          # same reason as the fixtures: a reload outlives monkeypatch
 
 
-def test_the_allow_list_still_decides_who_may_exist(ca):
-    """Per-user passwords are a SECOND factor of authorisation, not a replacement for the first."""
+def test_creating_an_account_is_itself_the_authorisation(ca):
+    """DELIBERATE REVERSAL, and the old reasoning is kept because deleting it would lose why.
+
+    This test used to assert the opposite — that a credential alone must not make an address
+    reachable, because "per-user passwords are a second factor of authorisation, not a replacement
+    for the first". That sounded right and was wrong in practice: it meant the Administration page
+    could not add anybody who was not ALREADY in a committed Python set, so the operator's first
+    real use of it returned "not on the access list — add it to colt_auth.PARTNER_EMAILS first".
+    A page whose whole purpose is to grant access cannot require a code change and a deploy to
+    grant access. An administrator creating a named account is a stronger and better-audited
+    authorisation act than the domain rule sitting next to it.
+    """
+    import user_store
+    assert ca.email_allowed("stranger@example.com") is False, "not authorised before"
+    user_store.set_password("stranger@example.com", "a-perfectly-good-password", must_change=False)
+    assert ca.email_allowed("stranger@example.com") is True, (
+        "an account an administrator created cannot log in; the Administration page would then be "
+        "unable to do the only thing it exists for")
+    assert ca.password_ok("stranger@example.com", "a-perfectly-good-password")[0] is True
+
+
+def test_disabling_removes_the_authorisation_not_just_the_password(ca):
+    """Otherwise 'disable' would take the password away and leave the identity authorised, and the
+    account could come back on the shared password the moment it was deleted."""
     import user_store
     user_store.set_password("stranger@example.com", "a-perfectly-good-password", must_change=False)
-    assert ca.password_ok("stranger@example.com", "a-perfectly-good-password")[0] is True
+    user_store.set_disabled("stranger@example.com", True)
+    assert ca.email_allowed("stranger@example.com") is False
+    assert ca.password_ok("stranger@example.com", "a-perfectly-good-password")[0] is False
+    assert ca.password_ok("stranger@example.com", "the-old-shared-secret")[0] is False
+
+
+def test_deleting_the_account_withdraws_access_again(ca):
+    import user_store
+    user_store.set_password("stranger@example.com", "a-perfectly-good-password", must_change=False)
+    assert ca.email_allowed("stranger@example.com") is True
+    user_store.delete("stranger@example.com")
     assert ca.email_allowed("stranger@example.com") is False, (
-        "email_allowed is what Auth.begin checks alongside the password; an address off the list "
-        "must not become reachable just because a credential exists for it")
+        "removing the credential left the address authorised")
+
+
+def test_an_address_with_no_account_and_no_list_entry_is_still_refused(ca):
+    """The new source ADDS; it must not weaken the committed rules."""
+    for e in ("attacker@gmail.com", "someone@lancon.de", "r.helle@lancon.de.evil.com", "", "x"):
+        assert ca.email_allowed(e) is False, "%r became reachable" % (e,)
+    assert ca.email_allowed("anyone@s4biz.io") is True, "the trusted domain still applies"
+
+
+def test_an_unreadable_store_cannot_grant_access(ca, monkeypatch):
+    """Fails CLOSED: a database problem must never become an authorisation source of its own."""
+    import user_store
+
+    def boom(_e):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(user_store, "get", boom)
+    assert ca.email_allowed("stranger@example.com") is False
+    assert ca.email_allowed("anyone@s4biz.io") is True, (
+        "a broken store must not take away access that the committed lists grant")
+
+
+def test_the_admin_create_route_does_not_pre_check_the_allow_list():
+    """The pre-check is what produced 'not on the access list' on the operator's first use. It is
+    gone deliberately; if it returns, this page stops being able to add anyone new."""
+    src = _no_comments(_src("webapp/backend/app/main.py"))
+    i = src.find("def admin_create_user(")
+    assert i > 0
+    body = src[i:src.find("\n@app.", i)]
+    assert "email_allowed" not in body, (
+        "admin_create_user checks the allow-list again before creating an account; creating the "
+        "account is what puts the address ON the list")
 
 
 # ---------------------------------------------------------------------------------------------

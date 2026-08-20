@@ -682,13 +682,14 @@ def admin_create_user(req: AdminUserReq, request: Request):
     """
     admin = _require_admin(request)
     email = (req.email or "").strip().lower()
-    if not colt_auth.email_allowed(email):
-        # The allow-list still decides WHO may exist. Creating a credential for an address the gate
-        # would refuse anyway produces an account that can never log in, which looks like a bug.
-        raise HTTPException(
-            status_code=400,
-            detail=("%s is not on the access list. Add the address or its domain to "
-                    "colt_auth.PARTNER_EMAILS / PARTNER_DOMAINS first." % email))
+    # NO ALLOW-LIST PRE-CHECK. Creating the account IS the act of authorisation: colt_auth
+    # .email_allowed() treats an enabled row in the credential store as a source in its own right.
+    # An earlier version refused any address outside the committed sets and told the operator to
+    # edit colt_auth.PARTNER_EMAILS and redeploy first — which made this page unable to do the one
+    # thing it exists for, and put the decision in two places with the newer one losing.
+    # The address itself is still validated (user_store.set_password requires a real one), the
+    # administrator is still authenticated and authorised, and the act is logged below with WHO
+    # granted it. Revocation is disable or delete on this same screen.
     pw = (req.password or "").strip() or user_store.generate_password()
     try:
         rec = user_store.set_password(email, pw, must_change=bool(req.must_change),

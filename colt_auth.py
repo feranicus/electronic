@@ -85,6 +85,25 @@ except Exception:                                                    # pragma: n
     _users = None
 
 
+def _has_enabled_account(email: str) -> bool:
+    """True if an administrator has created an account for this address and not disabled it.
+
+    This is an AUTHORISATION source in its own right — see email_allowed(). Reading `disabled` here
+    rather than calling has_account() is deliberate and the two are not interchangeable:
+      * has_account() counts a disabled row ON PURPOSE, so a disabled user cannot fall back to the
+        shared password;
+      * this must NOT, or disabling somebody would leave them authorised.
+    Fails CLOSED: a store that cannot be read grants nothing, and the committed lists still apply.
+    """
+    if _users is None:
+        return False
+    try:
+        rec = _users.get(email)
+    except Exception:
+        return False
+    return bool(rec) and not rec.get("disabled")
+
+
 def password_ok(email: str, pw: str):
     """(ok, must_change) for factor 1.
 
@@ -128,15 +147,34 @@ def email_allowed(email: str) -> bool:
          * a Colt AE            -> name.familyname@colt.net   (EMAIL_RE)
          * a named partner      -> ALLOWED_EMAILS
          * a trusted domain     -> anyone@ALLOWED_DOMAINS
+         * an ADMINISTERED USER -> an enabled account in user_store (see below)
     Used by BOTH the Telegram bots and the web app so they can never disagree.
-    NOTE: this only decides WHO may start auth — the shared password + a 6-digit OTP
-    delivered to that mailbox are still required."""
+    NOTE: this only decides WHO may start auth — a password + a 6-digit OTP delivered to that
+    mailbox are still required.
+
+    WHY AN ADMINISTERED ACCOUNT IS AN AUTHORISATION SOURCE, not merely a credential.
+    The Administration page exists so the operator can add somebody WITHOUT a code change and a
+    deploy. While this function ignored the credential store, it could not: creating a user for any
+    address outside the committed sets produced "not on the access list — add it to
+    colt_auth.PARTNER_EMAILS first", i.e. edit code, commit, ship, then come back. That is two
+    sources of truth for one decision, and the newer one lost. It was the first thing the operator
+    hit on the first real use of the page.
+    An administrator deliberately creating an account is a STRONGER and far more auditable act of
+    authorisation than the domain rule beside it: the row records who created it and when, it names
+    one person rather than admitting everyone at a domain forever, and it is revoked from the same
+    screen (disable, or delete). The committed lists remain for the bulk cases and are unchanged.
+    A DISABLED account is not allowed — otherwise the disable button would only take the password
+    away and leave the identity authorised.
+    """
     e = (email or "").strip().lower()
     if not _GENERIC_EMAIL_RE.match(e):
         return False
     if EMAIL_RE.match(e) or e in ALLOWED_EMAILS:
         return True
-    return e.split("@", 1)[1] in ALLOWED_DOMAINS
+    if e.split("@", 1)[1] in ALLOWED_DOMAINS:
+        return True
+    # Last, so the committed paths answer without touching the database on every attempt.
+    return _has_enabled_account(e)
 MAX_FAILS   = int(os.environ.get("AUTH_MAX_FAILS", "5"))
 LOCK_SECS   = int(os.environ.get("AUTH_LOCK_SECS", "900"))
 OTP_TTL     = int(os.environ.get("OTP_TTL_SECS", "600"))      # 10 minutes
