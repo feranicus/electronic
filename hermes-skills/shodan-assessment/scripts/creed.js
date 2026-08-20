@@ -45,7 +45,7 @@ function draw(pres, s, o) {
   const y = o.y != null ? o.y : 3.20;
   const w = o.w != null ? o.w : 7.7;
   const col = o.color || "121212";
-  const acc = o.accent || "00B2A9";
+  const acc = o.accent || BRAND.recolor("00D7BD");   // was the RETIRED Colt teal 00B2A9
   const FF = o.fontFace || "Segoe UI";
   // tunable: the compliance cover has a much shallower free band than the other four
   const s1 = o.size1 != null ? o.size1 : 9.5;

@@ -96,7 +96,23 @@ def main():
     stops = {P.REF["light"], P.REF["mid"], P.REF["dark"]}
     theirs = {theme["palette"][k] for k in ("brandLight", "brandMid", "brandDark")}
 
-    DECKS = [("build_findings_deck.js", "sample/findings.sample.json"),
+    # THE FIXTURE MUST CONTAIN THE SHAPES. The leak that reached a partner's deck was in `tagMap`
+    # — a SECOND colour table holding COLT/PSF chips as literals — and this gate passed anyway
+    # because the sample produces no finding carrying those tags. A gate is only as good as the
+    # shapes its fixture contains, so the sample is extended here with one of each.
+    _fj = json.load(open(os.path.join(SKILL, "sample/findings.sample.json"), encoding="utf-8"))
+    _tagged = dict(_fj)
+    _f = list(_tagged.get("findings") or [])
+    if _f:
+        _f[0] = dict(_f[0], rem=[{"tag": "COLT", "title": "Managed service", "body": "x" * 40},
+                                 {"tag": "PSF", "title": "Platform control", "body": "y" * 40},
+                                 {"tag": "VENDOR", "title": "Vendor fix", "body": "z" * 40},
+                                 {"tag": "OSS", "title": "Open source", "body": "w" * 40}])
+        _tagged["findings"] = _f
+    _tag_path = os.path.join(tmp, "findings.tagged.json")
+    json.dump(_tagged, open(_tag_path, "w", encoding="utf-8"))
+
+    DECKS = [("build_findings_deck.js", os.path.relpath(_tag_path, SKILL)),
              ("build_cbiq_deck.js", "sample/cbiq.sample.json"),
              ("build_geopol_deck.js", "sample/geopol.sample.json")]
 

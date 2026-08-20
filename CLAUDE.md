@@ -5832,3 +5832,42 @@ four independent models failed the same way.
 Guarded by test_proteus.py: the stock-theme-plus-painted-shapes shape yields the cyan, frequency
 alone would have picked the grey, a CUSTOM theme still beats the slides, the panel may vote for a
 slide colour, a colourless deck says so, and full-slide renders are refused WITH a reason.
+
+## WHITE LABEL, THE SECOND PASS: a colour table the mapping never saw, and stock fonts (2026-08-20)
+The cyan fix worked and the delivered deck still was not right. Reading the ARTIFACT found two more,
+both the same disease one level down.
+
+**1. OUR TEAL LEAKED ONTO A PARTNER'S DECK: `00D7BD` x11 and `0C544E` x11 survived.**
+`brand.js::palette()` maps BY VALUE, which is what makes it small — but it only ever saw the object
+passed THROUGH it. `build_findings_deck.js` has a SECOND colour table:
+```
+const tagMap = { VENDOR:[...], COLT:["00D7BD","121212"], PSF:["0C544E","FFFFFF"], OSS:[...] };
+```
+Eleven remediation chips, eleven of our teal, on a partner's customer-facing report.
+FIX: `recolor()` walks strings, arrays and nested objects, and `tagMap` goes through it. Mapping by
+value is right; mapping by value in ONE PLACE is not. `creed.js` also carried the RETIRED Colt teal
+`00B2A9` as a dormant default — replaced.
+**AND THE GATE PASSED ANYWAY**, because `findings.sample.json` produces no finding with a COLT or
+PSF tag. A gate is only as good as the shapes its fixture contains — the same lesson the brand gate
+already taught when it missed a LOW/COLT row. The gate now injects one chip of each tag, and a unit
+test asserts NO builder holds a reference stop outside something `BRAND` maps.
+
+**2. THE FONTS WERE MICROSOFT'S, PRESENTED AS THE PARTNER'S.** The White Label page read
+"Fonts: Calibri Light / Calibri" under the heading "Colours read from your template". Those are the
+STOCK Office font scheme, exactly as the accents were. Harvesting the slides does not rescue this
+one: the S4biz brief's shapes use Arial / Arial Black / Consolas, which are the GENERATOR's
+fallbacks, not a brand typeface. So the honest answer differs from the colour case:
+`_fonts_for()` uses a face only when it is DISTINCTIVE (not in a generic/system list, not a `+mn-lt`
+theme reference); otherwise it keeps OUR fonts and says the file carried no brand typography.
+Dressing a system font up as the partner's is the same false claim as reading a brand colour out of
+a stock palette, and "absence of evidence is never a finding" applies to typography too.
+
+TWO FIXTURE DEFECTS OF MINE, both found by the tests failing against CORRECT code:
+  * the STOCK theme fixture swapped only the COLOURS, so it still carried "Gill Sans MT" — the font
+    assertion was measuring a file that genuinely had a brand typeface. A stock deck is stock all
+    the way down.
+  * the "no stop outside the mapping" test stripped `BRAND.recolor({...})` but not
+    `BRAND.recolor("...")`, which is how creed.js passes a single value.
+RULE, restated: when a partner's artifact is wrong, read the ARTIFACT. Both of these were invisible
+in the theme.json and in the White Label page, and obvious in thirty seconds of counting colours and
+typefaces in the delivered .pptx.

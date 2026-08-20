@@ -12,6 +12,7 @@ one slide only).
 """
 import io
 import os
+import re
 import struct
 import sys
 import zipfile
@@ -343,9 +344,14 @@ def test_a_photograph_is_not_a_logo():
 # This is not an edge case: pptxgenjs, python-pptx, Canva, Figma and Google Slides exports all
 # leave theme1.xml alone and paint explicit srgbClr on shapes.
 # ---------------------------------------------------------------------------------------------
-STOCK_THEME = THEME_XML.replace("C8102E", "4472C4").replace("7A8B99", "ED7D31") \
-                       .replace("00843D", "A5A5A5").replace("FFB81C", "FFC000") \
-                       .replace("41B6E6", "5B9BD5").replace("6C1D45", "70AD47")
+# A stock deck is stock ALL THE WAY DOWN: Office's accents AND Office's font scheme. The first
+# version of this fixture swapped only the colours, so it still carried "Gill Sans MT" and the font
+# assertion failed against a file that genuinely had a brand typeface. A fixture that does not model
+# the condition under test is a test of the fixture.
+STOCK_THEME = (THEME_XML.replace("C8102E", "4472C4").replace("7A8B99", "ED7D31")
+               .replace("00843D", "A5A5A5").replace("FFB81C", "FFC000")
+               .replace("41B6E6", "5B9BD5").replace("6C1D45", "70AD47")
+               .replace("Gill Sans MT", "Calibri Light").replace("Verdana", "Calibri"))
 
 
 def painted(colours, extra=""):
@@ -433,3 +439,51 @@ def test_full_slide_renders_are_not_a_logo_and_the_partner_is_told_why():
     assert P._heuristic(f)["logo"] == ""
     t = P.build_theme(f, P._heuristic(f))
     assert any("full-slide render" in w for w in t["warnings"])
+
+
+def test_a_second_colour_table_is_re_coloured_too():
+    """THE LEAK THAT REACHED A PARTNER'S DECK. build_findings_deck.js has a SECOND colour table,
+    `tagMap`, with our teal and dark teal as literals for the MANAGED and PSF chips. palette() only
+    walked one flat object, so 11 of each shipped on a branded deck. brand.js::recolor now handles
+    strings, arrays and nested objects — this asserts the JS still routes that table through it."""
+    js = open(os.path.join(SCRIPTS, "brand.js"), encoding="utf-8").read()
+    assert "function recolor(" in js and "Array.isArray(v)" in js, (
+        "recolor no longer walks nested structures; a colour table would bypass the mapping")
+    fd = open(os.path.join(SCRIPTS, "build_findings_deck.js"), encoding="utf-8").read()
+    fd = "\n".join(l for l in fd.split("\n") if not l.strip().startswith("//"))
+    i = fd.index("const tagMap")
+    assert "BRAND.recolor(" in fd[i:i + 200], (
+        "tagMap is built from literals again; the MANAGED and PSF chips would keep our teal")
+    # and nothing else in the builders still holds a bare stop outside the palette call
+    for name in ("build_findings_deck.js", "build_cbiq_deck.js", "build_geopol_deck.js",
+                 "build_compliance_deck.js", "creed.js"):
+        src = open(os.path.join(SCRIPTS, name), encoding="utf-8").read()
+        src = "\n".join(l for l in src.split("\n") if not l.strip().startswith("//"))
+        body = re.sub(r"const C = BRAND\.palette\(\{.*?\}\);", "", src, flags=re.S)
+        body = re.sub(r"BRAND\.recolor\(\{.*?\}\)", "", body, flags=re.S)
+        body = re.sub(r'BRAND\.recolor\("[0-9A-Fa-f]{6}"\)', "", body)   # creed.js passes a string
+        for stop in P.REF.values():
+            assert stop not in body, (
+                "%s holds %s outside anything BRAND maps; it would survive on a partner deck"
+                % (name, stop))
+
+
+def test_a_stock_font_scheme_is_not_presented_as_the_partners_typography():
+    """"Calibri Light / Calibri" is Microsoft's default. Showing it as "read from your template" is
+    the same false claim as reading a brand colour out of a stock palette."""
+    f = P.extract(make_generated())          # stock theme, generic faces on the slides
+    t = P.build_theme(f, P._heuristic(f))
+    assert t["fonts"] == {"heading": "Georgia", "body": "Calibri"}, (
+        "a system default was adopted as the partner's typeface")
+    assert any("no brand typeface" in w for w in t["warnings"])
+    assert P.is_distinctive_face("Calibri Light") is False
+    assert P.is_distinctive_face("Arial Black") is False
+    assert P.is_distinctive_face("+mn-lt") is False
+    assert P.is_distinctive_face("Unbounded") is True
+
+
+def test_a_real_brand_typeface_is_used_when_the_file_has_one():
+    f = P.extract(make_pptx())               # custom theme: Gill Sans MT / Verdana
+    t = P.build_theme(f, P._heuristic(f))
+    assert t["fonts"]["heading"] == "Gill Sans MT"
+    assert not any("no brand typeface" in w for w in t["warnings"])

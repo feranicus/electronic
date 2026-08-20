@@ -135,6 +135,27 @@ def chroma(h):
     return 0.0 if not mx else (mx - min(r, g, b)) / float(mx)
 
 
+# FONTS HAVE THE SAME PROBLEM AS COLOURS, and a different honest answer.
+# A stock theme carries the stock font scheme, so "Calibri Light / Calibri" was presented to the
+# operator as "read from your template" when it is simply Microsoft's default. And the S4biz brief's
+# SHAPES use Arial / Arial Black / Consolas — the generator's fallbacks, not a brand typeface. So
+# harvesting harder does not help here: that file contains NO brand typography, and the honest
+# result is to keep our own fonts and say so, rather than dress a system font up as the partner's.
+_GENERIC_FACES = {
+    "calibri", "calibri light", "cambria", "arial", "arial black", "helvetica", "helvetica neue",
+    "times new roman", "times", "verdana", "tahoma", "segoe ui", "segoe ui light", "courier new",
+    "consolas", "georgia", "trebuchet ms", "sans-serif", "serif", "monospace", "roboto", "open sans",
+}
+
+
+def is_distinctive_face(name):
+    """A typeface a company chose, as opposed to whatever the tool defaulted to."""
+    n = re.sub(r"\s+", " ", str(name or "")).strip().lower()
+    if not n or n.startswith("+"):          # +mn-lt / +mj-lt are theme references, not faces
+        return False
+    return n not in _GENERIC_FACES
+
+
 def is_brandable(h):
     """Could a company plausibly call this its colour? Chroma AND a mid luminance band.
 
@@ -446,6 +467,17 @@ def extract(path_or_bytes):
     out["used"] = [{"hex": h, "n": n} for h, n in _cnt.most_common() if is_brandable(h)][:12]
     out["used_all"] = sum(_cnt.values())
 
+    _fnt = collections.Counter()
+    for n in names:
+        if re.match(r"ppt/(slides|slideLayouts|slideMasters)/[^/]+\.xml$", n):
+            try:
+                _fnt.update(re.findall(r'typeface="([^"]+)"',
+                                       z.read(n).decode("utf-8", "replace")))
+            except Exception:
+                continue
+    out["used_fonts"] = [{"face": f, "n": k} for f, k in _fnt.most_common()
+                         if is_distinctive_face(f)][:6]
+
     if "ppt/presentation.xml" in names:
         try:
             p = ET.fromstring(z.read("ppt/presentation.xml"))
@@ -688,6 +720,29 @@ def judge(f, models=None, ask=None, on=None):
 
 
 # --------------------------------------------------------------------------- the rails
+def _fonts_for(f, warn):
+    """The partner's typography, or ours — never a system default dressed up as theirs.
+
+    A stock Office theme names Calibri Light / Calibri. Presenting that as "read from your template"
+    is a false claim, and it is the same class of error as reading the brand colour out of a stock
+    palette. So a theme face is used only when it is DISTINCTIVE; otherwise the slides are asked;
+    otherwise we keep our own and say the file carried no brand typography.
+    """
+    th = f.get("fonts") or {}
+    used = [u["face"] for u in (f.get("used_fonts") or [])]
+    heading = th.get("major") if is_distinctive_face(th.get("major")) else None
+    body = th.get("minor") if is_distinctive_face(th.get("minor")) else None
+    if not heading and used:
+        heading = used[0]
+    if not body and used:
+        body = used[-1] if len(used) > 1 else used[0]
+    if not (heading or body):
+        warn.append("this file carries no brand typeface — its fonts are the ones the tool that "
+                    "made it defaults to — so the artifacts keep their own, which are chosen to "
+                    "fit the layouts")
+    return {"heading": heading or "Georgia", "body": body or "Calibri"}
+
+
 def build_theme(f, j, logo_name=None, powered_by=None, logo_wh=None):
     """Facts + judgement -> the theme the builders consume. Every rail is applied HERE."""
     warn = []
@@ -763,10 +818,7 @@ def build_theme(f, j, logo_name=None, powered_by=None, logo_wh=None):
             "ink": ink,
             "paper": paper,
         },
-        "fonts": {
-            "heading": (f.get("fonts", {}) or {}).get("major") or "Georgia",
-            "body": (f.get("fonts", {}) or {}).get("minor") or "Calibri",
-        },
+        "fonts": _fonts_for(f, warn),
         "powered_by": powered_by if powered_by is not None else POWERED_BY,
         "source": {"sha256": f.get("sha256"), "slides": f.get("slides"),
                    "colors": f.get("colors"), "company": f.get("company")},

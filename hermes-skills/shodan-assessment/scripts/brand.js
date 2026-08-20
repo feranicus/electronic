@@ -63,20 +63,41 @@ function theme() {
 
 const active = () => !!theme();
 
-/** The builder's own palette, re-coloured by VALUE. Unrecognised entries pass through untouched. */
-function palette(defaults) {
+/**
+ * Re-colour ANY structure by VALUE: a flat palette, a map of arrays, a nested object.
+ *
+ * WHY IT RECURSES. `palette()` used to walk one flat object, so it only ever saw the colours that
+ * went THROUGH it — and build_findings_deck.js has a SECOND colour table, `tagMap`, holding
+ * `COLT: ["00D7BD", "121212"]` and `PSF: ["0C544E", "FFFFFF"]` as literals. Those bypassed the
+ * mapping entirely, and a partner's deck shipped with 11 of our teal chips and 11 of our dark
+ * ones still on it. Mapping by value is right; mapping by value in only one place is not.
+ * The render gate missed it because its fixture produced no COLT or PSF tag — a gate is only as
+ * good as the shapes its fixture contains.
+ */
+function recolor(x) {
   const t = theme();
-  if (!t) return defaults;
+  if (!t) return x;
   const p = t.palette;
   const map = {
     [REF.light]: NORM(p.brandLight),
     [REF.mid]: NORM(p.brandMid),
     [REF.dark]: NORM(p.brandDark),
   };
-  const out = {};
-  for (const [k, v] of Object.entries(defaults)) out[k] = map[NORM(v)] || v;
-  return out;
+  const walk = (v) => {
+    if (typeof v === "string") return map[NORM(v)] || v;
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") {
+      const o = {};
+      for (const [k, val] of Object.entries(v)) o[k] = walk(val);
+      return o;
+    }
+    return v;
+  };
+  return walk(x);
 }
+
+/** The builder's own palette, re-coloured by VALUE. Unrecognised entries pass through untouched. */
+const palette = (defaults) => recolor(defaults);
 
 /** heading/body follow the partner; mono and display deliberately do not (see the header). */
 function fonts(defaults) {
@@ -166,4 +187,4 @@ const name = () => {
   return (t && String(t.name || "").trim()) || "";
 };
 
-module.exports = { REF, active, palette, fonts, wordmark, logo, mark, poweredBy, name, theme };
+module.exports = { REF, active, palette, recolor, fonts, wordmark, logo, mark, poweredBy, name, theme };

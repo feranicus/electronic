@@ -52,7 +52,9 @@ const num = v => (v == null || v === "" || Number.isNaN(Number(v))) ? 0 : Number
 // service closes this", as against VENDOR (patch it), PSF (professional services) and OSS (free
 // tooling), so "MANAGED" carries the same meaning and names no vendor.
 const tagLabel = { COLT: "MANAGED", VENDOR: "VENDOR", PSF: "PSF", OSS: "OSS" };
-const tagMap = { VENDOR: ["FF7900", "FFFFFF"], COLT: ["00D7BD", "121212"], PSF: ["0C544E", "FFFFFF"], OSS: ["474946", "FFFFFF"] };
+// A SECOND colour table, so it goes through the same value mapping the palette does — see
+// brand.js::recolor. Without this the MANAGED and PSF chips keep our teal on a partner deck.
+const tagMap = BRAND.recolor({ VENDOR: ["FF7900", "FFFFFF"], COLT: ["00D7BD", "121212"], PSF: ["0C544E", "FFFFFF"], OSS: ["474946", "FFFFFF"] });
 // dedup repeated IP:port evidence lines (keeps first occurrence, preserves order)
 const IPPORT = /\b\d{1,3}(?:\.\d{1,3}){3}:\d{1,5}\b/;
 function dedupEvidence(lines) {
