@@ -1,5 +1,5 @@
 # Dedicated Colt assessment Telegram bot — NO LLM. Runs the deterministic engine.
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl nodejs npm python3-pip \
