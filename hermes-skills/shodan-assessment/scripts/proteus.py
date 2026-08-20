@@ -466,9 +466,17 @@ def _heuristic(f):
         or cols.get("accent1") or REF["light"]
     sec = cols.get("accent2") or brand
     lt1 = cols.get("lt1") or "FFFFFF"
+    # A LOGO IS SHAPED LIKE A LOGO. The first version accepted anything referenced anywhere with an
+    # aspect above 0.5, which adopted a 1200x800 PHOTOGRAPH off the title slide as a partner's mark
+    # — caught by a test, and it would have gone on every slide of every report they produce.
+    # On the MASTER is decisive (an image that repeats on every slide is doing a logo's job).
+    # Otherwise it must be wide and small: photographs are large and roughly 3:2 or 4:3.
     logo = ""
     for m in (f.get("media") or []):
-        if m["score"] > 0 and (m["aspect"] or 1) >= 0.5:
+        if not m["score"]:
+            continue
+        area = (m["w"] or 0) * (m["h"] or 0)
+        if m["on_master"] or ((m["aspect"] or 0) >= 1.2 and area < 500000):
             logo = m["name"]
             break
     return {"brand": brand, "secondary": sec, "mode": "light" if luminance(lt1) > 0.5 else "dark",

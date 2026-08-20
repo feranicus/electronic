@@ -19,3 +19,10 @@ pydantic==2.*
 google-auth==2.*
 # GeoIP country lookup for the visitor log (DB-IP Lite .mmdb — MaxMind DB format, no licence key)
 maxminddb==2.*
+# White Label uploads: FastAPI needs this to parse multipart/form-data, and there is no way to
+# accept a file without it. Pinned >=0.0.18 DELIBERATELY, not merely "latest": this package has a
+# history that matters here — CVE-2024-24762 (ReDoS on a crafted Content-Type, fixed 0.0.7) and
+# CVE-2024-53981 (CPU exhaustion from many small parts, fixed 0.0.18). Both are reachable from an
+# unauthenticated-shaped request, and Trivy now fails the build on CRITICAL, so adding a dependency
+# is a considered act rather than a convenience.
+python-multipart>=0.0.18

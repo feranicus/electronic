@@ -321,3 +321,14 @@ def test_verify_catches_a_hand_edited_theme():
 def test_the_powered_by_line_is_present_by_default():
     t = P.build_theme(P.extract(make_pptx()), P._heuristic(P.extract(make_pptx())))
     assert "cybergod" in t["powered_by"].lower()
+
+
+def test_a_photograph_is_not_a_logo():
+    """Found by the API test: the first heuristic accepted any referenced image with an aspect
+    above 0.5, so a 1200x800 photograph on the title slide became the partner's mark — on every
+    slide of every report they produce. On the master is decisive; otherwise a logo is wide (>=1.2)
+    and small (under 0.5 MP)."""
+    f = P.extract(make_pptx(with_logo=False))          # only the 1200x800 decoy remains
+    assert P._heuristic(f)["logo"] == "", "a photograph was adopted as the logo"
+    f2 = P.extract(make_pptx())                        # 240x60 on the master
+    assert P._heuristic(f2)["logo"] == "ppt/media/image1.png"

@@ -18,7 +18,7 @@ import asyncio
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     JSONResponse, StreamingResponse, FileResponse, HTMLResponse, PlainTextResponse,
@@ -26,7 +26,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import store, assistant
+from . import store, assistant, brand
 from .auth import AUTH, make_session, read_session, email_ok, _log
 # IMPORTED AFTER .auth ON PURPOSE: importing .auth is what puts the repo root (local dev) and /opt
 # (container) on sys.path, so these two resolve in both places. Moving this line above it would
@@ -728,6 +728,82 @@ def admin_delete(email: str, request: Request):
     return {"ok": ok}
 
 
+# ---------------- White Label (Proteus) ----------------
+# A partner uploads their own PowerPoint; we read the palette, fonts and logo out of it and every
+# artifact they generate afterwards carries their design. Owner-scoped throughout: a brand belongs
+# to the identity that uploaded it and there is no route that takes an email from the caller.
+@app.get("/api/brand")
+def brand_get(request: Request):
+    email = _require_ready(request)
+    t = brand.get(email)
+    if not t:
+        return {"active": False, "max_logo_kb": proteus_max_logo_kb()}
+    return {"active": True, "brand": _brand_public(t), "max_logo_kb": proteus_max_logo_kb()}
+
+
+def proteus_max_logo_kb():
+    from proteus import MAX_LOGO_BYTES
+    return MAX_LOGO_BYTES // 1024
+
+
+def _brand_public(t):
+    """What the cabinet may see. The panel's per-model votes are included deliberately — the
+    partner should be able to read WHY their colour was chosen and disagree with it — but nothing
+    here is a secret and nothing here is another user's."""
+    return {k: t.get(k) for k in
+            ("name", "wordmark", "palette", "fonts", "logo", "logo_w", "logo_h", "mode",
+             "powered_by", "decided_by", "why", "votes", "warnings", "updated_ts", "has_logo")}
+
+
+@app.post("/api/brand")
+async def brand_set(request: Request,
+                    template: UploadFile = File(None),
+                    logo: UploadFile = File(None),
+                    name: str = Form(""),
+                    panel: str = Form("1")):
+    email = _require_ready(request)
+    # Read with a hard ceiling rather than trusting Content-Length: the cap has to be enforced on
+    # the bytes we actually took, not on a number the client sent.
+    from proteus import MAX_UPLOAD
+    tpl = await template.read(MAX_UPLOAD + 1) if template is not None else None
+    lg = await logo.read(MAX_UPLOAD + 1) if logo is not None else None
+    for blob, what in ((tpl, "template"), (lg, "logo")):
+        if blob is not None and len(blob) > MAX_UPLOAD:
+            raise HTTPException(status_code=413, detail="%s is larger than %d MB"
+                                % (what, MAX_UPLOAD // (1024 * 1024)))
+    try:
+        theme, warnings = brand.save(email, template=tpl or None, logo=lg or None,
+                                     name=name, use_panel=str(panel) != "0")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        _log(evt="brand_error", user=email, error=repr(e)[:200])
+        raise HTTPException(status_code=400, detail="could not read that file: %r" % (e,))
+    _log(evt="brand_set", user=email, name=theme.get("name", ""),
+         decided_by=theme.get("decided_by", ""), warnings=len(warnings))
+    return {"ok": True, "brand": _brand_public(theme), "warnings": warnings}
+
+
+@app.delete("/api/brand")
+def brand_delete(request: Request):
+    email = _require_ready(request)
+    existed = brand.delete(email)
+    _log(evt="brand_delete", user=email, existed=existed)
+    return {"ok": True, "existed": existed}
+
+
+@app.get("/api/brand/logo")
+def brand_logo(request: Request):
+    """The partner's own logo, to preview it. Owner-scoped: the path is derived from the SESSION,
+    never from anything the caller sends, so there is no identifier to tamper with."""
+    email = _require_ready(request)
+    p = brand.logo_path(email)
+    if not p:
+        raise HTTPException(status_code=404, detail="no logo")
+    return FileResponse(p, media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
+
+
 # ---------------- assessment ----------------
 def _job_dir(email: str, job_id: str) -> Path:
     safe_email = re.sub(r"[^a-z0-9._-]", "_", email.lower())
@@ -852,7 +928,11 @@ async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: 
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             # COLT_USER -> the engine stamps every event + the cost ledger with the requester,
             # so Grafana can answer "which AE ran this?" and cost is attributable per person.
-            env={**os.environ, "COLT_USER": email})
+            # BRAND_THEME -> White Label. Set HERE, once, for the whole engine run: every deck and
+            # HTML builder is a subprocess of this one and inherits os.environ, so the five
+            # artifacts cannot end up half-branded. Absent when the user has no brand, and the
+            # builders then render exactly as they always did.
+            env={**os.environ, "COLT_USER": email, **brand.env_for(email)})
     except Exception as e:
         _w(json.dumps({"evt": "error", "message": f"failed to start engine: {e!r}"}))
         store.finish_job(job_id, [], {}, status="error"); _RUNNING.pop(job_id, None); return
