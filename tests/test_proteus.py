@@ -332,3 +332,104 @@ def test_a_photograph_is_not_a_logo():
     assert P._heuristic(f)["logo"] == "", "a photograph was adopted as the logo"
     f2 = P.extract(make_pptx())                        # 240x60 on the master
     assert P._heuristic(f2)["logo"] == "ppt/media/image1.png"
+
+
+# ---------------------------------------------------------------------------------------------
+# THE GENERATED-DECK CASE. A partner uploaded the S4biz capability brief and every artifact came
+# back in Microsoft's default blue. The theme was untouched stock Office; the brand lived in the
+# SHAPES (#22D3EE cyan 77 times). All four models chose the blue and all four were right about the
+# wrong evidence, because the theme slots were the only thing they were shown.
+#
+# This is not an edge case: pptxgenjs, python-pptx, Canva, Figma and Google Slides exports all
+# leave theme1.xml alone and paint explicit srgbClr on shapes.
+# ---------------------------------------------------------------------------------------------
+STOCK_THEME = THEME_XML.replace("C8102E", "4472C4").replace("7A8B99", "ED7D31") \
+                       .replace("00843D", "A5A5A5").replace("FFB81C", "FFC000") \
+                       .replace("41B6E6", "5B9BD5").replace("6C1D45", "70AD47")
+
+
+def painted(colours, extra=""):
+    """A slide whose shapes carry explicit colours, the way a generated deck does."""
+    body = "".join('<a:solidFill><a:srgbClr val="%s"/></a:solidFill>' % c for c in colours)
+    return '<?xml version="1.0"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/'\
+           '2006/main">' + body + extra + '</p:sld>'
+
+
+def make_generated(theme=STOCK_THEME, slide_colours=None):
+    """Stock theme + branded shapes: the exact shape of the S4biz brief."""
+    import io as _io
+    cols = slide_colours if slide_colours is not None else (
+        ["22D3EE"] * 77 + ["8B5CF6"] * 62 + ["4F46E5"] * 41
+        + ["C7CDDA"] * 89          # a pale grey hairline: the MOST used colour in the real file
+        + ["FFFFFF"] * 69 + ["2B3042"] * 57 + ["14161F"] * 35)
+    b = _io.BytesIO()
+    with zipfile.ZipFile(b, "w") as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types/>')
+        z.writestr("ppt/theme/theme1.xml", theme)
+        z.writestr("ppt/slides/slide1.xml", painted(cols))
+        z.writestr("docProps/app.xml",
+                   '<?xml version="1.0"?><Properties xmlns="http://schemas.openxmlformats.org/'
+                   'officeDocument/2006/extended-properties"><Company></Company></Properties>')
+    return b.getvalue()
+
+
+def test_a_generated_deck_keeps_its_brand_in_the_shapes_not_the_theme():
+    """THE REGRESSION. #4472C4 is Microsoft's default; #22D3EE is the company's."""
+    f = P.extract(make_generated())
+    assert P.is_stock_palette(f["colors"]) is True
+    assert f["colors"]["accent1"] == "4472C4"
+    assert P._heuristic(f)["brand"] == "22D3EE", (
+        "the stock Office accent was taken as the brand again; the slides say otherwise")
+    assert P.build_theme(f, P._heuristic(f))["palette"]["brandLight"] == "22D3EE"
+
+
+def test_frequency_alone_would_have_picked_the_hairline_grey():
+    """#C7CDDA is used 89 times, more than the brand's 77. Chroma is what separates them."""
+    f = P.extract(make_generated())
+    top = [u["hex"] for u in f["used"]]
+    assert "C7CDDA" not in top, "a grey reached the brand candidates"
+    assert "FFFFFF" not in top and "14161F" not in top, "white/near-black reached the candidates"
+    assert top[0] == "22D3EE"
+    assert P.chroma("C7CDDA") < P.BRAND_MIN_CHROMA <= P.chroma("22D3EE")
+
+
+def test_a_custom_theme_still_wins_over_the_slides():
+    """The rule is not 'always trust the slides'. Somebody who set their accents on purpose gets
+    them; only a STOCK theme is treated as saying nothing."""
+    f = P.extract(make_generated(theme=THEME_XML))       # custom accents, plus painted shapes
+    assert P.is_stock_palette(f["colors"]) is False
+    assert P._heuristic(f)["brand"] == "C8102E", "a custom theme accent was ignored"
+
+
+def test_the_panel_is_shown_the_slide_colours_and_may_choose_them():
+    """Showing the models the evidence is useless if their answer is then discarded as 'not one of
+    the file's colours'. Both halves are needed."""
+    f = P.extract(make_generated())
+    facts = P._facts_for_panel(f)
+    assert "22D3EE" in facts and "used 77 time" in facts
+    assert "STOCK Microsoft Office palette" in facts
+    j = P.judge(f, ask=lambda m, p: _vote("22D3EE", logo=""))
+    assert j["brand"] == "22D3EE", "a vote for a slide colour was thrown away"
+
+
+def test_a_deck_with_no_colour_anywhere_says_so_rather_than_inventing_one():
+    f = P.extract(make_generated(slide_colours=["FFFFFF"] * 5))
+    t = P.build_theme(f, P._heuristic(f))
+    assert any("no brand colour to find" in w for w in t["warnings"])
+
+
+def test_full_slide_renders_are_not_a_logo_and_the_partner_is_told_why():
+    """Every image in the real brief was a 1920x1080 page render. Refusing them is right; saying
+    nothing about it reads as the feature being broken."""
+    import io as _io
+    b = _io.BytesIO()
+    with zipfile.ZipFile(b, "w") as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types/>')
+        z.writestr("ppt/theme/theme1.xml", STOCK_THEME)
+        z.writestr("ppt/slides/slide1.xml", painted(["22D3EE"] * 10))
+        z.writestr("ppt/media/Slide-1-image-1.png", png(1920, 1080))
+        z.writestr("ppt/slides/_rels/slide1.xml.rels", RELS % (REL % (1, "../media/Slide-1-image-1.png")))
+    f = P.extract(b.getvalue())
+    assert P._heuristic(f)["logo"] == ""
+    t = P.build_theme(f, P._heuristic(f))
+    assert any("full-slide render" in w for w in t["warnings"])

@@ -5783,3 +5783,52 @@ python-multipart — i.e. the operator's box reproduced — then app import fail
 prints nothing.
 RULE, now enforced rather than written down: when a change adds a runtime dependency, the machine
 that runs the tests has to get it automatically. Ask "which interpreter?" before every probe.
+
+## THE BRAND IS NOT IN THE THEME — a generated deck keeps it in the SHAPES (2026-08-20, S4biz)
+The operator uploaded the S4biz capability brief and every artifact came back in **#4472C4 —
+Microsoft's default Office blue** — for a company whose brand is cyan. All four panel models chose
+that blue, and **all four were right about the wrong evidence**, because the theme slots were the
+only thing I showed them. This is an evidence-gathering bug of mine, not a model failure.
+
+MEASURED ON THE REAL FILE:
+```
+ppt/theme/theme1.xml  accent1..6 = 4472C4 ED7D31 A5A5A5 FFC000 5B9BD5 70AD47   <- stock Office 2013
+ppt/slides/*.xml      #C7CDDA x89  #22D3EE x77  #FFFFFF x69  #8B5CF6 x62  #4F46E5 x41  #2B3042 x57
+```
+**THE ASSUMPTION THAT WAS WRONG:** "a partner's brand lives in `theme1.xml`". True for a deck
+authored FROM a corporate PowerPoint template. FALSE for a deck produced by a GENERATOR —
+pptxgenjs, python-pptx, a Canva / Figma / Google Slides export — which leaves the stock theme
+untouched and paints every shape with an explicit `<a:srgbClr>`. That is not an edge case; it is
+what every design-led company's deck looks like, and it is what OUR OWN decks look like.
+CLAUDE.md already recorded doing this by hand ("the S4BIZ COLOURS WERE COUNTED, NOT SAMPLED...
+tallied every srgbClr across every slide: #22D3EE cyan (77)") — I did the right thing once
+manually and then did not build it into the tool.
+
+FIX, in three parts, and the middle one is the subtle one:
+1. **`extract()` harvests the colours the slides, layouts and masters actually paint with**, with
+   counts. Both sources are now on the table.
+2. **CHROMA FILTERS BEFORE FREQUENCY ORDERS.** The most-used colour in that file is #C7CDDA at 89
+   uses — a pale grey-blue hairline. Ranking by frequency alone would have made THAT the brand,
+   which is a worse answer than the blue. `is_brandable()` requires HSV saturation >= 0.35 and
+   luminance in 0.05..0.85, which drops the greys, the white and the near-black page backgrounds
+   (#14161F, #1B1F2C, #2B3042 are saturated enough to pass chroma on their own).
+3. **THE SOURCE IS CHOSEN, NOT AVERAGED.** A CUSTOM theme is authoritative — somebody set those
+   accents on purpose. A STOCK theme states nothing, so the shapes are authoritative instead.
+   `brand_candidates()` returns one list with the evidence for each entry ("theme accent1" /
+   "used 77 times in the slides") and the heuristic takes the first.
+AND THE PANEL IS SHOWN ALL OF IT: `_facts_for_panel` now prints the slide table with counts and
+says outright when the theme is stock; `judge()`'s `allowed` set was widened to include the slide
+colours, because showing the models the evidence is useless if the answer they give from it is
+then discarded as "not one of the file's colours". Both halves were needed.
+RESULT on the real brief, from the DETERMINISTIC path alone: **#22D3EE**, no panel required.
+
+ALSO FIXED, same file: every image in that deck is a 1920x1080 full-slide render (it was exported
+picture-per-slide), so the logo rule correctly refused all of them — and said nothing, which reads
+as the feature being broken. It now explains that there is no mark in the file and to upload one.
+
+RULE: when a model gets something wrong, check what it was SHOWN before concluding it was wrong.
+Four vendors agreeing on a bad answer is much more likely to mean the evidence was bad than that
+four independent models failed the same way.
+Guarded by test_proteus.py: the stock-theme-plus-painted-shapes shape yields the cyan, frequency
+alone would have picked the grey, a CUSTOM theme still beats the slides, the panel may vote for a
+slide colour, a colourless deck says so, and full-slide renders are refused WITH a reason.

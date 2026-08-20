@@ -110,6 +110,42 @@ def _ms(t0):
     return int((time.time() - t0) * 1000)
 
 
+# --------------------------------------------------------------------------- what counts as a brand
+# THE ASSUMPTION THAT WAS WRONG, and it cost a partner a deck in Microsoft's default blue.
+# The first version read ONLY ppt/theme/theme1.xml, because that is where a brand lives in a deck
+# authored FROM a corporate PowerPoint template. It is NOT where it lives in a deck produced by a
+# GENERATOR — pptxgenjs, python-pptx, a Canva or Figma or Google Slides export — which leaves the
+# stock Office theme untouched and paints every shape with an explicit <a:srgbClr>. Measured on the
+# operator's own S4biz brief: theme accents were the Office 2013 defaults to the letter, while the
+# slides carried #22D3EE cyan 77 times, #8B5CF6 violet 62 and #4F46E5 indigo 41.
+# That shape is not an edge case. It is what every design-led company's deck looks like.
+BRAND_MIN_CHROMA = float(os.environ.get("BRAND_MIN_CHROMA", "0.35"))
+BRAND_LUM_LO, BRAND_LUM_HI = 0.05, 0.85
+
+
+def chroma(h):
+    """HSV saturation. The discriminator between a BRAND colour and the furniture.
+
+    Measured on the same file: the single most-used colour was #C7CDDA (89 times) — a pale grey-blue
+    used for body text and hairlines. Ranking by frequency alone would have made THAT the brand.
+    Greys have near-zero chroma; #22D3EE has 0.86.
+    """
+    r, g, b = _rgb(h)
+    mx = max(r, g, b)
+    return 0.0 if not mx else (mx - min(r, g, b)) / float(mx)
+
+
+def is_brandable(h):
+    """Could a company plausibly call this its colour? Chroma AND a mid luminance band.
+
+    The luminance floor is what rejects the near-black page backgrounds (#14161F, #1B1F2C, #2B3042)
+    which are numerous and saturated enough to pass a chroma test on their own.
+    """
+    if not _hex(h):
+        return False
+    return chroma(h) >= BRAND_MIN_CHROMA and BRAND_LUM_LO <= luminance(h) <= BRAND_LUM_HI
+
+
 # --------------------------------------------------------------------------- colour arithmetic
 def _hex(s):
     s = (s or "").strip().lstrip("#").upper()
@@ -395,6 +431,21 @@ def extract(path_or_bytes):
         })
     out["media"].sort(key=lambda m: (-m["score"], m["name"]))
 
+    # WHERE THE BRAND ACTUALLY IS on a generated deck: the shapes, not the theme. Counted across
+    # slides, layouts and masters, filtered to colours a company could plausibly call its own, and
+    # ranked by how often the deck uses them. This is the evidence the panel was never shown.
+    import collections
+    _cnt = collections.Counter()
+    for n in names:
+        if re.match(r"ppt/(slides|slideLayouts|slideMasters)/[^/]+\.xml$", n):
+            try:
+                blob = z.read(n).decode("utf-8", "replace")
+            except Exception:
+                continue
+            _cnt.update(x.upper() for x in re.findall(r'srgbClr val="([0-9A-Fa-f]{6})"', blob))
+    out["used"] = [{"hex": h, "n": n} for h, n in _cnt.most_common() if is_brandable(h)][:12]
+    out["used_all"] = sum(_cnt.values())
+
     if "ppt/presentation.xml" in names:
         try:
             p = ET.fromstring(z.read("ppt/presentation.xml"))
@@ -432,7 +483,8 @@ Answer with STRICT JSON, no prose, no markdown fence:
 {
   "brand": "RRGGBB",        // the ONE colour a reader would call this company's colour. Must be
                             // one of the values listed above, copied exactly. Prefer a saturated
-                            // accent over near-black, near-white or a grey.
+                            // accent over near-black, near-white or a grey. If the theme is the
+                            // stock Office palette, it is NOT evidence — use the slide colours.
   "secondary": "RRGGBB",    // a supporting colour from the list, or the same as brand
   "mode": "light"|"dark",   // is the deck's page background light or dark
   "logo": "ppt/media/...",  // the entry that is the company LOGO, or "" if none of them is.
@@ -444,9 +496,25 @@ Answer with STRICT JSON, no prose, no markdown fence:
 
 
 def _facts_for_panel(f):
-    lines = ["theme colours:"]
+    # THE PANEL CAN ONLY ANSWER FROM WHAT IT IS SHOWN. The first version listed the theme slots and
+    # nothing else, so on a generated deck all four models correctly chose the most prominent colour
+    # they could see — Microsoft's default blue — and were right about the wrong evidence. Both
+    # sources are on the table now, labelled, with the usage counts that decide between them.
+    lines = []
+    if is_stock_palette(f.get("colors")):
+        lines.append("NOTE: the theme below is the STOCK Microsoft Office palette, untouched. It "
+                     "says nothing about this company. Prefer the colours the SLIDES use.")
+    lines.append("theme colours:")
     for k, v in (f.get("colors") or {}).items():
         lines.append("  %-9s #%s   (luminance %.2f)" % (k, v, luminance(v)))
+    used = f.get("used") or []
+    if used:
+        lines.append("colours the SLIDES actually paint with (brandable ones only, most used first):")
+        for u in used[:10]:
+            lines.append("  #%s  used %d time(s)   (luminance %.2f, chroma %.2f)"
+                         % (u["hex"], u["n"], luminance(u["hex"]), chroma(u["hex"])))
+    else:
+        lines.append("the slides use no explicit brandable colour — they inherit from the theme.")
     lines.append("fonts: major=%s minor=%s" % (f.get("fonts", {}).get("major", "?"),
                                                f.get("fonts", {}).get("minor", "?")))
     lines.append("company from file metadata: %r   title: %r" % (f.get("company"), f.get("title")))
@@ -458,18 +526,47 @@ def _facts_for_panel(f):
     return "\n".join(lines)
 
 
+def brand_candidates(f):
+    """The colours this file offers, each with the EVIDENCE for it. One list, two sources.
+
+    THE SOURCE IS CHOSEN, NOT AVERAGED, and the rule is explicit:
+      * a CUSTOM theme is authoritative — somebody set those accents on purpose;
+      * a STOCK Office theme states nothing, so the shapes are authoritative instead.
+    Ranking by usage across both sources would have let #C7CDDA (89 uses, a grey hairline) outvote
+    #22D3EE (77 uses, the actual brand), which is why chroma filters the list before frequency
+    orders it.
+    """
+    cols = f.get("colors") or {}
+    used = [u for u in (f.get("used") or []) if is_brandable(u.get("hex"))]
+    stock = is_stock_palette(cols)
+    out = []
+    if not stock:
+        for slot in ("accent1", "accent2", "accent3", "dk2", "hlink"):
+            v = cols.get(slot)
+            if v and is_brandable(v):
+                out.append({"hex": v, "why": "theme %s" % slot, "src": "theme"})
+    for u in used:
+        out.append({"hex": u["hex"], "why": "used %d times in the slides" % u["n"], "src": "slides"})
+    if not out:                      # nothing plausible anywhere: fall back to whatever exists
+        for slot in ("accent1", "accent2", "dk2"):
+            if cols.get(slot):
+                out.append({"hex": cols[slot], "why": "theme %s (no better evidence)" % slot,
+                            "src": "theme"})
+                break
+    return out
+
+
 def _heuristic(f):
     """What we do when the panel cannot be reached. Never a failed upload.
 
-    accent1 is the brand colour by Office convention, and the highest placement score is the logo.
-    That is right most of the time, which is exactly why the panel is an improvement and not a
-    dependency.
+    The first candidate is the answer: a custom theme's accent1, or the most-used brandable colour
+    on the slides. That is right most of the time, which is exactly why the panel is an improvement
+    and not a dependency.
     """
     cols = f.get("colors") or {}
-    cand = [cols.get(k) for k in ("accent1", "accent2", "accent3", "dk2", "hlink")]
-    brand = next((c for c in cand if c and 0.03 < luminance(c) < 0.85), None) \
-        or cols.get("accent1") or REF["light"]
-    sec = cols.get("accent2") or brand
+    cand = brand_candidates(f)
+    brand = (cand[0]["hex"] if cand else None) or cols.get("accent1") or REF["light"]
+    sec = (cand[1]["hex"] if len(cand) > 1 else None) or cols.get("accent2") or brand
     lt1 = cols.get("lt1") or "FFFFFF"
     # A LOGO IS SHAPED LIKE A LOGO. The first version accepted anything referenced anywhere with an
     # aspect above 0.5, which adopted a 1200x800 PHOTOGRAPH off the title slide as a partner's mark
@@ -509,7 +606,11 @@ def judge(f, models=None, ask=None, on=None):
     that never arrives instead of as a spinner that never stops.
     """
     facts = _facts_for_panel(f)
+    # A vote must name a colour that is IN the file — from either source. Widening this to the
+    # slide palette is the other half of the fix: showing the models the evidence is useless if the
+    # answer they give from it is then discarded as "not one of the file's colours".
     allowed = {v for v in (f.get("colors") or {}).values()}
+    allowed |= {u["hex"] for u in (f.get("used") or [])}
     media = {m["name"] for m in (f.get("media") or [])}
     panel = list(models or PANEL)
     say = on or (lambda pct, msg: None)
@@ -611,9 +712,25 @@ def build_theme(f, j, logo_name=None, powered_by=None, logo_wh=None):
     # their reports in Microsoft's default blue while implying we read THEIR design would be a
     # confident wrong answer, which this repo treats as worse than an honest "we could not tell".
     if is_stock_palette(f.get("colors")):
-        warn.append("this template still uses the default Office colour scheme, so it carries no "
-                    "brand colour of its own — set the colour by hand, or upload a deck that uses "
-                    "your real template")
+        if (f.get("used") or []):
+            warn.append("this file keeps the stock Office theme, so the colours were read from what "
+                        "the SLIDES actually paint with instead — that is where a deck built by a "
+                        "design tool carries its brand")
+        else:
+            warn.append("this template still uses the default Office colour scheme and its slides "
+                        "add no colour of their own, so there is no brand colour to find — set it "
+                        "by hand, or upload a deck that uses your real template")
+
+    # THE LOGO, WHEN THERE ISN'T ONE. Measured on the S4biz brief: every image in it is a
+    # 1920x1080 full-slide render, because the deck was exported picture-per-slide. The shape rule
+    # correctly refuses all of them — a screenshot on every page of a customer's report would be
+    # far worse than no mark — but silence there reads as "the logo feature is broken". Say which
+    # it is.
+    if not logo_name and (f.get("media") or []):
+        _big = [m for m in f["media"] if (m.get("w") or 0) * (m.get("h") or 0) >= 500000]
+        if len(_big) == len(f["media"]):
+            warn.append("no logo was taken from this file: every image in it is a full-slide "
+                        "render, not a mark. Upload your logo as a PNG and it will be used instead")
 
     # The name is a SUGGESTION until a human confirms it — it goes on a customer's title slide.
     # NOT dc:title. That is the DECK's title, and using it produced the wordmark
