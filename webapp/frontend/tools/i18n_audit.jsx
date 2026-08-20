@@ -35,9 +35,15 @@ import Compliance from "../src/pages/Compliance.jsx";
 import Assistant from "../src/pages/Assistant.jsx";
 import History from "../src/pages/History.jsx";
 import Sidebar from "../src/components/Sidebar.jsx";
+// ADDED WITH THE ADMINISTRATION FEATURE. A page absent from this list is a page nobody has ever
+// PROVEN renders: `vite build` accepts an undefined identifier, which is how /app once went white
+// on `useLegalLang is not defined`. Both of these call hooks and api helpers, so they are exactly
+// the shape that fails at execution rather than at compile time.
+import Admin from "../src/pages/Admin.jsx";
+import ChangePassword from "../src/pages/ChangePassword.jsx";
 
 const PAGES = { Landing, Demo, Partners, Contact, Experience, Privacy, Impressum, Login,
-                NewAssessment, Compliance, Assistant, History, Sidebar };
+                NewAssessment, Compliance, Assistant, History, Sidebar, Admin, ChangePassword };
 const CODES = LANGS.map((l) => l.code);
 let fail = 0;
 

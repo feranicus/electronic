@@ -98,7 +98,13 @@ def test_every_public_page_keeps_the_phone_tab_bar():
     overlap. That is a real distinction, so the test states it rather than skipping /app quietly.
     """
     pages = os.path.join(FE, "src", "pages")
-    CABINET = {"Cabinet.jsx", "NewAssessment.jsx", "Compliance.jsx", "Assistant.jsx", "History.jsx"}
+    # DERIVED, NOT LISTED. A hardcoded set goes stale the moment a cabinet page is added - which is
+    # exactly what happened when Admin.jsx and ChangePassword.jsx arrived and this test failed for
+    # them despite them being cabinet pages with the sidebar's own bottom bar. Cabinet.jsx's imports
+    # ARE the definition of "a cabinet page", so read them.
+    cab_src = _read(os.path.join(pages, "Cabinet.jsx"))
+    CABINET = {"Cabinet.jsx"} | {m + ".jsx" for m in
+                                 re.findall(r'import\s+\w+\s+from\s+"\./(\w+)\.jsx"', cab_src)}
     missing = []
     for f in sorted(os.listdir(pages)):
         if not f.endswith(".jsx") or f in CABINET:

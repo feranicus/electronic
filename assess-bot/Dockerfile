@@ -11,6 +11,7 @@ RUN pip3 install --no-cache-dir --break-system-packages google-auth requests
 # engine (recon + 3 deck generators) + the bot
 COPY hermes-skills/shodan-assessment /opt/shodan-skill
 COPY colt_auth.py /opt/colt_auth.py
+COPY user_store.py /opt/user_store.py
 COPY assess-bot/bot.py /opt/bot.py
 RUN mkdir -p /root/work
 CMD ["python3", "/opt/bot.py"]

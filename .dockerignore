@@ -6,6 +6,7 @@
 !assess-bot
 !cassandra-bot
 !colt_auth.py
+!user_store.py
 !webapp
 # ...but NOT the operator's node_modules. `COPY webapp/frontend/ ./` runs AFTER `npm install` in the
 # fe stage, so a host node_modules would be copied straight OVER the fresh install — and npm

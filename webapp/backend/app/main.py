@@ -28,6 +28,11 @@ from pydantic import BaseModel
 
 from . import store, assistant
 from .auth import AUTH, make_session, read_session, email_ok, _log
+# IMPORTED AFTER .auth ON PURPOSE: importing .auth is what puts the repo root (local dev) and /opt
+# (container) on sys.path, so these two resolve in both places. Moving this line above it would
+# work on the developer's machine and fail inside the image.
+import colt_auth      # noqa: E402  — the shared gate: allow-list, admin list, password_ok
+import user_store     # noqa: E402  — per-user credentials, shared with the Telegram bots
 from .settings import (
     ENGINE, COMPLIANCE_ENGINE, JOBS_DIR, FRONTEND_DIST, SESSION_COOKIE, SESSION_MAX_AGE,
     SESSION_COOKIE_SECURE, CORS_ORIGINS,
@@ -188,6 +193,18 @@ class AssistReq(BaseModel):
     message: str
 
 
+class AdminUserReq(BaseModel):
+    email: str
+    password: str = ""        # blank -> the server generates one and returns it ONCE
+    must_change: bool = True
+    note: str = ""
+
+
+class ChangePwReq(BaseModel):
+    current_password: str = ""
+    new_password: str
+
+
 # ---------------- session helpers ----------------
 def _current_email(request: Request):
     tok = request.cookies.get(SESSION_COOKIE)
@@ -199,6 +216,52 @@ def _require_email(request: Request) -> str:
     if not email:
         raise HTTPException(status_code=401, detail="not authenticated")
     return email
+
+
+def _must_change(email: str) -> bool:
+    """Does this identity still owe us a password change?
+
+    Read from the STORE on every request rather than trusted from the session cookie. A flag baked
+    into the cookie at login would survive the change itself, and worse, would let an old cookie
+    keep asserting a stale answer. The store is the only thing that knows.
+    """
+    try:
+        import user_store
+        rec = user_store.get(email)
+        return bool(rec and rec.get("must_change"))
+    except Exception:
+        return False
+
+
+def _require_ready(request: Request) -> str:
+    """Authenticated AND not owing a password change.
+
+    THIS IS THE ENFORCEMENT. Routing the browser to a change-password screen is presentation: the
+    endpoints it would otherwise call are still reachable with curl and the session cookie. Every
+    functional endpoint depends on THIS, so a user who has not set their own password cannot run an
+    assessment, read history or download a deck no matter what client they use.
+    """
+    email = _require_email(request)
+    if _must_change(email):
+        raise HTTPException(status_code=403, detail="password_change_required")
+    return email
+
+
+def _require_admin(request: Request) -> str:
+    """Authenticated, ready, AND on the committed administrator list.
+
+    Checked here on the server for every administrative route. Hiding the menu item is not
+    authorisation — anyone can issue the request the menu would have issued.
+    """
+    email = _require_ready(request)
+    try:
+        import colt_auth
+        if colt_auth.is_admin(email):
+            return email
+    except Exception:
+        pass
+    _log(evt="admin_denied", user=email)
+    raise HTTPException(status_code=403, detail="administrator access required")
 
 
 def _set_session_cookie(resp: Response, email: str) -> None:
@@ -529,7 +592,139 @@ def me(request: Request):
     email = _current_email(request)
     if not email:
         raise HTTPException(status_code=401, detail="not authenticated")
-    return {"email": email}
+    is_admin = False
+    try:
+        import colt_auth
+        is_admin = colt_auth.is_admin(email)
+    except Exception:
+        pass
+    # `must_change` is advisory to the UI only. The refusal itself lives in _require_ready, so a
+    # client that ignores this field gains nothing.
+    return {"email": email, "is_admin": is_admin, "must_change": _must_change(email)}
+
+
+# ---------------- password self-service ----------------
+@app.post("/api/auth/change-password")
+def change_password(req: ChangePwReq, request: Request):
+    """Set your own password. Deliberately reachable while a change is OWED (it depends on
+    _require_email, not _require_ready) or the forced-change state would be a locked door with no
+    handle."""
+    email = _require_email(request)
+    new = (req.new_password or "").strip()
+    if len(new) < user_store.MIN_PASSWORD_LEN:
+        raise HTTPException(status_code=400,
+                            detail="password must be at least %d characters" % user_store.MIN_PASSWORD_LEN)
+    owed = _must_change(email)
+    # PROVE IT IS STILL YOU. A session cookie is a bearer token: if it were enough on its own, a
+    # borrowed laptop would be a password change. The one exception is the very first login on an
+    # administrator-issued password, where the user has just proved the old password AND the OTP
+    # minutes ago and is being forced to replace it.
+    if not owed:
+        ok, _ = colt_auth.password_ok(email, req.current_password or "")
+        if not ok:
+            _log(evt="password_change", user=email, result="bad_current")
+            raise HTTPException(status_code=403, detail="current password is incorrect")
+    try:
+        user_store.set_password(email, new, must_change=False, by=email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _log(evt="password_change", user=email, result="ok", was_forced=owed)
+    return {"ok": True}
+
+
+# ---------------- administration ----------------
+# Every route below depends on _require_admin. The committed list is colt_auth.ADMIN_EMAILS.
+@app.get("/api/admin/users")
+def admin_users(request: Request):
+    """Everyone who can reach cybergod.ai, from all three sources that decide it.
+
+    A list built only from the credential table would omit every user who signed in with the shared
+    password, which is most of them today — and "who is registered" would then be a comforting
+    subset rather than an answer.
+    """
+    _require_admin(request)
+    accounts = {u["email"]: dict(u, source="assigned") for u in user_store.list_all()}
+    # Everyone who has ever completed email + password + OTP. This is the de-facto register.
+    for uid, rec in (getattr(AUTH, "authed", {}) or {}).items():
+        e = (rec or {}).get("email") or uid
+        e = str(e).strip().lower()
+        if not e:
+            continue
+        row = accounts.setdefault(e, {"email": e, "must_change": False, "disabled": False,
+                                      "created_ts": None, "updated_ts": None, "created_by": "",
+                                      "note": "", "source": "self-served"})
+        row["last_login_ts"] = (rec or {}).get("ts")
+    out = []
+    for e, row in accounts.items():
+        row.setdefault("last_login_ts", None)
+        row["has_password"] = row.get("source") == "assigned"
+        row["is_admin"] = colt_auth.is_admin(e)
+        row["allowed"] = colt_auth.email_allowed(e)
+        row["quota"] = colt_auth.quota_for(e)
+        try:
+            row["assessments"] = store.count_jobs(e)
+        except Exception:
+            row["assessments"] = None
+        out.append(row)
+    out.sort(key=lambda r: (not r["is_admin"], r["email"]))
+    return {"users": out, "store_ok": user_store.available(),
+            "min_password_len": user_store.MIN_PASSWORD_LEN,
+            "shared_password_active": bool(colt_auth.COLT_PW)}
+
+
+@app.post("/api/admin/users")
+def admin_create_user(req: AdminUserReq, request: Request):
+    """Create an account or reset a password. The plaintext is returned HERE and nowhere else.
+
+    It is not emailed: mailing a password puts it in two mailboxes and a transit log for as long as
+    those exist, and the OTP already proves control of the mailbox, so mailing the password there
+    would collapse two factors into one channel.
+    """
+    admin = _require_admin(request)
+    email = (req.email or "").strip().lower()
+    if not colt_auth.email_allowed(email):
+        # The allow-list still decides WHO may exist. Creating a credential for an address the gate
+        # would refuse anyway produces an account that can never log in, which looks like a bug.
+        raise HTTPException(
+            status_code=400,
+            detail=("%s is not on the access list. Add the address or its domain to "
+                    "colt_auth.PARTNER_EMAILS / PARTNER_DOMAINS first." % email))
+    pw = (req.password or "").strip() or user_store.generate_password()
+    try:
+        rec = user_store.set_password(email, pw, must_change=bool(req.must_change),
+                                      by=admin, note=(req.note or "").strip() or None)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _log(evt="admin_user_set", user=admin, target=email, must_change=bool(req.must_change))
+    return {"ok": True, "user": rec, "password": pw}      # shown once, never stored
+
+
+@app.post("/api/admin/users/{email}/disable")
+def admin_disable(email: str, request: Request, disabled: bool = True):
+    admin = _require_admin(request)
+    target = (email or "").strip().lower()
+    if disabled and colt_auth.is_admin(target):
+        # Locking the last administrator out of the administration page is not a state anyone can
+        # recover from through the product.
+        raise HTTPException(status_code=400, detail="an administrator account cannot be disabled here")
+    rec = user_store.set_disabled(target, disabled)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="no assigned account for %s" % target)
+    _log(evt="admin_user_disable", user=admin, target=target, disabled=disabled)
+    return {"ok": True, "user": rec}
+
+
+@app.delete("/api/admin/users/{email}")
+def admin_delete(email: str, request: Request):
+    """Remove the assigned password. NOTE this does not revoke access on its own: if the address is
+    still on the allow-list it falls back to the shared password. The UI says so."""
+    admin = _require_admin(request)
+    target = (email or "").strip().lower()
+    if colt_auth.is_admin(target):
+        raise HTTPException(status_code=400, detail="an administrator account cannot be removed here")
+    ok = user_store.delete(target)
+    _log(evt="admin_user_delete", user=admin, target=target, existed=ok)
+    return {"ok": ok}
 
 
 # ---------------- assessment ----------------
@@ -570,7 +765,7 @@ def _enforce_quota(email: str) -> None:
 
 @app.post("/api/assess")
 async def assess(req: AssessReq, request: Request):
-    email = _require_email(request)
+    email = _require_ready(request)
     company = (req.company or "").strip()
     if not company:
         raise HTTPException(status_code=400, detail="company required")
@@ -792,7 +987,7 @@ def _sse(obj: dict, eid: int = None) -> str:
 def assess_status(job_id: str, request: Request):
     """Polling fallback: works when SSE is impossible (locked phone, dead radio, proxy that buffers).
     The truth lives in the DB + run.log, not in a connection."""
-    email = _require_email(request)
+    email = _require_ready(request)
     job = store.get_job(job_id)
     if not job or job["email"] != email.lower():
         raise HTTPException(status_code=404, detail="job not found")
@@ -810,7 +1005,7 @@ def assess_status(job_id: str, request: Request):
 
 @app.get("/api/assess/{job_id}/events")
 async def assess_events(job_id: str, request: Request):
-    email = _require_email(request)
+    email = _require_ready(request)
     # Standard SSE resume: the browser sends back the last id it saw.
     try:
         start_line = int(request.headers.get("last-event-id") or 0)
@@ -829,7 +1024,7 @@ async def assess_events(job_id: str, request: Request):
 
 @app.get("/api/assess/{job_id}/deck/{name}")
 def assess_deck(job_id: str, name: str, request: Request):
-    email = _require_email(request)
+    email = _require_ready(request)
     job = store.get_job(job_id)
     if not job or job["email"] != email.lower():
         raise HTTPException(status_code=404, detail="not found")
@@ -930,7 +1125,7 @@ def _refine_flags(answers: dict) -> list:
 @app.get("/api/assess/{job_id}/clarify")
 def assess_clarify(job_id: str, request: Request):
     """Return the post-run clarification questions (clarify.json) for a finished job."""
-    email = _require_email(request)
+    email = _require_ready(request)
     job = store.get_job(job_id)
     if not job or job["email"] != email.lower():
         raise HTTPException(status_code=404, detail="job not found")
@@ -951,7 +1146,7 @@ async def assess_refine(job_id: str, req: RefineReq, request: Request):
     than patching the old artifacts: recon is where scope is decided, so the clean way to change
     scope is to re-resolve it with the operator's asserted facts. The child streams exactly like the
     original assessment (same /events + /status)."""
-    email = _require_email(request)
+    email = _require_ready(request)
     parent = store.get_job(job_id)
     if not parent or parent["email"] != email.lower():
         raise HTTPException(status_code=404, detail="job not found")
@@ -1011,7 +1206,7 @@ def _compliance_refine_flags(answers: dict) -> list:
 
 @app.post("/api/compliance")
 async def compliance(req: ComplianceReq, request: Request):
-    email = _require_email(request)
+    email = _require_ready(request)
     company = (req.company or "").strip()
     if not company:
         raise HTTPException(status_code=400, detail="company required")
@@ -1043,7 +1238,7 @@ async def compliance(req: ComplianceReq, request: Request):
 async def compliance_refine(job_id: str, req: ComplianceRefineReq, request: Request):
     """Answer the compliance clarification questions -> a NEW child run, re-scoped with the
     operator-confirmed facts (which OVERRIDE the model's inference)."""
-    email = _require_email(request)
+    email = _require_ready(request)
     parent = store.get_job(job_id)
     if not parent or parent["email"] != email.lower():
         raise HTTPException(status_code=404, detail="job not found")
@@ -1072,7 +1267,7 @@ async def compliance_refine(job_id: str, req: ComplianceRefineReq, request: Requ
 
 @app.get("/api/history")
 def history(request: Request):
-    email = _require_email(request)
+    email = _require_ready(request)
     out = []
     for j in store.history(email):
         out.append({
@@ -1089,7 +1284,7 @@ def history(request: Request):
 # ---------------- assistant (cassandra) ----------------
 @app.post("/api/assist")
 async def assist(req: AssistReq, request: Request):
-    _require_email(request)
+    _require_ready(request)
     message = (req.message or "").strip()
     if not message:
         return {"reply": "(say something and I'll help)"}

@@ -54,6 +54,63 @@ def quota_for(email: str):
     """Maximum assessments this identity may start, or None for unlimited."""
     return USER_QUOTAS.get((email or "").strip().lower())
 
+# ---------------------------------------------------------------- administrators
+# WHO MAY MANAGE USERS. Kept here beside PARTNER_EMAILS and USER_QUOTAS because all three answer
+# the same question — who may use this, how much, and who decides — and an answer that lives
+# somewhere else drifts out of step with the identity it applies to.
+# An address is not a secret, so committing it makes the admin list auditable in git and reviewable
+# in a pull request, which an env var on a droplet never is.
+# Extend WITHOUT a code change:  EXTRA_ADMIN_EMAILS="a@x.com,b@y.com"
+ADMIN_EMAILS = {"feranicus@s4biz.io"}
+_EXTRA_ADMINS = {e.strip().lower() for e in
+                 os.environ.get("EXTRA_ADMIN_EMAILS", "").split(",") if e.strip()}
+ADMINS = {e.strip().lower() for e in (ADMIN_EMAILS | _EXTRA_ADMINS) if e.strip()}
+
+
+def is_admin(email: str) -> bool:
+    """True if this identity may administer users.
+
+    Checked SERVER-SIDE on every administrative endpoint. Hiding a menu item is presentation, not
+    authorisation: anyone can issue the HTTP request the menu would have issued.
+    """
+    return (email or "").strip().lower() in ADMINS
+
+
+# ---------------------------------------------------------------- per-user passwords
+# user_store lives beside this file (repo root locally, /opt in the container). It is OPTIONAL: if
+# it cannot be imported the system behaves exactly as it did before, on the shared password alone.
+try:
+    import user_store as _users
+except Exception:                                                    # pragma: no cover
+    _users = None
+
+
+def password_ok(email: str, pw: str):
+    """(ok, must_change) for factor 1.
+
+    THE RULE, decided with the operator: an ASSIGNED password wins, and the shared password remains
+    a fallback ONLY for identities that have not been given one.
+      * account exists -> the assigned password is the only one that works. This is what makes the
+        administration page meaningful: revoking or resetting one person cannot be sidestepped by
+        falling back to the secret everybody knows.
+      * no account     -> the shared COLT_BOT_PASSWORD, exactly as before, so no current user is
+        locked out the moment this deploys.
+    A disabled account counts as existing, so disabling somebody does not hand them the fallback.
+    """
+    pw = pw or ""
+    if _users is not None:
+        try:
+            if _users.has_account(email):
+                return _users.check_password(email, pw)
+        except Exception:
+            # A broken store must not silently promote everyone back to the shared password: that
+            # would turn a database problem into an authentication bypass. Refuse instead.
+            return (False, False)
+    if not COLT_PW:
+        return (False, False)
+    return (hmac.compare_digest(pw, COLT_PW), False)
+
+
 _GENERIC_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 
 EXTRA_ALLOWED_EMAILS  = {e.strip().lower() for e in
@@ -142,18 +199,24 @@ class Auth:
         u = str(uid)
         lk = self.locked(uid)
         if lk: return ("locked", "\U0001f6d1 Too many attempts. Try again in %ds." % lk)
-        if not COLT_PW: return ("error", "Auth is not configured (COLT_BOT_PASSWORD).")
         email = (email or "").strip()
-        if not (email_allowed(email) and hmac.compare_digest(pw or "", COLT_PW)):
+        # An identity with an assigned password does not need COLT_BOT_PASSWORD to be configured at
+        # all, so this check moved BELOW password_ok: refusing earlier would have made an
+        # administered account unusable on a deployment that had retired the shared secret.
+        pw_ok, must_change = password_ok(email, pw)
+        if not (email_allowed(email) and pw_ok):
             self._fail(uid)
             self.log(evt="auth", bot=self.bot, result="fail", email=email.lower()[:60], user=u, ts=int(_now()))
+            if not (COLT_PW or (_users is not None and _users.has_account(email))):
+                return ("error", "Auth is not configured (COLT_BOT_PASSWORD).")
             return ("denied", "❌ Access denied. Requires an approved company email and the access password.")
         if not REQUIRE_2FA:
-            self.authed[u] = {"email": email.lower(), "ts": int(_now())}; self._save()
+            self.authed[u] = {"email": email.lower(), "ts": int(_now()), "must_change": must_change}; self._save()
             self.log(evt="auth", bot=self.bot, result="ok", email=email.lower(), user=u, ts=int(_now()))
             return ("authed", "✅ Authenticated as %s." % email.lower())
         code = "".join(secrets.choice("0123456789") for _ in range(6))
-        self.pending[u] = {"email": email.lower(), "code": self._hash(code, u), "exp": _now() + OTP_TTL, "tries": 0}
+        self.pending[u] = {"email": email.lower(), "code": self._hash(code, u), "exp": _now() + OTP_TTL,
+                           "tries": 0, "must_change": must_change}
         if not self._send_otp(email.lower(), code):
             self.log(evt="auth", bot=self.bot, result="otp_send_fail", email=email.lower(), user=u, ts=int(_now()))
             return ("error", "⚠ I couldn't send the verification email. Ask the admin to check SMTP settings.")
@@ -168,10 +231,18 @@ class Auth:
         if p["tries"] >= OTP_MAX: self.pending.pop(u, None); self._fail(uid); return (False, "Too many wrong codes. Run /auth again.")
         p["tries"] += 1
         if hmac.compare_digest(self._hash(code, u), p["code"]):
-            self.authed[u] = {"email": p["email"], "ts": int(_now())}; self._save()
+            mc = bool(p.get("must_change"))
+            self.authed[u] = {"email": p["email"], "ts": int(_now()), "must_change": mc}; self._save()
             self.pending.pop(u, None); self.fails.pop(u, None)
-            self.log(evt="auth", bot=self.bot, result="verified", email=p["email"], user=u, ts=int(_now()))
-            return (True, "✅ Verified. You're in as %s." % p["email"])
+            self.log(evt="auth", bot=self.bot, result="verified", email=p["email"], user=u,
+                     must_change=mc, ts=int(_now()))
+            msg = "✅ Verified. You're in as %s." % p["email"]
+            if mc and self.bot != "webapp":
+                # The bots have no password-change screen. Say so plainly rather than leaving the
+                # user to discover that the password they were given is meant to be temporary.
+                msg += ("\n\n⚠ This password was issued to you and must be changed. "
+                        "Sign in at https://cybergod.ai to set your own.")
+            return (True, msg)
         self.log(evt="auth", bot=self.bot, result="otp_bad", email=p["email"], user=u, ts=int(_now()))
         return (False, "❌ Wrong code. %d attempt(s) left." % max(0, OTP_MAX - p["tries"]))
 

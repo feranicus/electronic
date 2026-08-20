@@ -2628,6 +2628,12 @@ def run(ident, F, audience, limit_per_query=500):
         else:
             del hosts[ip]
     if _attr_dropped:
+        # COUNT THEM. The methodology slide printed "0 DROPPED FALSE-POS" on a run where this gate
+        # removed 339 records -- the single heaviest piece of false-positive work in the assessment.
+        # `dropped` only ever counted honeypot and CDN drops, so the deck advertised that the FP
+        # machinery had done nothing, on exactly the run where it did the most. A methodology slide
+        # that understates its own filtering is a credibility problem in front of a bank.
+        dropped += len(_attr_dropped)
         ident["records_unattributable"] = [{"ip": i, "port": p, "name": n}
                                            for i, p, n in _attr_dropped][:40]
         print("[auto] attribution gate: dropped %d record(s) on shared/provider infrastructure that "

@@ -1179,3 +1179,58 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .cg-guard{left:12px;right:12px;max-width:none;bottom:calc(84px + var(--sab,0px))}
 }
 @media (prefers-reduced-motion:reduce){.cg-guard{transition:none}}
+
+/* ============================================================================================
+   ADMINISTRATION + password change.
+   Colours come from the existing variables only. The contrast gate measures the SHIPPED
+   stylesheet, so a hand-picked hex here would have to earn 4.5:1 on its own; reusing the
+   palette means it already has.
+   ============================================================================================ */
+.admin-new{padding:16px 18px;margin-bottom:16px}
+.admin-head{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  flex-wrap:wrap;margin:22px 0 10px}
+.admin-head h2{margin:0;font-size:18px}
+.admin-q{min-width:220px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;
+  background:var(--card);color:var(--ink);font-size:14px}
+
+/* The issued password. Deliberately loud: it is shown once and the reader has to notice it. */
+.issued{padding:14px 18px;margin-bottom:16px;border-color:var(--cta);background:var(--cta-l)}
+.issued-h{font-weight:800;color:var(--ink);margin-bottom:8px}
+.issued-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.issued-email{color:var(--body);font-weight:600}
+.issued-pw{font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:16px;
+  font-weight:700;letter-spacing:.5px;background:var(--card);color:var(--ink);
+  border:1px solid var(--line2);border-radius:8px;padding:7px 12px;user-select:all}
+.issued-note{color:var(--body);font-size:13px;margin:10px 0 0;max-width:76ch}
+
+/* A table is the honest shape for "who is registered": one row per person, scannable. */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.admin-tbl{width:100%;border-collapse:collapse;font-size:14px;min-width:760px}
+.admin-tbl th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--mut);font-weight:700;padding:12px 14px;border-bottom:1px solid var(--line)}
+.admin-tbl td{padding:11px 14px;border-bottom:1px solid var(--line);color:var(--body);
+  vertical-align:middle}
+.admin-tbl tr:last-child td{border-bottom:none}
+.admin-tbl td:first-child{color:var(--ink);font-weight:600}
+.admin-tbl .mono{font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:13px}
+.admin-tbl .row-off td{opacity:.55}
+.admin-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.admin-tbl .tag{margin-left:8px;padding:3px 8px;font-size:11px}
+.admin-tbl .tag.ok{color:var(--green);border-color:var(--green-f);background:var(--green-l)}
+.admin-tbl .tag.warn{color:var(--amber,#92400E);border-color:var(--line2);background:var(--navy)}
+.admin-tbl .tag.off{color:var(--red);border-color:var(--red-f);background:var(--red-l)}
+.admin-tbl .tag.admin{color:var(--cta);border-color:var(--cta);background:var(--cta-l)}
+.admin-tbl .tag.muted{color:var(--mut);background:var(--navy)}
+.btn.danger{color:var(--red);border-color:var(--red-f)}
+
+.pw-page{max-width:520px}
+.pw-form{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+.pw-form .btn{align-self:flex-start}
+
+@media (max-width:720px){
+  /* A 760px-wide table cannot fit a phone, so the wrapper scrolls rather than the page. */
+  .admin-head{align-items:stretch;flex-direction:column}
+  .admin-q{width:100%;font-size:16px}          /* 16px: stops iOS zoom-on-focus */
+  .issued-pw{font-size:15px;width:100%}
+  .admin-actions{justify-content:flex-start}
+}

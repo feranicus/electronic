@@ -17,12 +17,34 @@ export async function postJSON(path, body) {
   try { data = await r.json(); } catch { /* empty body ok */ }
   return { ok: r.ok, status: r.status, data };
 }
+// DELIBERATELY THE SAME SHAPE AS postJSON: { ok, status, data }. A third return contract is a third
+// thing to remember, and api_contract.mjs exists because this file already had two. The gate is
+// taught to treat delJSON as postJSON-backed, so its callers are checked the same way.
+export async function delJSON(path) {
+  const r = await fetch(path, opts("DELETE"));
+  let data = {};
+  try { data = await r.json(); } catch { /* empty body ok */ }
+  return { ok: r.ok, status: r.status, data };
+}
 
 // ---- Auth ----
 export const authBegin  = (email, password) => postJSON("/api/auth/begin",  { email, password });
 export const authVerify = (email, code)     => postJSON("/api/auth/verify", { email, code });
 export const authLogout = ()                => postJSON("/api/auth/logout", {});
+// getJSON-backed: returns the PARSED BODY { email, is_admin, must_change }, not { ok, data }.
 export const getMe      = ()                => getJSON("/api/me");
+export const changePassword = (currentPassword, newPassword) =>
+  postJSON("/api/auth/change-password", { current_password: currentPassword, new_password: newPassword });
+
+// ---- Administration (server-side gated on colt_auth.ADMIN_EMAILS; the nav item is cosmetic) ----
+// getJSON-backed: the parsed body { users, store_ok, min_password_len, shared_password_active }.
+export const adminUsers = () => getJSON("/api/admin/users");
+// postJSON-backed: { ok, status, data }. data.password is the plaintext, returned ONCE.
+export const adminSetUser = (email, password, mustChange = true, note = "") =>
+  postJSON("/api/admin/users", { email, password, must_change: mustChange, note });
+export const adminDisable = (email, disabled = true) =>
+  postJSON(`/api/admin/users/${encodeURIComponent(email)}/disable?disabled=${disabled ? "true" : "false"}`, {});
+export const adminDeleteUser = (email) => delJSON(`/api/admin/users/${encodeURIComponent(email)}`);
 
 // ---- Assessment ----
 export const startAssess = (company, lang = "en", zoneSurvey = false) =>

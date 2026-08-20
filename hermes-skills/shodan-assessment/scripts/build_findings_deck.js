@@ -465,7 +465,13 @@ function drawTable(slide, rows, opts) {
           "OSFI E-21 " + EMDASH + " operational resilience (full adherence 1 Sep 2026)",
           "PIPEDA Sch. 1 cl. 4.7 " + EMDASH + " security safeguards",
           "CISA KEV " + EMDASH + " known-exploited vulnerabilities"];
-  } else if (!cc || EU.indexOf(cc) >= 0) {
+  } else if (EU.indexOf(cc) >= 0) {
+    // UNKNOWN IS NOT THE EU (aminagroup.com, 2026-08). This branch used to read `!cc || EU...`, so a
+    // country the engine had DELIBERATELY refused to determine was treated as an EU member and the
+    // deck cited NIS2 Art. 21 and GDPR Art. 32. AMINA is a Swiss bank: NIS2 does not apply in
+    // Switzerland at all. Having just fixed the engine to stop adopting the hoster's country, the
+    // deck then supplied the wrong jurisdiction anyway from the empty value. An unknown country now
+    // falls through to the jurisdiction-neutral set below, which is the honest answer.
     fw = ["NIS2 Art. 21 " + EMDASH + " risk-management measures",
           "GDPR Art. 32 " + EMDASH + " security of processing",
           "ISO/IEC 27001 " + EMDASH + " control-objective mapping",

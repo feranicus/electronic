@@ -5391,6 +5391,75 @@ script reads it from stdin, an end-to-end bash run upserts it idempotently, AND 
 exercised with a stubbed subprocess to prove the WIRING (value on stdin, script in argv, no
 `bash -s`). Proven by reintroducing the exact `bash -s` line: caught.
 
+## USER ADMINISTRATION — per-user passwords, and the four rails around them (2026-08-20)
+The operator asked for an Administration section, visible only to him, to create users, assign and
+reset passwords, keep MFA, and see everyone registered. That is a change to AUTHENTICATION, so the
+decisions matter more than the screen.
+
+**THE MODEL.** `user_store.py` (repo root, beside colt_auth.py) is a SQLite credential store at
+`/var/log/colt/users.sqlite` on the shared, persistent `colt_events` volume — the same volume and
+the same reasoning as `cost_ledger.sqlite`, mounted read-write by colt-web AND both bots so all
+three consult ONE store and can never disagree about a password. Passwords are stored as
+scrypt(n=2**14, r=8, p=1) with a 32-byte salt; the plaintext is returned ONCE to the administrator
+and never again.
+- **`colt_auth.password_ok(email, pw) -> (ok, must_change)`** is the single gate, used by
+  `Auth.begin`, so the bots and the web app share it. THE RULE, chosen by the operator: an ASSIGNED
+  password WINS and the shared `COLT_BOT_PASSWORD` remains a fallback ONLY for identities that do
+  not have one. That is what makes the page mean anything — resetting or revoking one person cannot
+  be sidestepped by falling back to the secret everybody knows — while nobody is locked out on the
+  day it deploys.
+- **A DISABLED ACCOUNT STILL COUNTS AS EXISTING** (`has_account` returns True). If it did not,
+  disabling somebody would hand them the shared password and "Disable" would be a button that does
+  nothing. Guarded by a test.
+- **A BROKEN STORE REFUSES.** If the database cannot be read, `password_ok` returns False rather
+  than promoting everyone back to the shared password: a database problem must not become an
+  authentication bypass.
+- **TIMING.** `check_password` runs the same scrypt cost against a dummy salt on a miss, so "no such
+  user" and "wrong password" take the same time and the endpoint cannot be used to enumerate
+  addresses.
+- **ADMIN LIST IS COMMITTED**, `colt_auth.ADMIN_EMAILS = {"feranicus@s4biz.io"}`, beside
+  PARTNER_EMAILS and USER_QUOTAS — the same question (who may use this, how much, who decides)
+  belongs in one place, and an address is not a secret, so committing it makes it auditable in git.
+  `EXTRA_ADMIN_EMAILS` extends it without a code change.
+
+**AUTHORISATION IS SERVER-SIDE, AND THE NAV ITEM IS NOT THE CONTROL.** Every `/api/admin/*` route
+depends on `_require_admin`. Hiding a menu is presentation: anyone can issue the request the menu
+would have issued. Likewise the forced first-login change is enforced by `_require_ready`, which
+every functional endpoint now depends on and which returns 403 `password_change_required` — routing
+the browser to a change-password screen would leave those endpoints reachable with curl and a
+cookie. `/api/auth/change-password` deliberately depends on `_require_email`, NOT `_require_ready`,
+or the forced state is a locked door with no handle.
+
+**THE PASSWORD IS NOT EMAILED.** The OTP already proves control of that mailbox; sending the
+password there too would put both factors in one channel. It is shown once in the UI and relayed by
+the operator over a channel they choose. `generate_password()` excludes 0/O/1/l/I because a password
+that has to be re-sent after being misread ends up in more places than it should.
+
+**FIVE OF MY OWN DEFECTS, EACH CAUGHT BY A GATE OR A NEGATIVE TEST:**
+1. `colt_auth` used in `change_password` without importing it — caught by the ruff F821 gate.
+2. Static greps asserting `_require_admin(request)` appears in each route body PASSED when the
+   function's DEFINITION was renamed: the call text is unchanged and the app would only fail at
+   runtime. Replaced with real requests through the ASGI app carrying a signed session cookie.
+   **Behaviour, not text** — the same lesson as validating a temp copy instead of the mounted file.
+3. `_require_admin` built on `_require_email` would have exempted the ADMINISTRATOR from the forced
+   password change. Found by a negative test; the rule has to apply to the person who wrote it.
+4. **MY TEST FIXTURE POLLUTED test_auth.py.** It reloads `colt_auth` with a test password;
+   `monkeypatch` restores the ENV but the module keeps what it read at import. Two cases in
+   test_auth failed with "denied" while passing in isolation — the signature of cross-test
+   pollution. A fixture that reloads a module must reload it again on teardown.
+5. The field markup was invented (`<label className="fld"><span>`) instead of read from the
+   neighbouring page (`<div className="fld"><div className="label">`, `className="input"`), so it
+   would have rendered unstyled.
+
+**THREE WIRING POINTS, NOT ONE.** `user_store.py` had to be added to `webapp/Dockerfile`,
+`assess-bot/Dockerfile`, `cassandra-bot/Dockerfile` AND whitelisted in `.dockerignore` (which starts
+with `*`). An image with colt_auth but not user_store would silently fall back to the shared
+password for users who have their own. Asserted by a test that derives the list from the Dockerfiles.
+**And the render audit's page list was hardcoded**, so Admin.jsx and ChangePassword.jsx were not
+render-checked until they were added — `vite build` accepts an undefined identifier, which is how
+/app once went white. Same for `test_routes.py`'s cabinet set, now DERIVED from Cabinet.jsx's
+imports rather than listed.
+
 ## aminagroup.com — ONE `if not _nm:` SHIPPED ANOTHER COMPANY'S FIREWALL AS THE CRITICAL (2026-08-17)
 AMINA Bank AG (Zug, FINMA-regulated digital-asset bank, formerly SEBA) received a deck where **four
 of six findings were false positives, including the CRITICAL and the HIGH**, and the narrative
@@ -5474,3 +5543,30 @@ FIXTURE LESSON: my first barrier-2 fixture used org `"WPEngine, Inc."`, which ca
 hosting/datacenter marker and announces few prefixes — so `_looks_like_provider` never matched, the
 gate never engaged, and the test failed against correct code. In the real run the trigger was
 `_no_space`. A fixture that does not reproduce the condition under test is a test of the fixture.
+
+### The re-run: 17 IPs -> 4, and TWO MORE DEFECTS ONLY THE ARTIFACT SHOWED (2026-08-17)
+The fixes worked — PERI, smartTrade's WHM port and the WPEngine cPanel port are gone, CRIT 0, 339
+records dropped by the gate, `country NOT inferred from the estate`, and the hallucination guard
+stripped an invented CVE-2017-5638. Reading the delivered deck found two things the log could not:
+1. **UNKNOWN IS NOT THE EU.** `build_findings_deck.js` had
+   `else if (!cc || EU.indexOf(cc) >= 0)`, so a country the engine had DELIBERATELY refused to
+   determine fell into the EU branch and the deck cited **NIS2 Art. 21 and GDPR Art. 32 at a Swiss
+   bank**. NIS2 does not apply in Switzerland. Having just fixed the engine to stop adopting the
+   hoster's country, the deck supplied the wrong jurisdiction anyway from the empty value — the
+   fourth recurrence of D9/A7, this time hiding in the fallback. `!cc ||` removed; unknown now falls
+   through to the jurisdiction-neutral set. VERIFIED BY RENDERING, not by reading the branch:
+   UNKNOWN -> ISO 27001 / NIST CSF / KEV · DE -> NIS2 + GDPR + BSI · CH -> revFADP + NCSC-CH ·
+   CA -> OSFI. Note CH already had a correct branch, so the neutral set is only ever reached when we
+   genuinely do not know — and the operator can supply the country through the clarify/refine loop.
+2. **"0 DROPPED FALSE-POS" on the methodology slide while the gate dropped 339 records.**
+   `dropped` counted only honeypot and CDN drops; the attribution gate's tally was never added. The
+   deck advertised that the false-positive machinery had done nothing on precisely the run where it
+   did the most. A methodology slide that understates its own filtering is a credibility problem.
+STILL OPEN, and it is a judgement call rather than a bug: H1's two evidence hosts (172.97.126.45 =
+smartTrade Technologies AS18919, 62.12.132.67 = ti&m services AG AS15623) are AMINA's SUPPLIERS. The
+records carry AMINA's names, so the attribution gate keeps them correctly — it is their application
+on a supplier's platform. But the finding text says "directly from the corporate IP space" (it is
+not), calls them "non-production" from a hostname inference presented as an observation, and the
+remediation tells AMINA to put ZTNA in front of infrastructure it does not control. The title says
+"(3 hosts)" while the evidence lists two and the prose says "three ... on the IP 172.97.126.45" —
+three statements of the count, none agreeing.

@@ -24,7 +24,15 @@ const items = [
   )],
 ];
 
-export default function Sidebar({ email }) {
+// The administration entry. NOT in `items` above, because that array is rendered unconditionally
+// and this one is not: it appears only when /api/me says is_admin. That is convenience only — every
+// /api/admin/* route refuses a non-administrator server-side, so rendering this link for the wrong
+// person would grant nothing.
+const ADMIN_ITEM = ["/app/admin", "side.admin", (
+  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6" /></svg>
+)];
+
+export default function Sidebar({ email, isAdmin = false }) {
   const nav = useNavigate();
   const [, , t] = useT();
   async function logout() {
@@ -48,6 +56,12 @@ export default function Sidebar({ email }) {
               <span className="nav-label">{t(label)}</span>
             </NavLink>
           ))}
+          {isAdmin ? (
+            <NavLink key={ADMIN_ITEM[0]} to={ADMIN_ITEM[0]}>
+              <span className="nav-ico">{ADMIN_ITEM[2]}</span>
+              <span className="nav-label">{t(ADMIN_ITEM[1])}</span>
+            </NavLink>
+          ) : null}
         </nav>
         <div className="who">
           {t("side.signedIn")}
@@ -57,6 +71,9 @@ export default function Sidebar({ email }) {
             <a href="/impressum">{t("side.impressum")}</a><span>&middot;</span>
             <a href="/privacy">{t("side.privacy")}</a><span>&middot;</span>
             <a href="/contact">{t("side.contact")}</a>
+          </div>
+          <div className="side-legal">
+            <NavLink to="/app/password">{t("side.password")}</NavLink>
           </div>
         </div>
       </aside>

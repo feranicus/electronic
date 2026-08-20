@@ -6,5 +6,6 @@ RUN pip install --no-cache-dir "python-telegram-bot>=21,<22" playwright \
  && playwright install --with-deps chromium
 RUN pip install --no-cache-dir google-auth requests   # Gmail API (HTTPS) for OTP; separate layer keeps Chromium cached
 COPY colt_auth.py /opt/colt_auth.py
+COPY user_store.py /opt/user_store.py
 COPY cassandra-bot/cassandra_bot.py /opt/cassandra_bot.py
 CMD ["python3", "/opt/cassandra_bot.py"]

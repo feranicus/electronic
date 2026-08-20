@@ -28,9 +28,13 @@ const backed = (helper) =>
   new Set([...api.matchAll(new RegExp(String.raw`export const (\w+)\s*=[^;]*?${helper}\(`, "g"))]
     .map((m) => m[1]));
 const GET = backed("getJSON");
-const POST = backed("postJSON");
+// delJSON returns the SAME { ok, status, data } shape as postJSON on purpose, so its callers are
+// checked by the same rule. Listed explicitly: a helper this gate does not know about is a helper
+// whose call sites nobody checks, which is the silent gap the whole file exists to close.
+const POST = new Set([...backed("postJSON"), ...backed("delJSON")]);
 GET.add("getJSON");
 POST.add("postJSON");
+POST.add("delJSON");
 
 const files = [];
 for (const dir of ["pages", "components", "."]) {
