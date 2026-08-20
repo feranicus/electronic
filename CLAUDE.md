@@ -5451,6 +5451,25 @@ that has to be re-sent after being misread ends up in more places than it should
    neighbouring page (`<div className="fld"><div className="label">`, `className="input"`), so it
    would have rendered unstyled.
 
+**IT WAS FOUR WIRING POINTS, NOT THREE — and I wrote "three" one paragraph before the staging
+build proved otherwise.** `deploy_web_direct.INCLUDE` is a SEPARATE allow-list deciding what is
+packed into the tarball sent to the droplet; `colt_auth.py` is named there explicitly and
+`user_store.py` was not, so the file never arrived and the image build died with
+`COPY user_store.py /opt/user_store.py -> "/user_store.py": not found`. The staging gate caught it
+and production was never touched, which is the gate doing exactly its job. My test could not see
+it: it asserted the Dockerfiles and `.dockerignore` and had no idea a fourth list existed.
+`test_every_root_file_a_dockerfile_copies_is_actually_packed_to_the_droplet` now DERIVES the set
+from the Dockerfiles' own `COPY` lines and asserts each is in INCLUDE, and the tarball was then
+opened to confirm the file is really in it — the artifact, not the code. Negative-tested.
+RULE: when a change needs N edits, the check must DERIVE N from something authoritative. Counting
+them by hand in a commit message is how the fourth one is missed.
+
+**AND A CREDENTIAL DATABASE GOT COMMITTED.** `data/users.sqlite` appeared in the ship commit:
+`user_store.db_path()` falls back to `<repo>/data/users.sqlite` when `USER_DB` is unset, and a test
+run created it. It was empty (schema only, zero rows, verified before deleting), but a user database
+must never be in git even so. Removed with `git rm --cached`; `data/` and `*.sqlite` are now
+gitignored.
+
 **THREE WIRING POINTS, NOT ONE.** `user_store.py` had to be added to `webapp/Dockerfile`,
 `assess-bot/Dockerfile`, `cassandra-bot/Dockerfile` AND whitelisted in `.dockerignore` (which starts
 with `*`). An image with colt_auth but not user_store would silently fall back to the shared
