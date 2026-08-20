@@ -51,6 +51,7 @@ import os
 import re
 import struct
 import sys
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -103,6 +104,10 @@ def _clean_name(s):
 def is_stock_palette(colors):
     accents = tuple((colors or {}).get("accent%d" % i, "") for i in range(1, 7))
     return accents in _OFFICE_DEFAULT_ACCENTS
+
+
+def _ms(t0):
+    return int((time.time() - t0) * 1000)
 
 
 # --------------------------------------------------------------------------- colour arithmetic
@@ -487,41 +492,71 @@ def _heuristic(f):
             "decided_by": "heuristic", "votes": []}
 
 
-def judge(f, models=None, ask=None):
-    """Ask the four vendors, then decide by QUORUM — never by the first answer that parses.
+def judge(f, models=None, ask=None, on=None):
+    """Ask the four vendors IN PARALLEL, then decide by QUORUM — never by the first answer.
 
     Ties and non-answers are expected: the panel is a signal, not an authority (the same rule the
     staging gate follows). Anything below a quorum of 2 falls back to the heuristic rather than
     letting one model's opinion become the partner's brand.
+
+    PARALLEL, not serial, and the reason is a person waiting at an upload form. Four models at a
+    45s timeout is up to THREE MINUTES end to end when one of them is slow, and the operator sees a
+    spinner the whole time; in parallel the wall clock is the SLOWEST model, not their sum. The
+    models are independent by construction here — each is answering the same question about the
+    same file and none of them sees another's answer — so there is nothing to serialise.
+
+    `on(pct, msg)` reports each answer AS IT LANDS, so a stuck vendor is visible as the one line
+    that never arrives instead of as a spinner that never stops.
     """
     facts = _facts_for_panel(f)
     allowed = {v for v in (f.get("colors") or {}).values()}
     media = {m["name"] for m in (f.get("media") or [])}
-    votes = []
+    panel = list(models or PANEL)
+    say = on or (lambda pct, msg: None)
     if ask is None:
         def ask(model, prompt):
             import enrich as E
             raw, _usage = E._call(prompt, model=model, timeout=45, max_tokens=400)
             return E._json(raw)
-    for m in (models or PANEL):
+
+    def one(m):
+        t0 = time.time()
         try:
             j = ask(m, PROMPT % facts)
             if not isinstance(j, dict):
-                continue
+                return {"model": m, "ok": False, "err": "not a JSON object", "ms": _ms(t0)}
             b = _hex(j.get("brand"))
             # A model that invents a colour that is not in the file is answering a different
             # question. Discard the vote rather than adopting a hallucinated shade.
             if not b or b not in allowed:
-                votes.append({"model": m, "ok": False, "err": "brand not one of the file's colours"})
-                continue
-            votes.append({"model": m, "ok": True, "brand": b,
-                          "secondary": _hex(j.get("secondary")) or b,
-                          "mode": "dark" if str(j.get("mode", "")).lower() == "dark" else "light",
-                          "logo": j.get("logo") if j.get("logo") in media else "",
-                          "name": str(j.get("name") or "").strip()[:80],
-                          "why": str(j.get("why") or "").strip()[:160]})
+                return {"model": m, "ok": False, "ms": _ms(t0),
+                        "err": "chose #%s, which is not a colour in the file" % (b or "?")}
+            return {"model": m, "ok": True, "brand": b, "ms": _ms(t0),
+                    "secondary": _hex(j.get("secondary")) or b,
+                    "mode": "dark" if str(j.get("mode", "")).lower() == "dark" else "light",
+                    "logo": j.get("logo") if j.get("logo") in media else "",
+                    "name": str(j.get("name") or "").strip()[:80],
+                    "why": str(j.get("why") or "").strip()[:160]}
         except Exception as e:
-            votes.append({"model": m, "ok": False, "err": repr(e)[:120]})
+            return {"model": m, "ok": False, "err": repr(e)[:120], "ms": _ms(t0)}
+
+    votes = []
+    try:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=max(1, len(panel))) as ex:
+            futs = {ex.submit(one, m): m for m in panel}
+            for fut in as_completed(futs):
+                v = fut.result()
+                votes.append(v)
+                say(20 + int(50 * len(votes) / max(1, len(panel))),
+                    "%s: %s (%.1fs)" % (v["model"],
+                                        ("chose #" + v["brand"]) if v.get("ok") else v.get("err", "?"),
+                                        v.get("ms", 0) / 1000.0))
+    except Exception:
+        # A thread pool we cannot create must not cost the partner their upload.
+        for m in panel:
+            votes.append(one(m))
+    votes.sort(key=lambda v: panel.index(v["model"]) if v["model"] in panel else 99)
 
     good = [v for v in votes if v.get("ok")]
     if len(good) < 2:

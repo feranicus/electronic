@@ -1253,3 +1253,10 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   margin:-2px 0 14px}
 .brandchip-logo{max-height:20px;max-width:96px;object-fit:contain}
 @media (max-width:720px){ .wl-chip{width:84px;height:44px} }
+/* White Label upload progress: a bar and a log, for the same reason the assessment has them. */
+.wl-prog{margin:12px 0}
+.wl-bar{height:7px;border-radius:99px;background:var(--line);overflow:hidden}
+.wl-bar span{display:block;height:100%;background:var(--grad);transition:width .35s ease}
+.wl-pct{font-size:12px;color:var(--mut);margin:5px 0 7px}
+.wl-log{max-height:190px;overflow:auto;margin:0;padding:9px 11px;border-radius:8px;
+  background:var(--dark);color:var(--dark-ink);font-size:12px;line-height:1.55;white-space:pre-wrap}

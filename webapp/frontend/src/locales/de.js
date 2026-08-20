@@ -358,6 +358,8 @@ export const keyed = {
   "wl.severityNote": "Kritisch, hoch und mittel behalten Rot, Orange und Bernstein. Diese Farben tragen Bedeutung für den Leser und werden nie umgefärbt.",
   "wl.poweredNote": "Jedes Deckblatt trägt eine kleine Zeile „Powered by cybergod.ai“.",
   "wl.panelOff": "KI-Panel überspringen und die Vorlage deterministisch auslesen (schneller)",
+  "wl.netFail": "Die Anfrage hat den Server nicht erreicht.",
+  "wl.starting": "wird gestartet…",
   "wl.saveFail": "Diese Vorlage konnte nicht angewendet werden.",
   "wl.loadFail": "Ihr Branding konnte nicht geladen werden.",
   "wl.chip": "Dokumente tragen Ihr {name}-Branding.",

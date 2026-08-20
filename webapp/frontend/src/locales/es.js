@@ -396,6 +396,8 @@ export const keyed = {
   "wl.severityNote": "Crítico, alto y medio mantienen el rojo, el naranja y el ámbar. Esos colores tienen significado para quien lee y nunca se recolorean.",
   "wl.poweredNote": "Cada portada lleva una pequeña línea “Powered by cybergod.ai”.",
   "wl.panelOff": "Omitir el panel de IA y leer la plantilla de forma determinista (más rápido)",
+  "wl.netFail": "La solicitud no llegó al servidor.",
+  "wl.starting": "iniciando…",
   "wl.saveFail": "No se pudo aplicar esa plantilla.",
   "wl.loadFail": "No se pudo cargar su marca.",
   "wl.chip": "Los documentos llevarán su marca {name}.",

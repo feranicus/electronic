@@ -65,6 +65,10 @@ export async function setBrand({ template, logo, name = "", panel = true }) {
   return { ok: r.ok, status: r.status, data };
 }
 export const deleteBrand = () => delJSON("/api/brand");
+// The upload returns a JOB immediately and the work continues server-side; poll this for phases.
+// getJSON-backed: the parsed body { pct, done, error, brand, warnings, lines, total }.
+export const brandJob = (job, since = 0) =>
+  getJSON(`/api/brand/job/${encodeURIComponent(job)}?since=${since}`);
 
 // ---- Assessment ----
 export const startAssess = (company, lang = "en", zoneSurvey = false) =>

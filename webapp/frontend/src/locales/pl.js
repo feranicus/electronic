@@ -402,6 +402,8 @@ export const keyed = {
   "wl.severityNote": "Krytyczny, wysoki i średni zachowują czerwień, pomarańcz i bursztyn. Te kolory niosą znaczenie dla czytelnika i nigdy nie są zmieniane.",
   "wl.poweredNote": "Każda okładka zawiera mały wiersz „Powered by cybergod.ai”.",
   "wl.panelOff": "Pomiń panel AI i odczytaj szablon deterministycznie (szybciej)",
+  "wl.netFail": "Żądanie nie dotarło do serwera.",
+  "wl.starting": "uruchamianie…",
   "wl.saveFail": "Nie udało się zastosować tego szablonu.",
   "wl.loadFail": "Nie udało się wczytać Twoich oznaczeń.",
   "wl.chip": "Dokumenty będą miały Twoje oznaczenia {name}.",

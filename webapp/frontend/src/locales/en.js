@@ -385,6 +385,8 @@ export const keyed = {
   "wl.severityNote": "Critical, high and medium keep their red, orange and amber. Those colours carry meaning for the reader and are never re-coloured.",
   "wl.poweredNote": "Each cover carries one small “Powered by cybergod.ai” line.",
   "wl.panelOff": "Skip the AI panel and read the template deterministically (faster)",
+  "wl.netFail": "The request never reached the server.",
+  "wl.starting": "starting…",
   "wl.saveFail": "Could not apply that template.",
   "wl.loadFail": "Could not load your branding.",
   "wl.chip": "Artifacts will carry your {name} branding.",

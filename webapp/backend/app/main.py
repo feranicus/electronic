@@ -771,17 +771,92 @@ async def brand_set(request: Request,
         if blob is not None and len(blob) > MAX_UPLOAD:
             raise HTTPException(status_code=413, detail="%s is larger than %d MB"
                                 % (what, MAX_UPLOAD // (1024 * 1024)))
+    # RETURN IMMEDIATELY AND REPORT PROGRESS, rather than holding the request open.
+    #
+    # With the panel on, four models at a 45s timeout is up to a minute of wall clock even in
+    # parallel, and a spinner that says nothing for a minute is indistinguishable from a hang. That
+    # is the same lesson the assessment progress bar was built from: a long job with no visible
+    # phase makes people refresh. The work is CPU/network-bound and synchronous, so it goes to a
+    # worker thread; the event loop stays free to answer the poll.
+    # The cheap refusals happen NOW, synchronously: a file that is not a presentation, or a logo
+    # we will not accept, is answered with a 400 and a reason instead of becoming a job the
+    # operator has to watch in order to learn it was never going to work.
     try:
-        theme, warnings = brand.save(email, template=tpl or None, logo=lg or None,
-                                     name=name, use_panel=str(panel) != "0")
+        brand.precheck(tpl or None, lg or None)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         _log(evt="brand_error", user=email, error=repr(e)[:200])
         raise HTTPException(status_code=400, detail="could not read that file: %r" % (e,))
-    _log(evt="brand_set", user=email, name=theme.get("name", ""),
-         decided_by=theme.get("decided_by", ""), warnings=len(warnings))
-    return {"ok": True, "brand": _brand_public(theme), "warnings": warnings}
+
+    job = uuid.uuid4().hex[:12]
+    st = {"pct": 0, "lines": [], "done": False, "error": "", "brand": None, "warnings": [],
+          "user": email, "started": time.time()}
+    _BRAND_JOBS[job] = st
+    _brand_jobs_gc()
+
+    def say(pct, msg):
+        st["pct"] = max(st["pct"], int(pct))
+        st["lines"].append({"pct": st["pct"], "msg": str(msg)[:300], "t": time.time() - st["started"]})
+        del st["lines"][:-200]
+
+    def work():
+        try:
+            theme, warnings = brand.save(email, template=tpl or None, logo=lg or None,
+                                         name=name, use_panel=str(panel) != "0", on=say)
+            st["brand"] = _brand_public(theme)
+            st["warnings"] = warnings
+            _log(evt="brand_set", user=email, name=theme.get("name", ""),
+                 decided_by=theme.get("decided_by", ""), warnings=len(warnings))
+        except ValueError as e:
+            st["error"] = str(e)
+            say(100, "refused: " + str(e))
+        except Exception as e:
+            st["error"] = "could not read that file: %r" % (e,)
+            say(100, st["error"])
+            _log(evt="brand_error", user=email, error=repr(e)[:200])
+        finally:
+            # ALWAYS. A job that never reports done leaves the page spinning for ever, which is the
+            # exact defect this endpoint was rewritten to fix.
+            st["pct"] = 100
+            st["done"] = True
+
+    asyncio.get_event_loop().run_in_executor(None, work)
+    return {"ok": True, "job": job}
+
+
+# In-memory and deliberately so: this is a 60-second progress feed, not a record. It is rebuilt on
+# restart, and the THEME itself is already on disk by the time a job finishes — losing the progress
+# of an in-flight upload costs a re-upload, while persisting it would be a second store to reason
+# about for no benefit.
+_BRAND_JOBS = {}
+
+
+def _brand_jobs_gc():
+    old = [k for k, v in _BRAND_JOBS.items() if time.time() - v.get("started", 0) > 1800]
+    for k in old:
+        _BRAND_JOBS.pop(k, None)
+
+
+@app.get("/api/brand/job/{job}")
+def brand_job(job: str, request: Request, since: int = 0):
+    """Poll, not SSE, and that is a considered choice.
+
+    The assessment stream is minutes long, resumable and survives a phone locking, which is what
+    justifies EventSource plus Last-Event-ID plus a reconnect path. This is under a minute and the
+    page is open in front of the person who started it. A poll every second has no reconnect
+    semantics to get wrong, and `since` keeps each response to the new lines only.
+    """
+    email = _require_ready(request)
+    st = _BRAND_JOBS.get(job)
+    if not st:
+        raise HTTPException(status_code=404, detail="no such upload")
+    if st.get("user") != email:
+        # Owner-scoped like everything else here: a job id is not an authorisation.
+        raise HTTPException(status_code=404, detail="no such upload")
+    return {"pct": st["pct"], "done": st["done"], "error": st["error"],
+            "brand": st["brand"], "warnings": st["warnings"],
+            "lines": st["lines"][max(0, int(since or 0)):], "total": len(st["lines"])}
 
 
 @app.delete("/api/brand")

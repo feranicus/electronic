@@ -71,6 +71,12 @@ export default defineConfig({
             "/api/auth/verify",    // OTP -> session cookie, so the cabinet can be looked at
             "/api/auth/logout",    // always allow the way out
             "/api/privacy/ack",    // records that the Art.13 notice was shown; no cost, no quota
+            // White Label. Same test as the others: no money, no quota, nobody else's account —
+            // it changes how THIS user's own artifacts look and is undone by "Remove branding".
+            // Refusing it made the one page you would preview to look at untestable, which is the
+            // trap that made this list exist in the first place (the whole cabinet was
+            // unfollowable for the look-before-you-ship rule).
+            "/api/brand",
           ]);
           proxy.on("proxyReq", (proxyReq, req, res) => {
             const m = (req.method || "GET").toUpperCase();

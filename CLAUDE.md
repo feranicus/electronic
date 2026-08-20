@@ -5703,3 +5703,46 @@ MEASUREMENT NOTE: completeness is measured against a NO-LOGO theme deliberately.
 counts legitimately differ because the image REPLACES 18 brand-coloured wordmark text elements — my
 first assertion conflated "was every surface mapped" with "did the logo replace the wordmark" and
 failed on correct code.
+
+## THE UPLOAD BUTTON SPUN FOR EVER AND THE PAGE COULD NOT SAY WHY (2026-08-20)
+First real use of White Label: "Reading your template…" and nothing else, ever. The operator's own
+preview log had the answer in it:
+```
+2:27:00 PM [vite] http proxy error: /api/brand
+Error: socket hang up
+```
+THREE defects, and the first is the one that matters:
+1. **`setBrand` had no error path.** The preview's read-only rail destroys an unlisted write, the
+   fetch REJECTS, and the exception propagated out of `submit()` before `setBusy(false)` ever ran.
+   So the one thing the page could not do was tell you it had failed. Any `await` on a network call
+   in a handler that sets a busy flag needs a `catch` that clears it — a rejected fetch is not an
+   error response, it is no response at all, and `r.ok` is never reached. A test now asserts every
+   exit from submit/poll clears the flag.
+2. **`/api/brand` was not on the preview's ALLOW_WRITE list**, so the one page you would open the
+   preview to test was the one page that could not work there. Same trap that created the list:
+   uploading a brand costs nothing, consumes no quota, touches nobody else's account and is undone
+   by "Remove branding". Added, with the reasoning next to it.
+3. **A minute of silence is indistinguishable from a hang.** With the panel on, four models at a 45s
+   timeout is up to a minute even in parallel. That is exactly what the assessment progress bar
+   exists for, and this had a spinner.
+NOW: `POST /api/brand` returns a JOB and the work runs in an executor; the page polls
+`/api/brand/job/{id}` and shows a bar plus a log — which model answered, which is still out, what
+was decided. **The failure path ALWAYS reaches done=100** (a `finally`), because a job that never
+finishes is the original defect wearing a different hat.
+- **POLL, NOT SSE, deliberately.** The assessment stream is minutes long, resumable and survives a
+  phone locking, which is what justifies EventSource + Last-Event-ID + a reconnect path. This is
+  under a minute with the page open in front of the person who started it; a poll has no reconnect
+  semantics to get wrong, and `since` keeps each response to the new lines only.
+- **THE PANEL IS NOW PARALLEL.** Four models at 45s serially is up to THREE MINUTES; in parallel the
+  wall clock is the slowest model. They are independent by construction — same question, same file,
+  none sees another's answer — so there was nothing to serialise. Measured 0.31s vs 1.2s on a stub.
+  Vote order is re-sorted to the chain order afterwards so a tie-break cannot depend on who
+  answered first.
+- **`brand.precheck()` — ONE implementation, TWO callers.** The cheap refusals (not a zip, not a
+  deck, a zip bomb, a bad logo) are milliseconds, so they answer synchronously with a 400 and a
+  reason instead of becoming a job you have to watch to learn it was never going to work. `save()`
+  calls it too: an endpoint that validated separately would drift from what save() accepts, and a
+  save() that trusted the endpoint would be unsafe called from anywhere else.
+RULE: any handler that sets a busy flag before an `await` must clear it on EVERY path, including a
+rejected promise. And any operation that can exceed a few seconds needs a phase feed, not a spinner
+— the operator cannot tell "working" from "stuck", and neither can you.

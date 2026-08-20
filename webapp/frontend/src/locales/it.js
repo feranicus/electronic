@@ -380,6 +380,8 @@ export const keyed = {
   "wl.severityNote": "Critico, alto e medio mantengono rosso, arancione e ambra. Questi colori hanno un significato per chi legge e non vengono mai ricolorati.",
   "wl.poweredNote": "Ogni copertina riporta una piccola riga “Powered by cybergod.ai”.",
   "wl.panelOff": "Salta il panel AI e leggi il modello in modo deterministico (più rapido)",
+  "wl.netFail": "La richiesta non ha raggiunto il server.",
+  "wl.starting": "avvio…",
   "wl.saveFail": "Impossibile applicare questo modello.",
   "wl.loadFail": "Impossibile caricare il tuo branding.",
   "wl.chip": "I documenti useranno il branding {name}.",

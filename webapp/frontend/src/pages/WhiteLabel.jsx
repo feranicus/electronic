@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBrand, setBrand, deleteBrand } from "../api.js";
+import { getBrand, setBrand, deleteBrand, brandJob } from "../api.js";
 import { useT } from "../i18n";
 
 // WHITE LABEL — a partner uploads their own PowerPoint and every artifact they generate afterwards
@@ -36,6 +36,8 @@ export default function WhiteLabel() {
   const [logo, setLogo] = useState(null);
   const [panel, setPanel] = useState(true);
   const [warnings, setWarnings] = useState([]);
+  const [log, setLog] = useState([]);
+  const [pct, setPct] = useState(0);
   // Cache-busts the logo preview after an upload: the URL never changes, so without this the
   // browser shows the PREVIOUS partner's mark and everyone concludes the upload failed.
   const [v, setV] = useState(0);
@@ -52,13 +54,48 @@ export default function WhiteLabel() {
   }
   useEffect(() => { load(); }, []);            // eslint-disable-line react-hooks/exhaustive-deps
 
+  // WHY THERE IS A LOG AND A BAR HERE AT ALL.
+  // With the panel on, four models at a 45s timeout is up to a minute even in parallel, and a
+  // spinner that says nothing for a minute is indistinguishable from a hang — which is exactly
+  // what happened the first time this page was used. The upload now returns a JOB and this polls
+  // it, so every phase is visible: which model answered, which one is still out, and what was
+  // decided. The same reasoning as the assessment progress bar.
   async function submit(ev) {
     ev.preventDefault();
-    setBusy(true); setErr(""); setWarnings([]);
-    const r = await setBrand({ template: tpl, logo, name: name.trim(), panel });
+    setBusy(true); setErr(""); setWarnings([]); setLog([]); setPct(0);
+    let r;
+    try {
+      r = await setBrand({ template: tpl, logo, name: name.trim(), panel });
+    } catch (e) {
+      // A REJECTED FETCH IS THE CASE THAT USED TO HANG FOR EVER. Without this the button sat on
+      // "Reading your template…" with no way to say that the request never left the machine.
+      setBusy(false);
+      setErr(t("wl.netFail") + " " + String((e && e.message) || e));
+      return;
+    }
+    if (!r.ok || !r.data || !r.data.job) {
+      setBusy(false);
+      setErr((r.data && r.data.detail) || t("wl.saveFail"));
+      return;
+    }
+    poll(r.data.job, 0);
+  }
+
+  async function poll(job, since) {
+    let s;
+    try {
+      s = await brandJob(job, since);          // getJSON-backed: the parsed body
+    } catch (e) {
+      setBusy(false);
+      setErr(t("wl.netFail") + " " + String((e && e.message) || e));
+      return;
+    }
+    if (s.lines && s.lines.length) setLog((L) => L.concat(s.lines));
+    setPct(s.pct || 0);
+    if (!s.done) { setTimeout(() => poll(job, s.total || 0), 900); return; }
     setBusy(false);
-    if (!r.ok) { setErr((r.data && r.data.detail) || t("wl.saveFail")); return; }
-    setWarnings((r.data && r.data.warnings) || []);
+    if (s.error) { setErr(s.error); return; }
+    setWarnings(s.warnings || []);
     setTpl(null); setLogo(null);
     setV((n) => n + 1);
     load();
@@ -112,6 +149,18 @@ export default function WhiteLabel() {
           <span>{t("wl.panelOff")}</span>
         </label>
       </form>
+
+      {(busy || log.length) ? (
+        <div className="card wl-prog">
+          <div className="wl-bar"><span style={{ width: pct + "%" }} /></div>
+          <div className="wl-pct">{pct}%</div>
+          {/* Newest LAST and the box scrolls: a log that reorders itself is harder to read than
+              one that grows, and the line you are waiting for is the one at the bottom. */}
+          <pre className="wl-log">
+            {log.map((l, i) => (l.t.toFixed(1) + "s  " + l.msg)).join("\n") || t("wl.starting")}
+          </pre>
+        </div>
+      ) : null}
 
       {warnings.length ? (
         <div className="card wl-warn">

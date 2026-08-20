@@ -390,6 +390,8 @@ export const keyed = {
   "wl.severityNote": "Critique, élevé et moyen gardent le rouge, l’orange et l’ambre. Ces couleurs portent un sens pour le lecteur et ne sont jamais modifiées.",
   "wl.poweredNote": "Chaque couverture porte une petite ligne « Powered by cybergod.ai ».",
   "wl.panelOff": "Ignorer le panel IA et lire le modèle de façon déterministe (plus rapide)",
+  "wl.netFail": "La requête n’a jamais atteint le serveur.",
+  "wl.starting": "démarrage…",
   "wl.saveFail": "Impossible d’appliquer ce modèle.",
   "wl.loadFail": "Impossible de charger votre identité.",
   "wl.chip": "Les documents porteront votre identité {name}.",
