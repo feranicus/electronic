@@ -22,6 +22,7 @@
 const fs = require("fs");
 const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
+const BRAND = require("./brand.js");   // White Label: re-colours at the render boundary
 
 // typographic glyphs (pure-ASCII source, emitted via \u escapes)
 const EMDASH = "—";   // em dash
@@ -46,15 +47,15 @@ const OUT = process.argv[3] ||
   "./" + String(cust).replace(/[^A-Za-z0-9]+/g, "_") + "_CBIQ_Business_Impact.pptx";
 
 // ---------- palette / fonts (copied VERBATIM from the VIP builder) ----------
-const C = {
+const C = BRAND.palette({
   teal: "00D7BD", tealMid: "00A49A", tealDark: "0C544E",
   black: "121212", dark: "474946", light: "ECECED",
   crit: "F20C36", high: "FF7900", med: "FFC33C", low: "474946",
   ink: "1A1A1A", inkMuted: "5B6470", divider: "D8D6CF",
   white: "FFFFFF", evBg: "0C544E", evInk: "ECECED",
   green: "1E9E6A", gold: "C9A227",
-};
-const FH = "Georgia", FB = "Calibri", FM = "Consolas", FD = "Arial Black", FA = "Arial";
+});
+const { FH, FB, FM, FD, FA } = BRAND.fonts({ FH: "Georgia", FB: "Calibri", FM: "Consolas", FD: "Arial Black", FA: "Arial" });
 const TIER = { CRIT: [C.crit, C.white], HIGH: [C.high, C.white], MED: [C.med, C.black], LOW: [C.low, C.white] };
 
 const CLASS = String(d.classification || "INTERNAL " + EMDASH + " CONFIDENTIAL " + MIDDOT + " NOT FOR EXTERNAL DISTRIBUTION").toUpperCase();
@@ -115,8 +116,7 @@ findings.forEach(f => {
 // chrome / helpers (copied from the VIP builder + findings deck)
 // ==================================================================
 function corner(s, color = C.tealDark, size = 16) {
-  s.addText("cybergod.ai", { x: 7.85, y: 0.18, w: 2.05, h: 0.32, fontSize: 13, fontFace: FA,
-    color, bold: true, align: "right", margin: 0 });
+  BRAND.mark(s, { x: 7.85, y: 0.18, w: 2.05, h: 0.32, fontSize: 13, fontFace: FA, color: color });
 }
 function bigChevrons(s, o = {}) {
   const x = o.x ?? 0.5, w = o.w ?? 9.0, yStart = o.yStart ?? 0.20;
@@ -637,7 +637,7 @@ function closerSlide() {
     ay += ah;
   });
   s.addText(CAVEAT, { x: 0.4, y: 5.30, w: 7.4, h: 0.22, fontSize: 8, fontFace: FB, color: C.teal, italic: true, charSpacing: 1, valign: "middle", margin: 0 });
-  s.addText("cybergod.ai", { x: 7.9, y: 5.28, w: 2.0, h: 0.28, fontSize: 10, fontFace: FA, color: C.white, bold: true, align: "right", margin: 0 });
+  BRAND.mark(s, { x: 7.9, y: 5.28, w: 2.0, h: 0.28, fontSize: 10, fontFace: FA, color: C.white });
 }
 
 // ---------- build ----------

@@ -25,6 +25,7 @@
 const fs = require("fs");
 const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
+const BRAND = require("./brand.js");   // White Label: re-colours at the render boundary
 
 // ---- typographic glyphs (avoid raw multibyte literals in source) ----
 const EMDASH = "—"; // --
@@ -61,14 +62,14 @@ pres.author = "Cybergod LLC / S4Biz Group";
 pres.title = cust + " " + EMDASH + " GEOPOL Cyber Threat Assessment";
 
 // ---- Palette (COLT_DESIGN_SYSTEM.md 1.4) -- copied verbatim from VIP builder ----
-const C = {
+const C = BRAND.palette({
   teal: "00D7BD", tealMid: "00A49A", tealDark: "0C544E",
   black: "121212", dark: "474946", light: "ECECED",
   crit: "F20C36", high: "FF7900", med: "FFC33C", low: "474946",
   ink: "1A1A1A", inkMuted: "5B6470", divider: "D8D6CF", white: "FFFFFF",
   evBg: "0C544E", evInk: "ECECED", green: "1E9E6A", gold: "F7C844",
-};
-const FH = "Georgia", FB = "Calibri", FM = "Consolas", FD = "Arial Black", FA = "Arial";
+});
+const { FH, FB, FM, FD, FA } = BRAND.fonts({ FH: "Georgia", FB: "Calibri", FM: "Consolas", FD: "Arial Black", FA: "Arial" });
 
 const FOOT = "INTERNAL " + EMDASH + " CYBERGOD / S4BIZ CONFIDENTIAL " + MIDDOT +
   " NOT FOR EXTERNAL DISTRIBUTION " + MIDDOT + " STRATEGIC CTI";
@@ -99,8 +100,7 @@ let pageNum = 0;
 
 // ---------- chrome helpers (from VIP builder) ----------
 function corner(s, color) {
-  s.addText("cybergod.ai", { x: 7.9, y: 0.18, w: 2.0, h: 0.32, fontSize: 13, fontFace: FA,
-    color, bold: true, align: "right", margin: 0 });
+  BRAND.mark(s, { x: 7.9, y: 0.18, w: 2.0, h: 0.32, fontSize: 13, fontFace: FA, color: color });
 }
 function bigChevrons(s, o = {}) {
   const x = o.x ?? 0.5, w = o.w ?? 9.0, yStart = o.yStart ?? 0.20,

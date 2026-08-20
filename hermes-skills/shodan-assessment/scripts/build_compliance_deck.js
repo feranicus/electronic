@@ -19,6 +19,7 @@
 const fs = require("fs");
 const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
+const BRAND = require("./brand.js");   // White Label: re-colours at the render boundary
 
 const [, , jsonPath, outPath, regimeArg] = process.argv;
 if (!jsonPath || !outPath || !regimeArg) {
@@ -33,13 +34,13 @@ const company = D.company || "Target";
 const EMDASH = "—", MIDDOT = "·", RAQUO = "»";
 
 // ---- palette (matches the security decks) ----
-const C = {
+const C = BRAND.palette({
   teal: "00D7BD", tealMid: "00A49A", tealDark: "0C544E", black: "121212", dark: "474946",
   light: "ECECED", crit: "F20C36", high: "FF7900", med: "FFC33C", low: "474946",
   ink: "1A1A1A", inkMuted: "5B6470", divider: "D8D6CF", white: "FFFFFF", gold: "F7C844",
   navy: "1D2B4E", purple: "6B3FA0", green: "10B981",
-};
-const FH = "Georgia", FB = "Calibri", FD = "Arial Black", FA = "Arial";
+});
+const { FH, FB, FD, FA } = BRAND.fonts({ FH: "Georgia", FB: "Calibri", FD: "Arial Black", FA: "Arial" });
 
 // ---- label map for the chrome (prose comes from the model already localised) ----
 // Regime names (NIS2 / Cyber Resilience Act / EU AI Act / DORA / GDPR) and article citations are
@@ -151,7 +152,7 @@ let pageNum = 0, TOTAL = 1;
 
 // ---------- helpers ----------
 function corner(s, color = C.black, size = 18) {
-  s.addText("cybergod.ai", { x: 7.85, y: 0.18, w: 2.05, h: 0.32, fontSize: 13, fontFace: FA, color, bold: true, align: "right", margin: 0 });
+  BRAND.mark(s, { x: 7.85, y: 0.18, w: 2.05, h: 0.32, fontSize: 13, fontFace: FA, color: color });
 }
 function tracer(s, color = C.tealDark) {
   s.addText(RAQUO + RAQUO + " " + pageNum + "/" + TOTAL, { x: 8.62, y: 5.28, w: 1.23, h: 0.28, fontSize: 9, fontFace: FB, color, bold: true, align: "right", valign: "middle", margin: 0 });

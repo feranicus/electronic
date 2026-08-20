@@ -18,6 +18,7 @@
 const fs = require("fs");
 const CREED = require("./creed.js");
 const pptxgen = require("pptxgenjs");
+const BRAND = require("./brand.js");   // White Label: re-colours at the render boundary
 
 // typographic glyphs (avoid raw multibyte literals in source)
 const EMDASH = "—";     // --
@@ -107,15 +108,15 @@ pres.author = "Cybergod LLC · S4Biz Group";
 pres.title = (t.company || "Target") + " " + EMDASH + " External Attack Surface Assessment";
 
 // ---- Palette (COLT_DESIGN_SYSTEM.md 1.4) -- copied verbatim from VIP builder ----
-const C = {
+const C = BRAND.palette({
   teal: "00D7BD", tealMid: "00A49A", tealDark: "0C544E",
   black: "121212", dark: "474946", light: "ECECED",
   crit: "F20C36", high: "FF7900", med: "FFC33C", low: "474946",
   ink: "1A1A1A", inkMuted: "5B6470", divider: "D8D6CF",
   white: "FFFFFF", evidenceBg: "121212", evidenceInk: "ECECED",
   green: "10B981",
-};
-const FH = "Georgia", FB = "Calibri", FM = "Consolas", FD = "Arial Black", FA = "Arial";
+});
+const { FH, FB, FM, FD, FA } = BRAND.fonts({ FH: "Georgia", FB: "Calibri", FM: "Consolas", FD: "Arial Black", FA: "Arial" });
 
 let pageNum = 0;
 
@@ -139,8 +140,7 @@ TOTAL += 2; // caveats & confidence + next seven days
 
 // ---------- helpers (copied from VIP builder) ----------
 function corner(slide, color = C.black, size = 18) {
-  slide.addText("cybergod.ai", { x: 7.85, y: 0.18, w: 2.05, h: 0.32,
-    fontSize: 13, fontFace: FA, color, bold: true, align: "right", margin: 0 });
+  BRAND.mark(slide, { x: 7.85, y: 0.18, w: 2.05, h: 0.32, fontSize: 13, fontFace: FA, color: color });
 }
 function bigChevrons(slide, opts = {}) {
   const x = opts.x ?? 0.5, w = opts.w ?? 9.0, yStart = opts.yStart ?? 0.20;

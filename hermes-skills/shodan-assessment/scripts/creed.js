@@ -14,6 +14,8 @@
  * every other translated literal takes, so the German cover works with no special casing. The two
  * lines are therefore two separate keys in de.json — keep them in sync with the strings below.
  */
+const BRAND = require("./brand.js");   // White Label: the attribution line below the creed
+
 const LINE1 = "Cassandra foretold the fall of Troy — and no one believed her.";
 const LINE2 = "We predict the critical cyber risks, stop them before they materialise, "
             + "and keep every Trojan horse out of your IT landscape.";
@@ -66,6 +68,16 @@ function draw(pres, s, o) {
     fontSize: s1, fontFace: FF, color: col, italic: true, margin: 0 });
   s.addText(l2, { x, y: y + dy2, w, h: h2,
     fontSize: s2, fontFace: FF, color: col, bold: true, margin: 0 });
+
+  // WHITE LABEL ATTRIBUTION. Drawn HERE, inside the one cover element every builder already calls,
+  // rather than added to each builder in turn — five copies of an attribution line is five chances
+  // for one deck to ship without it, which is precisely the drift this module was created to stop.
+  // Returns "" when no partner theme is active, so an unbranded deck is byte-identical to before.
+  const by = BRAND.poweredBy();
+  if (by) {
+    s.addText(by, { x, y: y + dy2 + h2 + 0.04, w, h: 0.20,
+      fontSize: 7.5, fontFace: FF, color: col, margin: 0, transparency: 35 });
+  }
 }
 
 module.exports = { LINE1, LINE2, LINE1_DE, LINE2_DE, LINE1_RU, LINE2_RU, draw };
