@@ -182,7 +182,13 @@ ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts
                 # scope_deny.py is the authoritative shortener/social/platform denylist. It is a
                 # SCOPE-CORRECTNESS file: a container running an older copy would happily admit
                 # wa.me again (the abakus-tk.de failure), so its hash has to be proved deployed.
-                "scripts/scope_deny.py", "scripts/psl.py", "scripts/asn_sources.py", "scripts/clarify.py"]
+                "scripts/scope_deny.py", "scripts/psl.py", "scripts/asn_sources.py", "scripts/clarify.py",
+                # White Label. proteus.py decides what a partner's artifacts LOOK like and brand.js
+                # is what applies it at the render boundary; a container running an older copy of
+                # either would silently ship the wrong branding — or our colours — to a partner's
+                # customer, with every check still green. Same reasoning as scope_deny.py: prove
+                # the hash is deployed rather than assuming the image picked it up.
+                "scripts/proteus.py", "scripts/brand.js"]
 ENGINE_LOCAL = os.path.join(HERE, "hermes-skills", "shodan-assessment")
 ENGINE_REMOTE = "/opt/shodan-skill"
 
