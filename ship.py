@@ -618,6 +618,18 @@ def do_tests():
         sys.exit('[X] ASN DISCOVERY REGRESSION - an enterprise estate would be truncated. Do not ship.')
     print('  enterprise ASNs: global source first, holder-corroborated, cap 40')
 
+    # WHITE LABEL (Proteus). Builds REAL decks with a partner theme and reads them back, because
+    # the colour arithmetic being right is not the deck being right. Two of its assertions protect
+    # EXISTING customers rather than partners: that an unbranded build is byte-identical to one
+    # from before this feature existed, and that severity colours are never themed.
+    _wl = subprocess.run([sys.executable, os.path.join(engine, 'test_white_label.py')],
+                         capture_output=True, text=True, timeout=600)
+    if _wl.returncode != 0:
+        print((_wl.stdout or '') + (_wl.stderr or ''))
+        sys.exit('[X] WHITE LABEL REGRESSION - partner artifacts or the unbranded path are wrong. '
+                 'Do not ship.')
+    print('  white label: partner colours applied, severity enums intact, unbranded path untouched')
+
     # THE PASSIVE FEATURE SET from the ns03.ru engagement (email authentication, certificate
     # intelligence, naming-convention mining) plus the assertion that the ACTIVE tier stays shut.
     # Replayed against that engagement's real data, so a regression is measured against ground
