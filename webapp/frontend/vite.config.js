@@ -48,22 +48,43 @@ export default defineConfig({
         // tokens, and consume an evaluation account's quota, from what the operator believes is
         // a local colour preview.
         //
-        // GET and HEAD pass. Everything else is refused HERE, before it leaves the machine, and
-        // says why. Refusing locally rather than relying on the server's auth is deliberate: the
-        // browser may still hold a valid session cookie for the live site.
+        // GET and HEAD pass. So does SIGNING IN, and that exception was earned the hard way:
+        // blocking every write also blocked POST /api/auth/begin, so no logged-in page could be
+        // opened in the preview AT ALL. The standing rule is to LOOK at a UI change before
+        // shipping it, and for the cabinet — Assess, Compliance, History, Administration — that
+        // rule was unfollowable. The operator hit exactly this ("I couldn't enter the preview with
+        // shared password"); the vite log said `http proxy error: /api/auth/begin, socket hang up`,
+        // which is this guard destroying the request.
+        //
+        // The line is COST AND CONSEQUENCE, not the HTTP verb. Signing in spends nothing, creates
+        // nothing and is undone by logging out; the OTP still has to arrive in the real mailbox,
+        // so this grants no access the operator did not already have. Everything that spends money,
+        // consumes quota or changes another person's account stays refused.
         // ------------------------------------------------------------------------------------
         configure: (proxy) => {
           if (!READONLY) return;
+          // Exact paths only. A prefix match on "/api/auth" would also admit
+          // /api/auth/change-password, which is a real credential change and belongs on the live
+          // site, not in a colour preview.
+          const ALLOW_WRITE = new Set([
+            "/api/auth/begin",     // email + password -> sends the OTP to the real mailbox
+            "/api/auth/verify",    // OTP -> session cookie, so the cabinet can be looked at
+            "/api/auth/logout",    // always allow the way out
+            "/api/privacy/ack",    // records that the Art.13 notice was shown; no cost, no quota
+          ]);
           proxy.on("proxyReq", (proxyReq, req, res) => {
             const m = (req.method || "GET").toUpperCase();
             if (m === "GET" || m === "HEAD") return;
+            const path = (req.url || "").split("?")[0];
+            if (ALLOW_WRITE.has(path)) return;
             proxyReq.destroy();
             res.writeHead(405, { "Content-Type": "application/json" });
             res.end(JSON.stringify({
               error: "blocked by the local preview",
               detail: `${m} ${req.url} was not sent. The preview proxies /api to ${TARGET} in `
-                    + "READ-ONLY mode so a local page cannot start a real assessment, change "
-                    + "settings or consume quota. Read-only pages work; anything that writes does not.",
+                    + "READ-ONLY mode so a local page cannot start a real assessment, change a "
+                    + "user's account or consume quota. Signing in works so that logged-in pages "
+                    + "can be looked at; anything with a cost or a consequence does not.",
             }));
           });
         },

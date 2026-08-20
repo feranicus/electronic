@@ -74,3 +74,8 @@ forensics-*.txt
 # closed, leaving a tracked path that does not exist.
 .~lock.*#
 ~$*
+
+# Runtime credential store. Created by user_store.py when USER_DB is unset (e.g. a local test
+# run). A user database must never be in git, even an empty one.
+data/
+*.sqlite

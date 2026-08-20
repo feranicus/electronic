@@ -387,3 +387,32 @@ def test_the_build_context_is_not_filtered_out():
     the COPY above fails at image-build time."""
     s = _src(".dockerignore")
     assert "!user_store.py" in s, "user_store.py is excluded from the docker build context"
+
+
+def test_every_root_file_a_dockerfile_copies_is_actually_packed_to_the_droplet():
+    """THE FOURTH WIRING POINT, and the one that failed the staging build.
+
+    deploy_web_direct.INCLUDE decides what is packed into the tarball sent to the droplet. It is a
+    SEPARATE list from .dockerignore, and adding user_store.py to the Dockerfiles and to
+    .dockerignore was not enough: the build died with
+        COPY user_store.py /opt/user_store.py -> "/user_store.py": not found
+    because the file was never shipped. Derived from the Dockerfiles rather than listed, so the
+    next root-level module cannot repeat it.
+    """
+    import re as _re
+    sys.path.insert(0, ROOT)
+    import deploy_web_direct
+
+    wanted = set()
+    for df in ("webapp/Dockerfile", "assess-bot/Dockerfile", "cassandra-bot/Dockerfile"):
+        for src_path in _re.findall(r"^COPY\s+(?:--from=\S+\s+)?(\S+)\s+\S+\s*$",
+                                    _src(df), _re.M):
+            # Root-level FILES only. Directories and paths inside them are covered by the
+            # directory entries already in INCLUDE.
+            if "/" not in src_path and os.path.isfile(os.path.join(ROOT, src_path)):
+                wanted.add(src_path)
+    assert wanted, "no root-level COPY sources found; the regex stopped matching the Dockerfiles"
+    missing = sorted(f for f in wanted if f not in deploy_web_direct.INCLUDE)
+    assert not missing, (
+        "these files are COPYd by a Dockerfile but are NOT in deploy_web_direct.INCLUDE, so they "
+        "never reach the droplet and the image build fails: %s" % missing)

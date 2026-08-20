@@ -27,7 +27,13 @@ SCP_BASE = ["scp", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERR
 if KEY and os.path.exists(KEY):
     SSH_BASE += ["-i", KEY]; SCP_BASE += ["-i", KEY]
 
-INCLUDE = ["webapp", "hermes-skills/shodan-assessment", "colt_auth.py",
+# THE FOURTH WIRING POINT. A shared root-level module needs FOUR edits, not three: the Dockerfile
+# that COPYs it, .dockerignore (which starts with `*`), the bots' Dockerfiles - and THIS list, which
+# decides what is even packed onto the droplet. user_store.py was added to the first three and the
+# staging build failed with `COPY user_store.py: "/user_store.py": not found`, because the tarball
+# never carried it. Anything a Dockerfile COPYs from the repo root must appear here; asserted by
+# tests/test_admin_users.py so the next one cannot be missed.
+INCLUDE = ["webapp", "hermes-skills/shodan-assessment", "colt_auth.py", "user_store.py",
            "docker-compose.web.yml", "deploy", ".dockerignore"]
 EXCLUDE = {"node_modules", "__pycache__", "dist", ".git", ".pytest_cache", "shodan-out"}
 
