@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { startAssess, assessEventsUrl, ackPrivacy, assessStatus,
   assessClarify, assessRefine } from "../api.js";
 import { NOTICE, useLegalLang, LangToggle } from "../legal";
+import BrandChip from "../components/BrandChip.jsx";
 import { useT } from "../i18n";
 import { useDocLangs } from "../docLangs.js";
 
@@ -255,6 +256,7 @@ export default function NewAssessment() {
   return (
     <>
       <h1 className="page-h">{t("assess.h1")}</h1>
+      <BrandChip />
       <p className="page-sub">{t("assess.sub")}</p>
 
       {!ackd && (

@@ -5624,3 +5624,82 @@ The pre-check in `admin_create_user` is gone, with a test asserting `email_allow
 reappear in that function — if it returns, the page stops being able to add anyone new.
 RULE: before shipping a screen that grants something, try to grant something with it. The gate that
 protects a feature must not be the thing that makes the feature impossible.
+
+## WHITE LABEL / Proteus — a partner's own PowerPoint becomes the theme (2026-08-20)
+A VAR, MSP or vendor uploads their template; every deck and HTML report they generate afterwards
+carries their colours, fonts and logo. `proteus.py` is the engine (the god who takes any form while
+remaining the same substance), "White Label" is the UI and the OEM agreement's word for it —
+the same split as Perseus Shield over shield.py.
+
+**MOST OF THIS IS PARSING, NOT AN LLM, AND THAT IS THE DESIGN.** A .pptx is a ZIP of XML: the exact
+brand colours are in `ppt/theme/theme1.xml` (`clrScheme` dk1/lt1/accent1-6, remembering that dk1/lt1
+are usually `sysClr` whose real value is `@lastClr`), the fonts in `fontScheme`, the logo in
+`ppt/media/`, the organisation in `docProps/app.xml <Company>`. Asking a model to GUESS hex codes
+would be slower, cost money, hallucinate a shade and answer differently every upload — the phantom
+`deepseek-v4-flash` mistake one layer up. So there is NO model in `extract()`.
+The panel answers only what parsing cannot: which accent is the brand vs decoration, which image is
+the logo vs a stock photo, light or dark house style. Quorum of the models that answer, a vote naming
+a colour that is NOT IN THE FILE is discarded, below two answers it falls back to a deterministic
+heuristic — an upload must never fail because an inference account hit its quota.
+
+**THE LUMINANCE RAMP IS THE PART THAT IS EASY TO GET WRONG.** The builders do not use one brand
+colour, they use a triple: `teal` is a LIGHT accent carrying DARK text, `tealDark` is a DARK fill
+carrying LIGHT text. Dropping a partner's navy into `teal` would put dark text on a dark fill on
+every slide at once. So `ramp()` places the brand at the stop matching ITS OWN luminance and derives
+the other two by binary search toward white/black to hit our reference luminances (0.52 / 0.29 /
+0.07). Binary search, not a fixed step: luminance is a 2.4-power curve, so "lighten by 20%" lands
+somewhere different depending on where you start, which is how a lighter shade comes out darker than
+the one below it. Verified across eight brands including pure white and pure black: every ramp
+ordered, every stop ≥4.5:1.
+
+**brand.js MAPS BY VALUE, NOT BY KEY**, which is what makes it small. Any default whose VALUE is one
+of our three stops is a brand surface wherever it appears, so `teal`, `tealDark` and `evBg:"0C544E"`
+are themed for free while crit/high/med/low/ink/divider are untouched because their values are not
+in the ramp. **Severity colours are ENUMS**: a partner whose brand is red does not get green
+criticals, and that property now holds by construction rather than by a list somebody maintains.
+One `require` + one wrapped `{...}` + one `BRAND.mark()` per builder — the deck_i18n doctrine, which
+was written after a failed attempt to hoist 530 literals: translate (here, re-colour) at the
+boundary, never fork the builders.
+
+**FOUR THINGS THE MEASUREMENTS CHANGED, all of which would otherwise have shipped:**
+1. **A 263 KB logo turned a 498 KB deck into 5.2 MB.** pptxgenjs writes a separate `ppt/media` entry
+   per `addImage`, so an 18-slide deck carries 18 copies. The first cap was 4 MB = a 72 MB artifact
+   nobody can email, with nothing saying why. Now 150 KB, and the arithmetic is in the refusal.
+2. **Two real templates reported their author as "PptxGenJS" and "Steve Canny"** (a rendering
+   library, and the author of python-pptx). Either would have gone on a partner's title slide. And
+   `dc:title` produced the wordmark "Why Redevco Needs Breach & Attack Simula". Only `<Company>` is
+   used; otherwise the field stays EMPTY and a human types it. Metadata is a suggestion, never a
+   value we put in front of a customer unconfirmed.
+3. **A 1200x800 PHOTOGRAPH was adopted as the logo** by the first heuristic (anything referenced
+   with an aspect over 0.5). Caught by the API test. On the slide MASTER is decisive; otherwise a
+   logo is wide (>=1.2) and under half a megapixel.
+4. **A template still on the stock Office palette** is reported as carrying no brand colour rather
+   than confidently themed in Microsoft's default blue.
+
+**SECURITY.** The upload is an attacker-shaped ZIP: total and per-member uncompressed sizes are
+checked BEFORE any member is read (the cap is on the compressed file; a 25 MB zip can declare 10 GB).
+Logos are validated from the HEADER — magic bytes plus declared dimensions — with no image-decoding
+library added, because a decoder is a large new attack surface for a small job and every dependency
+is one Trivy reports on forever. **SVG is refused outright**: it carries script and external entities
+and would be inlined into the animated HTML report. `python-multipart>=0.0.18` is pinned
+deliberately (CVE-2024-24762 ReDoS, CVE-2024-53981 DoS), not merely "latest".
+
+**STORAGE IS ON THE SHARED `colt_events` VOLUME**, like cost_ledger.sqlite and users.sqlite, so a
+Telegram-initiated assessment renders in the same branding as one from the cabinet. `colt_webdata`
+is the obvious home and is WRONG: only colt-web mounts it, and the bots would silently produce
+unbranded decks. `BRAND_THEME` is set ONCE in `_run_job`/`bot.py` and every builder subprocess
+inherits it, so five artifacts cannot come out half-branded. **The uploaded .pptx is NOT kept** —
+we have taken a palette, two font names and one image, and keeping customer files we have no use for
+is storage we would have to defend, disclose and delete on request.
+
+**THE GATE (`scripts/test_white_label.py`, blocking in ship.py) BUILDS REAL DECKS AND READS THEM
+BACK**, because the colour arithmetic being right is not the deck being right. Two of its assertions
+protect EXISTING customers rather than partners: **an unbranded build is byte-identical, on all 18
+slides, to one from before this feature existed**, and severity counts are unchanged. Also: all
+189/231/230 branded surfaces mapped with zero of our stops surviving, our wordmark reduced from 18
+occurrences to the single attribution line, the logo actually embedded, and an unreadable or missing
+theme degrading to OUR palette rather than failing the run.
+MEASUREMENT NOTE: completeness is measured against a NO-LOGO theme deliberately. With a logo the
+counts legitimately differ because the image REPLACES 18 brand-coloured wordmark text elements — my
+first assertion conflated "was every surface mapped" with "did the logo replace the wordmark" and
+failed on correct code.

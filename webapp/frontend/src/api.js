@@ -46,6 +46,26 @@ export const adminDisable = (email, disabled = true) =>
   postJSON(`/api/admin/users/${encodeURIComponent(email)}/disable?disabled=${disabled ? "true" : "false"}`, {});
 export const adminDeleteUser = (email) => delJSON(`/api/admin/users/${encodeURIComponent(email)}`);
 
+// ---- White Label (Proteus) ----
+// getJSON-backed: the parsed body { active, brand?, max_logo_kb }.
+export const getBrand = () => getJSON("/api/brand");
+// NOT postJSON-backed: this is multipart/form-data, so it cannot go through the JSON helper — a
+// browser must set the boundary itself, which means NEVER setting Content-Type by hand here.
+// It returns the SAME { ok, status, data } shape as postJSON deliberately: a third return contract
+// is a third thing to remember, and api_contract.mjs exists because this file already had two.
+export async function setBrand({ template, logo, name = "", panel = true }) {
+  const fd = new FormData();
+  if (template) fd.append("template", template);
+  if (logo) fd.append("logo", logo);
+  fd.append("name", name);
+  fd.append("panel", panel ? "1" : "0");
+  const r = await fetch("/api/brand", { method: "POST", credentials: "include", body: fd });
+  let data = {};
+  try { data = await r.json(); } catch { /* empty body ok */ }
+  return { ok: r.ok, status: r.status, data };
+}
+export const deleteBrand = () => delJSON("/api/brand");
+
 // ---- Assessment ----
 export const startAssess = (company, lang = "en", zoneSurvey = false) =>
   postJSON("/api/assess", { company, lang, zone_survey: zoneSurvey });

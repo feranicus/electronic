@@ -6,6 +6,7 @@ import Compliance from "./Compliance.jsx";
 import Assistant from "./Assistant.jsx";
 import History from "./History.jsx";
 import Admin from "./Admin.jsx";
+import WhiteLabel from "./WhiteLabel.jsx";
 import ChangePassword from "./ChangePassword.jsx";
 import { getMe } from "../api.js";
 
@@ -54,6 +55,7 @@ export default function Cabinet() {
           <Route path="compliance" element={<Compliance />} />
           <Route path="assistant" element={<Assistant />} />
           <Route path="history" element={<History />} />
+          <Route path="brand" element={<WhiteLabel />} />
           <Route path="password" element={<ChangePassword onDone={refresh} />} />
           {/* Rendered only for an administrator. This is convenience, not security: /api/admin/*
               refuses anyone not on colt_auth.ADMIN_EMAILS regardless of what the SPA renders. */}

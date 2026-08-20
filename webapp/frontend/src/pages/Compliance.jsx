@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { startCompliance, complianceRefine, assessEventsUrl, assessStatus, assessClarify, getJurisdictions } from "../api.js";
+import BrandChip from "../components/BrandChip.jsx";
 import { useT } from "../i18n";
 import { useDocLangs } from "../docLangs.js";
 
@@ -168,6 +169,7 @@ export default function Compliance() {
   return (
     <>
       <h1 className="page-h">{t("comp.h1")}</h1>
+      <BrandChip />
       {/* Four connective fragments around three BOLD statutory names. The names are legal titles and
           are never translated (see rule in locales/en.js), so they cannot live inside a key. */}
       <p className="page-sub">

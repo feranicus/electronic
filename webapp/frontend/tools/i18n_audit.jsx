@@ -40,10 +40,12 @@ import Sidebar from "../src/components/Sidebar.jsx";
 // on `useLegalLang is not defined`. Both of these call hooks and api helpers, so they are exactly
 // the shape that fails at execution rather than at compile time.
 import Admin from "../src/pages/Admin.jsx";
+import WhiteLabel from "../src/pages/WhiteLabel.jsx";
 import ChangePassword from "../src/pages/ChangePassword.jsx";
 
 const PAGES = { Landing, Demo, Partners, Contact, Experience, Privacy, Impressum, Login,
-                NewAssessment, Compliance, Assistant, History, Sidebar, Admin, ChangePassword };
+                NewAssessment, Compliance, Assistant, History, Sidebar, Admin, ChangePassword,
+                WhiteLabel };
 const CODES = LANGS.map((l) => l.code);
 let fail = 0;
 

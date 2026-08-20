@@ -4,7 +4,7 @@ DeepSeek enrichment call. Zero-trust gate: every user must authenticate with an 
 email (name.familyname@yourcompany.com) + a shared 99-char access password BEFORE using /assess.
 Streams live phase progress, shows when the AI takes over (tokens + est cost), and re-emits
 structured JSON events (incl. auth audit) for the Loki/Grafana observability stack."""
-import os, json, time, asyncio, colt_auth
+import os, re, json, time, asyncio, colt_auth
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -476,6 +476,27 @@ async def on_lang(update, ctx):
                           pending["extra"] + ["--lang", lang], ui)
 
 
+def _brand_env(email):
+    """White Label: point the engine at this partner's theme, if they have one.
+
+    ONE derivation of the path, matching webapp/backend/app/brand.py — both read it from
+    EVENTS_LOG's directory, which is the shared colt_events volume every container already mounts.
+    Importing colt-web's app package instead is not an option (this image does not have it), and
+    hardcoding a second copy of the path would be the "two homes for one value" defect again.
+    Fails SILENT: a branding lookup must never be the reason a Telegram assessment does not start.
+    """
+    try:
+        base = os.path.dirname(os.environ.get("EVENTS_LOG", "/var/log/colt/events.log"))
+        root = os.environ.get("BRAND_DIR", os.path.join(base, "brands"))
+        safe = re.sub(r"[^a-z0-9._-]", "_", (email or "").strip().lower())
+        if not safe or safe in (".", ".."):
+            return {}
+        p = os.path.join(root, safe, "theme.json")
+        return {"BRAND_THEME": p} if os.path.isfile(p) else {}
+    except Exception:
+        return {}
+
+
 async def _run_assessment(msg, ctx, uid, seed, extra, ui="en"):
     # `ui` is the INTERFACE language (how we narrate); `lang` is the DOCUMENT language the engine
     # was actually given. They are deliberately allowed to differ.
@@ -513,8 +534,13 @@ async def _run_assessment(msg, ctx, uid, seed, extra, ui="en"):
     cmd = ["python3", ENGINE, "--seed", seed, "--outdir", OUTDIR] + list(extra)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        # COLT_USER: same requester attribution as the web path
-        env={**os.environ, "COLT_USER": _who})
+        # COLT_USER: same requester attribution as the web path.
+        # BRAND_THEME: White Label. The brand store lives on the SHARED colt_events volume for
+        # exactly this reason — a partner who uploaded their template in the cabinet gets the same
+        # branding from Telegram, and a run started here is indistinguishable from one started
+        # there. Reading it directly rather than importing colt-web's app package: this container
+        # does not have that package, and duplicating the path string would be a second home for it.
+        env={**os.environ, "COLT_USER": _who, **_brand_env(_who)})
 
     lines = []
     async for raw in proc.stdout:

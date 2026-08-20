@@ -1234,3 +1234,22 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
   .issued-pw{font-size:15px;width:100%}
   .admin-actions{justify-content:flex-start}
 }
+
+/* ---- White Label ------------------------------------------------------------------------- */
+/* The swatches render the RETURNED theme, so what is on screen is what the builders will use. */
+.wl-swatches{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 4px}
+.wl-sw{display:flex;flex-direction:column;gap:4px;font-size:12px}
+.wl-chip{width:104px;height:52px;border-radius:10px;border:1px solid var(--line);
+  display:grid;place-items:center;font-weight:700;font-size:15px}
+.wl-swl{color:var(--mut)}
+.wl-live{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}
+.wl-logo{max-height:34px;max-width:170px;object-fit:contain}
+.wl-form input[type=file]{padding:7px 9px;font-size:13px}
+.wl-panel{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--mut)}
+.wl-warn ul{margin:6px 0 0 18px}
+.wl-warn .wl-h{font-weight:700}
+/* The chip sits under the page heading on Assess and Compliance. */
+.brandchip{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13px;color:var(--mut);
+  margin:-2px 0 14px}
+.brandchip-logo{max-height:20px;max-width:96px;object-fit:contain}
+@media (max-width:720px){ .wl-chip{width:84px;height:44px} }
