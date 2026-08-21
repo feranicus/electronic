@@ -235,6 +235,64 @@ check(not i3.get("scope_blowout"),
       "NO scope blow-out -> the operator gets a deck instead of 'assessment failed'")
 check(bool(i3.get("pivot_budget")), "the budget actually used is recorded for observability")
 
+# ---------------------------------------------------------------------------------------------
+print("\n== bottomline.com: N pivots each UNDER budget must not own the estate together ==")
+# THE 2026-08-21 FAILURE. The per-pivot rule worked and the assessment still died:
+#     org:"BOTTOMLINE TECHNOLOGIES (DE)"  +310  > 270  -> rolled back   (correct)
+#     org:"BOTTOMLINE TECHNOLOGIES"       +202  <= 270 -> kept
+#     org:"Bottomline Technologies"       +117  <= 270 -> kept
+# 90 proven hosts became 420, the scope-blowout check fired, and the operator got NOTHING.
+# Two defects: the budget was per-selector rather than a pool, and Shodan's org: is
+# case-insensitive so two of those are the SAME query charged twice.
+#
+# THE FIXTURE MUST REPRODUCE THE CONDITION. My first attempt gave one pivot 400 hosts, which the
+# PER-PIVOT rule kills on its own — so the pool was never exercised and both mutations passed. The
+# real shape is several DISTINCT selectors each comfortably under budget. Budget here is
+# max(60, 3*6) = 60, so three pivots of 25 are individually fine and 75 in total.
+mine = [_h("203.0.113.%d" % n, "Bottomline Technologies", ["bottomline.com"]) for n in range(1, 7)]
+def _blk(third, base):
+    # EIGHT each: identity 6 -> pool 19, blow-out 25. Each pivot is comfortably under the
+    # per-selector rule, so only the POOL can stop the third, and only the DEDUP stops the case
+    # variant being charged twice. Sized so each guard is individually load-bearing.
+    return [_h("198.51.%d.%d" % (base, n), "Bottomline %s" % third, []) for n in range(1, 9)]
+_a, _b, _c = _blk("Alpha", 10), _blk("Beta", 11), _blk("Gamma", 12)
+_install_routing_shodan([('net:"203.0.113', mine),
+                         ('org:"Bottomline Alpha"', mine + _a),
+                         ('org:"Bottomline Beta"',  mine + _b),
+                         ('org:"Bottomline Gamma"', mine + _c)], default=mine)
+# COUNT THE QUERIES. A duplicate case variant returns hosts already in the set, so it costs no
+# BUDGET - it costs a Shodan query (credits + wall clock). That is what the dedup actually saves,
+# and my first assertion measured budget instead and could not fail.
+_orgq = []
+_realcur = sys.modules["shodan"].Shodan.search_cursor
+def _counting(self, q, **k):
+    if str(q).startswith('org:"'):
+        _orgq.append(str(q))
+    return _realcur(self, q, **k)
+sys.modules["shodan"].Shodan.search_cursor = _counting
+importlib.reload(R)
+_offline()
+i4 = dict(_ident(["203.0.113.1"]), seed="bottomline.com", company="Bottomline",
+          domains=["bottomline.com"], brand_tokens=["bottomline"], group_domains=[],
+          org="Bottomline Alpha",
+          # three DISTINCT selectors, plus a case variant of one: org: is case-insensitive, so
+          # "BOTTOMLINE ALPHA" is the same search and must not be charged to the budget twice.
+          cert_orgs=["Bottomline Alpha", "BOTTOMLINE ALPHA", "Bottomline Beta", "Bottomline Gamma"])
+R.run(i4, [{"n": 1, "name": "pinned", "clause": 'net:"203.0.113.0/29"', "run": True, "cat": "pinned"}],
+      "Bottomline")
+_est = len(i4.get("scanned_ips") or [])
+_bud = i4.get("pivot_budget") or 0
+check(not i4.get("scope_blowout"),
+      "no blow-out: the operator gets a deck, not 'assessment failed' (estate %d)" % _est)
+check(_est <= max(25, 4 * 6),
+      "the estate stays inside the blow-out threshold (%d hosts)" % _est)
+_rb = i4.get("pivots_rolled_back") or []
+check(any("cumulative" in (r.get("reason") or "") for r in _rb) or _est <= _bud + 6,
+      "pivots are bounded by a shared POOL, not one budget each (%d rollback(s))" % len(_rb))
+check(len(_orgq) == len(set(q.casefold() for q in _orgq)),
+      "no org: query is issued twice in different casing (%d issued, %d distinct)"
+      % (len(_orgq), len(set(q.casefold() for q in _orgq))))
+
 print("\n" + "=" * 74)
 print("  test_run_path: %s" % ("ALL PASSED" if not FAILS else "%d FAILURE(S)" % len(FAILS)))
 print("=" * 74)

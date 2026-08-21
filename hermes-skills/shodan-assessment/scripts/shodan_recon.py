@@ -2309,15 +2309,53 @@ def run(ident, F, audience, limit_per_query=500):
     # Rollback is whole-pivot and includes its ASNs: a bad selector's ASNs must not survive to widen
     # a later sweep. Raise PIVOT_MAX_ADD only for a target you have verified by hand.
     PIVOT_MAX_ADD = int(os.environ.get("PIVOT_MAX_ADD", "60"))
+    # AND IT MUST NEVER EXCEED WHAT THE BLOW-OUT CHECK WILL ACCEPT.
+    #
+    # Two guards with independent thresholds, and the pivot budget was the LOOSER of the two: it
+    # floors at 60 while the blow-out refusal fires above max(25, 4*identity). On a small estate —
+    # 6 proven hosts, threshold 24 — the pool would happily authorise 60 additions and the run would
+    # then be REFUSED for a total the budget had just approved. Guards that do not agree on the
+    # limit produce exactly the outcome both exist to prevent: no deck at all. Same class as the
+    # lotto24 finding that three individually-correct guards composed into a total failure.
+    _blowout_max = max(25, 4 * max(1, len(identity_ips)))
     _pivot_budget = max(PIVOT_MAX_ADD, 3 * len(identity_ips))
+    _pivot_budget = max(0, min(_pivot_budget, _blowout_max - len(identity_ips)))
     ident["pivot_budget"] = _pivot_budget
+
+    # AND THE SAME BUDGET ACROSS ALL PIVOTS TOGETHER.
+    #
+    # bottomline.com, 2026-08-21: the per-pivot rule worked perfectly and the assessment still died.
+    #     org:"BOTTOMLINE TECHNOLOGIES (DE)"  +310  > 270  -> ROLLED BACK   (correct)
+    #     org:"BOTTOMLINE TECHNOLOGIES"       +202  <= 270 -> kept
+    #     org:"Bottomline Technologies"       +117  <= 270 -> kept
+    # Each survivor was individually "widening at the margin"; together they added 330 to a 90-host
+    # proven estate, the scope-blowout check then fired at 420, and the operator got NOTHING.
+    # A rule enforced one pivot at a time does not bound N pivots — three at 75% of budget is 225%.
+    # The principle was always "a pivot may widen scope, never own it", and OWN is a property of the
+    # total. So the budget is now a POOL: whatever is left after earlier pivots is what the next one
+    # may spend, and a pivot that would exceed the remainder is rolled back whole, exactly as before.
+    _pool = {"spent": 0}
 
     def _accept_pivot(label, added, added_asns):
         """Commit a pivot's hosts, or roll the whole pivot back if it dominates the estate."""
-        if len(added) <= _pivot_budget:
+        _left = _pivot_budget - _pool["spent"]
+        if len(added) <= _left:
+            _pool["spent"] += len(added)
             for _a in added_asns:
                 asns.add(_a)
             return len(added)
+        if len(added) <= _pivot_budget:      # fits the per-pivot rule, but the POOL is exhausted
+            for _ip in added:
+                hosts.pop(_ip, None)
+            print("[auto] pivot ROLLED BACK: %s added %d hosts and only %d of the %d-host pivot "
+                  "budget is left (%d already spent by earlier pivots). Pivots widen the estate "
+                  "TOGETHER; the budget is the total, not per selector."
+                  % (label, len(added), max(_left, 0), _pivot_budget, _pool["spent"]),
+                  file=sys.stderr)
+            ident.setdefault("pivots_rolled_back", []).append(
+                {"pivot": label, "added": len(added), "budget": _pivot_budget,
+                 "reason": "cumulative budget exhausted", "spent": _pool["spent"]})
+            return 0
         for _ip in added:
             hosts.pop(_ip, None)
         print("[auto] pivot ROLLED BACK: %s added %d hosts but the budget is %d "
@@ -2479,6 +2517,21 @@ def run(ident, F, audience, limit_per_query=500):
     # stored field "S-KON SALES KONTOR HAMBURG AG" that the full 'GmbH' string missed.
     _org_pivots = {_org_core(o) for o in seen_org if _brandish(o)}
     _org_pivots |= {_org_core(o) for o in ident.get("cert_orgs", []) if _brandish(o)}
+    # SHODAN'S org: IS CASE-INSENSITIVE, so two spellings of one name are ONE query run twice.
+    # bottomline.com produced org:"BOTTOMLINE TECHNOLOGIES" (+202) and org:"Bottomline Technologies"
+    # (+117) as separate pivots — the same search, paged differently, charged twice against the
+    # budget and counted twice toward the scope-blowout total. Fold case-equal cores to one pivot,
+    # keeping the spelling that reads best on the log line.
+    _by_fold = {}
+    for _o in _org_pivots:
+        _k = " ".join(_o.casefold().split())
+        if _k not in _by_fold or _o.istitle():
+            _by_fold[_k] = _o
+    if len(_by_fold) < len(_org_pivots):
+        print("[auto] org pivots: %d spelling(s) folded to %d distinct query(ies) — org: is "
+              "case-insensitive, so the extras were the same search"
+              % (len(_org_pivots), len(_by_fold)), file=sys.stderr)
+    _org_pivots = set(_by_fold.values())
     for _oc in sorted(_org_pivots, key=len, reverse=True)[:4]:
         if len(_oc) < 5:
             continue
