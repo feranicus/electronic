@@ -1408,8 +1408,39 @@ def do_rollback(ref):
 
 
 # ------------------------------------------------------------------ 3. deploy
+def warn_if_tree_moved_since_commit():
+    """The tree was committed in 2/5; if it is dirty NOW, something wrote to it mid-ship.
+
+    THE SITUATION THIS NAMES, from the 2026-08-21 run: step 2 printed "(nothing new to commit)" and
+    step 3 printed "working tree is DIRTY (2 path(s))" for two ENGINE files. An editor was writing
+    while the ship ran. Everything then behaved correctly — the pack takes the COMMIT, so the edits
+    did not ship, and the engine-hash verify refused to report success — but the operator was left
+    reading "colt-web STILL runs stale code after a direct deploy", which sounds like a broken
+    deploy rather than a race he can fix in one command.
+    Say it plainly, and only when an ENGINE file is involved, because those are the ones whose
+    absence the verify will definitely catch five minutes later.
+    """
+    try:
+        out = subprocess.run(["git", "status", "--porcelain"], cwd=HERE, capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", timeout=30).stdout
+    except Exception:
+        return
+    dirty = [ln[3:].strip() for ln in (out or "").splitlines() if ln.strip()]
+    eng = [p for p in dirty
+           if any(p.replace("\\", "/").endswith(f.split("scripts/")[-1]) for f in ENGINE_FILES)]
+    if not eng:
+        return
+    print("\n  [!] THE TREE CHANGED AFTER 2/5 COMMITTED IT — something is writing while this ship")
+    print("      runs. These are ENGINE files, so the deploy will pack the COMMIT (correctly),")
+    print("      the container will not get them, and 3/5 will stop with 'STILL runs stale code':")
+    for p in eng[:6]:
+        print("        %s" % p)
+    print("      Let the edit finish, then re-run: python ship.py\n")
+
+
 def do_web(use_ci):
     say("3/5  DEPLOY WEB — cybergod.ai (colt-web)")
+    warn_if_tree_moved_since_commit()
     # DEFAULT = deploy straight from this PC over SSH.
     # There is no firewall between here and the droplet (port 22 is open to the internet), so the
     # old GitHub-Actions -> Tailscale -> droplet path added a hop that bought nothing and was the
