@@ -162,11 +162,30 @@ class Deck:
 
 
 def card(s, x, y, w, h, kicker, kcol, head, body, hcol=WHITE, bsize=10, fill=INK):
-    """The template's card: panel + a coloured kicker line + head + body."""
+    """The template's card: panel + a coloured kicker line + head + body.
+
+    THE HEAD IS A FIXED BOX AND IT IS ARITHMETIC, not taste. The head sits at y+0.50 and the body
+    starts at y+0.95, so the head has 0.45in. At 14pt Arial Black a line is about 0.233in: one line
+    fits comfortably, two just fit, three overlap the body. A three-line head shipped in the first
+    render of the cybergod pitch (the MITRE / Diamond / Admiralty card) and printed straight
+    through the paragraph beneath it.
+
+    Same defect class as the site header row and the deck title row, both of which this repository
+    has already paid for. Refuse it at build time rather than hope somebody looks at the render.
+    """
+    if head.count("\n") + 1 > 2:
+        raise SystemExit("[X] card head is %d lines and overlaps the body (max 2): %r"
+                         % (head.count("\n") + 1, head))
+    # A TWO-LINE HEAD MOVES THE BODY DOWN. At 14pt a line is ~0.233in, so two lines need 0.47in
+    # while the gap to the body is 0.45: the second line and the first line of body text touch.
+    # Measured on the render rather than assumed. A one-line head is unaffected, so the two decks
+    # that only use one-line heads are byte-identical to before this change.
+    drop = 0.24 if head.count("\n") else 0.0
     _rect(s, x, y, w, h, fill, LINE)
     _tb(s, x + 0.26, y + 0.22, w - 0.52, 0.24, kicker.upper(), 9, kcol, MONO, True)
-    _tb(s, x + 0.26, y + 0.50, w - 0.52, 0.38, head, 14, hcol, DISPLAY, True)
-    _tb(s, x + 0.26, y + 0.95, w - 0.52, h - 1.15, body, bsize, BODY, TEXT, space=1.28)
+    _tb(s, x + 0.26, y + 0.50, w - 0.52, 0.38 + drop, head, 14, hcol, DISPLAY, True)
+    _tb(s, x + 0.26, y + 0.95 + drop, w - 0.52, h - 1.15 - drop, body, bsize, BODY, TEXT,
+        space=1.28)
 
 
 def bullets(s, x, y, w, items, gap=0.52, dot=CYAN, size=10.5, dotsize=0.11):
