@@ -51,6 +51,25 @@ def secaudit_line_matters(s):
                              "UNREACHABLE", "patchwatch_timer")))
 
 
+# OUTPUT ENCODING, SET ONCE FOR THIS PROCESS AND EVERY CHILD IT SPAWNS.
+#
+# A Windows console is cp1252. The engine gates print what they compared, and for the Russian and
+# German packs that includes non-ASCII — so a gate that had just PASSED died in `print()` with
+# UnicodeEncodeError, and ship.py reported it as "ENGINE i18n REGRESSION - a document language would
+# ship English finding text". The translations were perfect; the console could not render the
+# evidence. That is the sixth time in this repo that something validated in a UTF-8 sandbox was
+# handed to the operator's box and failed on the platform, so it is fixed HERE, at the one place
+# that launches all of them, rather than in each gate for ever.
+#   * PYTHONIOENCODING is read at interpreter START, so setting it now affects CHILDREN only.
+#   * reconfigure() fixes OUR OWN streams, which matter because we print the children's captured
+#     output. Both halves are needed; neither alone is enough.
+os.environ.setdefault("PYTHONIOENCODING", "utf-8:replace")
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.environ.get("DROPLET_HOST", "64.225.108.200")
 USER = os.environ.get("DROPLET_USER", "root")
@@ -73,6 +92,29 @@ def say(msg, char="-"):
     print("\n" + char * 74)
     print("  " + msg + "     [+%ds]" % int(time.time() - T0))
     print(char * 74, flush=True)
+
+
+def gate_failed(name, proc, claim):
+    """Exit, saying whether the SUBJECT is broken or the CHECK is — they are different problems.
+
+    A gate that raises has told you nothing about the thing it checks, and reporting it as a defect
+    in the subject sends the next hour down the wrong road. That happened verbatim: the engine i18n
+    gate printed PASS for every German and Russian string, then died in `print()` because a Windows
+    console is cp1252 and the Russian detail is Cyrillic — and ship.py announced
+    "ENGINE i18n REGRESSION - a document language would ship English finding text". Every
+    translation was correct. The operator's reply was "полная ж", and he was right to be annoyed.
+
+    The tell is a traceback in stderr with no verdict line in stdout. Say so, and name the fix.
+    """
+    out = (proc.stdout or "") + (proc.stderr or "")
+    crashed = "Traceback (most recent call last)" in out
+    if crashed:
+        last = [ln for ln in out.strip().splitlines() if ln.strip()][-1:]
+        sys.exit("\n[X] THE %s GATE CRASHED - this is NOT a finding about %s.\n"
+                 "    %s\n"
+                 "    The check could not run, so it has said nothing about its subject. Fix the\n"
+                 "    check, then re-run: python ship.py" % (name, name, last[0].strip() if last else ""))
+    sys.exit("[X] %s REGRESSION - %s. Do not ship." % (name, claim))
 
 
 def run(args, check=True, cwd=None):
@@ -772,8 +814,8 @@ def do_tests():
                          capture_output=True, text=True, timeout=180)
     if _ei.returncode != 0:
         print((_ei.stdout or '') + (_ei.stderr or ''))
-        sys.exit('[X] ENGINE i18n REGRESSION - a document language we advertise would ship English '
-                 'finding text. Do not ship.')
+        gate_failed('ENGINE i18n', _ei,
+                    'a document language we advertise would ship English finding text')
     print('  engine i18n: every finding string renders in every advertised document language')
 
     # THE PASSIVE FEATURE SET from the ns03.ru engagement (email authentication, certificate

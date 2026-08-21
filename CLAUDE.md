@@ -5833,6 +5833,35 @@ Guarded by test_proteus.py: the stock-theme-plus-painted-shapes shape yields the
 alone would have picked the grey, a CUSTOM theme still beats the slides, the panel may vote for a
 slide colour, a colourless deck says so, and full-slide renders are refused WITH a reason.
 
+## THE GATE PASSED AND THEN DIED PRINTING ITS OWN PASS (2026-08-21, cp1252)
+The engine i18n gate reported PASS for all 237 German strings and all 237 Russian ones, and then:
+```
+  PASS ru: composed titles translate (template + product + host count)   0 of 33 fail
+  UnicodeEncodeError: 'charmap' codec can't encode characters in position 65-68
+[X] ENGINE i18n REGRESSION - a document language we advertise would ship English finding text.
+```
+**Every translation was correct.** A Windows console is cp1252, the check prints WHAT IT COMPARED,
+and for Russian that detail is Cyrillic (`singular 'хост' vs plural 'хостов'`) — so `print()` raised,
+the gate exited non-zero, and ship.py blamed the translations. The operator's reply was "полная ж".
+TWO SEPARATE DEFECTS:
+1. **The gate depended on the console encoding.** SIXTH instance of the root cause this file already
+   records under "A CHECK MUST RUN WHERE THE TOOLCHAIN IS CORRECT BY CONSTRUCTION" (httpx,
+   esbuild/win32, `os.uname`, python-multipart, …): validated in a UTF-8 sandbox, handed to the
+   operator's box. Fixed at the ONE place that launches every gate — ship.py sets
+   `PYTHONIOENCODING` (read at interpreter start, so it affects CHILDREN) **and** reconfigures its
+   OWN streams (it prints the children's captured output). Both halves are needed; neither alone is
+   enough. The gate also reconfigures itself, for anyone running it directly.
+2. **ship.py could not tell a CRASH from a FINDING.** A check that raised has said NOTHING about its
+   subject, and reporting it as a defect in the subject sends the next hour down the wrong road.
+   `gate_failed()` now distinguishes them: a traceback with no verdict line prints
+   "THE … GATE CRASHED - this is NOT a finding about …" and names the exception.
+RULE: **a gate must be able to render its own PASS on the operator's console.** A check that blocks
+a good deploy and names the wrong culprit is worse than no check.
+Guarded by `tests/test_console_encoding.py`, which REPRODUCES the console (`PYTHONIOENCODING=cp1252`)
+rather than reasoning about it, and asserts both directions of the crash/regression message. Four
+mutations, each verified to fail and restore — including one that "fixes" the crash by DROPPING the
+Cyrillic evidence, which is silently losing the thing the check exists to show.
+
 ## TWO CONTAINERS, ONE COMMIT, DIFFERENT BYTES — and the verify said they matched (2026-08-21)
 From the 2026-08-20 ship log. One `python ship.py`, one commit, and the two containers it deployed
 ended up running different engine files:

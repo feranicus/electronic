@@ -32,6 +32,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "i18n"))
 
+# THE CONSOLE ENCODING IS NOT THE TEST'S BUSINESS, AND IT KILLED THIS GATE ON THE FIRST REAL RUN.
+# A Windows console defaults to cp1252. This check prints what it compared — and for Russian that
+# detail is Cyrillic — so `print()` raised UnicodeEncodeError, the gate exited non-zero, and ship.py
+# reported "ENGINE i18n REGRESSION - a document language would ship English finding text". Every
+# translation was correct; the printer was not. A gate that cannot report its own PASS is worse than
+# no gate: it blocks a good deploy and names the wrong culprit.
+# Sixth instance of the same root cause in this repo (httpx, esbuild/win32, os.uname, ...): I
+# validated in a UTF-8 sandbox and handed the operator a command for a cp1252 box.
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")     # py3.7+; never raises on a pipe
+    except Exception:
+        pass
+
 import deck_langs                                                        # noqa: E402
 import shodan_recon as R                                                 # noqa: E402
 import i18n as I                                                         # noqa: E402
