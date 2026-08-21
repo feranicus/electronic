@@ -111,6 +111,9 @@ def sshout(cmd, timeout=30, tries=3):
 def scp(local_path, remote_path):
     return run(["scp", *SSH_OPTS, local_path, "%s@%s:%s" % (USER, HOST, remote_path)], timeout=300)
 
+_INV = ""          # the batched read-only inventory, reused instead of re-probing
+
+
 def inspect():
     """ONE ssh session for the whole read-only inventory.
 
@@ -119,8 +122,15 @@ def inspect():
     session that got refused was a trivial `printf > .env` — the droplet was healthy, sshd simply
     would not take another connection. Batching the probes is free: they are all read-only and the
     output is identical."""
+    # ...AND THE ANSWERS ARE REUSED. Batching this inventory was only half the job: discover_loki(),
+    # ensure_docker() and ensure_swap() then opened FOUR more sessions to re-ask questions this one
+    # already answered. On 2026-08-21 those four were the ones sshd refused — five consecutive
+    # rc=124 timeouts on READ-ONLY probes, after the web app had already deployed fine, so the bots
+    # step failed for no reason but connection count. CLAUDE.md's own rule: before adding a probe,
+    # ask whether this run already knows the answer. Session count for the pre-flight: 5 -> 1.
     print("\n=== READ-ONLY inventory of %s (nothing changed, ONE ssh session) ===\n" % HOST)
-    ssh("; ".join([
+    global _INV
+    _r = ssh("; ".join([
         "docker --version 2>/dev/null || echo 'docker: NOT INSTALLED'",
         "echo",
         "echo '-- running containers (Amnezia VPN / VideoDead / jobhuntwow — do NOT disturb) --'",
@@ -136,9 +146,18 @@ def inspect():
         "echo",
         "echo '-- our stack already present? --'",
         "docker ps -a --filter name=colt- --format '  {{.Names}} ({{.Status}})' 2>/dev/null || true",
-    ]), check=False, timeout=120)
+    ]), check=False, capture=True, timeout=120)
+    _INV = (getattr(_r, "stdout", "") or "") + (getattr(_r, "stderr", "") or "")
+    print(_INV)
+    return _INV
 
 def discover_loki():
+    # The inventory already printed "<name>  <image>  net=<network>" for every loki container.
+    for ln in (_INV or "").splitlines():
+        if "loki" in ln.lower() and "net=" in ln:
+            parts = ln.split()
+            if parts and parts[-1].startswith("net="):
+                return parts[0], parts[-1][4:].split(",")[0]
     name = sshout("docker ps --format '{{.Names}}|{{.Image}}' 2>/dev/null | grep -i loki | head -1 | cut -d'|' -f1")
     if not name:
         return None, None
@@ -146,6 +165,8 @@ def discover_loki():
     return name, net
 
 def ensure_docker():
+    if "Docker version" in (_INV or ""):
+        print("  docker present (from the inventory — no extra ssh)."); return
     print("  checking docker (30s timeout, retries)...", flush=True)
     if "OK" in sshout("command -v docker >/dev/null 2>&1 && echo OK || echo MISSING"):
         print("  docker present — untouched."); return
@@ -157,6 +178,9 @@ def ensure_docker():
         "apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")
 
 def ensure_swap():
+    # `swapon --show` printed its table into the inventory, or "(no swap)" if there is none.
+    if _INV and "(no swap)" not in _INV and "swap" in _INV.lower() and "PRIO" in _INV:
+        print("  swap present (from the inventory — no extra ssh)."); return
     print("  checking swap...", flush=True)
     if "HAVE" in sshout("swapon --show 2>/dev/null | grep -q . && echo HAVE || echo NONE"):
         print("  swap present — untouched."); return
