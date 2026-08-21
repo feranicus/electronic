@@ -119,6 +119,77 @@ def colt_regressions():
               "country cell is summarised (%r), not 21 codes truncated mid-word" % cc)
 
 
+def length_budgets():
+    """The prose contract must fit the BOX, and every enrichment path must enforce it.
+
+    bottomline.com was delivered with 46 text boxes ending in an ellipsis. Nothing was broken: the
+    bible asked for three full sentences of `why` (~450 chars) into a 243-char box and 3-5
+    remediation objects into rows that hold 148 chars at five rows. The contract and the box had
+    simply never been compared.
+
+    THE CAPACITY IS DERIVED FROM build_findings_deck.js, not retyped here, so moving a box fails
+    this check instead of silently re-opening the defect.
+    """
+    print("\n  --- length budgets: the contract must fit the box -------------------------------")
+    sys.path.insert(0, HERE)
+    import enrich as E
+
+    js = open(os.path.join(HERE, "build_findings_deck.js"), encoding="utf-8").read()
+
+    def cap(w, h, pt):                       # fitText's own model: ~0.5*pt/char, ~1.25*pt/line
+        return int(w * 72 / (0.5 * pt)) * int(h * 72 / (1.25 * pt))
+
+    m = re.search(r"fitText\(asText\(f\.why\)[^,]*,\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)", js)
+    check(bool(m), "the why box is still readable from build_findings_deck.js")
+    if m:
+        box = cap(*(float(x) for x in m.groups()))
+        check(E.BUDGET["why"] <= box,
+              "why budget %d fits its %d-char box" % (E.BUDGET["why"], box))
+
+    # REM_ROWS is the load-bearing number: rowH is adaptive, so asking for five rows is asking for
+    # a third of the space per row. Assert the rows we request can hold the body we ask for.
+    rh = min(1.05, (5.24 - 2.06) / max(1, E.REM_ROWS))
+    body_box = cap(3.85, rh - 0.30, 7.4)
+    check(E.BUDGET["rem_body"] <= body_box,
+          "rem body budget %d fits its %d-char box at %d rows"
+          % (E.BUDGET["rem_body"], body_box, E.REM_ROWS))
+    check(E.BUDGET["rem_title"] <= cap(3.85, 0.24, 8.6),
+          "rem title budget %d fits its box" % E.BUDGET["rem_title"])
+
+    # THE BIBLE MUST STATE THE SAME NUMBERS. A budget the model is never told about is a budget it
+    # cannot meet: it writes 450 characters, we delete 110, and the customer reads a fragment.
+    bible = open(os.path.join(HERE, "..", "reference", "LLM_DELTAS_BIBLE.md"),
+                 encoding="utf-8").read()
+    for name, n in (("rem_title", E.BUDGET["rem_title"]), ("rem_body", E.BUDGET["rem_body"]),
+                    ("why", E.BUDGET["why"])):
+        check(str(n) in bible, "the bible states the %s budget (%d characters)" % (name, n))
+    check(re.search(r"`rem` must be EXACTLY %d" % E.REM_ROWS, bible, re.I) is not None,
+          "the bible asks for exactly %d remediation objects" % E.REM_ROWS)
+
+    # BOTH PATHS ENFORCE IT. enrich_parallel.apply() used to copy the model's fields on verbatim,
+    # and it is the path that runs whenever the monolithic call fails — i.e. the one that built the
+    # deck this check exists for.
+    over = {"why": ["S%d. " % i + "w" * 300 for i in range(3)],
+            "rem": [{"tag": "MADEUP", "title": "N" * 200, "body": "b" * 900}] * 6}
+    got = E.normalise_prose(over)
+    check(len(got["rem"]) == E.REM_ROWS, "normalise_prose caps the rows the box can render")
+    check(got["rem"][0]["tag"] == "COLT", "an invented remediation tag is coerced to a real one")
+    check(all(len(r["title"]) <= E.BUDGET["rem_title"] and len(r["body"]) <= E.BUDGET["rem_body"]
+              for r in got["rem"]), "every remediation field is inside its budget")
+    check(len(" ".join(got["why"])) <= E.BUDGET["why"], "why is clamped on the JOINED budget")
+
+    src = open(os.path.join(HERE, "enrich_parallel.py"), encoding="utf-8").read()
+    body = src[src.index("def apply("):].split("\ndef ")[0]
+    check("normalise_prose(" in body,
+          "the shard path applies the same normalisation as the serial chain")
+
+    # A SENTENCE THAT DOES NOT FIT IS DROPPED, NOT TRIMMED. Two complete thoughts read better than
+    # two and a half, which is the entire reason for clamping here rather than letting fitText cut.
+    two = E._clamp_list(["A" * 100 + ".", "B" * 100 + ".", "C" * 100 + "."], 230)
+    check(all(s.endswith(".") and "…" not in s for s in two),
+          "whole sentences only: an over-long one is dropped, never trimmed mid-thought")
+
+
 def main():
     tmp = tempfile.mkdtemp()
     fj = json.load(open(os.path.join(SAMPLE, "findings.sample.json"), encoding="utf-8"))
@@ -219,6 +290,7 @@ def main():
         print("  skip  sample has no _enriched flags (fixture predates the coverage contract)")
 
     colt_regressions()
+    length_budgets()
 
     print("\n" + "=" * 78)
     print("  test_deck_quality: %s" % ("ALL PASSED" if not FAILS else "%d FAILURE(S)" % len(FAILS)))

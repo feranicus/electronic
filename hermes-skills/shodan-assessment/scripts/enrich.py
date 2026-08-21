@@ -194,6 +194,128 @@ BUDGET_S = int(os.environ.get("ENRICH_BUDGET_S", "245"))  # hard wall for the wh
                                                           # kills enrich at 260s, so stop before that.
 BACKOFF  = float(os.environ.get("ENRICH_BACKOFF_S", "3")) # base for exponential backoff on 429/5xx
 
+# ---------------------------------------------------------------------------------------------
+# CHARACTER BUDGETS — derived from the REAL box arithmetic in build_findings_deck.js, not chosen.
+#
+# THE DEFECT THIS CLOSES, measured on bottomline.com_Shodan_Findings_DE.pptx: 46 text boxes ended
+# in an ellipsis. `fitText(t,w,h,pt)` trims on a word boundary when the text exceeds the box, so a
+# customer-facing slide read "Managed SASE/SSE mit ZTNA — Entfernt die öffentliche…". Nothing was
+# broken; the CONTRACT simply did not match the BOX. The bible demanded three full sentences of
+# `why` (~400-500 chars) into a 243-char box, and 3-5 remediation objects each carrying WHY THIS
+# SERVICE / WHAT YOU GET / HOW (~450 chars) into rows that are only 148 chars wide at five rows.
+#
+# TWO DECISIONS, both arithmetic:
+#   * REM_ROWS = 3, not 5. rowH is adaptive — `min(1.05, (5.24-2.06)/rows)` — so three rows give
+#     each body 370 characters and five give 148. Three rich rows beat five truncated ones, and
+#     the enrichment bible now asks for exactly three so the model is not writing text we delete.
+#   * The budgets sit just under the box, and _clamp cuts at a SENTENCE boundary. A slide that ends
+#     mid-sentence is a defect; one that ends a sentence early is simply shorter.
+#
+# GERMAN AND RUSSIAN RUN ~30% LONGER than the English the model is briefed in, which is why these
+# are enforced HERE rather than trusted to the prompt. A prompt is a request; this is a guarantee.
+# When a box changes, change the number here and in reference/LLM_DELTAS_BIBLE.md together.
+REM_ROWS = 3
+BUDGET = {
+    "why":       230,     # box: w4.55 h0.48 @7.6pt -> 243 chars, joined
+    "what":      230,
+    "rem_title":  60,     # box: w3.85 h0.24 @8.6pt ->  69 chars
+    "rem_body":  340,     # box: w3.85, 3 rows      -> 370 chars
+}
+
+
+def _clamp(s, n):
+    """Trim to `n` characters on a SENTENCE boundary, else a word boundary. Never mid-word.
+
+    The old code did a bare `str(...)[:400]`, which cuts inside a word and then hands the deck a
+    string it truncates AGAIN with an ellipsis. Two truncations, neither of them readable.
+    """
+    s = str(s or "").strip()
+    if len(s) <= n:
+        return s
+    # A LABEL IS NOT A SENTENCE. Models write "Managed SASE/SSE with ZTNA — removes the public
+    # reachability of the management plane" into a 60-character title box. Cutting that on a word
+    # boundary leaves "...removes the public.", which reads like a defect. The service NAME is the
+    # part before the dash or colon, and it is what the row is actually for.
+    for sep in (" — ", " - ", ": "):
+        i = s.find(sep)
+        if 0 < i <= n:
+            return s[:i].strip()
+    head = s[:n]
+    for end in (". ", "! ", "? ", ".\n"):
+        i = head.rfind(end)
+        if i >= n * 0.55:                       # a sentence break, but not so early it guts the text
+            return head[:i + 1].strip()
+    # LAST RESORT: one sentence longer than the whole box, with no break to cut at. Mark it with an
+    # ellipsis rather than closing it with a full stop — a fabricated sentence end tells the reader
+    # the thought finished when it did not, and that is worse than admitting the trim.
+    # The ellipsis COSTS A CHARACTER. Appending it after slicing to n returned n+1 and blew the
+    # budget by exactly one — which the deck would then trim again, the double truncation this
+    # whole change removes. Reserve the room before cutting.
+    head = s[:n - 1]
+    i = head.rfind(" ")
+    return (head[:i] if i > 0 else head).rstrip(" ,;:—-") + "…"
+
+
+def _clamp_list(xs, n):
+    """Fit whole sentences into a JOINED budget — the deck renders them as one paragraph.
+
+    Clamping each element to `n` would let three sentences total three times the box. And a
+    sentence that does not fit WHOLE is DROPPED rather than trimmed: two complete thoughts read
+    better than two and a half, which is the whole point of doing this here instead of letting
+    fitText cut it. Only a single over-long sentence is trimmed, because dropping it would leave
+    the field empty.
+    """
+    out, used = [], 0
+    for x in xs:
+        x = str(x).strip()
+        if not x:
+            continue
+        room = n - used - (1 if out else 0)
+        if len(x) <= room:
+            out.append(x)
+            used += len(x) + (1 if out[:-1] else 0)
+        elif not out:                           # the first sentence alone overflows: trim it
+            out.append(_clamp(x, n))
+            used = len(out[0])
+        # else: no room for this one whole -> leave it out, and stop looking
+        if used >= n - 40:
+            break
+    return out
+
+
+def normalise_prose(x):
+    """Clean ONE model-returned finding into the shape the deck renders. THE ONLY implementation.
+
+    It existed only inside the serial chain's merge loop, so `enrich_parallel.apply()` — the path
+    that runs whenever the monolithic call fails, which is most large estates — copied the model's
+    fields onto the finding VERBATIM: no tag validation, no row cap, no length clamp. The
+    bottomline.com deck was built by the shards, which is why 46 boxes were truncated and why a
+    remediation row could carry an invented tag. Same defect as a value with four homes, one level
+    down: the newer path silently skipped the rules the older one enforced.
+    """
+    out = {}
+    for k in ("what", "why"):
+        if isinstance(x.get(k), list) and x[k]:
+            out[k] = _clamp_list([str(v) for v in x[k]][:3], BUDGET[k])
+    if isinstance(x.get("rem"), list) and x["rem"]:
+        rem = []
+        for v in x["rem"][:REM_ROWS]:
+            if isinstance(v, dict):
+                tag = str(v.get("tag", "COLT")).upper()
+                if tag not in ("COLT", "PSF", "OSS", "VENDOR"):
+                    tag = "COLT"
+                rem.append({"tag": tag,
+                            "title": _clamp(v.get("title", ""), BUDGET["rem_title"]),
+                            "body": _clamp(v.get("body", ""), BUDGET["rem_body"])})
+            elif v:
+                rem.append(_clamp(v, BUDGET["rem_body"]))
+        if rem:
+            out["rem"] = rem
+    if x.get("realComparable"):
+        out["realComparable"] = str(x["realComparable"])
+    return out
+
+
 def _bible():
     for name in ("LLM_DELTAS_BIBLE.md", "COLT_SHODAN_DECK_METHODOLOGY.md"):
         p = os.path.join(HERE, "..", "reference", name)
@@ -658,23 +780,10 @@ def enrich(fj, lang="en"):
                 # TEMPLATES fallback — which is why "coverage 0%" fired a pointless map-reduce
                 # top-up on a run where deepseek-3.2 had in fact rewritten every finding.
                 f["_enriched"] = True
-                for k in ("what", "why"):
-                    if isinstance(x.get(k), list) and x[k]:
-                        f[k] = [str(v) for v in x[k]][:3]
-                # `rem` may be rich objects {tag,title,body} — the findings deck renders title bold with
-                # the body underneath (up to 5 rows). str() would have turned them into "{'tag': ...}".
-                if isinstance(x.get("rem"), list) and x["rem"]:
-                    _rem = []
-                    for v in x["rem"][:5]:
-                        if isinstance(v, dict):
-                            _tag = str(v.get("tag", "COLT")).upper()
-                            if _tag not in ("COLT", "PSF", "OSS", "VENDOR"): _tag = "COLT"
-                            _rem.append({"tag": _tag, "title": str(v.get("title", ""))[:120],
-                                         "body": str(v.get("body", ""))[:400]})
-                        else:
-                            _rem.append(str(v))
-                    f["rem"] = _rem
-                if x.get("realComparable"): f["realComparable"] = str(x["realComparable"])
+                # `rem` may be rich objects {tag,title,body} — the findings deck renders the title
+                # bold with the body underneath. normalise_prose validates the tag, caps the rows to
+                # what the box can render and clamps every field on a sentence boundary.
+                f.update(normalise_prose(x))
             if j.get("exec_summary"): fj["target"]["exec_summary"] = str(j["exec_summary"])
             if j.get("qa_note"):      fj["target"]["qa_note"]      = str(j["qa_note"])
             if j.get("geopol_context"): fj["target"]["geopol_context"] = str(j["geopol_context"])

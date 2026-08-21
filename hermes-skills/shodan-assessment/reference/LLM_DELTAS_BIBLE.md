@@ -107,17 +107,35 @@ PSF workshops: resilience, PKI rationalisation, China risk/compliance. OSS: crt.
 ```
 Include an entry in `findings` for EVERY id you were given, each with a `realComparable`.
 
+## LENGTH — the box is fixed, so these are hard limits, not preferences
+The deck is rendered into boxes of a fixed size. Anything longer is CUT, and a slide that stops
+mid-sentence in front of a customer is worse than a shorter one that finishes its thought. Write to
+these budgets. **If you are writing in German or Russian, the same sentence runs about 30% longer
+than in English — say less, do not say it in smaller words.**
+
+| field       | limit | box it is rendered into |
+|-------------|-------|--------------------------|
+| `rem` title | **60 characters** — a SERVICE NAME, never a sentence | 3.85in x 0.24in |
+| `rem` body  | **340 characters** total, all three questions inside it | 3.85in, one of three rows |
+| `why`       | **230 characters** for all sentences COMBINED | 4.55in x 0.48in |
+| `what`      | **230 characters** for all sentences COMBINED | shares the same column |
+
+`rem` must be EXACTLY 3 objects. The row height is divided between them, so three rows give each
+body 370 characters to live in and five give 148 — five entries is not more content, it is the same
+content truncated. Three complete answers beat five fragments.
+
 ## DEPTH — the deck has room; fill it (this is the #1 complaint about thin output)
-- `rem` MUST be 3-5 OBJECTS `{tag,title,body}` with `tag` one of COLT | PSF | OSS | VENDOR. The deck
+- `rem` MUST be 3 OBJECTS `{tag,title,body}` with `tag` one of COLT | PSF | OSS | VENDOR. The deck
   renders the title in bold with the body underneath — a bare product name wastes the slide.
   Lead with the managed-service row (tag COLT). Every managed-service body answers three questions in this order:
     WHY THIS SERVICE   — what it structurally removes, and why a patch/firewall rule does not
     WHAT THEY GET — the outcome in the customer's terms (exposure retired, hours saved, audit evidence,
                     one accountable contract instead of five tools)
     HOW        — how it is delivered and operated (managed service, per-site policy, ZTNA broker, ...)
-- `why` = 2-3 FULL sentences, not a fragment. Name the attacker action, the business consequence and
-  the regulation article. "Credential attacks; panel-CVE surface" is NOT acceptable output.
-- `what` = 1-2 full sentences per item, naming the host/version/CVE evidence.
+- `why` = 2 FULL sentences inside the 230-character budget, not a fragment. Name the attacker action,
+  the business consequence and the regulation article. "Credential attacks; panel-CVE surface" is NOT
+  acceptable output — but neither is a third sentence that gets cut off.
+- `what` = 1-2 full sentences, naming the host/version/CVE evidence, inside 230 characters.
 - `exec_summary` = 4-6 sentences and must END with the hook: what does about this estate.
 - Be specific to THIS customer. Generic prose that would fit any company is a failure.
 - Depth must never be padding: every sentence carries a fact, a number, an article or an outcome.

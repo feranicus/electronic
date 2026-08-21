@@ -725,6 +725,21 @@ def do_tests():
                  'Do not ship.')
     print('  white label: partner colours applied, severity enums intact, unbranded path untouched')
 
+    # ENGINE i18n. /api/langs is a CAPABILITY CLAIM: advertising a document language means the
+    # DETERMINISTIC path renders in it, not just the model's prose. bottomline.com received a German
+    # deck with English finding titles on three of ten slides because 143 of 237 customer-visible
+    # TEMPLATES strings had no translation in either pack, and every one of them belonged to a
+    # detector added after the packs were written. The gap was invisible precisely because the model
+    # usually writes over these strings — it only shows on the findings enrichment did not reach,
+    # which are the runs where the customer is already getting less.
+    _ei = subprocess.run([sys.executable, os.path.join(engine, 'test_engine_i18n.py')],
+                         capture_output=True, text=True, timeout=180)
+    if _ei.returncode != 0:
+        print((_ei.stdout or '') + (_ei.stderr or ''))
+        sys.exit('[X] ENGINE i18n REGRESSION - a document language we advertise would ship English '
+                 'finding text. Do not ship.')
+    print('  engine i18n: every finding string renders in every advertised document language')
+
     # THE PASSIVE FEATURE SET from the ns03.ru engagement (email authentication, certificate
     # intelligence, naming-convention mining) plus the assertion that the ACTIVE tier stays shut.
     # Replayed against that engagement's real data, so a regression is measured against ground

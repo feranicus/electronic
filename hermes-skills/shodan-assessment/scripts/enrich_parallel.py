@@ -150,9 +150,21 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
     _per = int(os.environ.get("ENRICH_SHARD_TIMEOUT", "150"))
     _chain = list(getattr(E, "MODELS", None) or [getattr(E, "MODEL", None)])
 
+    # SPREAD THE SHARDS ACROSS VENDORS. Every shard used to be sent to _chain[0], so the four of them
+    # shared ONE failure domain: on bottomline.com the head model was already stalling (it had just
+    # burned its full 175s cap in the serial chain returning nothing), and all four shards then timed
+    # out together at 150s — 150 seconds of wall clock, four calls, zero findings, and only then did
+    # the targeted retry start. CLAUDE.md has said since the first 429 that a backup must be a
+    # DIFFERENT VENDOR because an outage is provider-wide; that rule was written for the serial chain
+    # and never carried across to the shards, which is where most large estates are actually enriched.
+    # Round-robin bounds a single vendor's bad minute to 1/N of the work instead of all of it, and the
+    # targeted retry below still re-asks anything a weaker model missed.
+    _for = lambda i: _chain[i % len(_chain)] if _chain and len(_chain) > 1 else (_chain or [None])[0]
+    _log("[enrich-mr] shard models: %s" % ", ".join(str(_for(i)) for i in range(len(batches))))
+
     merged, metas = {}, []
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(batches)))) as pool:
-        futs = {pool.submit(_call_shard, E, fj, b, lang, i, _chain[0], _per): i
+        futs = {pool.submit(_call_shard, E, fj, b, lang, i, _for(i), _per): i
                 for i, b in enumerate(batches)}
         for fut in as_completed(futs):
             got, meta = fut.result()
@@ -221,6 +233,7 @@ def apply(fj, merged):
     HARD RULE (CLAUDE.md): the LLM rewrites PROSE only. Severity, evidence and CVE ids are engine
     facts and are never taken from the model.
     """
+    import enrich as E                 # module-local, like _call_shard: enrich imports lazily here
     KEEP_ENGINE = ("id", "sev", "evidence", "cves", "kind", "hosts")
     out = []
     for f in (fj.get("findings") or []):
@@ -236,6 +249,11 @@ def apply(fj, merged):
             if k in KEEP_ENGINE:
                 continue
             nf[k] = v
+        # THE SAME NORMALISATION THE SERIAL CHAIN APPLIES. Without this the shards wrote the model's
+        # fields on verbatim — unvalidated tags, five remediation rows squeezed into a box that fits
+        # three, and text past what the slide can render (46 truncated boxes on bottomline.com, a
+        # deck the shards built because the monolithic call had timed out).
+        nf.update(E.normalise_prose(nf))
         nf["_enriched"] = True
         out.append(nf)
     fj["findings"] = out

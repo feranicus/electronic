@@ -39,6 +39,22 @@ def _code(lang):
         return "en"
     return c if os.path.exists(os.path.join(HERE, "%s.json" % c)) else "en"
 
+def _labels(s, code):
+    """Translate the inline structure labels wherever they appear.
+
+    A remediation body is written "WHY THIS SERVICE: ... WHAT YOU GET: ... HOW: ...". Those labels
+    are PROSE inside a German sentence, and they shipped in English eleven times in one deck. They
+    cannot be ordinary patterns: `t()` returns on the first pattern that matches, so a body
+    containing all three would have had one translated and two left in English.
+    They cannot be fixed by asking the model either. A prompt is a request; this is a guarantee.
+    """
+    L = _pack(code).get("labels") or {}
+    for en, tr in L.items():
+        if en in s:
+            s = s.replace(en, tr)
+    return s
+
+
 def t(s, lang="de"):
     """Translate one string; passthrough if unknown or if there is no pack for `lang`."""
     if not isinstance(s, str) or not s.strip():
@@ -46,6 +62,7 @@ def t(s, lang="de"):
     code = _code(lang)
     if code == "en":
         return s
+    s = _labels(s, code)
     P = _pack(code); S = P.get("strings", {})
     core = s.strip()
     if core in S:
@@ -59,7 +76,85 @@ def t(s, lang="de"):
         if rx.search(core):
             # JS-style $1 backrefs in the shared dictionary -> python \1
             return s.replace(core, rx.sub(re.sub(r"\$(\d)", r"\\\1", rep), core))
+    comp = _composed(core, code)
+    if comp is not None:
+        return s.replace(core, comp)
     return s
+
+
+# A COMPOSED FINDING TITLE IS NOT A DICTIONARY KEY, and that is why a German deck shipped English.
+#
+# shodan_recon builds every finding title as
+#     "<template title><extra> (<n> hosts)"
+# where <extra> is " — <product>" or ": <CVE-id> +<k> more CVEs". The composed string can never be
+# a key, so the exact lookup above always missed. The pack worked around it with ONE HAND-WRITTEN
+# REGEX PER DETECTOR PER LANGUAGE — and the moment a detector was added without one, its title
+# shipped in English. Measured on the bottomline.com deck: three of ten titles, and 15 of the 33
+# templates had no pattern at all.
+#
+# So translate the PARTS instead. The head goes through the dictionary (where the plain template
+# title lives), the product name is a proper noun and stays, and the host count is rendered from
+# the pack. A new detector now needs its plain title translated and nothing else.
+_COMPOSED = re.compile(r"^(?P<body>.+) \((?P<n>\d+) hosts?\)$")
+_MORE = re.compile(r"\+(\d+) more CVEs")
+
+
+def _plural(n, forms):
+    """Pick a plural form. Slavic rules when the pack supplies `few`, otherwise one/other.
+
+    THE PACK DECLARES ITS OWN GRAMMAR. Hardcoding "add an s" here would be an English rule applied
+    to every language; hardcoding the Slavic rule would be a Russian rule applied to German. The
+    code asks what forms exist and applies the rule that those forms imply.
+    """
+    if "few" in forms:                                    # ru: 1 хост, 2-4 хоста, 5+ хостов
+        a, b = n % 10, n % 100
+        if a == 1 and b != 11:
+            return forms.get("one", forms["other"])
+        if 2 <= a <= 4 and not (12 <= b <= 14):
+            return forms["few"]
+        return forms["other"]
+    return forms.get("one", forms["other"]) if n == 1 else forms["other"]
+
+
+def _count(n, kind, code):
+    forms = (_pack(code).get("counts") or {}).get(kind)
+    if not forms:
+        return None
+    try:
+        return _plural(n, forms) % n
+    except (TypeError, ValueError):
+        return None
+
+
+def _composed(core, code):
+    """Split "<template><extra> (<n> hosts)" and translate the parts.
+
+    THE SPLIT POINT CANNOT BE GUESSED BY A SINGLE REGEX, and my first version proved it: several
+    template titles CONTAIN an em dash ("No CAA record — any certificate authority may issue for
+    this domain"), so a non-greedy head split at the wrong one and three detectors still failed.
+    A greedy head fails the opposite way when a product IS appended. So try the candidate splits,
+    longest head first, and take the one the dictionary actually recognises. The dictionary is the
+    arbiter; the regex only proposes.
+    """
+    m = _COMPOSED.match(core)
+    if not m:
+        return None
+    hosts = _count(int(m.group("n")), "hosts", code)
+    if hosts is None:
+        return None
+    body = m.group("body")
+    cands = [(body, "")]
+    for sep in (" — ", ": "):
+        i = body.rfind(sep)
+        if i > 0:
+            cands.append((body[:i], body[i:]))
+    for head, extra in cands:
+        got = t(head, code)
+        if got != head:
+            extra = _MORE.sub(
+                lambda x: _count(int(x.group(1)), "more_cves", code) or x.group(0), extra)
+            return "%s%s (%s)" % (got, extra, hosts)
+    return None                # the template itself is untranslated: leave the title alone
 
 # Keys we must NEVER translate.
 #  (a) ENUM/LOOKUP KEYS — the builders group and colour-map on these exact English values
