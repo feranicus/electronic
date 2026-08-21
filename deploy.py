@@ -28,6 +28,19 @@ SSH_KEY = os.environ.get("SSH_KEY", "")
 REMOTE  = "/opt/colt-stack"
 PROJECT = "colt-stack"
 LOCAL   = os.path.dirname(os.path.abspath(__file__))
+
+# The paths the BOTS images actually build from. docker-compose.reuse.yml sets `context: .` with
+# `dockerfile: assess-bot/Dockerfile` (and cassandra-bot/), and those Dockerfiles COPY
+# hermes-skills/, colt_auth.py, user_store.py and the bot scripts; promtail bind-mounts obs/.
+# This is the bots' equivalent of deploy_web_direct.INCLUDE and is deliberately NOT the same set —
+# the web tree contains no bot Dockerfile at all, so the two scopes can be shared only as a
+# MECHANISM, never as one list.
+# MODULE SCOPE, not a local inside package(): a deploy-shaping constant that only exists while one
+# function runs cannot be read by a test, and an unreadable constant is an untested one.
+BOTS_INCLUDE = ["docker-compose.reuse.yml", "assess-bot", "cassandra-bot", "hermes-skills",
+                "colt_auth.py", "user_store.py", "obs"]
+# Gitignored by design; see deploy_web_direct.pack(). Code from the commit, secrets from the machine.
+BOTS_SECRETS = ["assess-bot/.env", "cassandra-bot/.env"]
 # FAIL FAST, NEVER HANG. Without ConnectTimeout a stalled connect blocks forever with NO output:
 # deploy.py opens ~12 separate ssh sessions and one silently hung for 40 minutes on the
 # read-only `command -v docker` check (sshout uses echo=False, so not even the command printed).
@@ -171,8 +184,31 @@ def package():
         try: os.unlink(tgz)
         except OSError as e: sys.exit("[X] cannot remove stale %s: %s" % (tgz, e))
     t0 = time.time()
-    r = run(["tar"] + sum([["--exclude", e] for e in excludes], []) + ["-czf", tgz, "-C", LOCAL, "."],
-            check=False)
+    # PACK THE COMMIT, NOT THE WORKING TREE — the same rule deploy_web_direct.py already follows.
+    #
+    # THE DEFECT THIS CLOSES, visible in the 2026-08-20 ship log: colt-web and colt-assessbot were
+    # deployed from ONE ship of ONE commit and ended up with DIFFERENT engine bytes —
+    #     scripts/proteus.py   colt-web fbed443dfcea   colt-assessbot 26ab2bf3a805
+    #     scripts/creed.js     colt-web 472e6a8c7985   colt-assessbot 73c14617e33c
+    #     scripts/pptx_preview.py                      colt-assessbot MISSING
+    # because the web path packs `git archive HEAD` (repository bytes, LF, immutable) while this
+    # path tar'd the operator's WORKING COPY. Git checks files out with CRLF on Windows, so the same
+    # commit hashes differently through the two paths, and any uncommitted edit ships to the bots
+    # only. "staging and prod get identical bytes" was therefore true of the web app and false of
+    # the bots — and the engine-hash verify exists precisely to catch two deliveries disagreeing.
+    #
+    # ONE implementation, imported rather than reimplemented: a second copy of the exclusion rules
+    # is how the two paths drifted in the first place.
+    try:
+        import shutil
+        import deploy_web_direct as _dwd
+        src = _dwd.pack(include=BOTS_INCLUDE, extra=BOTS_SECRETS)   # -> PATH to a .tar.gz
+        shutil.copyfile(src, tgz)                # copy, do not move: pack() owns its temp file
+        r = 0
+    except Exception as e:
+        print("  [!] commit-pack unavailable (%s) - falling back to the working tree" % e)
+        r = run(["tar"] + sum([["--exclude", e] for e in excludes], []) + ["-czf", tgz, "-C", LOCAL, "."],
+                check=False)
     if not os.path.exists(tgz):
         sys.exit("[X] tar produced no archive — deploy aborted rather than ship stale code.")
     if os.path.getsize(tgz) < 10240:

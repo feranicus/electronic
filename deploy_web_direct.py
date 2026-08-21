@@ -56,8 +56,38 @@ def _tree_state():
     return (not dirty), sha, dirty
 
 
-def pack():
+def _add_extra(tar_path, extra):
+    """Append untracked files (secrets) to an uncompressed tar produced by `git archive`."""
+    got = []
+    for rel in extra or ():
+        p = os.path.join(HERE, rel)
+        if os.path.exists(p):
+            with tarfile.open(tar_path, "a") as t:      # "a" needs an UNcompressed tar
+                t.add(p, arcname=rel)
+            got.append(rel)
+    if got:
+        print("  + %d untracked file(s) added on top of the commit: %s"
+              % (len(got), ", ".join(got)))
+    return got
+
+
+def pack(include=None, extra=()):
     """Pack the sources that will be BUILT on the droplet.
+
+    `include` is the path set handed to `git archive`; it defaults to the WEB deploy's INCLUDE.
+    deploy.py (the bots) passes its own, because the two images need different trees — the bots need
+    assess-bot/, cassandra-bot/, obs/ and docker-compose.reuse.yml, which the web image never sees.
+    ONE mechanism (pack the immutable commit, repository bytes, no CRLF), TWO file scopes. Sharing
+    the mechanism is the point; sharing the file list would break the bots build outright, and a
+    second COPY of the mechanism is how the two paths drifted apart in the first place.
+
+    `extra` names UNTRACKED files to add on top of the commit. There is exactly one legitimate use:
+    `assess-bot/.env`, which holds runtime secrets and is gitignored by design, so `git archive`
+    can never contain it. The bots compose declares `env_file: assess-bot/.env`, and CLAUDE.md
+    records that the LOCAL copy is the source of truth for those secrets. Packing only the commit
+    would silently stop shipping them — a behaviour change smuggled in as a side effect of a
+    determinism fix, which is exactly how a secret goes missing on the next fresh deploy. Code comes
+    from the commit; secrets come from the operator's machine, and the split is deliberate.
 
     THE WORKING TREE IS A MOVING TARGET AND THAT IS HOW A DEPLOY GOES OUT UNTESTED.
     ship.py does: test the tree -> commit the tree -> push -> pack the tree for staging -> pack the
@@ -87,10 +117,12 @@ def pack():
         # what tests/test_deploy_immutability.py caught on the operator's machine while passing in
         # a Linux sandbox. Forcing both off makes the archive the REPOSITORY bytes on every OS.
         r = subprocess.run(["git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
-                            "archive", "--format=tar", "-o", tf.name, "HEAD"] + list(INCLUDE),
+                            "archive", "--format=tar", "-o", tf.name, "HEAD"]
+                           + list(include or INCLUDE),
                            cwd=HERE, capture_output=True, text=True, timeout=180)
         if r.returncode == 0 and os.path.getsize(tf.name) > 0:
             gz = tf.name + ".gz"
+            _add_extra(tf.name, extra)
             with tarfile.open(tf.name) as src, tarfile.open(gz, "w:gz") as dst:
                 for m in src.getmembers():
                     if _keep(m.name):
@@ -105,7 +137,11 @@ def pack():
 
     tf = tempfile.NamedTemporaryFile(suffix=".tgz", delete=False); tf.close()
     with tarfile.open(tf.name, "w:gz") as tar:
-        for item in INCLUDE:
+        # `include or INCLUDE`, NOT the module constant: the fallback must pack the SAME tree the
+        # git path would have. Leaving it hardcoded meant a caller that passed its own file set got
+        # the web tree here — the bots image would then build without its own Dockerfile, and only
+        # on the rare path where git is unavailable, which is the worst kind of bug to find.
+        for item in list(include or INCLUDE) + list(extra or ()):
             p = os.path.join(HERE, item)
             if os.path.exists(p):
                 tar.add(p, arcname=item, filter=_filter)

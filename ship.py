@@ -87,11 +87,12 @@ def run(args, check=True, cwd=None):
     return rc
 
 
-def ssh(cmd, check=False, timeout=180):
+def ssh(cmd, check=False, timeout=180, echo=True):
     # `timeout` was being PASSED by do_verify's model probe but the signature never accepted it, so
     # that call raised TypeError inside a try/except and the probe silently never ran. A check that
     # cannot execute is not a check — the same class as the ruff gate that skipped for weeks.
-    print("  $ ssh %s@%s %r" % (USER, HOST, cmd[:70]), flush=True)
+    if echo:
+        print("  $ ssh %s@%s %r" % (USER, HOST, cmd[:70]), flush=True)
     if DRY:
         return ""
     # HARD TIMEOUT. CLAUDE.md already mandates this for every ssh in every script — ship.py's own
@@ -107,7 +108,7 @@ def ssh(cmd, check=False, timeout=180):
         class _R:                       # keep the caller's contract; a timeout is not a crash
             stdout, stderr, returncode = "", "timeout", 124
         r = _R()
-    if r.stdout.strip():
+    if echo and r.stdout.strip():
         print("    " + r.stdout.rstrip().replace("\n", "\n    "))
     if check and r.returncode != 0:
         sys.exit("[X] remote failed: %s\n%s" % (cmd, r.stderr[:400]))
@@ -312,7 +313,9 @@ def _sha_all_in_container(container, fresh=False):
             "if os.path.exists(os.path.join(b,r)) else 'MISSING') for r in fs))"
             % (ENGINE_REMOTE, list(ENGINE_FILES)))
     # A READ-ONLY probe must fail fast: 180s of silence teaches the operator to distrust the tool.
-    out = ssh("docker exec %s python3 -c \"%s\" 2>/dev/null || true" % (container, code), timeout=60)
+    # QUIET: the raw dump is not the evidence. print_engine_comparison() renders what was compared.
+    out = ssh("docker exec %s python3 -c \"%s\" 2>/dev/null || true" % (container, code),
+              timeout=60, echo=False)
     got = {}
     for line in (out or "").splitlines():
         parts = line.strip().split(" ")
@@ -354,15 +357,48 @@ def engine_is_current(container, fresh=False):
     `fresh=True` after a (re)deploy of that container; otherwise the per-run cache answers, so a
     single ship opens ONE session per container instead of five."""
     got = _sha_all_in_container(container, fresh=fresh)
-    stale = []
+    stale, unverifiable = [], []
     for rel in ENGINE_FILES:
         want = _sha_local(rel)
         if not want:
+            # THE FILE IS NOT IN THE REPO. That used to `continue` SILENTLY, so a name that had been
+            # renamed or deleted locally was quietly dropped from the gate and the verdict still read
+            # OK — a check shrinking itself without saying so. Absence of evidence is never a pass.
+            unverifiable.append(rel)
             continue
         have = got.get(rel, "MISSING")
         if have != want:
             stale.append("%s (container=%s repo=%s)" % (rel, have[:12], want[:12]))
+    if unverifiable:
+        stale.append("NOT IN THE REPO, so nothing was compared: %s" % ", ".join(unverifiable))
+    if not got:
+        stale.append("the probe returned NOTHING for %s - ssh throttled or docker exec failed, so "
+                     "this verdict is not evidence about the container" % container)
     return (not stale), stale
+
+
+def print_engine_comparison(container, got=None):
+    """Print the comparison this gate ACTUALLY made, file by file.
+
+    THE DEFECT THIS CLOSES, from the 2026-08-20 ship log: the verify dumped the remote probe's raw
+    output — nineteen lines, one of them `scripts/pptx_preview.py MISSING` — and then printed
+    `OK  colt-assessbot engine matches the repo` underneath it. Two containers deployed from one
+    commit disagreed on three engine files and the operator was told they matched.
+    Whatever the plumbing was doing, the human was reading one thing and the verdict was computed
+    from another. So print the COMPARISON, never the raw dump: a MISSING can then never sit above an
+    OK, because the same numbers produce both lines.
+    """
+    got = got if got is not None else _sha_all_in_container(container)
+    bad = 0
+    for rel in ENGINE_FILES:
+        want, have = _sha_local(rel), got.get(rel, "MISSING")
+        mark = "ok  " if (want and have == want) else "STALE"
+        if mark != "ok  ":
+            bad += 1
+        print("    %-5s %-34s container=%-12s repo=%s"
+              % (mark, rel, have[:12], (want or "NOT-IN-REPO")[:12]))
+    print("    %d of %d file(s) differ" % (bad, len(ENGINE_FILES)))
+    return bad
 
 
 def _has_pytest(py):
@@ -1354,6 +1390,7 @@ def do_web(use_ci):
     print("  -> self-healing with a direct deploy (deploy_web_direct.py)")
     run([sys.executable, "deploy_web_direct.py"])
     ok, stale = engine_is_current("colt-web", fresh=True)   # just self-healed -> re-probe
+    print_engine_comparison("colt-web")
     if not ok:
         for s in stale:
             print("        " + s)
@@ -1379,6 +1416,7 @@ def do_bots():
     run([sys.executable, "deploy.py", "--reuse", "--yes"])
     print("\n  verifying colt-assessbot is running the current engine...")
     ok, stale = engine_is_current("colt-assessbot", fresh=True)   # just rebuilt -> re-probe
+    print_engine_comparison("colt-assessbot")
     if ok:
         print("  OK  colt-assessbot engine matches the repo")
     else:

@@ -5833,6 +5833,53 @@ Guarded by test_proteus.py: the stock-theme-plus-painted-shapes shape yields the
 alone would have picked the grey, a CUSTOM theme still beats the slides, the panel may vote for a
 slide colour, a colourless deck says so, and full-slide renders are refused WITH a reason.
 
+## TWO CONTAINERS, ONE COMMIT, DIFFERENT BYTES — and the verify said they matched (2026-08-21)
+From the 2026-08-20 ship log. One `python ship.py`, one commit, and the two containers it deployed
+ended up running different engine files:
+```
+scripts/proteus.py        colt-web fbed443dfcea   colt-assessbot 26ab2bf3a805
+scripts/creed.js          colt-web 472e6a8c7985   colt-assessbot 73c14617e33c
+scripts/pptx_preview.py   colt-web 0b111a71374d   colt-assessbot MISSING
+```
+and directly underneath that list the run printed **`OK  colt-assessbot engine matches the repo`**.
+Local hashes were measured afterwards: all three match colt-web, so the BOTS were the stale side.
+
+**CAUSE 1 — THE TWO PATHS PACKED DIFFERENTLY.** `deploy_web_direct.py` packs `git archive HEAD`
+with `core.autocrlf=false` (repository bytes, immutable commit). `deploy.py` tar'd the operator's
+WORKING COPY. On Windows git checks files out with CRLF, so the SAME commit hashes differently
+through the two paths, and any uncommitted edit shipped to the bots only. The promise recorded in
+this file — *"packing the COMMIT … staging and prod get identical bytes"* — was true of the web app
+and false of the bots, which is precisely the disagreement the engine-hash verify exists to detect.
+FIX: ONE mechanism, TWO scopes. `pack(include=…, extra=…)` is the only implementation; `deploy.py`
+passes `BOTS_INCLUDE` (compose + both bot Dockerfiles + obs/, none of which the web tree contains).
+Sharing the FILE LIST would break the bots build outright — the shareable thing is the mechanism.
+**The secrets split is deliberate:** `assess-bot/.env` is gitignored, so `git archive` can never
+contain it and packing only the commit would have SILENTLY stopped shipping runtime secrets — a
+behaviour change smuggled in as a side effect of a determinism fix. `extra=BOTS_SECRETS` adds it
+on top. Code from the commit, secrets from the machine.
+
+**CAUSE 2 — THE PRINTOUT WAS NOT THE COMPARISON.** The verify dumped the remote probe's raw output
+and printed a verdict computed separately, so the human read one thing and the gate decided on
+another. Reproducing `engine_is_current()` against that exact output returns ok=False, which means
+the two were never looking at the same data. RULE: **print the comparison you made, never a raw
+dump plus a conclusion** — `print_engine_comparison()` renders file / container / repo per line, so
+a MISSING physically cannot sit above an OK. The probe is now `echo=False`.
+Two silent-pass holes closed in the same function: a file absent from the REPO used to `continue`
+(the gate shrinking itself without saying so — absence of evidence is never a pass), and an EMPTY
+probe (ssh throttled) was indistinguishable from a match; both now fail with a named reason.
+
+Guarded by `tests/test_deploy_parity.py` (9 tests): both packs must agree on the files that really
+diverged, the bots pack must contain what the bots build from, the web pack must NOT be widened to
+the bots tree, untracked secrets must still ship, and the three gate holes must each fail.
+**AND MY OWN ASSERTION MATCHED ITS OWN COMMENT — the fourth time in this repo.** The
+`core.autocrlf=false` check grepped the raw file, and the paragraph explaining that flag contains
+the string, so deleting the real arguments left the comment behind and the check passed against a
+file carrying the exact defect. Strip comments, then assert. Seven mutations, each verified to fail
+and then restored.
+**A `finally` STILL CANNOT SURVIVE A KILL:** the mutation harness was timed out mid-run and left
+`core.pager=cat` in deploy_web_direct.py. Found only by scanning for EVERY marker the harness could
+have written rather than eyeballing a diffstat — same lesson as the `TRANSIENT EDIT` incident.
+
 ## A COMPOSED STRING IS NOT A DICTIONARY KEY — 60% of the engine shipped in English (2026-08-21)
 bottomline.com received a GERMAN deck with English finding titles on three of ten slides. Measured
 across the packs: **15 of 33 TEMPLATES titles and 143 of 237 customer-visible engine strings had no
