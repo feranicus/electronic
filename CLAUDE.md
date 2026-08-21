@@ -5833,6 +5833,74 @@ Guarded by test_proteus.py: the stock-theme-plus-painted-shapes shape yields the
 alone would have picked the grey, a CUSTOM theme still beats the slides, the panel may vote for a
 slide colour, a colourless deck says so, and full-slide renders are refused WITH a reason.
 
+## A COMPOSED STRING IS NOT A DICTIONARY KEY — 60% of the engine shipped in English (2026-08-21)
+bottomline.com received a GERMAN deck with English finding titles on three of ten slides. Measured
+across the packs: **15 of 33 TEMPLATES titles and 143 of 237 customer-visible engine strings had no
+translation in EITHER German or Russian**, and every one belonged to a detector added after the
+packs were written.
+ROOT CAUSE: `shodan_recon` builds every title at render time as
+`"<template title><extra> (<n> hosts)"`, so the string that reaches `t()` can never be a key. The
+packs worked around it with ONE HAND-WRITTEN REGEX PER DETECTOR PER LANGUAGE — a second and third
+edit, in two other files, that nothing asserted. So it was forgotten every single time.
+FIX — translate the PARTS, not the whole: `_composed()` sends the head through the dictionary
+(where the plain template title already lives), leaves the product name alone as a proper noun, and
+renders the host count from the pack. **THE SPLIT POINT CANNOT BE GUESSED BY ONE REGEX** and my
+first version proved it: several titles CONTAIN an em dash ("No CAA record — any certificate
+authority may issue…"), so a non-greedy head split at the wrong one; a greedy head fails the
+opposite way when a product IS appended. Try the candidate splits and take the one the dictionary
+recognises — the regex proposes, the dictionary decides. 23 legacy regexes deleted per pack; a new
+detector now needs its plain title translated and nothing else.
+- **THE PACK DECLARES ITS OWN GRAMMAR.** The old regexes hardcoded the plural, producing "(1 Hosts)"
+  in German and "(хостов: 1)" in Russian. `_plural()` applies the Slavic three-form rule when the
+  pack supplies `few` and one/other otherwise. Hardcoding "add an s" is an English rule applied to
+  every language; hardcoding the Slavic rule is a Russian rule applied to German.
+- **INLINE LABELS NEED THEIR OWN PASS.** A remediation body reads "WHY THIS SERVICE: … WHAT YOU GET:
+  … HOW: …". `t()` RETURNS ON THE FIRST PATTERN THAT MATCHES, so as ordinary patterns one label
+  would be translated and two left English. They shipped in English 11 times in one deck.
+- WHY IT STAYED INVISIBLE: the model writes over most of these strings on a good run. The gap only
+  shows on findings the enrichment did not reach — i.e. the runs where the customer is already
+  getting less. **/api/langs is a CAPABILITY CLAIM**: advertising a document language means the
+  DETERMINISTIC path renders in it, not just the model's prose.
+GATE: `test_engine_i18n.py` (blocking) asserts, per advertised language, that every TEMPLATES
+title/why/rem translates, that the real COMPOSED shape translates (not just the plain template —
+the plain template being present is what everybody assumed and is not what reaches the slide), that
+the count is declined, that each label is translated, and that English is byte-for-byte unchanged.
+**MY OWN PLURAL CHECK COULD NOT FAIL.** It compared the two rendered titles and required "(1 " to
+appear — which "(1 Hosts)" satisfies perfectly — so it PASSED against a pack mutated to exactly the
+defect it is named for. It now compares the NOUN. Nth instance of a check aimed next to its subject.
+
+## THE CONTRACT DID NOT FIT THE BOX — 46 truncated text boxes (2026-08-21)
+Same deck, extracted: **46 text boxes ended in an ellipsis**, including a remediation title reading
+"Managed SASE/SSE mit ZTNA — Entfernt die öffentliche…". Nothing was broken. `fitText` trims on a
+word boundary when text exceeds its box, and the ARITHMETIC had never been compared:
+  * `why` box holds **243 chars**; the bible demanded three full sentences (~450).
+  * `rem` body holds **370 chars at three rows and 148 at five**, because `rowH` is adaptive
+    (`min(1.05, (5.24-2.06)/rows)`) — the bible asked for 3-5, so asking for five was asking for a
+    third of the space per row. Five entries is not more content, it is the same content truncated.
+  * `enrich.py` then applied a BLUNT `[:120]` / `[:400]`, above the box and mid-word, so the text
+    was truncated TWICE, neither time readably.
+FIX: `REM_ROWS = 3`, budgets stated in `LLM_DELTAS_BIBLE.md` so the model is told what it has (with
+the note that German and Russian run ~30% longer), and `_clamp()` cutting on a SENTENCE boundary.
+A sentence that does not fit WHOLE is DROPPED, not trimmed — two complete thoughts read better than
+two and a half, which is the entire reason for doing this here instead of letting the deck cut. A
+TITLE is cut at its separator, because the service NAME is what the row is for. The last-resort
+word cut appends an ellipsis rather than a full stop: a fabricated sentence end tells the reader the
+thought finished when it did not.
+**THE PATH THAT BUILT THIS DECK APPLIED NONE OF IT.** `enrich_parallel.apply()` copied the model's
+fields on VERBATIM — no tag validation, no row cap, no clamp — and it is the path that runs whenever
+the monolithic call fails, which is most large estates. Same normalisation, two homes, one wired up.
+`enrich.normalise_prose()` is now the only implementation and both paths call it.
+GATE: `test_deck_quality.length_budgets()` DERIVES the capacity from `build_findings_deck.js`, so
+moving a box fails the build instead of silently re-opening this; it also asserts the bible states
+the same numbers (a budget the model is never told about is one it cannot meet) and that BOTH paths
+enforce them. Five mutations, including `REM_ROWS = 5` and the old 450-char `why`, each verified to
+fail by name and then restored.
+ALSO: every shard was sent to `_chain[0]`, so four parallel calls shared ONE failure domain — on
+this run the head model had just burned its full 175s cap in the serial chain returning nothing, and
+all four shards then timed out together at 150s before the targeted retry could start. The rule that
+a backup must be a DIFFERENT VENDOR was written for the serial chain and never carried across to the
+shards. Round-robin bounds a vendor's bad minute to 1/N of the work.
+
 ## WHITE LABEL, THE SECOND PASS: a colour table the mapping never saw, and stock fonts (2026-08-20)
 The cyan fix worked and the delivered deck still was not right. Reading the ARTIFACT found two more,
 both the same disease one level down.
