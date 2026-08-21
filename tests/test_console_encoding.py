@@ -89,6 +89,43 @@ def test_the_i18n_gate_still_passes_on_a_utf8_console():
         "the Russian evidence is no longer printed - the detail was silently dropped, not fixed"
 
 
+def test_ship_decodes_every_child_pipe_as_utf8():
+    """THE MIRROR OF THE FIRST BUG, and I shipped it by fixing only one direction.
+
+    Setting PYTHONIOENCODING made the CHILDREN write UTF-8. But `subprocess.run(..., text=True)`
+    decodes the pipe with `locale.getpreferredencoding()`, which is cp1252 on Windows and is NOT
+    affected by the parent's PYTHONIOENCODING. So the parent then choked on the child's own output:
+
+        Exception in thread Thread-231 (_readerthread):
+          File "subprocess.py", line 1615, in _readerthread
+            buffer.append(fh.read())
+        UnicodeDecodeError: 'charmap' codec can't decode byte 0x81 in position 1009
+
+    It did not fail the run - it is raised in a reader THREAD - which is worse: the output is
+    silently truncated and the gate is judged on a partial read.
+
+    AST, NOT GREP: three of the 34 call sites write the arguments in the other order
+    (`text=True, capture_output=True`) and my first regex missed all three. A check that depends on
+    argument order will pass while the defect sits two lines away.
+    """
+    import ast
+    tree = ast.parse(open(os.path.join(HERE, "ship.py"), encoding="utf-8").read())
+    bad = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        kw = {k.arg for k in node.keywords if k.arg}
+        if not ({"text", "universal_newlines"} & kw):
+            continue
+        if "encoding" not in kw:
+            bad.append(getattr(node, "lineno", "?"))
+    assert not bad, (
+        "ship.py line(s) %s decode a child pipe with the LOCALE encoding. The children emit UTF-8; "
+        "on a cp1252 box the reader thread raises UnicodeDecodeError and the captured output is "
+        "truncated without failing the run. Pass encoding=\"utf-8\", errors=\"replace\"."
+        % ", ".join(str(b) for b in bad))
+
+
 def test_ship_sets_the_child_encoding_and_its_own():
     src = open(os.path.join(HERE, "ship.py"), encoding="utf-8").read()
     code = "\n".join(ln.split("#")[0] for ln in src.splitlines())   # never match our own comment

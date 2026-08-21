@@ -5857,6 +5857,24 @@ TWO SEPARATE DEFECTS:
    "THE … GATE CRASHED - this is NOT a finding about …" and names the exception.
 RULE: **a gate must be able to render its own PASS on the operator's console.** A check that blocks
 a good deploy and names the wrong culprit is worse than no check.
+**AND I FIXED ONLY ONE DIRECTION, so the next run raised the MIRROR of it:**
+```
+Exception in thread Thread-231 (_readerthread):
+  File "subprocess.py", line 1615, in _readerthread   buffer.append(fh.read())
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x81 in position 1009
+```
+`PYTHONIOENCODING` made the CHILDREN write UTF-8, but `subprocess.run(..., text=True)` decodes the
+pipe with `locale.getpreferredencoding()` — cp1252 on Windows, and NOT affected by the parent's
+PYTHONIOENCODING. So ship.py choked on its own children's output. It did not fail the run because
+it is raised in a reader THREAD, which is worse: the captured output is silently truncated and the
+gate is then judged on a partial read. All 34 call sites now pass `encoding="utf-8",
+errors="replace"`. The guard is an AST walk, not a grep: three call sites write the arguments in the
+other order (`text=True, capture_output=True`) and my first regex missed all three — a check that
+depends on argument order passes while the defect sits two lines away.
+**A guard whose failure is invisible is the shape this repo keeps paying for** — which is also why
+the gate's own printing is now total (`say()` re-encodes with backslashreplace on
+UnicodeEncodeError) rather than relying on `reconfigure()` inside a try/except. Verified with
+reconfigure DELIBERATELY broken under cp1252: rc=0, evidence degraded to escapes, never lost.
 Guarded by `tests/test_console_encoding.py`, which REPRODUCES the console (`PYTHONIOENCODING=cp1252`)
 rather than reasoning about it, and asserts both directions of the crash/regression message. Four
 mutations, each verified to fail and restore — including one that "fixes" the crash by DROPPING the

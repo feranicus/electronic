@@ -141,7 +141,7 @@ def ssh(cmd, check=False, timeout=180, echo=True):
     # helper never got it, and a remote command that hangs (sshd throttling after ~12 rapid
     # sessions, or a slow docker restart) froze the deploy with no output and no way to tell why.
     try:
-        r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), cmd], text=True, capture_output=True,
+        r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), cmd], text=True, capture_output=True, encoding="utf-8", errors="replace",
                            timeout=180)
     except subprocess.TimeoutExpired:
         print("    [!] ssh TIMED OUT after 180s: %s" % cmd[:90])
@@ -277,7 +277,7 @@ def ensure_app_requirements(py=None):
              "        out.append(n)\n"
              "print('\\n'.join(out))\n")
     r = subprocess.run([py, "-c", probe] + [n for n, _ in specs],
-                       capture_output=True, text=True, timeout=120)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     if r.returncode != 0:
         return                                    # a probe we cannot run must not block the ship
     absent = {ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()}
@@ -289,7 +289,7 @@ def ensure_app_requirements(py=None):
     print("  installing them so the tests exercise the same stack the image builds...")
     for name, spec in missing:
         r = subprocess.run([py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
-                            spec], capture_output=True, text=True, timeout=300)
+                            spec], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
         if r.returncode != 0:
             print((r.stdout or "") + (r.stderr or ""))
             sys.exit("[X] could not install %s, which webapp/backend/requirements.txt declares. "
@@ -503,7 +503,7 @@ def do_tests():
         rc = subprocess.run([sys.executable, os.path.join(engine, "author_geopol.py"),
                              os.path.join(smp, "findings.sample.json"),
                              os.path.join(smp, "geopol.sample.json"), rp, "--company", "SmokeTest"],
-                            capture_output=True, text=True, env=dict(os.environ, DECK_LANG=_lang))
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", env=dict(os.environ, DECK_LANG=_lang))
         lok = rc.returncode == 0 and os.path.exists(rp)
         if lok:
             htm = open(rp, encoding="utf-8").read()
@@ -606,7 +606,7 @@ def do_tests():
                             '--select', 'F821,F811,F822', '--quiet',
                             os.path.join(engine, '.'),
                             os.path.join(HERE, 'webapp', 'backend', 'app'), HERE],
-                           capture_output=True, text=True, timeout=180)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if _lint.returncode not in (0,):
         _out = (_lint.stdout or '') + (_lint.stderr or '')
         if 'No module named' in _out or 'not found' in _out.lower():
@@ -615,12 +615,12 @@ def do_tests():
             # machine every run. Install it once, automatically — "no manual steps" (principle 1).
             print('  ruff missing - installing it once so the static check cannot be skipped...')
             subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet', 'ruff'],
-                           capture_output=True, text=True, timeout=300)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
             _lint = subprocess.run([sys.executable, '-m', 'ruff', 'check', '--no-cache',
                                     '--select', 'F821,F811,F822', '--quiet',
                                     os.path.join(engine, '.'),
                                     os.path.join(HERE, 'webapp', 'backend', 'app'), HERE],
-                                   capture_output=True, text=True, timeout=180)
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
             if _lint.returncode == 0:
                 print('  static check: no undefined names (ruff installed)')
             else:
@@ -641,7 +641,7 @@ def do_tests():
     #             stop reading five files to answer 'which model will actually run?' — resolve it
     #             once, with provenance, and print it. Same payload is served at GET /api/diag.
     _dg = subprocess.run([sys.executable, os.path.join(engine, 'engine_config.py')],
-                         capture_output=True, text=True, timeout=60)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     for _l in (_dg.stdout or '').splitlines():
         if _l.strip():
             print('  ' + _l)
@@ -695,7 +695,7 @@ def do_tests():
     # leakage, no empty deck. The 4,000-character DATA SOURCE footer that produced 'all the
     # letters are on top of each other' is reproduced verbatim as the fixture.
     _dq = subprocess.run([sys.executable, os.path.join(engine, 'test_deck_quality.py')],
-                         capture_output=True, text=True, timeout=300)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
     if _dq.returncode != 0:
         print((_dq.stdout or '') + (_dq.stderr or ''))
         sys.exit('[X] deck quality gate failed - do not ship a deck that renders badly')
@@ -703,7 +703,7 @@ def do_tests():
 
     # ATTRIBUTION scorer — graded confidence must keep discriminating on the real angermann hosts.
     _at = subprocess.run([sys.executable, os.path.join(engine, 'attribution.py'), '--demo'],
-                         capture_output=True, text=True, timeout=60,
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
                          env={**os.environ, 'SHODAN_API_KEY': os.environ.get('SHODAN_API_KEY', 'x')})
     _ao = _at.stdout or ''
     _bad_attr = []
@@ -726,7 +726,7 @@ def do_tests():
     #           Passbolt vault, the netbid.io mail cluster) AND precision (co-tenants, the law
     #           firm, the dental practice) AND severity (a password vault is not 'standard service').
     _pa = subprocess.run([sys.executable, os.path.join(engine, 'test_parity.py')],
-                         capture_output=True, text=True, timeout=180)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if _pa.returncode != 0:
         print((_pa.stdout or '') + (_pa.stderr or ''))
         sys.exit('[X] PARITY FAILED - the platform disagrees with manual Shodan work. Do not ship.')
@@ -737,7 +737,7 @@ def do_tests():
     #          actually runs. This drives shodan_recon.run() against a mocked Shodan API and
     #          asserts the co-tenant guard's behaviour on the real shared Colt /24.
     _rp = subprocess.run([sys.executable, os.path.join(engine, 'test_run_path.py')],
-                         capture_output=True, text=True, timeout=120)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     if _rp.returncode != 0:
         print((_rp.stdout or '') + (_rp.stderr or ''))
         sys.exit('[X] run() path test failed - the engine would crash or mis-scope in production')
@@ -754,7 +754,7 @@ def do_tests():
     #           because the poison arrived through an IDENTITY query and therefore poisoned the very
     #           baseline scope_blowout and the co-tenant guard measure against.
     _ab = subprocess.run([sys.executable, os.path.join(engine, 'test_scope_abakus.py')],
-                         capture_output=True, text=True, timeout=180)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if _ab.returncode != 0:
         print((_ab.stdout or '') + (_ab.stderr or ''))
         sys.exit('[X] SCOPE REGRESSION - a discovered domain can own the estate again. Do not ship.')
@@ -769,7 +769,7 @@ def do_tests():
     #            http.redirects; (3) the framework list cited NIS2, GDPR, TISAX and UNECE R155 at an
     #            Emirati police force — the third recurrence of D9/A7.
     _ap = subprocess.run([sys.executable, os.path.join(engine, 'test_classify_adpolice.py')],
-                         capture_output=True, text=True, timeout=120)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     if _ap.returncode != 0:
         print((_ap.stdout or '') + (_ap.stderr or ''))
         sys.exit('[X] CLASSIFY REGRESSION - TLS negation / service identity / jurisdiction. Do not ship.')
@@ -785,7 +785,7 @@ def do_tests():
     #             (Bosch, Raiffeisenbank and a Catholic college share the handle prefix and must not
     #             be adopted).
     _ae = subprocess.run([sys.executable, os.path.join(engine, 'test_asn_enterprise.py')],
-                         capture_output=True, text=True, timeout=120)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     if _ae.returncode != 0:
         print((_ae.stdout or '') + (_ae.stderr or ''))
         sys.exit('[X] ASN DISCOVERY REGRESSION - an enterprise estate would be truncated. Do not ship.')
@@ -796,7 +796,7 @@ def do_tests():
     # EXISTING customers rather than partners: that an unbranded build is byte-identical to one
     # from before this feature existed, and that severity colours are never themed.
     _wl = subprocess.run([sys.executable, os.path.join(engine, 'test_white_label.py')],
-                         capture_output=True, text=True, timeout=600)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
     if _wl.returncode != 0:
         print((_wl.stdout or '') + (_wl.stderr or ''))
         sys.exit('[X] WHITE LABEL REGRESSION - partner artifacts or the unbranded path are wrong. '
@@ -811,7 +811,7 @@ def do_tests():
     # usually writes over these strings — it only shows on the findings enrichment did not reach,
     # which are the runs where the customer is already getting less.
     _ei = subprocess.run([sys.executable, os.path.join(engine, 'test_engine_i18n.py')],
-                         capture_output=True, text=True, timeout=180)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if _ei.returncode != 0:
         print((_ei.stdout or '') + (_ei.stderr or ''))
         gate_failed('ENGINE i18n', _ei,
@@ -829,7 +829,7 @@ def do_tests():
     # §202a StGB / CFAA / s.342.1 question rather than a product question. The gate must refuse
     # without a RECORDED authorisation reference, and this proves it does.
     _pc = subprocess.run([sys.executable, os.path.join(engine, 'test_passive_checks.py')],
-                         capture_output=True, text=True, timeout=180)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if _pc.returncode != 0:
         print((_pc.stdout or '') + (_pc.stderr or ''))
         sys.exit('[X] PASSIVE CHECK REGRESSION - a new finding class broke, or the active tier '
@@ -843,7 +843,7 @@ def do_tests():
     # contains no firewall call at all (Amnezia VPN shares this host). Then it replays the real
     # 10 Aug 2026 scanner and requires that it is actually stopped.
     _sd = subprocess.run([sys.executable, '-m', 'pytest', 'tests/test_shield.py', '-q'],
-                         cwd=HERE, capture_output=True, text=True, timeout=180)
+                         cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if _sd.returncode != 0:
         print((_sd.stdout or '') + (_sd.stderr or ''))
         sys.exit('[X] ACTIVE DEFENCE REGRESSION - the shield could block a real visitor, fail '
@@ -859,7 +859,7 @@ def do_tests():
     #        It now compares what is SERVED. This test pins both directions so the gate can never
     #        again cry wolf, and can never again miss the 2026-08-07 shape.
     _dr = subprocess.run([sys.executable, os.path.join(engine, 'test_drift.py')],
-                         capture_output=True, text=True, timeout=60)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     if _dr.returncode != 0:
         print((_dr.stdout or '') + (_dr.stderr or ''))
         sys.exit('[X] DRIFT CHECK REGRESSION - the staging gate would block or miss wrongly. Do not ship.')
@@ -870,7 +870,7 @@ def do_tests():
     #       itself for build_compliance_deck.js (which has no deck_i18n). test_creed.js pins them
     #       together so one family can never silently ship different German.
     _cr = subprocess.run(['node', os.path.join(engine, 'test_creed.js')],
-                         capture_output=True, text=True, timeout=60)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     if _cr.returncode != 0:
         print(_cr.stdout + _cr.stderr)
         sys.exit('[X] creed check failed - the Cassandra line drifted between de.json and creed.js')
@@ -892,11 +892,11 @@ def do_tests():
         for _reg, _fn in (("nis2", "ship_c_nis2.pptx"), ("roadmap", "ship_c_road.pptx")):
             _op = os.path.join(tempfile.gettempdir(), _fn)
             _r = subprocess.run(["node", os.path.join(engine, "build_compliance_deck.js"), _cpath, _op, _reg],
-                                capture_output=True, text=True, env=_env)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_env)
             comp_ok = comp_ok and _r.returncode == 0 and os.path.exists(_op)
         _hp = os.path.join(tempfile.gettempdir(), "ship_compliance.html")
         _r = subprocess.run(["node", os.path.join(engine, "build_compliance_html.js"), _cpath, _hp],
-                            capture_output=True, text=True, env=_env)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_env)
         if _r.returncode == 0 and os.path.exists(_hp):
             _htm = open(_hp, encoding="utf-8").read()
             comp_ok = comp_ok and all(t not in _htm for t in ("undefined", "NaN", "[object Object]"))
@@ -927,7 +927,7 @@ def do_tests():
     # defect this file already records twice, so this follows the capture-and-report pattern the
     # other engine tests use.
     _ca = subprocess.run([sys.executable, os.path.join(engine, "test_compliance_ca.py")],
-                         capture_output=True, text=True, timeout=300)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
     if _ca.returncode != 0:
         print((_ca.stdout or "") + (_ca.stderr or ""))
         sys.exit("[X] CANADIAN COMPLIANCE REGRESSION - a Canadian deck would carry a claim the "
@@ -949,7 +949,7 @@ def do_tests():
         import glob as _glob, zipfile as _zipfile, re
         _dout = os.path.join(tempfile.gettempdir(), "ship_demo")
         _r = subprocess.run([sys.executable, os.path.join(engine, "demo_build.py"), "--out", _dout],
-                            capture_output=True, text=True, timeout=420)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=420)
         _dfiles = sorted(_glob.glob(os.path.join(_dout, "*.pptx")) +
                          _glob.glob(os.path.join(_dout, "*.html")))
         demo_ok = _r.returncode == 0 and len(_dfiles) >= 4
@@ -1184,7 +1184,7 @@ def do_tests():
                             DECK_I18N_AUDIT_OUT=_au)
                 subprocess.run(["node", os.path.join(engine, _b), os.path.join(smp, _src),
                                 os.path.join(_ld, "%s_%s.pptx" % (_lc, _b[6:9]))],
-                               capture_output=True, text=True, env=_env, timeout=180)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", env=_env, timeout=180)
                 try:
                     for _it in _json.load(open(_au, encoding="utf-8")):
                         if _it["s"] in _de:
@@ -1217,7 +1217,7 @@ def do_tests():
                 _o = os.path.join(_bd, "%s_%s.pptx" % (_b, _lang))
                 subprocess.run(["node", os.path.join(engine, "build_%s_deck.js" % _b),
                                 os.path.join(engine, "..", "sample", "%s.sample.json" % _fx), _o],
-                               capture_output=True, text=True, timeout=180,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
                                env={**os.environ, "DECK_LANG": _lang})
                 if not os.path.exists(_o):
                     continue
@@ -1357,7 +1357,7 @@ def do_git(message):
     # ship.py run (or when the working tree was already clean) were never pushed, so GitHub silently
     # fell BEHIND the PC. "GitHub is the single source of truth" only holds if we push every time.
     ahead = subprocess.run(["git", "rev-list", "--count", "origin/main..HEAD"],
-                           cwd=HERE, text=True, capture_output=True).stdout.strip() or "?"
+                           cwd=HERE, text=True, capture_output=True, encoding="utf-8", errors="replace").stdout.strip() or "?"
     print("  local commits not yet on GitHub: %s — pushing." % ahead)
     run(["git", "push", "origin", "main"], check=False)
     return rc != 0
@@ -1385,7 +1385,7 @@ def do_rollback(ref):
     _clear_stale_git_locks()
     # show what we're about to move to, and refuse if it doesn't exist
     r = subprocess.run(["git", "rev-parse", "--verify", ref + "^{commit}"], cwd=HERE,
-                       text=True, capture_output=True)
+                       text=True, capture_output=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         sys.exit("[X] %r is not a known ref/tag. See your safe-points with:  git tag -l 'good-*'" % ref)
     run(["git", "stash", "push", "-u", "-m", "pre-rollback"], check=False)   # park any local mess
@@ -1891,7 +1891,7 @@ def main():
     #      a verified deploy. Same doctrine as caddyguard, secaudit and the review panel.
     try:
         _bk = subprocess.run([sys.executable, os.path.join(HERE, "dbbackup.py")],
-                             capture_output=True, text=True, timeout=600)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
         _bkout = ((_bk.stdout or "") + (_bk.stderr or "")).rstrip()
         print("")
         for _l in _bkout.splitlines():
@@ -1917,7 +1917,7 @@ def main():
     #      a verified deploy. Same doctrine as model_watch and the review panel.
     try:
         _sa = subprocess.run([sys.executable, os.path.join(HERE, "secaudit.py")],
-                             capture_output=True, text=True, timeout=300)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
         _saout = ((_sa.stdout or "") + (_sa.stderr or "")).rstrip()
         print("")
         # SURFACE EVERY VERDICT LINE, not a hardcoded list of the ones I happened to think of.
@@ -1946,7 +1946,7 @@ def main():
     try:
         _eng = os.path.join(HERE, 'hermes-skills', 'shodan-assessment', 'scripts')
         _mw = subprocess.run([sys.executable, os.path.join(_eng, 'model_watch.py')],
-                             capture_output=True, text=True, timeout=240)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240)
         _out = (_mw.stdout or '').rstrip()
         if 'catalog unavailable' in _out or not _out:
             # The key is on the droplet. Run it where it can SEE the thing it checks.
