@@ -183,6 +183,63 @@ def length_budgets():
     check("normalise_prose(" in body,
           "the shard path applies the same normalisation as the serial chain")
 
+    # THE ENGINE'S OWN TEXT MUST FIT TOO. The budgets used to be applied only where the MODEL's
+    # prose was merged, so any finding it did not rewrite went in with shodan_recon.TEMPLATES text —
+    # 3-4x the box (ot_exposed 1069 chars into a 258-char `why`) — and German adds ~30%. That is why
+    # the delivered bottomline.com deck still had 28 truncated boxes. Assert the LAST step fixes it,
+    # in every advertised language, because that is the only place the text is final.
+    sys.path.insert(0, os.path.join(HERE, "i18n"))
+    import shodan_recon as _R, deck_langs as _DL, i18n as _I
+    for lang in ["en"] + [l for l in _DL.doc_langs() if l != "en"]:
+        fj = {"findings": [{
+            "id": k,
+            "why": [_I.t(w, lang) for w in tpl[1]],
+            "rem": [{"tag": "COLT", "title": _I.t(r.get("title", ""), lang),
+                     "body": _I.t(r.get("body", ""), lang)}
+                    for r in tpl[2] if isinstance(r, dict)],
+        } for k, tpl in _R.TEMPLATES.items()]}
+        E.fit_for_deck(fj)
+        over = [f["id"] for f in fj["findings"]
+                if len(" ".join(f["why"])) > E.BUDGET["why"]
+                or len(f["rem"]) > E.REM_ROWS
+                or any(len(r["body"]) > E.BUDGET["rem_body"]
+                       or len(r["title"]) > E.BUDGET["rem_title"] for r in f["rem"])]
+        check(not over, "%s: every TEMPLATES finding fits the box after fit_for_deck (%d over%s)"
+              % (lang, len(over), (", e.g. " + over[0]) if over else ""))
+
+    # A COLON IS PUNCTUATION IN PROSE AND A SEPARATOR IN A LABEL. The first clamp cut on ": "
+    # everywhere and amputated a `why` sentence to 88 characters at its own colon.
+    # THE FIXTURE MUST EXCEED THE BUDGET or _clamp returns early and the separator branch is never
+    # reached — my first version used a 165-char string against a 230-char budget and therefore
+    # passed against the exact defect it is named for.
+    prose = ("Ein exponiertes Management-Interface ist ein dokumentierter Initial-Access-Vektor: "
+             "Angreifer nutzen bekannte Schwaechen der Verwaltungsebene, um sich Zugang zu "
+             "verschaffen, lateral zu wandern und dauerhaft im Netz zu bleiben. Das betrifft die "
+             "gesamte Verwaltungsebene und nicht nur diesen einen Host.")
+    assert len(prose) > E.BUDGET["why"], "the colon fixture no longer exceeds the budget"
+    kept = E._clamp(prose, E.BUDGET["why"])
+    check(len(kept) > E.BUDGET["why"] * 0.6,
+          "a why sentence is NOT amputated at a mid-sentence colon (kept %d of %d chars)"
+          % (len(kept), len(prose)))
+    check(E._clamp("Managed SASE/SSE mit ZTNA - Entfernen Sie das oeffentliche Management",
+                   E.BUDGET["rem_title"], "label") == "Managed SASE/SSE mit ZTNA",
+          "a remediation TITLE is still cut at its separator, keeping the service name")
+
+    # THE ROW CAP AT THE FINAL STEP. No TEMPLATES entry has more than 3 remediation objects, so the
+    # loop above cannot exercise it — the delivered bottomline.com deck had FOUR rows on slide 10,
+    # which is where the 218-char bodies came from. Give it a finding with five.
+    five = {"findings": [{"id": "X", "why": ["ok."],
+                          "rem": [{"tag": "COLT", "title": "T%d" % i, "body": "b"} for i in range(5)]}]}
+    E.fit_for_deck(five)
+    check(len(five["findings"][0]["rem"]) == E.REM_ROWS,
+          "the final fit caps the remediation rows at %d, whoever produced them" % E.REM_ROWS)
+
+    ra = open(os.path.join(HERE, "run_assessment.py"), encoding="utf-8").read()
+    check("fit_for_deck(" in ra, "run_assessment applies the fit before building the decks")
+    i = ra.find("fit_for_deck(")
+    check(ra.rfind("translate_file(", 0, i) > 0,
+          "...and AFTER translation, because German and Russian expand")
+
     # A SENTENCE THAT DOES NOT FIT IS DROPPED, NOT TRIMMED. Two complete thoughts read better than
     # two and a half, which is the entire reason for clamping here rather than letting fitText cut.
     two = E._clamp_list(["A" * 100 + ".", "B" * 100 + ".", "C" * 100 + "."], 230)

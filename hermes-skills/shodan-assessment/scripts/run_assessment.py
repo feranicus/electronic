@@ -780,6 +780,28 @@ def main():
         except Exception as _e:
             print(f"[warn] i18n pass: {_e}", file=sys.stderr)
 
+    # FIT THE TEXT TO THE BOX — LAST, after enrichment AND after translation.
+    #
+    # The budgets used to be applied only where the MODEL's prose was merged, so any finding it did
+    # not rewrite went in with the engine's own TEMPLATES text — which is 3-4x the box (ot_exposed
+    # 1069 chars into a 258-char `why`), and German adds ~30% on top. That is why the delivered
+    # bottomline.com deck still had 28 boxes ending in an ellipsis. Text is final HERE, so the
+    # budget belongs HERE; every producer upstream is then just being tidy, not load-bearing.
+    # RE-READ FROM DISK. `translate_file` rewrote findings.json in place, so the in-memory `fj` is
+    # the PRE-translation copy — fitting that and dumping it would silently throw the German away.
+    _fpath = os.path.join(a.outdir, "findings.json")
+    try:
+        sys.path.insert(0, HERE)
+        import enrich as _EN
+        _fj = json.load(open(_fpath, encoding="utf-8"))
+        _fitn = _EN.fit_for_deck(_fj)
+        if _fitn:
+            print("[auto] deck fit: %d field(s) trimmed to the slide box (whole sentences only)"
+                  % _fitn, file=sys.stderr)
+            json.dump(_fj, open(_fpath, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+    except Exception as _e:
+        print("[warn] deck fit skipped: %s: %s" % (type(_e).__name__, _e), file=sys.stderr)
+
     ok1=_node_build("build_findings_deck.js", os.path.join(a.outdir,"findings.json"), d1, a.lang)
     ok2=_node_build("build_cbiq_deck.js",     os.path.join(a.outdir,"cbiq.json"),     d2, a.lang)
     ok3=_node_build("build_geopol_deck.js",   os.path.join(a.outdir,"geopol.json"),   d3, a.lang)

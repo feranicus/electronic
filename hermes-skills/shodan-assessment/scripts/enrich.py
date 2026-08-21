@@ -223,11 +223,17 @@ BUDGET = {
 }
 
 
-def _clamp(s, n):
+def _clamp(s, n, kind="prose"):
     """Trim to `n` characters on a SENTENCE boundary, else a word boundary. Never mid-word.
 
     The old code did a bare `str(...)[:400]`, which cuts inside a word and then hands the deck a
     string it truncates AGAIN with an ellipsis. Two truncations, neither of them readable.
+
+    `kind="label"` additionally cuts at a separator — see below. It is opt-in for a REASON: the
+    first version applied that rule to everything, and a `why` sentence reading
+    "…ist ein dokumentiertes Initial-Access-Vektor: Angreifer nutzen historisch…" was amputated at
+    the colon down to 88 characters. A colon is ordinary punctuation in prose and a structural
+    separator in a label; the same rule cannot serve both.
     """
     s = str(s or "").strip()
     if len(s) <= n:
@@ -236,10 +242,11 @@ def _clamp(s, n):
     # reachability of the management plane" into a 60-character title box. Cutting that on a word
     # boundary leaves "...removes the public.", which reads like a defect. The service NAME is the
     # part before the dash or colon, and it is what the row is actually for.
-    for sep in (" — ", " - ", ": "):
-        i = s.find(sep)
-        if 0 < i <= n:
-            return s[:i].strip()
+    if kind == "label":
+        for sep in (" — ", " - ", ": "):
+            i = s.find(sep)
+            if 0 < i <= n:
+                return s[:i].strip()
     head = s[:n]
     for end in (". ", "! ", "? ", ".\n"):
         i = head.rfind(end)
@@ -305,7 +312,7 @@ def normalise_prose(x):
                 if tag not in ("COLT", "PSF", "OSS", "VENDOR"):
                     tag = "COLT"
                 rem.append({"tag": tag,
-                            "title": _clamp(v.get("title", ""), BUDGET["rem_title"]),
+                            "title": _clamp(v.get("title", ""), BUDGET["rem_title"], "label"),
                             "body": _clamp(v.get("body", ""), BUDGET["rem_body"])})
             elif v:
                 rem.append(_clamp(v, BUDGET["rem_body"]))
@@ -314,6 +321,53 @@ def normalise_prose(x):
     if x.get("realComparable"):
         out["realComparable"] = str(x["realComparable"])
     return out
+
+
+def fit_for_deck(fj):
+    """Clamp EVERY finding's prose to the box, whoever wrote it. Run LAST, after translation.
+
+    THE DEFECT THIS CLOSES, measured on the delivered bottomline.com_Shodan_Findings_DE.pptx:
+    28 text boxes still ended in an ellipsis after the budgets went in, because the budgets were
+    applied to the MODEL's output and never to the ENGINE's own. shodan_recon.TEMPLATES carries
+    the deterministic `why` and remediation bodies, and they are 3-4x the box:
+
+        why box holds 258 chars       ot_exposed  1069   exchange_onprem 913
+                                      nonprod_exposed 843   secrets_manager 829
+
+    19 of 33 templates overflow in English and German adds ~30% on top. Any finding the model did
+    not rewrite — or any field it returned in a shape normalise_prose skips — went in raw and the
+    deck chopped it. So the budget belongs at the LAST point where the text is final, not at one of
+    the several points where it is produced.
+
+    AFTER i18n, deliberately: German and Russian expand, so a string that fitted in English can
+    overflow once translated. Clamping before translation measures the wrong string.
+    """
+    n = 0
+    for f in (fj.get("findings") or []):
+        if not isinstance(f, dict):
+            continue
+        for k in ("what", "why"):
+            v = f.get(k)
+            if isinstance(v, list) and v:
+                out = _clamp_list([str(x) for x in v], BUDGET[k])
+                if out != v:
+                    f[k] = out; n += 1
+            elif isinstance(v, str) and len(v) > BUDGET[k]:
+                f[k] = _clamp(v, BUDGET[k]); n += 1
+        rem = f.get("rem")
+        if isinstance(rem, list) and rem:
+            cut = rem[:REM_ROWS]
+            for r in cut:
+                if not isinstance(r, dict):
+                    continue
+                if r.get("title") and len(r["title"]) > BUDGET["rem_title"]:
+                    r["title"] = _clamp(r["title"], BUDGET["rem_title"], "label"); n += 1
+                if r.get("body") and len(r["body"]) > BUDGET["rem_body"]:
+                    r["body"] = _clamp(r["body"], BUDGET["rem_body"]); n += 1
+            if len(cut) != len(rem):
+                n += 1
+            f["rem"] = cut
+    return n
 
 
 def _bible():

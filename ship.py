@@ -307,6 +307,12 @@ ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts
                 # SCOPE-CORRECTNESS file: a container running an older copy would happily admit
                 # wa.me again (the abakus-tk.de failure), so its hash has to be proved deployed.
                 "scripts/scope_deny.py", "scripts/psl.py", "scripts/asn_sources.py", "scripts/clarify.py",
+                # THE TRANSLATION LAYER. None of it was hash-verified, so a stale copy on the
+                # droplet was invisible — and a stale pack is exactly what an English label inside a
+                # German deck looks like. The engine i18n GATE proves the packs are complete in this
+                # repo; only these hashes prove the container is running the packs the gate checked.
+                "scripts/i18n/i18n.py", "scripts/i18n/de.json", "scripts/i18n/ru.json",
+                "scripts/i18n/deck_i18n.js",
                 # White Label. proteus.py decides what a partner's artifacts LOOK like and brand.js
                 # is what applies it at the render boundary; a container running an older copy of
                 # either would silently ship the wrong branding — or our colours — to a partner's
