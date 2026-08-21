@@ -46,6 +46,25 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+
+def out(s=""):
+    """print() that CANNOT raise on the console it is given.
+
+    reconfigure() above is the nice path — it prints real Cyrillic. But it sits in a try/except, so
+    if it ever fails (an older Python, a redirected stream, a platform that refuses) the gate falls
+    straight back to cp1252 and dies again, SILENTLY, in the same place. A guard whose failure is
+    invisible is the shape of defect this repo keeps paying for, so the printing itself is made
+    total: on UnicodeEncodeError, re-encode with backslashreplace. Cyrillic then renders as escapes
+    rather than crashing — the evidence is degraded, never lost, and the gate still reports.
+    MEASURED, not assumed: with reconfigure() forced to fail under PYTHONIOENCODING=cp1252 the old
+    version exited 1 with UnicodeEncodeError; this one exits 0.
+    """
+    try:
+        print(s)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(str(s).encode(enc, "backslashreplace").decode(enc, "replace"))
+
 import deck_langs                                                        # noqa: E402
 import shodan_recon as R                                                 # noqa: E402
 import i18n as I                                                         # noqa: E402
@@ -54,7 +73,7 @@ FAILS = []
 
 
 def check(ok, label, detail=""):
-    print("  %-4s %s%s" % ("PASS" if ok else "FAIL", label, ("   " + detail) if detail else ""))
+    out("  %-4s %s%s" % ("PASS" if ok else "FAIL", label, ("   " + detail) if detail else ""))
     if not ok:
         FAILS.append(label)
 
@@ -83,22 +102,22 @@ def translated(s, lang):
 
 
 def main():
-    print("=" * 78)
-    print("  Engine i18n — the deterministic strings, in every document language we advertise")
-    print("=" * 78)
+    out("=" * 78)
+    out("  Engine i18n — the deterministic strings, in every document language we advertise")
+    out("=" * 78)
 
     langs = [l for l in deck_langs.doc_langs() if l != "en"]
     need = customer_visible()
-    print("  %d customer-visible TEMPLATES string(s); document languages advertised: %s"
+    out("  %d customer-visible TEMPLATES string(s); document languages advertised: %s"
           % (len(need), ", ".join(langs) or "(none besides en)"))
-    print()
+    out()
 
     for lang in langs:
         missing = sorted((v, k) for k, v in need.items() if not translated(k, lang))
         check(not missing, "%s: every finding title, why and remediation is translated" % lang,
               "%d of %d missing" % (len(missing), len(need)))
         for src, txt in missing[:8]:
-            print("        %-28s %s" % (src, txt[:74]))
+            out("        %-28s %s" % (src, txt[:74]))
 
         # THE COMPOSED TITLE IS THE ONE THAT SHIPPED IN ENGLISH. Assert the real rendered shape,
         # not just the plain template, because the plain template being present is what everybody
@@ -112,7 +131,7 @@ def main():
         check(not bad, "%s: composed titles translate (template + product + host count)" % lang,
               "%d of %d fail" % (len(bad), len(R.TEMPLATES)))
         for k, p in bad[:5]:
-            print("        %-22s %s" % (k, p[:70]))
+            out("        %-22s %s" % (k, p[:70]))
 
         # PLURALS. "(1 Hosts)" is the kind of error a German reader notices immediately, and the
         # legacy per-detector regexes produced exactly that because each hardcoded the plural.
@@ -143,15 +162,15 @@ def main():
     sample = list(need)[:40]
     check(all(I.t(s, "en") == s for s in sample), "en is a passthrough, byte for byte")
 
-    print()
-    print("=" * 78)
+    out()
+    out("=" * 78)
     if FAILS:
-        print("  %d FAILURE(S): %s" % (len(FAILS), "; ".join(FAILS[:3])))
-        print()
-        print("  A document language we ADVERTISE must render the deterministic path, not only the")
-        print("  model's prose. Add the string to scripts/i18n/<lang>.json and re-run.")
+        out("  %d FAILURE(S): %s" % (len(FAILS), "; ".join(FAILS[:3])))
+        out()
+        out("  A document language we ADVERTISE must render the deterministic path, not only the")
+        out("  model's prose. Add the string to scripts/i18n/<lang>.json and re-run.")
         return 1
-    print("  engine i18n: every finding string renders in every advertised document language")
+    out("  engine i18n: every finding string renders in every advertised document language")
     return 0
 
 
