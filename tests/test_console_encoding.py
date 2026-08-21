@@ -51,6 +51,36 @@ def test_the_i18n_gate_survives_a_cp1252_console():
     assert r.returncode == 0, "the i18n gate failed under cp1252:\n" + (r.stdout + r.stderr)[-800:]
 
 
+def test_the_gate_survives_even_if_reconfigure_itself_fails():
+    """DEFEAT BOTH GUARDS, or you are measuring the other one.
+
+    The first fix was ONE layer: reconfigure() inside a try/except. If it ever failed — an older
+    Python, a redirected stream, a platform that refuses — the gate fell straight back to cp1252 and
+    died again in the same place, SILENTLY, because the except swallowed it. Measured: with
+    reconfigure() forced to raise under cp1252 the one-layer version exited 1 with
+    UnicodeEncodeError. So the printing itself is now total (say() re-encodes with backslashreplace
+    on UnicodeEncodeError) and the evidence degrades to escapes instead of the gate dying.
+    """
+    src = open(GATE, encoding="utf-8").read()
+    anchor = '_s.reconfigure(encoding="utf-8", errors="replace")'
+    assert anchor in src, "the reconfigure guard is gone; this test no longer measures anything"
+    broken = src.replace(anchor, 'raise RuntimeError("reconfigure unavailable")')
+    tmp = os.path.join(os.path.dirname(GATE), "_probe_encoding_tmp.py")
+    open(tmp, "w", encoding="utf-8").write(broken)
+    try:
+        r = _run(tmp, "cp1252")
+        assert "UnicodeEncodeError" not in (r.stdout + r.stderr), (
+            "with reconfigure() unavailable the gate still dies on a cp1252 console - the fix is "
+            "one silent layer deep, which is how it would come back unnoticed")
+        assert r.returncode == 0, (r.stdout + r.stderr)[-600:]
+        assert "the host count is declined" in r.stdout, \
+            "the gate stopped reporting rather than degrading its output"
+    finally:
+        # a harness that writes real files must clean up even when killed mid-run
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
 def test_the_i18n_gate_still_passes_on_a_utf8_console():
     """Both directions: a fix that only works on one encoding is half a fix."""
     r = _run(GATE, "utf-8")

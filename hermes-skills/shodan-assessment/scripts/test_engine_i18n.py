@@ -47,7 +47,7 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 
-def out(s=""):
+def say(s=""):
     """print() that CANNOT raise on the console it is given.
 
     reconfigure() above is the nice path — it prints real Cyrillic. But it sits in a try/except, so
@@ -73,7 +73,7 @@ FAILS = []
 
 
 def check(ok, label, detail=""):
-    out("  %-4s %s%s" % ("PASS" if ok else "FAIL", label, ("   " + detail) if detail else ""))
+    say("  %-4s %s%s" % ("PASS" if ok else "FAIL", label, ("   " + detail) if detail else ""))
     if not ok:
         FAILS.append(label)
 
@@ -102,22 +102,22 @@ def translated(s, lang):
 
 
 def main():
-    out("=" * 78)
-    out("  Engine i18n — the deterministic strings, in every document language we advertise")
-    out("=" * 78)
+    say("=" * 78)
+    say("  Engine i18n — the deterministic strings, in every document language we advertise")
+    say("=" * 78)
 
     langs = [l for l in deck_langs.doc_langs() if l != "en"]
     need = customer_visible()
-    out("  %d customer-visible TEMPLATES string(s); document languages advertised: %s"
+    say("  %d customer-visible TEMPLATES string(s); document languages advertised: %s"
           % (len(need), ", ".join(langs) or "(none besides en)"))
-    out()
+    say()
 
     for lang in langs:
         missing = sorted((v, k) for k, v in need.items() if not translated(k, lang))
         check(not missing, "%s: every finding title, why and remediation is translated" % lang,
               "%d of %d missing" % (len(missing), len(need)))
         for src, txt in missing[:8]:
-            out("        %-28s %s" % (src, txt[:74]))
+            say("        %-28s %s" % (src, txt[:74]))
 
         # THE COMPOSED TITLE IS THE ONE THAT SHIPPED IN ENGLISH. Assert the real rendered shape,
         # not just the plain template, because the plain template being present is what everybody
@@ -131,7 +131,7 @@ def main():
         check(not bad, "%s: composed titles translate (template + product + host count)" % lang,
               "%d of %d fail" % (len(bad), len(R.TEMPLATES)))
         for k, p in bad[:5]:
-            out("        %-22s %s" % (k, p[:70]))
+            say("        %-22s %s" % (k, p[:70]))
 
         # PLURALS. "(1 Hosts)" is the kind of error a German reader notices immediately, and the
         # legacy per-detector regexes produced exactly that because each hardcoded the plural.
@@ -162,15 +162,15 @@ def main():
     sample = list(need)[:40]
     check(all(I.t(s, "en") == s for s in sample), "en is a passthrough, byte for byte")
 
-    out()
-    out("=" * 78)
+    say()
+    say("=" * 78)
     if FAILS:
-        out("  %d FAILURE(S): %s" % (len(FAILS), "; ".join(FAILS[:3])))
-        out()
-        out("  A document language we ADVERTISE must render the deterministic path, not only the")
-        out("  model's prose. Add the string to scripts/i18n/<lang>.json and re-run.")
+        say("  %d FAILURE(S): %s" % (len(FAILS), "; ".join(FAILS[:3])))
+        say()
+        say("  A document language we ADVERTISE must render the deterministic path, not only the")
+        say("  model's prose. Add the string to scripts/i18n/<lang>.json and re-run.")
         return 1
-    out("  engine i18n: every finding string renders in every advertised document language")
+    say("  engine i18n: every finding string renders in every advertised document language")
     return 0
 
 
