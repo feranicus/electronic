@@ -21,6 +21,33 @@ quoted so the back-to-back terms cannot promise byon more than objectale itself 
 """
 
 # --------------------------------------------------------------------------- parties
+#
+# THE CHAIN, and every document in this pack names all three of them:
+#
+#   Stars4business OÜ  (Estonia)      owns and operates cybergod.ai        VENDOR
+#        |  distribution agreement, non-exclusive
+#   objectale GmbH     (Switzerland)  buys, resells, invoices, supports    DISTRIBUTOR
+#        |  reseller agreement
+#   byon gmbh          (Germany)      resells to its own customers         RESELLER
+#        |  byon's own customer contract, on the vendor's End-User Terms
+#   End customer       (e.g. a large enterprise)                           CUSTOMER
+#
+# THE LICENCE DOES NOT TRAVEL DOWN THAT CHAIN. The Vendor grants the right of use DIRECTLY to the
+# Reseller and to each End Customer; the Distributor sells, invoices and supports. A three-deep
+# sub-licence is what a large customer's counsel objects to, and it is also what collapses when the
+# middle tier leaves. Rights direct, trade through the tiers.
+VENDOR = {
+    "name": "Stars4business OÜ",
+    "short": "Stars4business",
+    "addr": "[street], [postcode] Tallinn, Estonia",
+    "addr_de": "[Straße], [PLZ] Tallinn, Estland",
+    "reg": "[Estonian Commercial Register, registry code __________]",
+    "reg_de": "[Handelsregister der Republik Estland, Registercode __________]",
+    "vat": "[EE__________]",
+    "mail": "feranicus@s4biz.io",
+    "web": "www.cybergod.ai",
+}
+
 OBJECTALE = {
     "name": "objectale GmbH",
     "short": "objectale",
@@ -48,11 +75,31 @@ BYON = {
 }
 
 PLATFORM = "cybergod.ai"
-OPERATOR = "Stars4business OÜ"
+OPERATOR = VENDOR["name"]
 
-VERSION = "1.0"
+VERSION = "2.0"
 DATE_EN = "21 August 2026"
 DATE_DE = "21. August 2026"
+
+# ONE GOVERNING LAW FOR THE WHOLE CHAIN, and this is a judgement rather than a preference.
+#
+# The parties span Estonia, Switzerland and Germany. Each pair could plausibly choose its own law,
+# and the result is a flow-down clause construed under one law feeding a contract construed under
+# another. That is precisely where a distribution chain fails: the reseller agreement says byon
+# passes on "material contractual obligations" and the upstream agreement, under a different law,
+# means something else by it. So the whole pack uses German law with Frankfurt am Main as the
+# forum, which is byon's own seat and the only forum all three would accept without argument.
+#
+# THE COST IS REAL AND WORTH STATING: German law brings Sections 305 to 310 BGB, so a pre-formulated
+# limitation of liability is controlled far more strictly than under Estonian or Swiss law. Every
+# liability clause in this pack is drafted to survive that control rather than to be as aggressive
+# as possible. Estonian law would be more vendor-friendly for the top tier; the price would be two
+# different constructions of the same flow-down.
+#
+# Change these two and rebuild if the vendor's counsel prefers otherwise. Nothing else moves.
+LAW_EN = "the laws of the Federal Republic of Germany"
+LAW_DE = "dem Recht der Bundesrepublik Deutschland"
+FORUM = "Frankfurt am Main"
 
 # --------------------------------------------------------------------------- house style
 # Mirrors the head documents: A4, Arial 10 pt body on a dark ink, Arial Black headings.
@@ -119,9 +166,6 @@ CREDITS_DE = [("< 99,5% und >= 99,0%", "5%"), ("< 99,0% und >= 98,0%", "10%"),
 # Art. 13(1)(e) GDPR require the chain to be disclosed, and because a customer's procurement will
 # ask for exactly this list.
 SUBPROCESSORS = [
-    (OPERATOR, "Estonia / Germany",
-     "Operates the platform. Hosts the application, the job store and the deliverables.",
-     "Frankfurt am Main (FRA1)"),
     ("DigitalOcean, LLC", "United States / Germany",
      "Infrastructure provider for the server on which the platform runs, and for the inference "
      "endpoint that writes the narrative sections of a deliverable.",
@@ -132,9 +176,6 @@ SUBPROCESSORS = [
      "United States"),
 ]
 SUBPROCESSORS_DE = [
-    (OPERATOR, "Estland / Deutschland",
-     "Betreibt die Plattform. Hostet die Anwendung, den Auftragsspeicher und die Ergebnisdokumente.",
-     "Frankfurt am Main (FRA1)"),
     ("DigitalOcean, LLC", "USA / Deutschland",
      "Infrastrukturanbieter für den Server, auf dem die Plattform läuft, sowie für den "
      "Inferenz-Endpunkt, der die Textabschnitte der Ergebnisdokumente erzeugt.",

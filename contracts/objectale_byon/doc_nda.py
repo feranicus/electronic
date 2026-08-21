@@ -10,7 +10,8 @@ does nothing to establish that; an NDA that obliges both sides to apply named me
 part of the evidence. The English-only head document has no equivalent because it is not drafted
 for German law.
 """
-from common import BYON, DATE_DE, DATE_EN, NOTE_DE, NOTE_EN, OBJECTALE, PLATFORM, VERSION
+from common import BYON, DATE_DE, DATE_EN, FORUM, NOTE_DE, NOTE_EN, OBJECTALE, PLATFORM, \
+    VENDOR, VERSION
 
 EN = [
     ("h1", "MUTUAL NON-DISCLOSURE AGREEMENT"),
@@ -62,6 +63,12 @@ EN = [
                    "advisers and affiliates who need the information for the Purpose and who are "
                    "bound by duties at least as protective. The Receiving Party remains "
                    "responsible for their compliance."),
+    ("num", "4.2a", "PERMITTED DISCLOSURE TO THE VENDOR. Either Party may disclose Confidential "
+                    "Information to %s, which owns and operates the platform, where that is "
+                    "necessary to escalate a support case, to confirm an entitlement or to give "
+                    "effect to the flow-down and step-in arrangements, provided the Vendor is "
+                    "bound by equivalent duties. Without this the Reseller's own escalation path "
+                    "would breach this Agreement." % VENDOR["name"]),
     ("num", "4.3", "The Receiving Party will protect Confidential Information with at least the "
                    "care it applies to its own confidential information of like importance, and in "
                    "no case with less than reasonable care."),
@@ -217,6 +224,13 @@ DE = [
                    "Berufsgeheimnisträgern und verbundenen Unternehmen offenlegen, die sie zum "
                    "Zweck benötigen und die mindestens gleichwertigen Pflichten unterliegen. Die "
                    "empfangende Partei bleibt für deren Einhaltung verantwortlich."),
+    ("num", "4.2a", "ZULÄSSIGE OFFENLEGUNG GEGENÜBER DEM HERSTELLER. Jede Partei darf vertrauliche "
+                    "Informationen an %s, Inhaberin und Betreiberin der Plattform, offenlegen, "
+                    "soweit dies zur Eskalation eines Supportfalls, zur Bestätigung einer "
+                    "Berechtigung oder zur Durchführung der Durchgriffs- und Eintrittsregelungen "
+                    "erforderlich ist, sofern der Hersteller gleichwertigen Pflichten unterliegt. "
+                    "Ohne diese Regelung verstiesse der eigene Eskalationsweg des "
+                    "Wiederverkäufers gegen diese Vereinbarung." % VENDOR["name"]),
     ("num", "4.3", "Die empfangende Partei schützt vertrauliche Informationen mindestens mit der "
                    "Sorgfalt, die sie für eigene vertrauliche Informationen vergleichbarer Bedeutung "
                    "anwendet, in keinem Fall jedoch mit weniger als der verkehrsüblichen Sorgfalt."),

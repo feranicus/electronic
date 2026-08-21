@@ -23,8 +23,8 @@ rather than a search-and-replace of the operator's Master Partner Agreement.
    for initial defects under Section 536a(1) BGB, because German courts classify software provided
    as a service as a lease and that liability applies without fault.
 """
-from common import BYON, OBJECTALE, DATE_DE, DATE_EN, LIST_PRICES, LIST_PRICES_DE, NOTE_DE, \
-    NOTE_EN, OPERATOR, PLATFORM, VERSION
+from common import BYON, OBJECTALE, DATE_DE, DATE_EN, FORUM, LIST_PRICES, LIST_PRICES_DE, \
+    NOTE_DE, NOTE_EN, OPERATOR, PLATFORM, VENDOR, VERSION
 
 TITLE_EN = "RESELLER FRAMEWORK AGREEMENT"
 TITLE_DE = "WIEDERVERKÄUFER-RAHMENVERTRAG"
@@ -46,9 +46,11 @@ EN = [
     ("note", NOTE_EN),
 
     ("h2", "Background"),
-    ("p", "A. objectale is a boutique consultancy for telecommunications and IT infrastructure and "
-          "is an authorised partner for %s, an external cyber-risk and EU regulatory-compliance "
-          "assessment platform operated by %s (the \"Operator\")." % (PLATFORM, OPERATOR)),
+    ("p", "A. %s, %s (the \"Vendor\") owns and operates %s, an external cyber-risk and EU "
+          "regulatory-compliance assessment platform. objectale is a boutique consultancy for "
+          "telecommunications and IT infrastructure and is the Vendor's authorised distributor "
+          "under a distribution agreement between the Vendor and objectale (the \"Distribution "
+          "Agreement\")." % (VENDOR["name"], VENDOR["addr"], PLATFORM)),
     ("p", "B. The platform has two modules. The assess module answers what of an organisation is "
           "exposed to the internet, what an incident would cost and who would plausibly attack it. "
           "The compliance module grades an organisation against the regulatory regimes of a chosen "
@@ -90,21 +92,22 @@ EN = [
     ("p", "This clause is the honest description of what objectale is able to sell. It is not "
           "boilerplate and the parties have read it."),
     ("num", "3.1", "objectale's rights in the platform are derived. objectale holds a partner "
-                   "agreement with the Operator (the \"Head Agreement\") and grants byon rights "
-                   "under this Agreement only to the extent the Head Agreement permits objectale "
+                   "agreement with the Vendor (the \"Distribution Agreement\") and grants byon rights "
+                   "under this Agreement only to the extent the Distribution Agreement permits objectale "
                    "to grant them."),
-    ("num", "3.2", "objectale warrants that on the Effective Date the Head Agreement is in force "
+    ("num", "3.2", "objectale warrants that on the Effective Date the Distribution Agreement is in force "
                    "and permits objectale to appoint resellers on the terms of this Agreement, and "
-                   "that objectale will not agree any variation of the Head Agreement that reduces "
+                   "that objectale will not agree any variation of the Distribution Agreement that reduces "
                    "the rights granted to byon during the term without byon's prior written "
                    "consent."),
-    ("num", "3.3", "objectale will notify byon in writing without undue delay if the Head "
-                   "Agreement is terminated, suspended or materially varied in a way that affects "
+    ("num", "3.3", "objectale will notify byon in writing without undue delay if the "
+                   "Distribution Agreement is terminated, suspended or materially varied in a way "
+                   "that affects "
                    "byon, and in any event within five business days of objectale becoming aware."),
-    ("num", "3.4", "If the Head Agreement ends for any reason, objectale will use its best efforts "
-                   "to procure that the Operator offers byon a direct agreement on terms no less "
+    ("num", "3.4", "If the Distribution Agreement ends for any reason, objectale will use its best efforts "
+                   "to procure that the Vendor offers byon a direct agreement on terms no less "
                    "favourable for the remainder of the then-current term of byon's own customer "
-                   "contracts. Where the Operator does not do so, clause 20.4 applies."),
+                   "contracts. Where the Vendor does not do so, clause 20.4 applies."),
     ("num", "3.5", "byon acknowledges that objectale does not own the platform, does not control "
                    "its roadmap and cannot grant rights in the underlying software beyond the "
                    "rights of use described in this Agreement."),
@@ -126,7 +129,7 @@ EN = [
     ("num", "4.5", "byon acts as an independent undertaking in its own name and for its own "
                    "account. Nothing in this Agreement creates an agency, a commercial agency "
                    "relationship within the meaning of Sections 84 ff. HGB, a partnership or a "
-                   "joint venture, and byon has no authority to bind objectale or the Operator."),
+                   "joint venture, and byon has no authority to bind objectale or the Vendor."),
 
     ("h2", "5. Resale to end customers"),
     ("num", "5.1", "byon may resell the platform to end customers in the Territory, in its own "
@@ -145,20 +148,20 @@ EN = [
     ("h2", "6. Minimum end-customer terms"),
     ("p", "objectale has no contract with byon's customers and cannot enforce anything against "
           "them. The protections below therefore have to appear in byon's own customer terms."),
-    ("num", "6.1", "byon will contract with each end customer on terms that, as a minimum, include "
-                   "the provisions in Schedule 4, and that are no less protective of objectale and "
-                   "the Operator than this Agreement."),
+    ("num", "6.1", "byon will incorporate the Vendor's End-User Terms, unchanged, into every "
+                   "contract under which it supplies the platform. Schedule 4 restates their "
+                   "substance for convenience; where the two differ the End-User Terms prevail."),
     ("num", "6.2", "byon will procure that each end customer is told, in writing and before first "
                    "use, that the platform reads public sources only, that it is not a penetration "
                    "test and that a deliverable is an assessment and not a guarantee of security."),
     ("num", "6.3", "byon will not make any representation or warranty about the platform beyond "
                    "the documentation objectale supplies, and will not commit objectale or the "
-                   "Operator to a service level, a functionality or a delivery date."),
+                   "Vendor to a service level, a functionality or a delivery date."),
     ("num", "6.4", "Where byon's customer is a public body, an operator of critical infrastructure "
                    "or a regulated financial institution, byon will tell objectale before the "
                    "Order Form is placed, so that any additional regulatory requirement can be "
                    "addressed before commitments are made."),
-    ("num", "6.5", "byon will pass through, without material change, any restriction the Operator "
+    ("num", "6.5", "byon will pass through, without material change, any restriction the Vendor "
                    "notifies to objectale in respect of a third-party data source."),
 
     ("h2", "7. byon's obligations"),
@@ -185,12 +188,12 @@ EN = [
     ("num", "8.1", "objectale will make the platform available to byon in accordance with the "
                    "Service Level Agreement, subject to clause 8.4."),
     ("num", "8.2", "objectale will provide second-line support to byon's nominated contacts and "
-                   "will escalate to the Operator where the cause lies in the platform."),
+                   "will escalate to the Vendor where the cause lies in the platform."),
     ("num", "8.3", "objectale will provide reasonable enablement at no charge: onboarding for "
                    "byon's contacts, current documentation, and the materials byon needs to sell."),
     ("num", "8.4", "objectale's obligations are back-to-back. objectale does not owe byon a "
                    "service level, an update or a correction that objectale does not itself receive "
-                   "under the Head Agreement. objectale will pursue the Operator diligently and "
+                   "under the Distribution Agreement. objectale will pursue the Vendor diligently and "
                    "will pass on to byon whatever remedy it obtains."),
     ("num", "8.5", "objectale will notify byon of a planned change that alters a deliverable's "
                    "structure or an interface, with the notice periods in the Service Level "
@@ -240,16 +243,18 @@ EN = [
 
     ("h2", "12. Intellectual property"),
     ("num", "12.1", "The platform, its software, its templates, its methodology and all "
-                    "intellectual property in them remain with the Operator or its licensors. "
+                    "intellectual property in them remain with the Vendor or its licensors. "
                     "Nothing in this Agreement transfers ownership."),
-    ("num", "12.2", "byon receives a non-exclusive, non-transferable right, limited to the term "
-                    "and the Territory, to use the platform and to resell rights of use to end "
-                    "customers on the terms of this Agreement."),
+    ("num", "12.2", "THE RIGHT OF USE COMES FROM THE VENDOR DIRECTLY. Under the Flow-Down and "
+                    "Step-In Deed the Vendor grants byon, and each end customer, the right to use "
+                    "the platform. byon does not receive a licence from objectale and does not "
+                    "sub-licence the platform; byon buys and sells entitlements. This is what "
+                    "keeps an end customer's right of use intact if objectale leaves the chain."),
     ("num", "12.3", "A deliverable generated for an end customer, and the analysis it contains, "
                     "may be used by that customer without restriction for its own internal "
                     "purposes and in its dealings with its own auditors, insurers and regulators."),
     ("num", "12.4", "Feedback byon gives about the platform may be used by objectale and the "
-                    "Operator without obligation and without payment. This does not extend to "
+                    "Vendor without obligation and without payment. This does not extend to "
                     "byon's own confidential information or customer data."),
 
     ("h2", "13. Trade marks"),
@@ -268,7 +273,7 @@ EN = [
                     "processing of personal data under this Agreement and satisfies Article 28 "
                     "GDPR."),
     ("num", "14.2", "In respect of the platform, byon is the controller for its own users' account "
-                    "data. objectale acts as processor for that data and the Operator acts as "
+                    "data. objectale acts as processor for that data and the Vendor acts as "
                     "sub-processor. Where byon runs an assessment on behalf of its own customer, "
                     "byon determines whether it does so as controller or as processor for that "
                     "customer, and byon is responsible for the corresponding agreement with that "
@@ -394,7 +399,7 @@ EN = [
                     "contracts existing at the date of termination until those contracts expire, "
                     "for a maximum of 12 months, on the commercial terms then in force, provided "
                     "byon pays for that use and does not sign new end customers. This applies only "
-                    "to the extent the Head Agreement permits it, and clause 3.4 applies where it "
+                    "to the extent the Distribution Agreement permits it, and clause 3.4 applies where it "
                     "does not."),
     ("num", "20.5", "Clauses 12, 14, 15, 17, 18, 20, 21, 23 and 24 survive termination."),
 
@@ -483,7 +488,7 @@ EN = [
         ["Review of the discount", "Annually, on the anniversary of the Effective Date"],
     ]),
     ("note", "objectale cannot grant a discount that takes byon's price below objectale's own cost "
-             "under the Head Agreement. The percentage above is agreed against that constraint and "
+             "under the Distribution Agreement. The percentage above is agreed against that constraint and "
              "is the one commercial figure the parties should settle before signature."),
 
     ("pagebreak",),
@@ -526,7 +531,7 @@ EN = [
                  "receives a right of use for the term, and may use the deliverables generated for "
                  "it without restriction for its own purposes."),
     ("num", "H", "The customer's liability provisions, and any limitation of byon's liability, do "
-                 "not purport to bind objectale or the Operator."),
+                 "not purport to bind objectale or the Vendor."),
     ("num", "I", "Where personal data is processed, the customer and byon enter into an agreement "
                  "satisfying Article 28 GDPR."),
 
@@ -555,10 +560,12 @@ DE = [
     ("note", NOTE_DE),
 
     ("h2", "Präambel"),
-    ("p", "A. objectale ist eine Boutique-Beratung für Telekommunikation und IT-Infrastruktur und "
-          "autorisierter Partner für %s, eine Plattform zur Bewertung externer Cyber-Risiken und "
-          "der EU-Regulierungs-Compliance, die von %s (der \"Betreiber\") betrieben wird."
-     % (PLATFORM, OPERATOR)),
+    ("p", "A. %s, %s (der \"Hersteller\") ist Inhaber und Hersteller von %s, einer Plattform zur "
+          "Bewertung externer Cyber-Risiken und der EU-Regulierungs-Compliance. objectale ist eine "
+          "Boutique-Beratung für Telekommunikation und IT-Infrastruktur und autorisierte "
+          "Distributorin des Herstellers aufgrund eines Distributionsvertrages zwischen dem "
+          "Hersteller und objectale (der \"Distributionsvertrag\")."
+     % (VENDOR["name"], VENDOR["addr_de"], PLATFORM)),
     ("p", "B. Die Plattform besteht aus zwei Modulen. Das Assess-Modul beantwortet, welche Teile "
           "eines Unternehmens aus dem Internet erreichbar sind, welche Kosten ein Vorfall "
           "verursachen würde und wer plausibel angreifen würde. Das Compliance-Modul bewertet ein "
@@ -606,22 +613,22 @@ DE = [
     ("p", "Diese Klausel beschreibt zutreffend, was objectale überhaupt verkaufen kann. Sie ist "
           "keine Formelklausel und die Parteien haben sie gelesen."),
     ("num", "3.1", "Die Rechte von objectale an der Plattform sind abgeleitet. objectale unterhält "
-                   "einen Partnervertrag mit dem Betreiber (der \"Hauptvertrag\") und räumt byon "
-                   "Rechte nach diesem Vertrag nur insoweit ein, als der Hauptvertrag objectale "
+                   "einen Partnervertrag mit dem Hersteller (der \"Distributionsvertrag\") und räumt byon "
+                   "Rechte nach diesem Vertrag nur insoweit ein, als der Distributionsvertrag objectale "
                    "deren Einräumung gestattet."),
-    ("num", "3.2", "objectale sichert zu, dass der Hauptvertrag am Datum des Inkrafttretens "
+    ("num", "3.2", "objectale sichert zu, dass der Distributionsvertrag am Datum des Inkrafttretens "
                    "besteht und objectale gestattet, Wiederverkäufer zu den Bedingungen dieses "
                    "Vertrages zu bestellen, und dass objectale ohne vorherige schriftliche "
-                   "Zustimmung von byon keiner Änderung des Hauptvertrages zustimmen wird, die die "
+                   "Zustimmung von byon keiner Änderung des Distributionsvertrages zustimmen wird, die die "
                    "byon eingeräumten Rechte während der Laufzeit einschränkt."),
     ("num", "3.3", "objectale wird byon unverzüglich schriftlich informieren, wenn der "
-                   "Hauptvertrag beendet, ausgesetzt oder in einer byon betreffenden Weise "
+                   "Distributionsvertrag beendet, ausgesetzt oder in einer byon betreffenden Weise "
                    "wesentlich geändert wird, in jedem Fall binnen fünf Arbeitstagen ab "
                    "Kenntnis."),
-    ("num", "3.4", "Endet der Hauptvertrag aus welchem Grund auch immer, wird objectale sich nach "
-                   "besten Kräften darum bemühen, dass der Betreiber byon einen unmittelbaren "
+    ("num", "3.4", "Endet der Distributionsvertrag aus welchem Grund auch immer, wird objectale sich nach "
+                   "besten Kräften darum bemühen, dass der Hersteller byon einen unmittelbaren "
                    "Vertrag zu nicht ungünstigeren Bedingungen für die Restlaufzeit der eigenen "
-                   "Kundenverträge von byon anbietet. Tut der Betreiber dies nicht, gilt Ziffer "
+                   "Kundenverträge von byon anbietet. Tut der Hersteller dies nicht, gilt Ziffer "
                    "20.4."),
     ("num", "3.5", "byon nimmt zur Kenntnis, dass objectale nicht Inhaberin der Plattform ist, "
                    "deren Weiterentwicklung nicht steuert und keine Rechte an der zugrunde "
@@ -647,7 +654,7 @@ DE = [
     ("num", "4.5", "byon handelt als selbständiges Unternehmen im eigenen Namen und auf eigene "
                    "Rechnung. Dieser Vertrag begründet keine Stellvertretung, kein "
                    "Handelsvertreterverhältnis im Sinne der §§ 84 ff. HGB, keine Gesellschaft und "
-                   "kein Joint Venture; byon ist nicht berechtigt, objectale oder den Betreiber zu "
+                   "kein Joint Venture; byon ist nicht berechtigt, objectale oder den Hersteller zu "
                    "verpflichten."),
 
     ("h2", "5. Weiterverkauf an Endkunden"),
@@ -669,23 +676,23 @@ DE = [
     ("p", "objectale unterhält keinen Vertrag mit den Kunden von byon und kann diesen gegenüber "
           "nichts durchsetzen. Die nachstehenden Schutzbestimmungen müssen daher in den eigenen "
           "Kundenbedingungen von byon enthalten sein."),
-    ("num", "6.1", "byon wird mit jedem Endkunden zu Bedingungen kontrahieren, die mindestens die "
-                   "Regelungen der Anlage 4 enthalten und objectale und den Betreiber nicht "
-                   "schlechter stellen als dieser Vertrag."),
+    ("num", "6.1", "byon bezieht die Endkundenbedingungen des Herstellers unverändert in jeden "
+                   "Vertrag ein, unter dem byon die Plattform liefert. Anlage 4 gibt deren Inhalt "
+                   "zur Erleichterung wieder; bei Abweichungen gehen die Endkundenbedingungen vor."),
     ("num", "6.2", "byon wird sicherstellen, dass jeder Endkunde vor der ersten Nutzung schriftlich "
                    "darauf hingewiesen wird, dass die Plattform ausschließlich öffentliche Quellen "
                    "auswertet, kein Penetrationstest ist und ein Ergebnisdokument eine Bewertung "
                    "und keine Sicherheitsgarantie darstellt."),
     ("num", "6.3", "byon wird über die von objectale bereitgestellte Dokumentation hinaus keine "
                    "Zusicherungen oder Garantien zur Plattform abgeben und objectale oder den "
-                   "Betreiber nicht auf ein Service Level, eine Funktionalität oder einen "
+                   "Hersteller nicht auf ein Service Level, eine Funktionalität oder einen "
                    "Liefertermin verpflichten."),
-    ("num", "6.4", "Ist der Kunde von byon eine öffentliche Stelle, ein Betreiber kritischer "
+    ("num", "6.4", "Ist der Kunde von byon eine öffentliche Stelle, ein Hersteller kritischer "
                    "Infrastrukturen oder ein beaufsichtigtes Finanzinstitut, wird byon objectale "
                    "vor Erteilung des Bestellformulars informieren, damit zusätzliche "
                    "aufsichtsrechtliche Anforderungen vor der Eingehung von Verpflichtungen "
                    "berücksichtigt werden können."),
-    ("num", "6.5", "byon wird jede Beschränkung, die der Betreiber objectale in Bezug auf eine "
+    ("num", "6.5", "byon wird jede Beschränkung, die der Hersteller objectale in Bezug auf eine "
                    "Drittdatenquelle mitteilt, ohne wesentliche Änderung weitergeben."),
 
     ("h2", "7. Pflichten von byon"),
@@ -711,14 +718,14 @@ DE = [
     ("num", "8.1", "objectale stellt byon die Plattform nach Maßgabe des Service Level Agreements "
                    "zur Verfügung, vorbehaltlich Ziffer 8.4."),
     ("num", "8.2", "objectale erbringt Second-Level-Support für die benannten Ansprechpartner von "
-                   "byon und eskaliert an den Betreiber, soweit die Ursache in der Plattform "
+                   "byon und eskaliert an den Hersteller, soweit die Ursache in der Plattform "
                    "liegt."),
     ("num", "8.3", "objectale stellt angemessene Befähigung unentgeltlich bereit: Einweisung der "
                    "Ansprechpartner von byon, aktuelle Dokumentation und die für den Vertrieb "
                    "erforderlichen Unterlagen."),
     ("num", "8.4", "Die Pflichten von objectale gelten spiegelbildlich. objectale schuldet byon "
                    "kein Service Level, kein Update und keine Fehlerbeseitigung, die objectale "
-                   "nicht selbst aus dem Hauptvertrag erhält. objectale wird den Betreiber "
+                   "nicht selbst aus dem Distributionsvertrag erhält. objectale wird den Hersteller "
                    "sorgfältig in Anspruch nehmen und byon den erlangten Ausgleich weitergeben."),
     ("num", "8.5", "objectale wird byon über geplante Änderungen informieren, die den Aufbau eines "
                    "Ergebnisdokuments oder eine Schnittstelle verändern, mit den Fristen des "
@@ -774,16 +781,19 @@ DE = [
 
     ("h2", "12. Schutzrechte"),
     ("num", "12.1", "Die Plattform, ihre Software, ihre Vorlagen, ihre Methodik und sämtliche "
-                    "daran bestehenden Schutzrechte verbleiben beim Betreiber oder seinen "
+                    "daran bestehenden Schutzrechte verbleiben beim Hersteller oder seinen "
                     "Lizenzgebern. Dieser Vertrag überträgt kein Eigentum."),
-    ("num", "12.2", "byon erhält ein nicht ausschließliches, nicht übertragbares, auf die Laufzeit "
-                    "und das Gebiet beschränktes Recht, die Plattform zu nutzen und Nutzungsrechte "
-                    "zu den Bedingungen dieses Vertrages an Endkunden weiterzuverkaufen."),
+    ("num", "12.2", "DAS NUTZUNGSRECHT STAMMT UNMITTELBAR VOM HERSTELLER. Nach der Durchgriffs- "
+                    "und Eintrittsvereinbarung räumt der Hersteller byon und jedem Endkunden das "
+                    "Recht zur Nutzung der Plattform ein. byon erhält von objectale keine Lizenz "
+                    "und erteilt keine Unterlizenz an der Plattform; byon kauft und verkauft "
+                    "Nutzungsberechtigungen. Dies erhält das Nutzungsrecht eines Endkunden, wenn "
+                    "objectale aus der Kette ausscheidet."),
     ("num", "12.3", "Ein für einen Endkunden erzeugtes Ergebnisdokument und die darin enthaltene "
                     "Analyse dürfen von diesem Kunden für eigene interne Zwecke sowie im Verkehr "
                     "mit seinen Prüfern, Versicherern und Aufsichtsbehörden uneingeschränkt genutzt "
                     "werden."),
-    ("num", "12.4", "Rückmeldungen von byon zur Plattform dürfen objectale und der Betreiber ohne "
+    ("num", "12.4", "Rückmeldungen von byon zur Plattform dürfen objectale und der Hersteller ohne "
                     "Verpflichtung und ohne Vergütung nutzen. Dies erstreckt sich nicht auf "
                     "vertrauliche Informationen oder Kundendaten von byon."),
 
@@ -807,7 +817,7 @@ DE = [
                     "personenbezogener Daten aus diesem Vertrag regelt und Art. 28 DSGVO genügt."),
     ("num", "14.2", "In Bezug auf die Plattform ist byon Verantwortlicher für die Kontodaten der "
                     "eigenen Nutzer. objectale handelt insoweit als Auftragsverarbeiter, der "
-                    "Betreiber als Unterauftragsverarbeiter. Führt byon ein Assessment für einen "
+                    "Hersteller als Unterauftragsverarbeiter. Führt byon ein Assessment für einen "
                     "eigenen Kunden durch, bestimmt byon, ob dies als Verantwortlicher oder als "
                     "Auftragsverarbeiter dieses Kunden geschieht; byon ist für die entsprechende "
                     "Vereinbarung mit diesem Kunden verantwortlich."),
@@ -938,7 +948,7 @@ DE = [
                     "aus im Zeitpunkt der Beendigung bestehenden Verträgen bis zu deren Ablauf "
                     "weiter betreuen, höchstens jedoch 12 Monate, zu den dann geltenden "
                     "kommerziellen Bedingungen, sofern byon diese Nutzung vergütet und keine neuen "
-                    "Endkunden gewinnt. Dies gilt nur, soweit der Hauptvertrag dies zulässt; "
+                    "Endkunden gewinnt. Dies gilt nur, soweit der Distributionsvertrag dies zulässt; "
                     "andernfalls gilt Ziffer 3.4."),
     ("num", "20.5", "Die Ziffern 12, 14, 15, 17, 18, 20, 21, 23 und 24 gelten über die Beendigung "
                     "hinaus fort."),
@@ -1029,7 +1039,7 @@ DE = [
         ["Überprüfung des Rabatts", "Jährlich zum Jahrestag des Inkrafttretens"],
     ]),
     ("note", "objectale kann keinen Rabatt gewähren, der den Preis von byon unter die eigenen "
-             "Kosten von objectale aus dem Hauptvertrag senkt. Der vorstehende Prozentsatz wird vor "
+             "Kosten von objectale aus dem Distributionsvertrag senkt. Der vorstehende Prozentsatz wird vor "
              "diesem Hintergrund vereinbart und ist die eine kommerzielle Größe, die die Parteien "
              "vor Unterzeichnung festlegen sollten."),
 
@@ -1075,7 +1085,7 @@ DE = [
                  "ein Nutzungsrecht für die Laufzeit und darf die für ihn erzeugten "
                  "Ergebnisdokumente für eigene Zwecke uneingeschränkt nutzen."),
     ("num", "H", "Die Haftungsregelungen des Kunden und eine Haftungsbegrenzung von byon binden "
-                 "objectale oder den Betreiber nicht."),
+                 "objectale oder den Hersteller nicht."),
     ("num", "I", "Soweit personenbezogene Daten verarbeitet werden, schließen der Kunde und byon "
                  "eine Vereinbarung, die Art. 28 DSGVO genügt."),
 

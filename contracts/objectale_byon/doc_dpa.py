@@ -14,17 +14,21 @@ Switzerland on 15 January 2024, so a transfer from byon in Germany to objectale 
 not a transfer to a third country requiring additional safeguards. That is checked, not assumed.
 The US leg (Google, for the one-time code) is covered by the EU-US Data Privacy Framework.
 """
-from common import BYON, DATE_DE, DATE_EN, NOTE_DE, NOTE_EN, OBJECTALE, OPERATOR, \
-    SUBPROCESSORS, SUBPROCESSORS_DE, VERSION
+from common import BYON, DATE_DE, DATE_EN, FORUM, NOTE_DE, NOTE_EN, OBJECTALE, OPERATOR, \
+    SUBPROCESSORS, SUBPROCESSORS_DE, VENDOR, VERSION
 
 EN = [
     ("h1", "DATA PROCESSING AGREEMENT"),
-    ("meta", "%s and %s  ·  Article 28 GDPR  ·  Version %s  ·  %s"
-     % (OBJECTALE["name"], BYON["name"], VERSION, DATE_EN)),
-    ("p", "This Data Processing Agreement (this \"DPA\") is concluded between %s, %s "
-          "(\"Processor\"), and %s, %s (\"Controller\"), and forms part of the Reseller Framework "
-          "Agreement between them." % (OBJECTALE["name"], OBJECTALE["addr"], BYON["name"],
-                                       BYON["addr"])),
+    ("meta", "%s · %s · %s  ·  Article 28 GDPR  ·  Version %s  ·  %s  ·  German law, %s"
+     % (VENDOR["name"], OBJECTALE["name"], BYON["name"], VERSION, DATE_EN, FORUM)),
+    ("p", "This Data Processing Agreement (this \"DPA\") is concluded between:"),
+    ("p", "%s, %s, which operates the platform (the \"Platform Processor\");"
+     % (VENDOR["name"], VENDOR["addr"])),
+    ("p", "%s, %s, which provides commercial and second-line support (the \"Support Processor\"); "
+          "and" % (OBJECTALE["name"], OBJECTALE["addr"])),
+    ("p", "%s, %s (the \"Controller\")." % (BYON["name"], BYON["addr"])),
+    ("p", "It forms part of the Distribution Agreement, the Reseller Framework Agreement and the "
+          "Flow-Down and Step-In Deed."),
     ("note", NOTE_EN),
 
     ("h2", "1. Subject matter and roles"),
@@ -39,6 +43,14 @@ EN = [
                    "agreement with that customer. The Processor is not a party to it."),
     ("num", "1.4", "The subject matter, duration, nature and purpose of the processing, the types "
                    "of personal data and the categories of data subject are set out in Annex 1."),
+    ("num", "1.5", "TWO PROCESSORS, SEVERALLY. In this DPA \"Processor\" means each of the Platform "
+                   "Processor and the Support Processor. Every obligation of the Processor applies "
+                   "to each of them severally in respect of the processing it actually performs, "
+                   "and neither is responsible for the other's processing. The Platform Processor "
+                   "operates the platform and holds the data; the Support Processor handles "
+                   "support and commercial correspondence and has no access to the platform's data "
+                   "stores. Making them jointly liable for each other would be a fiction, and a "
+                   "fiction is not an answer to a supervisory authority."),
 
     ("h2", "2. Instructions"),
     ("num", "2.1", "The Processor processes personal data only on the documented instructions of "
@@ -235,23 +247,32 @@ EN = [
      [list(r) for r in SUBPROCESSORS]),
     ("num", "A", "The Processor will maintain this list and notify changes in accordance with "
                  "clause 5.2."),
-    ("num", "B", "%s is the operator of the platform and is engaged by the Processor as a "
-                 "sub-processor for all processing described in Annex 1." % OPERATOR),
+    ("num", "B", "%s is a PARTY to this DPA as the Platform Processor and is not a sub-processor. "
+                 "The sub-processors above are engaged by it. The Support Processor engages no "
+                 "sub-processor for the processing it performs." % OPERATOR),
 
     ("pagebreak",),
     ("h2", "Signatures"),
-    ("sig", "For %s (Processor)" % OBJECTALE["name"], "For %s (Controller)" % BYON["name"],
+    ("sig", "For %s (Platform Processor)" % VENDOR["name"],
+     "For %s (Support Processor)" % OBJECTALE["name"],
+     ["Name:", "Function:", "Place:", "Date:"]),
+    ("sig", "For %s (Controller)" % BYON["name"], "",
      ["Name:", "Function:", "Place:", "Date:"]),
 ]
 
 DE = [
     ("h1", "AUFTRAGSVERARBEITUNGSVERTRAG"),
-    ("meta", "%s und %s  ·  Art. 28 DSGVO  ·  Version %s  ·  %s"
-     % (OBJECTALE["name"], BYON["name"], VERSION, DATE_DE)),
-    ("p", "Dieser Auftragsverarbeitungsvertrag (der \"AVV\") wird zwischen %s, %s "
-          "(\"Auftragsverarbeiter\"), und %s, %s (\"Verantwortlicher\"), geschlossen und ist "
-          "Bestandteil des zwischen ihnen bestehenden Wiederverkäufer-Rahmenvertrages."
-     % (OBJECTALE["name"], OBJECTALE["addr_de"], BYON["name"], BYON["addr_de"])),
+    ("meta", "%s · %s · %s  ·  Art. 28 DSGVO  ·  Version %s  ·  %s  ·  Deutsches Recht, %s"
+     % (VENDOR["name"], OBJECTALE["name"], BYON["name"], VERSION, DATE_DE, FORUM)),
+    ("p", "Dieser Auftragsverarbeitungsvertrag (der \"AVV\") wird geschlossen zwischen:"),
+    ("p", "%s, %s, die die Plattform betreibt (die \"Plattform-Auftragsverarbeiterin\");"
+     % (VENDOR["name"], VENDOR["addr_de"])),
+    ("p", "%s, %s, die die kaufmännische Betreuung und den Second-Level-Support erbringt (die "
+          "\"Support-Auftragsverarbeiterin\"); und"
+     % (OBJECTALE["name"], OBJECTALE["addr_de"])),
+    ("p", "%s, %s (der \"Verantwortliche\")." % (BYON["name"], BYON["addr_de"])),
+    ("p", "Er ist Bestandteil des Distributionsvertrages, des Wiederverkäufer-Rahmenvertrages und "
+          "der Durchgriffs- und Eintrittsvereinbarung."),
     ("note", NOTE_DE),
 
     ("h2", "1. Gegenstand und Rollen"),
@@ -267,6 +288,16 @@ DE = [
                    "verantwortlich. Der Auftragsverarbeiter ist daran nicht beteiligt."),
     ("num", "1.4", "Gegenstand, Dauer, Art und Zweck der Verarbeitung, die Arten personenbezogener "
                    "Daten und die Kategorien betroffener Personen ergeben sich aus Anlage 1."),
+    ("num", "1.5", "ZWEI AUFTRAGSVERARBEITER, JEWEILS EINZELN. In diesem AVV bezeichnet "
+                   "\"Auftragsverarbeiter\" sowohl die Plattform-Auftragsverarbeiterin als auch die "
+                   "Support-Auftragsverarbeiterin. Jede Pflicht des Auftragsverarbeiters trifft "
+                   "jede von ihnen einzeln für die von ihr tatsächlich durchgeführte Verarbeitung; "
+                   "keine haftet für die Verarbeitung der anderen. Die "
+                   "Plattform-Auftragsverarbeiterin betreibt die Plattform und hält die Daten; die "
+                   "Support-Auftragsverarbeiterin bearbeitet Support- und Geschäftskorrespondenz "
+                   "und hat keinen Zugriff auf die Datenbestände der Plattform. Eine gesamtschuld"
+                   "nerische Zurechnung wäre eine Fiktion, und eine Fiktion ist gegenüber einer "
+                   "Aufsichtsbehörde keine Antwort."),
 
     ("h2", "2. Weisungen"),
     ("num", "2.1", "Der Auftragsverarbeiter verarbeitet personenbezogene Daten ausschließlich auf "
@@ -465,7 +496,7 @@ DE = [
     ("bullet", "Strukturierte Ereignisprotokollierung von Anmeldungen, Assessment-Läufen und "
                "administrativen Handlungen, aufbewahrt für 30 Tage."),
     ("bullet", "Automatisierte Erkennung von Angriffen auf Zugangsdaten, Pfad-Sondierung und "
-               "automatisiertem Scannen mit Alarmierung eines benannten Betreibers."),
+               "automatisiertem Scannen mit Alarmierung eines benannten Herstellers."),
     ("h3", "Datenminimierung und Trennung"),
     ("bullet", "Die Geolokalisierung einer Anfrage wird ausschließlich auf Länderebene erfasst."),
     ("bullet", "Die Anfragetelemetrie kann so konfiguriert werden, dass anstelle der IP-Adressen "
@@ -481,13 +512,16 @@ DE = [
      [list(r) for r in SUBPROCESSORS_DE]),
     ("num", "A", "Der Auftragsverarbeiter führt diese Liste und teilt Änderungen nach Ziffer 5.2 "
                  "mit."),
-    ("num", "B", "%s ist Betreiber der Plattform und wird vom Auftragsverarbeiter als "
-                 "Unterauftragsverarbeiter für sämtliche in Anlage 1 beschriebenen Verarbeitungen "
-                 "eingesetzt." % OPERATOR),
+    ("num", "B", "%s ist als Plattform-Auftragsverarbeiterin PARTEI dieses AVV und nicht "
+                 "Unterauftragsverarbeiterin. Die vorstehenden Unterauftragsverarbeiter werden von "
+                 "ihr eingesetzt. Die Support-Auftragsverarbeiterin setzt für die von ihr "
+                 "durchgeführte Verarbeitung keinen Unterauftragsverarbeiter ein." % OPERATOR),
 
     ("pagebreak",),
     ("h2", "Unterschriften"),
-    ("sig", "Für %s (Auftragsverarbeiter)" % OBJECTALE["name"],
-     "Für %s (Verantwortlicher)" % BYON["name"],
+    ("sig", "Für %s (Plattform-Auftragsverarbeiterin)" % VENDOR["name"],
+     "Für %s (Support-Auftragsverarbeiterin)" % OBJECTALE["name"],
+     ["Name:", "Funktion:", "Ort:", "Datum:"]),
+    ("sig", "Für %s (Verantwortlicher)" % BYON["name"], "",
      ["Name:", "Funktion:", "Ort:", "Datum:"]),
 ]

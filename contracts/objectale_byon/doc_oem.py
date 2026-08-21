@@ -5,7 +5,7 @@ THE ONE HONEST CONSTRAINT IN HERE is clause 4. byon can put its own brand on eve
 because the platform supports it: a partner uploads its own PowerPoint template and the palette,
 fonts and logo are read out of it and applied to every deck and report that partner generates
 afterwards. What byon cannot do unilaterally is remove the attribution line, because that is
-controlled by the head agreement between objectale and the operator. Saying so in the contract is
+controlled by the Distribution Agreement between objectale and the operator. Saying so in the contract is
 better than discovering it on the first customer deck.
 """
 from common import BYON, DATE_DE, DATE_EN, NOTE_DE, NOTE_EN, OBJECTALE, OPERATOR, PLATFORM, VERSION
@@ -50,7 +50,7 @@ EN = [
                    "not need to be involved in each change."),
     ("num", "3.3", "byon may name the service in its own price list and marketing under a name of "
                    "byon's choosing, provided that name is not confusingly similar to the "
-                   "platform's name or to a mark of the Operator."),
+                   "platform's name or to a mark of the Vendor."),
     ("num", "3.4", "byon may present itself to its customers as the contracting party and the "
                    "service provider for the branded service."),
     ("num", "3.5", "The right does not include the source code, the right to host the platform on "
@@ -59,22 +59,22 @@ EN = [
     ("h2", "4. Limits that come from the chain of rights"),
     ("p", "This clause states plainly what objectale is not able to grant, so that byon does not "
           "promise it to a customer."),
-    ("num", "4.1", "The Attribution is controlled by the head agreement between objectale and the "
-                   "Operator. Unless Schedule A records that the Operator has agreed to its "
+    ("num", "4.1", "The Attribution is controlled by the Distribution Agreement between objectale and the "
+                   "Vendor. Unless Schedule A records that the Vendor has agreed to its "
                    "removal for byon, each deliverable carries one small attribution line and byon "
                    "will not remove, obscure or alter it."),
     ("num", "4.2", "Severity colours, and any other element the platform treats as carrying "
                    "meaning for the reader rather than brand identity, are not re-coloured by the "
                    "white-label function and byon will not attempt to change them."),
-    ("num", "4.3", "objectale will ask the Operator, on byon's written request, whether a further "
+    ("num", "4.3", "objectale will ask the Vendor, on byon's written request, whether a further "
                    "white-label right can be granted, and will tell byon the answer. objectale "
                    "gives no assurance that the answer will be yes."),
-    ("num", "4.4", "Where the Operator withdraws or narrows a white-label right, objectale will "
+    ("num", "4.4", "Where the Vendor withdraws or narrows a white-label right, objectale will "
                    "notify byon without undue delay and the parties will agree in good faith how "
                    "byon's existing customer commitments are handled."),
 
     ("h2", "5. Brand assets and quality"),
-    ("num", "5.1", "byon grants objectale and the Operator a licence to use the Brand Assets only "
+    ("num", "5.1", "byon grants objectale and the Vendor a licence to use the Brand Assets only "
                    "to render Branded Deliverables for byon. The licence ends when this OEM "
                    "Agreement ends."),
     ("num", "5.2", "byon warrants that it holds the rights in the Brand Assets and that their use "
@@ -96,14 +96,14 @@ EN = [
                    "and the test period restarts for the affected part."),
 
     ("h2", "7. Operation and responsibilities"),
-    ("num", "7.1", "The platform is operated by the Operator. byon does not host it and is not "
+    ("num", "7.1", "The platform is operated by the Vendor. byon does not host it and is not "
                    "responsible for its infrastructure."),
     ("num", "7.2", "byon is responsible for its Tenant's users, its own customer contracts, its "
                    "own first-line support and the accuracy of anything byon adds to a "
                    "deliverable."),
     ("num", "7.3", "objectale is responsible for second-line support to byon and for escalation to "
-                   "the Operator."),
-    ("num", "7.4", "byon will not represent that objectale or the Operator provides support "
+                   "the Vendor."),
+    ("num", "7.4", "byon will not represent that objectale or the Vendor provides support "
                    "directly to byon's customers."),
 
     ("h2", "8. Data protection in a white-label deployment"),
@@ -158,13 +158,13 @@ EN = [
         ["White-label discount on list", "[__]%"],
         ["One-off set-up charge", "[EUR __ / none]"],
         ["Minimum commitment for the white-label discount", "[__ seats / __ runs per quarter]"],
-        ["Attribution line", "[retained / removal agreed by the Operator on __]"],
+        ["Attribution line", "[retained / removal agreed by the Vendor on __]"],
         ["Service name used by byon", "[ ]"],
         ["Tenant administrators", "[name] · [e-mail]"],
         ["Brand assets supplied", "[template .pptx] · [logo .png] · [colour palette]"],
         ["Target date for tenant readiness", "[ ]"],
     ]),
-    ("note", "The attribution row is the one that needs an answer from the Operator before it is "
+    ("note", "The attribution row is the one that needs an answer from the Vendor before it is "
              "filled in. Leaving it as \"retained\" is the safe default and is what the platform "
              "does today."),
 
@@ -215,7 +215,7 @@ DE = [
                    "eigenen Vorlage an; objectale muss an jeder Änderung nicht beteiligt werden."),
     ("num", "3.3", "byon darf den Dienst in der eigenen Preisliste und im eigenen Marketing unter "
                    "einer von byon gewählten Bezeichnung führen, sofern diese Bezeichnung dem "
-                   "Namen der Plattform oder einer Kennzeichnung des Betreibers nicht "
+                   "Namen der Plattform oder einer Kennzeichnung des Herstellers nicht "
                    "verwechslungsfähig ähnlich ist."),
     ("num", "3.4", "byon darf sich seinen Kunden gegenüber als Vertragspartner und Erbringer des "
                    "gebrandeten Dienstes darstellen."),
@@ -226,23 +226,23 @@ DE = [
     ("h2", "4. Grenzen aus der Rechtekette"),
     ("p", "Diese Klausel benennt ausdrücklich, was objectale nicht einräumen kann, damit byon es "
           "einem Kunden nicht zusagt."),
-    ("num", "4.1", "Der Herkunftshinweis wird durch den Hauptvertrag zwischen objectale und dem "
-                   "Betreiber bestimmt. Sofern Anlage A nicht festhält, dass der Betreiber der "
+    ("num", "4.1", "Der Herkunftshinweis wird durch den Distributionsvertrag zwischen objectale und dem "
+                   "Hersteller bestimmt. Sofern Anlage A nicht festhält, dass der Hersteller der "
                    "Entfernung für byon zugestimmt hat, trägt jedes Ergebnisdokument eine kleine "
                    "Herkunftszeile; byon wird sie nicht entfernen, verdecken oder verändern."),
     ("num", "4.2", "Schweregradfarben und sonstige Elemente, die die Plattform als bedeutungstragend "
                    "für den Leser und nicht als Markenmerkmal behandelt, werden von der "
                    "White-Label-Funktion nicht umgefärbt; byon wird nicht versuchen, sie zu "
                    "verändern."),
-    ("num", "4.3", "objectale wird den Betreiber auf schriftliche Anfrage von byon fragen, ob ein "
+    ("num", "4.3", "objectale wird den Hersteller auf schriftliche Anfrage von byon fragen, ob ein "
                    "weitergehendes White-Label-Recht eingeräumt werden kann, und byon die Antwort "
                    "mitteilen. objectale sagt nicht zu, dass die Antwort positiv ausfällt."),
-    ("num", "4.4", "Entzieht oder beschränkt der Betreiber ein White-Label-Recht, informiert "
+    ("num", "4.4", "Entzieht oder beschränkt der Hersteller ein White-Label-Recht, informiert "
                    "objectale byon unverzüglich; die Parteien stimmen nach Treu und Glauben ab, wie "
                    "mit bestehenden Kundenzusagen von byon umzugehen ist."),
 
     ("h2", "5. Markenmaterial und Qualität"),
-    ("num", "5.1", "byon räumt objectale und dem Betreiber ein Nutzungsrecht am Markenmaterial "
+    ("num", "5.1", "byon räumt objectale und dem Hersteller ein Nutzungsrecht am Markenmaterial "
                    "ausschließlich zur Erzeugung gebrandeter Ergebnisdokumente für byon ein. Das "
                    "Recht endet mit diesem OEM-Vertrag."),
     ("num", "5.2", "byon sichert zu, die Rechte am Markenmaterial zu halten und dass dessen Nutzung "
@@ -267,14 +267,14 @@ DE = [
                    "die Testfrist beginnt für den betroffenen Teil erneut."),
 
     ("h2", "7. Betrieb und Verantwortlichkeiten"),
-    ("num", "7.1", "Die Plattform wird vom Betreiber betrieben. byon hostet sie nicht und ist für "
+    ("num", "7.1", "Die Plattform wird vom Hersteller betrieben. byon hostet sie nicht und ist für "
                    "ihre Infrastruktur nicht verantwortlich."),
     ("num", "7.2", "byon ist verantwortlich für die Nutzer des eigenen Mandanten, die eigenen "
                    "Kundenverträge, den eigenen First-Level-Support und die Richtigkeit dessen, was "
                    "byon einem Ergebnisdokument hinzufügt."),
     ("num", "7.3", "objectale ist verantwortlich für den Second-Level-Support gegenüber byon und "
-                   "für die Eskalation an den Betreiber."),
-    ("num", "7.4", "byon wird nicht darstellen, dass objectale oder der Betreiber unmittelbar "
+                   "für die Eskalation an den Hersteller."),
+    ("num", "7.4", "byon wird nicht darstellen, dass objectale oder der Hersteller unmittelbar "
                    "Support für Kunden von byon leistet."),
 
     ("h2", "8. Datenschutz im White-Label-Betrieb"),
@@ -331,14 +331,14 @@ DE = [
         ["White-Label-Rabatt auf Liste", "[__]%"],
         ["Einmaliges Einrichtungsentgelt", "[EUR __ / keines]"],
         ["Mindestabnahme für den White-Label-Rabatt", "[__ Seats / __ Läufe je Quartal]"],
-        ["Herkunftshinweis", "[bleibt bestehen / Entfernung vom Betreiber zugestimmt am __]"],
+        ["Herkunftshinweis", "[bleibt bestehen / Entfernung vom Hersteller zugestimmt am __]"],
         ["Von byon verwendete Dienstbezeichnung", "[ ]"],
         ["Administratoren des Mandanten", "[Name] · [E-Mail]"],
         ["Bereitgestelltes Markenmaterial", "[Vorlage .pptx] · [Logo .png] · [Farbpalette]"],
         ["Zieltermin für die Bereitstellung des Mandanten", "[ ]"],
     ]),
     ("note", "Die Zeile zum Herkunftshinweis ist diejenige, die vor dem Ausfüllen eine Antwort des "
-             "Betreibers benötigt. \"Bleibt bestehen\" ist die sichere Voreinstellung und "
+             "Herstellers benötigt. \"Bleibt bestehen\" ist die sichere Voreinstellung und "
              "entspricht dem heutigen Verhalten der Plattform."),
 
     ("pagebreak",),

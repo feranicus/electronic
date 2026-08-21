@@ -26,12 +26,12 @@ EN = [
                    "around the Platform, or a third-party public data source the Platform reads."),
 
     ("h2", "2. Who owes what"),
-    ("num", "2.1", "The Platform is operated by %s (the \"Operator\"). objectale is byon's "
+    ("num", "2.1", "The Platform is operated by %s (the \"Vendor\"). objectale is byon's "
                    "contractual counterparty and the single point of contact." % OPERATOR),
-    ("num", "2.2", "objectale provides second-line support to byon and escalates to the Operator. "
+    ("num", "2.2", "objectale provides second-line support to byon and escalates to the Vendor. "
                    "byon provides first-line support to its own customers."),
     ("num", "2.3", "This SLA is back-to-back with the agreement between objectale and the "
-                   "Operator. The commitments below are the commitments objectale itself receives. "
+                   "Vendor. The commitments below are the commitments objectale itself receives. "
                    "objectale does not owe byon more than that, and byon acknowledges it. Where "
                    "byon commits more to its own customers, byon carries the difference."),
 
@@ -40,7 +40,7 @@ EN = [
     ("num", "3.2", "Availability is calculated as ((T - P - E - D) / (T - P - E)) x 100, where T is "
                    "the total minutes in the month, P is planned and emergency maintenance, E is "
                    "minutes attributable to an exclusion under clause 8, and D is downtime."),
-    ("num", "3.3", "The Operator's server-side monitoring is the reference measurement. byon may "
+    ("num", "3.3", "The Vendor's server-side monitoring is the reference measurement. byon may "
                    "raise a discrepancy in writing within 10 business days of the month end."),
     ("num", "3.4", "On request objectale will provide the monthly availability report it receives."),
 
@@ -48,7 +48,7 @@ EN = [
     ("num", "4.1", "Planned maintenance will not exceed 4 hours in aggregate per calendar month, "
                    "will be notified at least 48 hours in advance by e-mail to byon's nominated "
                    "contacts, and will be scheduled outside 08:00 to 18:00 CET on business days."),
-    ("num", "4.2", "Emergency maintenance may be performed where the Operator reasonably "
+    ("num", "4.2", "Emergency maintenance may be performed where the Vendor reasonably "
                    "determines it is necessary to preserve security or integrity. Notice is given "
                    "as soon as reasonably practicable and may be after the event."),
     ("num", "4.3", "Planned and emergency maintenance are excluded from downtime and from the "
@@ -87,7 +87,7 @@ EN = [
                    "against future fees, are not payable in cash, and are byon's sole and "
                    "exclusive financial remedy for failure to meet the availability target."),
     ("num", "7.4", "objectale will pass on to byon any credit objectale itself receives from the "
-                   "Operator in respect of the same period, to the extent it exceeds the credit "
+                   "Vendor in respect of the same period, to the extent it exceeds the credit "
                    "calculated under this clause."),
 
     ("h2", "8. Exclusions"),
@@ -98,7 +98,7 @@ EN = [
     ("bullet", "Misuse, or use contrary to clause 7 of the Reseller Framework Agreement."),
     ("bullet", "Any suspension permitted under the Reseller Framework Agreement, including "
                "suspension for non-payment or for a suspected compromise."),
-    ("bullet", "An event beyond the reasonable control of objectale or the Operator."),
+    ("bullet", "An event beyond the reasonable control of objectale or the Vendor."),
     ("bullet", "Use of a trial, pilot, sandbox, beta or preview feature."),
 
     ("h2", "9. Backup and recovery"),
@@ -136,7 +136,7 @@ EN = [
         ["L1 - First line", "byon's own support desk", "On receipt from byon's customer."],
         ["L2 - Second line", "objectale's nominated contact",
          "S1 unresolved after 2 hours; S2 after 1 business day."],
-        ["L3 - Management", "objectale's management and the Operator",
+        ["L3 - Management", "objectale's management and the Vendor",
          "S1 unresolved after 4 hours; S2 after 2 business days."],
     ]),
 
@@ -195,12 +195,12 @@ DE = [
                    "die die Plattform auswertet."),
 
     ("h2", "2. Wer was schuldet"),
-    ("num", "2.1", "Die Plattform wird von %s (der \"Betreiber\") betrieben. objectale ist "
+    ("num", "2.1", "Die Plattform wird von %s (der \"Hersteller\") betrieben. objectale ist "
                    "Vertragspartner von byon und einziger Ansprechpartner." % OPERATOR),
     ("num", "2.2", "objectale erbringt Second-Level-Support für byon und eskaliert an den "
-                   "Betreiber. byon erbringt den First-Level-Support für die eigenen Kunden."),
+                   "Hersteller. byon erbringt den First-Level-Support für die eigenen Kunden."),
     ("num", "2.3", "Dieses SLA gilt spiegelbildlich zur Vereinbarung zwischen objectale und dem "
-                   "Betreiber. Die nachstehenden Zusagen sind diejenigen, die objectale selbst "
+                   "Hersteller. Die nachstehenden Zusagen sind diejenigen, die objectale selbst "
                    "erhält. objectale schuldet byon nicht mehr; byon nimmt dies zur Kenntnis. Sagt "
                    "byon eigenen Kunden mehr zu, trägt byon die Differenz."),
 
@@ -209,7 +209,7 @@ DE = [
     ("num", "3.2", "Die Verfügbarkeit berechnet sich als ((T - P - E - D) / (T - P - E)) x 100, "
                    "wobei T die Gesamtminuten des Monats, P geplante und Notfallwartung, E die "
                    "einer Ausnahme nach Ziffer 8 zurechenbaren Minuten und D die Ausfallzeit ist."),
-    ("num", "3.3", "Maßgeblich ist die serverseitige Überwachung des Betreibers. byon kann eine "
+    ("num", "3.3", "Maßgeblich ist die serverseitige Überwachung des Herstellers. byon kann eine "
                    "Abweichung binnen 10 Arbeitstagen nach Monatsende schriftlich rügen."),
     ("num", "3.4", "Auf Anforderung stellt objectale den erhaltenen monatlichen Verfügbarkeits"
                    "bericht zur Verfügung."),
@@ -219,7 +219,7 @@ DE = [
                    "mindestens 48 Stunden vorher per E-Mail an die benannten Ansprechpartner von "
                    "byon angekündigt und außerhalb von 08:00 bis 18:00 Uhr MEZ an Arbeitstagen "
                    "durchgeführt."),
-    ("num", "4.2", "Notfallwartung darf durchgeführt werden, wenn der Betreiber sie nach "
+    ("num", "4.2", "Notfallwartung darf durchgeführt werden, wenn der Hersteller sie nach "
                    "billigem Ermessen zur Wahrung der Sicherheit oder Integrität für erforderlich "
                    "hält. Die Ankündigung erfolgt sobald zumutbar möglich, gegebenenfalls im "
                    "Nachhinein."),
@@ -261,7 +261,7 @@ DE = [
                    "künftigen Entgelten verrechnet, werden nicht ausgezahlt und sind der "
                    "ausschließliche finanzielle Ausgleich von byon für das Verfehlen der "
                    "Zielverfügbarkeit."),
-    ("num", "7.4", "objectale gibt byon eine Gutschrift, die objectale selbst vom Betreiber für "
+    ("num", "7.4", "objectale gibt byon eine Gutschrift, die objectale selbst vom Hersteller für "
                    "denselben Zeitraum erhält, insoweit weiter, als sie die nach dieser Ziffer "
                    "berechnete Gutschrift übersteigt."),
 
@@ -275,7 +275,7 @@ DE = [
     ("bullet", "Jede nach dem Wiederverkäufer-Rahmenvertrag zulässige Sperrung, einschließlich "
                "wegen Zahlungsverzugs oder vermuteter Kompromittierung."),
     ("bullet", "Ein Ereignis außerhalb des zumutbaren Einflussbereichs von objectale oder des "
-               "Betreibers."),
+               "Herstellers."),
     ("bullet", "Nutzung einer Test-, Pilot-, Sandbox-, Beta- oder Vorschaufunktion."),
 
     ("h2", "9. Sicherung und Wiederherstellung"),
@@ -316,7 +316,7 @@ DE = [
         ["L1 - First Level", "Eigener Support von byon", "Bei Eingang vom Kunden von byon."],
         ["L2 - Second Level", "Benannter Ansprechpartner von objectale",
          "S1 nach 2 Stunden ungelöst; S2 nach 1 Arbeitstag."],
-        ["L3 - Management", "Geschäftsleitung von objectale und der Betreiber",
+        ["L3 - Management", "Geschäftsleitung von objectale und der Hersteller",
          "S1 nach 4 Stunden ungelöst; S2 nach 2 Arbeitstagen."],
     ]),
 

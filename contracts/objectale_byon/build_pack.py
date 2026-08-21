@@ -28,18 +28,26 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import common as C                                                       # noqa: E402
+import doc_distribution                                                  # noqa: E402
 import doc_reseller                                                      # noqa: E402
+import doc_deed                                                          # noqa: E402
+import doc_eula                                                          # noqa: E402
 import doc_oem                                                           # noqa: E402
 import doc_nda                                                           # noqa: E402
 import doc_sla                                                           # noqa: E402
 import doc_dpa                                                           # noqa: E402
 
+# CHAIN ORDER, and the numbering is the reading order for a customer's counsel: who owns it, who
+# may sell it, who did sell it, and what the buyer signs up to.
 DOCS = [
+    ("00_Distributionsvertrag", "00_Distribution_Agreement", doc_distribution),
     ("01_Wiederverkaeufer_Rahmenvertrag", "01_Reseller_Framework_Agreement", doc_reseller),
     ("02_White_Label_OEM_Vertrag", "02_White_Label_OEM_Agreement", doc_oem),
     ("03_Gegenseitige_Geheimhaltungsvereinbarung", "03_Mutual_NDA", doc_nda),
     ("04_Service_Level_Agreement", "04_Service_Level_Agreement", doc_sla),
     ("05_Auftragsverarbeitungsvertrag", "05_Data_Processing_Agreement", doc_dpa),
+    ("06_Durchgriffs_und_Eintrittsvereinbarung", "06_Flow_Down_and_Step_In_Deed", doc_deed),
+    ("07_Endkundenbedingungen", "07_End_User_Terms", doc_eula),
 ]
 
 
