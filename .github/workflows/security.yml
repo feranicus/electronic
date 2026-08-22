@@ -50,7 +50,7 @@ jobs:
         run: trivy config --severity HIGH,CRITICAL --exit-code 0 .
 
       - name: Hadolint - Dockerfile lint
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.4.0
         with:
           recursive: true
           failure-threshold: error
