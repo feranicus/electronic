@@ -657,3 +657,136 @@ def test_the_bot_does_not_promise_what_it_cannot_verify():
     h = s[s.index("def shield_decide"):s.index("def shield_decide") + 3000]
     assert "Applying." not in h, "the bot claims an outcome it has no way to check"
     assert "colt-web is not running" in h, "silence after a tap is left ambiguous"
+
+
+# ==============================================================================================
+# THE 2026-08-22 DIGEST GAP. analyse_attacks.py had been printing these in its "NEW OR
+# UNRECOGNISED" section for days while the blocker scored none of them, which is why the digest
+# kept reporting a low block count against 33,430 attack-shaped requests. The corpus naming a
+# class is worthless while probe_shape() cannot score it; these two must move together.
+# ==============================================================================================
+
+# Verbatim from the operator's own 14-day digest, 2026-08-21.
+_DIGEST_GAP = [
+    "/1.php7", "/about.php525", "/alfa-rex.php7", "/randkeyword.PhP7",   # php version suffixes
+    "/@fs/etc/passwd", "/@fs/proc/self/environ",                          # Vite dev-server LFI
+    "//firebase/init.json", "/service-account.json", "/Dockerfile",       # cloud creds + build
+    "/1b7e06/", "/2ff83958/", "/3fa375/",                                 # root hex spray
+]
+
+
+# Added because a mutation run proved the committed test did NOT cover these: deleting the whole
+# credential-and-debug extension rule changed nothing and the suite stayed green. _DIGEST_GAP only
+# held `/service-account.json`, which the separate filename rule catches, so the extension rule was
+# untested and therefore deletable. A rule with no test is a rule somebody removes by accident.
+_CREDS_AND_DEBUG = [
+    "/terraform.tfstate", "/prod.tfvars", "/kubeconfig", "/cert.pfx", "/store.p12",
+    "/keystore.jks", "/elmah.axd", "/trace.axd", "/_profiler/latest", "/debugbar/open",
+    "/.git-credentials", "/firebase.json", "/credentials.json", "/secrets.json",
+]
+
+
+def test_the_digest_gap_is_closed(sh):
+    """Every path our own digest could name but not block."""
+    missed = [p for p in _DIGEST_GAP if not sh.probe_shape(p)]
+    assert not missed, "still invisible to the blocker: %s" % missed
+
+
+def test_credential_and_debug_paths_are_scored(sh):
+    missed = [p for p in _CREDS_AND_DEBUG if not sh.probe_shape(p)]
+    assert not missed, "credential/debug probes not scored: %s" % missed
+
+
+def test_the_corpus_can_name_what_the_blocker_scores(sh):
+    """A class with no scoring rule is a name for something we cannot stop. Both directions."""
+    for p in _DIGEST_GAP:
+        if p in ("/1.php7", "/about.php525", "/alfa-rex.php7", "/randkeyword.PhP7"):
+            continue          # scored by shape; the corpus names these under php_probe only when
+                              # the extension is bare .php, which is fine: naming is for reporting
+        assert sh.classify(p), "%s is blockable but the digest cannot name it" % p
+
+
+def test_the_admin_cannot_be_blocked_from_the_admin_page(sh):
+    """/app/admin matched the admin-console rule and came back ACTIONABLE, so the administrator
+    moving around their own page accumulated probe_path at weight 3 and could have blocked
+    themselves out of the one page only they can reach. Same family as the 439-404 real visitor."""
+    assert not sh.probe_shape("/app/admin")
+    assert not sh.is_probe_path("/app/admin")
+
+
+def test_our_own_certificate_renewal_is_not_an_attack(sh):
+    """`/.well-known/` is IANA-registered and we serve it deliberately. The dot-directory rule was
+    matching it, so every Let's Encrypt validation and security.txt fetch scored probe_path and
+    inflated the attack figures in the daily digest."""
+    for p in ("/.well-known/security.txt", "/.well-known/acme-challenge/xYz123",
+              "/.well-known/sbom.cdx.json"):
+        assert not sh.probe_shape(p), p
+
+
+def test_an_exempt_prefix_is_not_a_hiding_place(sh):
+    """The `/api/` lesson, applied to every prefix this shield trusts. The first version of
+    is_our_route() returned True for anything under /assets/, so /assets/../../.env was waved
+    through before the traversal rule could fire."""
+    for p in ("/assets/../../.env", "/media/../../.git/config", "/app/..%2f..%2f.env",
+              "/assets/..\\..\\.env", "/.well-knownX/.env", "/.well-known/../.env",
+              "/.well-known/shell.php", "/appX/admin"):
+        assert sh.probe_shape(p), "%s slipped through a prefix exemption" % p
+
+
+def test_our_route_list_still_covers_the_application(sh):
+    """shield.OUR_TOP is a COPY of main.py::_APP_ROUTES, kept separate so the request path does not
+    import the application module. A copy drifts, so assert it. Adding a page without adding it
+    here arms the shield against a real customer route."""
+    import re
+    src = open(os.path.join(_BACKEND, "app", "main.py"), encoding="utf-8").read()
+    m = re.search(r"_APP_ROUTES\s*=\s*\{(.*?)\}", src, re.S)
+    assert m, "could not read _APP_ROUTES from main.py"
+    routes = set(re.findall(r'"([^"]*)"', m.group(1)))
+    missing = routes - set(sh.OUR_TOP)
+    assert not missing, "routes the shield does not know are ours: %s" % sorted(missing)
+
+
+# ==============================================================================================
+# A BARE ZERO IS NOT A REPORT (2026-08-22). For fourteen days the digest read "33430 attack-shaped
+# requests, 0 blocked (0%)" beside Telegram alerts saying blocks were happening, and that line
+# could not distinguish "the shield is off" from "below threshold" from "blind". It was blind.
+# ==============================================================================================
+
+def _digest():
+    """The digest module, imported the same way every other test here imports the app package.
+    `import attack_digest` fails: it lives inside the `app` package, not on sys.path."""
+    _import_app()
+    from app import attack_digest
+    return attack_digest
+
+
+_STATS = {"series": [{"day": "2026-08-21", "attacks": 1117, "blocked": 0,
+                      "visits": 73, "sources": 15}],
+          "classes": {"php_probe": 24069}, "countries": {},
+          "samples": ["/wp-login.php", "/.env", "/1.php7", "/@fs/etc/passwd", "/Dockerfile",
+                      "/service-account.json", "/1b7e06/", "/backup.sql", "/swagger.json"]}
+
+
+def test_the_digest_reports_coverage_not_just_a_zero(sh):
+    line = _digest()._explain_block_rate(_STATS, 0)
+    assert "coverage" in line, "the digest must say how much of the traffic is even scorable"
+    assert "100%" in line, "every sampled path should be scorable after the gap fix: %s" % line
+
+
+def test_a_coverage_gap_is_named_as_the_reason_for_zero(sh, monkeypatch):
+    """The state this file shipped in: half the traffic unscorable, and the summary said only 0."""
+    real = sh.probe_shape
+    monkeypatch.setattr(sh, "probe_shape", lambda p: real(p) and "@fs" not in p
+                        and "php7" not in p and "Dockerfile" not in p
+                        and "service-account" not in p and "1b7e06" not in p)
+    line = _digest()._explain_block_rate(_STATS, 0)
+    assert "CANNOT BE SCORED" in line, \
+        "a zero caused by blindness must SAY so rather than printing a bare 0: %s" % line
+
+
+def test_the_digest_says_when_the_shield_is_simply_off(sh, monkeypatch):
+    monkeypatch.setattr(sh, "ENABLED", False)
+    assert "SHIELD=off" in _digest()._explain_block_rate(_STATS, 0)
+    monkeypatch.setattr(sh, "ENABLED", True)
+    monkeypatch.setattr(sh, "ENFORCE", False)
+    assert "detection only" in _digest()._explain_block_rate(_STATS, 0)

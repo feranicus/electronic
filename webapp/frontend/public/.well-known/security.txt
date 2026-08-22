@@ -6,5 +6,5 @@
 Contact: mailto:feranicus@s4biz.io
 Preferred-Languages: en, de
 Canonical: https://cybergod.ai/.well-known/security.txt
-Policy: https://cybergod.ai/privacy
-Expires: 2027-01-01T00:00:00.000Z
+Policy: https://cybergod.ai/.well-known/disclosure-policy.txt
+Expires: 2027-08-22T00:00:00.000Z

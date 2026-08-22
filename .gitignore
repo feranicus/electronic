@@ -79,3 +79,12 @@ forensics-*.txt
 # run). A user database must never be in git, even an empty one.
 data/
 *.sqlite
+
+# Marketing campaign — GENERATED DATA is personal data (10k LinkedIn connections: names, emails,
+# profile URLs) and the send log names who was contacted. Neither belongs in git. The CODE that
+# produces them is committed; the data is regenerated from the operator's own Connections.csv.
+marketing/campaign/targets.json
+marketing/campaign/targets.csv
+marketing/campaign/shortlist_*.csv
+marketing/campaign/sent.jsonl
+marketing/campaign/Connections.csv

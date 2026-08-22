@@ -23,6 +23,15 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # SLSA BUILD PROVENANCE. A partner running our OEM image can cryptographically verify it was
+      # built from THIS repository by THIS workflow, not swapped for a look-alike. This is CISA's
+      # "take ownership of security outcomes" principle made checkable, and it is the direct answer
+      # to the Trivy supply-chain compromise this pipeline already hardened against: provenance is
+      # how a consumer detects exactly that class of substitution.
+      #   verify with: gh attestation verify oci://ghcr.io/feranicus/colttechbot:<tag> \
+      #                  --repo feranicus/electronic
+      id-token: write          # to sign the attestation via Sigstore's keyless flow
+      attestations: write      # to store it alongside the image in GHCR
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
@@ -75,10 +84,19 @@ jobs:
           trivy image --severity HIGH --ignore-unfixed --exit-code 0 "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}"
           trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 --ignorefile .trivyignore "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}"
       - name: Push colttechbot
+        id: push_bot
         run: |
           docker tag "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}" "$IMAGE_BASE/colttechbot:latest"
           docker push "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}"
           docker push "$IMAGE_BASE/colttechbot:latest"
+          # The digest is what provenance binds to: a tag can be moved, a digest cannot.
+          echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+      - name: Attest colttechbot provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE_BASE }}/colttechbot
+          subject-digest: ${{ steps.push_bot.outputs.digest }}
+          push-to-registry: true
 
       # ---- cassandra: build (load) -> Trivy scan -> push (only if clean) ----
       - uses: docker/build-push-action@v6
@@ -92,10 +110,18 @@ jobs:
           trivy image --severity HIGH --ignore-unfixed --exit-code 0 "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}"
           trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 --ignorefile .trivyignore "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}"
       - name: Push cassandra
+        id: push_cass
         run: |
           docker tag "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}" "$IMAGE_BASE/cassandra:latest"
           docker push "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}"
           docker push "$IMAGE_BASE/cassandra:latest"
+          echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+      - name: Attest cassandra provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE_BASE }}/cassandra
+          subject-digest: ${{ steps.push_cass.outputs.digest }}
+          push-to-registry: true
 
   deploy:
     needs: [build-scan-push]

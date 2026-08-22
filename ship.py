@@ -1301,6 +1301,19 @@ def do_tests():
     if not brand_ok:
         sys.exit("[X] brand gate failed - a customer-facing surface still says Colt")
 
+    # b2) the SBOM must match the dependency manifests. A stale SBOM is a false compliance claim:
+    #     it tells a partner "these are our components" while a dependency has changed underneath
+    #     it. Regenerate-and-fail rather than silently ship yesterday's bill of materials. Cheap,
+    #     deterministic, and it keeps the served .well-known/sbom.cdx.json honest.
+    _sb = subprocess.run([sys.executable, os.path.join(HERE, "scripts", "gen_sbom.py"), "--check"],
+                         capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if _sb.returncode != 0:
+        print((_sb.stdout or "") + (_sb.stderr or ""))
+        print("  regenerating the SBOM ...")
+        subprocess.run([sys.executable, os.path.join(HERE, "scripts", "gen_sbom.py")], cwd=HERE)
+    else:
+        print("  " + (_sb.stdout or "SBOM current").strip())
+
     # c) the unit suite. Bootstrap the runner if it is missing — "pytest not installed" is a setup
     #    gap, not a reason to hand the operator a second command. A failing TEST blocks the ship;
     #    a missing test RUNNER we fix ourselves and, if we cannot, warn loudly and continue.
@@ -1941,6 +1954,29 @@ def main():
             print("      the risk. Run: python dbbackup.py --verify")
     except Exception as _e:
         print("  [!] dbbackup skipped (%s) - never blocks a deploy" % type(_e).__name__)
+
+    # ---- OFF-BOX SECURITY LOG ARCHIVE --------------------------------------------------------
+    #      logship.py is a BUILDING BLOCK, not a second command (operating principle 7).
+    #      WHY IT EXISTS: Loki runs on the droplet it monitors, so an attacker who owns the box
+    #      owns the evidence. dbbackup preserves the BOOKS OF RECORD; logship preserves the
+    #      SECURITY TRAIL, shipped append-only to Spaces so a compromise cannot erase it. It is
+    #      also what makes a CRA Article 14 24-hour report possible - you cannot report from logs
+    #      the incident deleted. NON-BLOCKING and fail-open: absent Spaces credentials it installs
+    #      the timer and states plainly that shipping is not yet configured.
+    try:
+        _ls = subprocess.run([sys.executable, os.path.join(HERE, "logship.py")],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=200)
+        _lsout = ((_ls.stdout or "") + (_ls.stderr or "")).rstrip()
+        print("")
+        for _l in _lsout.splitlines():
+            _s = _l.strip()
+            if (_s.startswith(("####", "[X]", "[!]")) or "ship" in _s.lower()
+                    or "OK" in _s or "boto3" in _s or "configured" in _s):
+                print("  " + _s)
+        if _ls.returncode != 0:
+            print("  [!] logship install did not finish - the security trail may not be archived.")
+    except Exception as _e:
+        print("  [!] logship skipped (%s) - never blocks a deploy" % type(_e).__name__)
 
     # ---- PATCH CADENCE ON BOTH DROPLETS ------------------------------------------------------
     #      secaudit.py is a BUILDING BLOCK, not a second command (operating principle 7).

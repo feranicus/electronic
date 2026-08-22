@@ -97,7 +97,15 @@ NEVER_BLOCK_PREFIXES = ("/.well-known/", "/api/")
 HONEYTOKENS = ("/admin.php", "/wp-login.php", "/.env.bak", "/backup.zip", "/config.json.old")
 
 _PROBE_RE = re.compile(
-    r"(?:^|/)\.[^/]"                       # /.git /.env /.aws /.ssh — dot-directories
+    # /.git /.env /.aws /.ssh — dot-directories.
+    # THE NEGATIVE LOOKAHEAD IS LOAD-BEARING. `/.well-known/` is an IANA-registered namespace we
+    # serve on purpose: ACME renewal and RFC 9116 security.txt live there. Without the exclusion
+    # every Let's Encrypt validation and every security.txt fetch scored `probe_path` at weight 3.
+    # It could not be BLOCKED (the prefix is exempt) but it was counted, so our own certificate
+    # renewals were inflating the attack figures in the daily digest.
+    # An impostor is still caught: `/.well-knownX/` fails the lookahead because it requires the
+    # slash, and `/.well-known/x.php` or a traversal underneath it is caught by the rules below.
+    r"(?:^|/)\.(?!well-known/)[^/]"
     r"|//"                                 # //slug — a doubled slash is a template artefact
     r"|/\["                                # /[workspace]/ — an UNRENDERED PLACEHOLDER. A human
                                            #   cannot type this; it is a scanner replaying docs.
@@ -119,7 +127,54 @@ _PROBE_RE = re.compile(
     r"|(?:^|/)(?:id_rsa|credentials|dump|backup|shell|cmd|eval)(?:$|[./])"
     r"|(?:^|/)[A-Z_]{3,}\.md$"             # /DOCS.md /IAM.md /README.md at the root: repository
                                            #   documentation we do not serve, a leaked-docs scan.
-    r"|/null$",
+    r"|/null$"
+
+    # ------------------------------------------------------------------------------------------
+    # THE NINE PATHS OUR OWN 14-DAY DIGEST WAS SEEING AND THIS REGEX COULD NOT SCORE (2026-08-22).
+    # analyse_attacks.py named them in its "NEW OR UNRECOGNISED" section for days and nobody
+    # joined the two up. Measured before the fix: 9 of 17 real attack paths from that digest were
+    # invisible to the blocker, which is the whole reason `blocked` kept reading low. The corpus
+    # knowing a class is worthless if probe_shape() cannot score it.
+    #
+    # EVERY PATTERN BELOW IS ANCHORED so it cannot reach a real route. The live route set is
+    # main.py::_APP_ROUTES = {"", login, app, privacy, impressum, contact, demo, experience,
+    # partners} plus /assets/** (StaticFiles) and /api/** (exempt anyway). test_shield.py asserts
+    # all of them against this regex, because a shield that blocks a visitor is worse than none.
+
+    # 1. PHP VERSION SUFFIXES. `.php$` missed /1.php7, /about.php525, /alfa-rex.php7, and the
+    #    digest counted 24,069 php probes while these specific ones scored nothing.
+    r"|\.php\d{1,4}(?:$|[?/])"
+
+    # 2. VITE DEV-SERVER ARBITRARY FILE READ (CVE-2025-30208 family). /@fs/ is a Vite internal
+    #    prefix; /@fs/etc/passwd and /@fs/proc/self/environ were the single most-repeated
+    #    unrecognised probe in the digest, from three separate sources. We BUILD with Vite and
+    #    serve static files in production, so this cannot succeed here, but a request for it is
+    #    unambiguously a scanner: no browser and no human ever emits it.
+    r"|(?:^|/)@(?:fs|vite|id)(?:$|/)"
+
+    # 3. CLOUD AND SERVICE CREDENTIALS, by exact filename rather than by extension. Matching
+    #    "*.json" would hit the SBOM and any future public document; matching these names cannot.
+    r"|(?:^|/)(?:service[-_]?account(?:[-_]?key)?|serviceaccountkey|firebase[-_]?adminsdk"
+    r"|firebase|credentials|secrets?|gcp[-_]?key|client[-_]secret"
+    r"|application_default_credentials)\.json(?:$|[?/])"
+    r"|\.(?:tfstate|tfvars|pfx|p12|jks|keystore|axd)(?:$|[?/])"
+    # kubeconfig has NO extension, so it needs a filename rule and not an extension rule. The
+    # committed test caught this: it was listed in the extension alternation, where it could never
+    # match, which is a rule that looks present and does nothing.
+    r"|(?:^|/)(?:kubeconfig|\.git-credentials|id_ed25519|authorized_keys)(?:$|[?/])"
+
+    # 4. BUILD AND DEPLOY ARTEFACTS. Present in a repository, never on a web root.
+    r"|(?:^|/)(?:Dockerfile|docker-compose|Procfile|Makefile|Jenkinsfile|Vagrantfile)(?:$|[.?/])"
+
+    # 5. FRAMEWORK DEBUG CONSOLES. Information disclosure by design, which is why scanners want
+    #    them. /telescope/ and /_ignition are already above; these are the rest of the family.
+    r"|/(?:_?debugbar|_profiler|_debug|elmah\.axd|trace\.axd)(?:$|[/?])"
+
+    # 6. ROOT-LEVEL HEX DIRECTORIES: /1b7e06/ /2ff83958/ /3fa375/. Cache and WAF probing.
+    #    DELIBERATELY ROOT-ONLY. The obvious `(?:^|/)[0-9a-f]{5,12}/?$` would also match the LAST
+    #    SEGMENT of a legitimate path, and job identifiers are hex, so /app/<jobid> would have
+    #    been read as an attack on the operator's own cabinet. Anchor at ^ and the risk is gone.
+    r"|^/[0-9a-f]{5,12}/?$",
     re.I)
 
 
@@ -145,6 +200,18 @@ CLASSES = [
     ("docs_leak",   re.compile(r"(?:^|/)[A-Z_]{3,}\.md$")),
     ("template",    re.compile(r"(//|/\[)")),
     ("iot_router",  re.compile(r"(?i)/(boaform|goform|HNAP1|setup\.cgi|hudson|jenkins|solr)")),
+    # Added 2026-08-22 alongside the probe_shape patterns. THE TWO MUST MOVE TOGETHER: the corpus
+    # is "what exists" and probe_shape is "what we detect", and the gap analysis is only
+    # meaningful while both are current. A class here with no scoring rule there is a name for
+    # something we still cannot block.
+    ("dev_server",  re.compile(r"(?i)(?:^|/)@(fs|vite|id)(?:$|/)")),
+    ("cloud_creds", re.compile(r"(?i)(?:^|/)(service[-_]?account|firebase|credentials|secrets?)"
+                               r"\.json|\.(tfstate|tfvars|kubeconfig|pfx|p12|jks)(?:$|[?/])")),
+    ("build_files", re.compile(r"(?i)(?:^|/)(Dockerfile|docker-compose|Procfile|Makefile"
+                               r"|Jenkinsfile|Vagrantfile)(?:$|[.?/])")),
+    ("debug_panel", re.compile(r"(?i)/(_?debugbar|_profiler|_debug|elmah\.axd|trace\.axd"
+                               r"|_ignition|telescope)(?:$|[/?])")),
+    ("hex_spray",   re.compile(r"(?i)^/[0-9a-f]{5,12}/?$")),
 ]
 
 
@@ -159,6 +226,42 @@ def lane_of(path):
     return hits[0] if hits else None
 
 
+# THE PAGES WE ACTUALLY SERVE. Kept here rather than imported from main.py because shield.py is
+# on the request path and must not depend on the application module, but tests/test_shield.py
+# asserts this set still covers main.py::_APP_ROUTES, so adding a page without adding it here
+# fails the build instead of silently arming the shield against a real customer route.
+OUR_TOP = ("", "login", "app", "privacy", "impressum", "contact", "demo", "experience",
+           "partners")
+OUR_PREFIXES = ("/app/", "/assets/", "/media/")
+OUR_EXACT = ("/robots.txt", "/sitemap.xml", "/favicon.ico", "/manifest.webmanifest", "/sw.js",
+             "/defense.html", "/defense.js", "/healthz", "/health")
+
+
+_ESCAPE_RE = re.compile(r"\.\.|%2e|%2f|%5c|\\", re.I)
+
+
+def is_our_route(path):
+    """True for a page or asset this application serves. Never scored, never blocked.
+
+    A PREFIX EXEMPTION IS A HIDING PLACE UNLESS IT REFUSES TRAVERSAL. The first version returned
+    True for anything under `/assets/`, so `/assets/../../.env` was waved through before the
+    traversal rule could fire, and the negative test caught it immediately. That is the identical
+    defect the `/api/` prefix already caused once, reintroduced by me in the fix for a different
+    one. No legitimate route contains `..` or an encoded slash or dot, so refuse first and match
+    afterwards.
+    """
+    raw = str(path or "/")
+    if _ESCAPE_RE.search(raw):
+        return False
+    p = (raw.split("?")[0] or "/").rstrip("/") or "/"
+    if p in OUR_EXACT or path in OUR_EXACT:
+        return True
+    if p.startswith(OUR_PREFIXES) or (path or "").startswith(OUR_PREFIXES):
+        return True
+    seg = p.strip("/").split("/")
+    return len(seg) == 1 and seg[0] in OUR_TOP
+
+
 def probe_shape(path):
     """Does the path LOOK like scanner behaviour? Pure pattern, NO exemptions.
 
@@ -168,10 +271,28 @@ def probe_shape(path):
     NOTHING AT ALL. An attacker who prefixed every probe with /api/ was invisible to the shield.
     Now the SHAPE is always scored; the EXEMPTION only decides whether we may ACT on that request.
     """
-    p = str(path or "/")
-    if p.lower() in EXTRA_PROBE_PATHS:
+    raw = str(path or "/")
+    if raw.lower() in EXTRA_PROBE_PATHS:
         return True
-    return bool(_PROBE_RE.search(p))
+    # THE QUERY STRING IS ALWAYS SCANNED, EVEN ON OUR OWN PAGES.
+    # `/?XDEBUG_SESSION_START=phpstorm` has `/` as its path. The first version of the route
+    # exemption stripped the query, saw the homepage, and returned False, so a payload delivered
+    # in the query on any legitimate URL became invisible. That is the `/api/` hiding place for
+    # the THIRD time in one change: exemption from ACTION kept turning into exemption from
+    # OBSERVATION. The path may be ours; the query never is.
+    p, _sep, q = raw.partition("?")
+    if q and _PROBE_RE.search(q):
+        return True
+    # OUR OWN ROUTES ARE NEVER AN ATTACK SHAPE, and this is checked FIRST.
+    # `/app/admin` matched the `/(admin|manager|cpanel|...)` console rule and came back ACTIONABLE,
+    # so the administrator moving around their own administration page accumulated probe_path at
+    # weight 3 per request and could have tarpitted, then blocked, themselves out of the one page
+    # only they can reach. The rule predates this change; the route was added later and nothing
+    # compared the two. Same family as the 439-404 real visitor: a detector tuned on attacker
+    # behaviour has to be checked against OUR behaviour before it can be trusted.
+    if is_our_route(p):
+        return False
+    return bool(_PROBE_RE.search(raw))
 
 
 def is_probe_path(path):

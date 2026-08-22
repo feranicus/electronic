@@ -18,7 +18,17 @@ SERVICE      = os.environ.get("SERVICE", "colt-web")
 HASH_IPS     = os.environ.get("TELEMETRY_HASH_IPS", "0") == "1"
 IP_SALT      = os.environ.get("TELEMETRY_IP_SALT", "colt-cybergod")
 # static assets would drown the log and tell us nothing about a visitor
-SKIP_PATH_RE = re.compile(r"\.(css|js|map|png|jpe?g|svg|ico|woff2?|ttf)$", re.I)
+# A SUBRESOURCE IS NOT A PAGE VISIT.
+# 2026-08-22: the operator was alerted that "a person just opened cybergod.ai" with the page given
+# as `/manifest.webmanifest`. A real person HAD opened the site (the referrer proves it) and their
+# browser then fetched the PWA manifest, but the alert named the manifest as the page they
+# visited. `.webmanifest` was simply not in this list. Same class as the `sw.js` referrer alert
+# already recorded: the browser fetches things on the visitor's behalf and those fetches are not
+# navigations. Extensions added: webmanifest, webp/avif/gif (images), mp4/webm (the hero video),
+# json/txt/xml (manifests, robots, sitemap) and eot/otf (fonts).
+SKIP_PATH_RE = re.compile(
+    r"\.(css|js|mjs|map|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot"
+    r"|webmanifest|mp4|webm|json|txt|xml)$", re.I)
 
 _BOTS = [
     ("googlebot", "Googlebot"), ("bingbot", "Bingbot"), ("yandex", "YandexBot"),
