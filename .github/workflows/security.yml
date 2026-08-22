@@ -11,7 +11,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # TRIVY IS A SUPPLY-CHAIN DEPENDENCY LIKE ANY OTHER, AND IT HAS BEEN COMPROMISED ONCE.
       # Aqua's Trivy was hit in Feb/Mar 2026: a malicious v0.69.4 went to GHCR, ECR Public and
