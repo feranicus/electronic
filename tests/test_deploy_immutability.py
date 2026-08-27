@@ -185,6 +185,14 @@ def test_a_dirty_tree_is_reported_not_silently_shipped(dwd):
     for d in dirty:
         # A diagnostic that misreports a path sends the next investigation down the wrong road.
         assert not d.startswith(" "), "dirty path is mis-sliced: %r" % d
+        # GIT QUOTES A PATH CONTAINING SPACES. `git status --porcelain` emits
+        #     ?? "marketing/campaign/Entire Screen - Screencastify - ... .webm"
+        # with LITERAL quotation marks, and this assertion compared the quoted string against the
+        # filesystem, so a perfectly real 16MB screen recording was reported as a "phantom path,
+        # mis-sliced". The check was right to look; it was reading git's output format wrong.
+        # Unquote before testing, or every filename with a space becomes a false alarm.
+        if len(d) > 1 and d[0] == '"' and d[-1] == '"':
+            d = d[1:-1].encode().decode("unicode_escape")
         # A DELETED path legitimately does not exist on disk, so "not on disk" alone is not a
         # defect. The purpose of this assertion is to catch a MIS-SLICED path (the
         # "eploy_web_direct.py" bug), and a mangled name is neither on disk NOR in HEAD.

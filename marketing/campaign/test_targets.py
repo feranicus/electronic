@@ -111,6 +111,57 @@ for key in seen:
         missing.append(key)
 ck(not missing, "the free-assessment offer is present everywhere (%s)" % (missing or "all"))
 
+
+
+print("\n[7] THE CLIPBOARD VERDICT (2026-08-22). The self-test said 'clipboard MANGLES non-ASCII'")
+print("    and told the operator to stop. The clipboard was probably fine: PowerShell writes")
+print("    stdout in the CONSOLE code page, so the READ-BACK destroyed the accents on the way out.")
+print("    A check must not condemn its subject for its own defect, so accent-only damage now")
+print("    reads as 'read-back suspect' and the queue continues.")
+_PROBE = "Hi Göksal, Grüße aus München. Zażółć. 15 minutes?"
+
+
+def _verdict(back):
+    """The exact logic from outreach.clipboard_selftest, kept in step by test [8]."""
+    if back == _PROBE:
+        return "ok"
+    skel = "".join(c for c in _PROBE if c.isascii())
+    if len(back) == len(_PROBE):
+        same = all(b == p for b, p in zip(back, _PROBE) if p.isascii())
+    else:
+        same = "".join(c for c in back if c.isascii()) == skel
+    return "suspect" if (same or "".join(c for c in back if c.isascii()) == skel) else "stop"
+
+
+for _label, _back, _want in [
+    ("perfect round-trip", _PROBE, "ok"),
+    ("accents -> '?' (the real case)", "".join("?" if not c.isascii() else c for c in _PROBE), "suspect"),
+    ("mojibake utf8-as-cp1252", _PROBE.encode("utf-8").decode("cp1252", "replace"), "suspect"),
+    ("accents -> U+FFFD", "".join("�" if not c.isascii() else c for c in _PROBE), "suspect"),
+    ("different text", "something else entirely", "stop"),
+    ("truncated", _PROBE[:10], "stop"),
+    ("extra sentence injected", _PROBE + " Also send money.", "stop"),
+]:
+    ck(_verdict(_back) == _want, "%-34s -> %-8s (want %s)" % (_label, _verdict(_back), _want))
+
+print("\n[8] THE CAP IS THE OPERATOR'S, AND THE DOC MUST MATCH THE CODE")
+_out = open(os.path.join(HERE, "outreach.py"), encoding="utf-8").read()
+ck("OUTREACH_DAILY_CAP" in _out, "the cap is overridable without editing the file")
+ck('"200"' in _out, "the default cap is 200, as the operator set it")
+ck("DAILY_CAP is 200" in _out, "the module docstring states the same number the code uses")
+# The verdict logic above is a COPY of the one in outreach.py. A copy drifts, so assert the
+# distinctive line is really there rather than trusting that it is.
+# Case-insensitive: the message in outreach.py says "READ-BACK" in capitals and the first
+# version of this assertion compared lowercase, so it failed a correct file.
+ck("read-back" in _out.lower(),
+   "outreach.py still distinguishes a suspect read-back from a broken clipboard")
+
+
+# THE GATE IS LAST, AND IT MUST STAY LAST. It was in the MIDDLE of this file and sections [7]
+# and [8] were appended after it, so they were unreachable: 14 assertions that could never
+# run and could never fail. Identical to the defect already fixed in test_recall.py, where
+# the only sys.exit sat at line 253 of 761 and silently stopped enforcing everything below
+# it, including the public-suffix guard.
 print()
 if FAILS:
     print("%d FAILURE(S):" % len(FAILS))

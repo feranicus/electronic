@@ -790,3 +790,132 @@ def test_the_digest_says_when_the_shield_is_simply_off(sh, monkeypatch):
     monkeypatch.setattr(sh, "ENABLED", True)
     monkeypatch.setattr(sh, "ENFORCE", False)
     assert "detection only" in _digest()._explain_block_rate(_STATS, 0)
+
+# ==============================================================================================
+# THE 2026-08-26 DIGEST: 43,621 attack-shaped requests, coverage 100%, ZERO blocked. The detector
+# was NOT blind this time. The evidence expired faster than the scanner accumulated it:
+#   window 300s / block_after 12 / probe_path weight 3 -> 4 probes inside ONE five-minute window,
+#   while the three biggest sources ran at 0.53-0.55 per window and one had been at it 12 days.
+# The fix is a SECOND, 24-hour horizon keyed on DISTINCT PROBE PATHS, which is the one thing an
+# ordinary visitor never produces.
+# ==============================================================================================
+
+_SLOW_PROBES = ["/wp-login.php", "/.env", "/1.php7", "/@fs/etc/passwd", "/Dockerfile",
+                "/service-account.json", "/backup.sql", "/swagger.json", "/shell.php",
+                "/administrator/index.php", "/.git/config", "/terraform.tfstate"]
+_CLS = {"browser": "Chrome", "os": "Linux", "device": "desktop"}
+
+
+def test_a_low_and_slow_scan_is_caught(sh):
+    """The pace that defeated the five-minute window.
+
+    THE PACING IS THE TEST. The first version of this called observe() twelve times in a row and
+    then asserted BLOCK, which passed even with the slow rule deleted, because twelve probes in
+    one instant trip the FAST window on their own. It was defence in depth answering, not the
+    thing under test. A negative test that passes because of a different guard proves nothing.
+
+    So the fast evidence is aged out deliberately, which is exactly the real-world condition:
+    158.23.147.79 asked for 319 distinct paths at 0.55 per five-minute window, so at any moment
+    its recent-hits list was effectively empty while its 24-hour footprint was enormous.
+    """
+    ip = "158.23.147.79"
+    for p in _SLOW_PROBES:
+        sh.observe(ip, p, 404, _CLS)
+    # Age every FAST hit past the window, leaving only the 24-hour distinct-path record.
+    old = time.time() - (sh.cfg("window_s") * 3)
+    sh._hits[ip] = [(old, r) for (_t, r) in sh._hits.get(ip, [])]
+    sh._miss[ip] = {p: old for p in sh._miss.get(ip, {})}
+    assert sh._score(ip, time.time(), sh.cfg("window_s"))[0] < sh.cfg("tarpit_after"), (
+        "the fast window must be empty, or this test is measuring the wrong rule")
+    assert sh.slow_scan(ip) >= sh.SLOW_DISTINCT
+    assert sh.decide(ip, "/")[0] == "BLOCK"
+
+
+def test_the_slow_window_never_touches_a_real_visitor(sh):
+    """THE SAFETY ARGUMENT, and it is the whole reason this rule is allowed to exist: only
+    PROBE-SHAPED paths are recorded. On 10 Aug two genuine visitors produced 439 and 362 404s each
+    on our own stale routes; a volume rule would have blocked both."""
+    ours = ["/", "/app", "/partners", "/demo", "/contact", "/privacy", "/impressum",
+            "/experience", "/app/history", "/app/compliance"]
+    for i in range(400):
+        sh.observe("203.0.113.55", ours[i % len(ours)], 404,
+                   {"browser": "Firefox", "os": "Windows 10", "device": "desktop"})
+    assert sh.slow_scan("203.0.113.55") == 0, "a visitor's 404s must never enter the slow window"
+    assert sh.decide("203.0.113.55", "/")[0] == "ALLOW"
+
+
+def test_the_slow_window_ages_out(sh):
+    """A scanner that stopped yesterday must be forgotten, or this becomes a permanent blocklist
+    and an unbounded memory leak."""
+    import time as _t
+    old = _t.time() - (sh.SLOW_WINDOW_S + 3600)
+    sh._slow["198.51.100.9"] = {"/p%d" % i: old for i in range(sh.SLOW_DISTINCT + 8)}
+    assert sh.slow_scan("198.51.100.9") == 0
+    assert "198.51.100.9" not in sh._slow, "expired entries must be dropped, not just ignored"
+
+
+def test_the_slow_window_is_bounded(sh):
+    """The input is chosen by the attacker, so the state it can create must be capped."""
+    for i in range(sh.SLOW_MAX_PATHS + 50):
+        sh.observe("203.0.113.77", "/.env%d" % i, 404, _CLS)
+    assert len(sh._slow.get("203.0.113.77", {})) <= sh.SLOW_MAX_PATHS
+
+
+def test_the_app_prefix_is_not_a_hiding_place(sh):
+    """I INTRODUCED THIS ON 22 AUG. `/app/` was a blanket prefix exemption added to stop the shield
+    blocking the administrator from `/app/admin`, and it exempted everything an attacker could
+    append to it. Fifth instance of the same defect in this file."""
+    for p in ("/app/wp-login.php", "/app/.env", "/assets/.env", "/media/../../.git/config",
+              "/app/../.env"):
+        assert sh.probe_shape(p), "%s must be scored, not exempted by a prefix" % p
+    for p in ("/app/admin", "/app/history", "/app/compliance", "/app/assistant", "/app/brand",
+              "/app/password", "/assets/index-a1b2c3.js", "/media/cassandra.mp4"):
+        assert not sh.probe_shape(p), "%s is a real route/asset" % p
+
+
+def test_a_404_on_our_own_route_is_never_evidence(sh):
+    """A stale bookmark is not a scan however many of them there are. The distinct-path floor alone
+    was not enough: a visitor with eight old bookmarks clears a floor of six."""
+    for p in ("/", "/app", "/partners", "/oldpage", "/app/history"):
+        assert sh.is_our_route(p) or not sh.probe_shape(p)
+    sh._miss.clear()
+    for i in range(50):
+        sh.observe("203.0.113.61", "/partners", 404, _CLS)
+    assert sh.decide("203.0.113.61", "/")[0] == "ALLOW"
+
+
+def test_the_new_config_and_wp_patterns(sh):
+    """From the 2026-08-26 digest's own unrecognised list."""
+    for p in ("/amplifyconfiguration.json", "/application.properties", "/appsettings.json",
+              "/appsettings.Production.json", "/blog/wp/v2/users", "/wp-json/wp/v2/users"):
+        assert sh.probe_shape(p), p
+
+
+def test_the_unanchored_json_proposal_stays_refused(sh):
+    """The panel proposed `/\.(env|json|properties|py)$`. Unanchored `\.json$` matches the SBOM we
+    now serve at /.well-known/sbom.cdx.json. Accepting it would have made a published compliance
+    artifact look like an attack, and blocked anyone who fetched it."""
+    for p in ("/.well-known/sbom.cdx.json", "/manifest.webmanifest", "/assets/data-a1b2.json"):
+        assert not sh.probe_shape(p), "%s is ours and must never score" % p
+
+
+def test_the_bot_gate_observes_before_it_returns():
+    """The gate 404s and returns; observe() came AFTER call_next, so anything the gate handled left
+    no trace in the shield's memory. A self-declared scanner could enumerate forever."""
+    src = _src("webapp/backend/app/telemetry.py")
+    i = src.index("_v.should_block")
+    j = src.index("return HTMLResponse(_v.NOT_FOUND_HTML, status_code=404)", i)
+    assert "_sh.observe(" in src[i:j], (
+        "the bot-gate branch must call shield.observe() before returning, or the shield never "
+        "learns from a request the gate handled")
+
+
+def test_our_own_directories_are_not_reported_as_attacks():
+    """/.well-known/ and /assets/ were listed as UNRECOGNISED attacker behaviour on the operator's
+    digest. _ours() rstripped the slash before the prefix test."""
+    _import_app()
+    from app import attack_digest as ad
+    for p in ("/.well-known/", "/assets/", "/media/", "/api/"):
+        assert ad._ours(p), "%s is our own path and must not be reported as an anomaly" % p
+    for p in ("/images/", "/chosen", "/search/label/PHP-Shells"):
+        assert not ad._ours(p), "%s is not ours" % p

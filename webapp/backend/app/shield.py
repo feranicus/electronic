@@ -75,6 +75,33 @@ MIN_ABS_BLOCKS = _i("SHIELD_MIN_ABS_BLOCKS", 5)
 # Distinct 404 paths before a miss is evidence at all. Below this it is a stale bookmark.
 NF_DISTINCT = _i("SHIELD_NF_DISTINCT", 6)
 
+# ------------------------------------------------------------------ the SLOW window
+# MEASURED ON THE 2026-08-26 DIGEST: 43,621 attack-shaped requests over fourteen days, coverage
+# 100%, and ZERO blocked. The detector was not blind (that defect was fixed on 22 Aug); the
+# EVIDENCE EXPIRED FASTER THAN THE SCANNER ACCUMULATED IT.
+#
+#   window 300s, block_after 12, probe_path weight 3  ->  4 probe requests inside ONE 5-minute
+#   window to block. The three biggest sources in that digest ran at:
+#       158.23.147.79    319 distinct paths / 2 days  =  0.55 per window
+#       68.155.159.216   317 distinct paths / 2 days  =  0.55 per window
+#       20.100.175.163   305 distinct paths / 2 days  =  0.53 per window
+#   A source can therefore enumerate 319 DISTINCT paths and never once reach 4 in five minutes.
+#   212.58.119.0/24 has been doing it for TWELVE DAYS.
+#
+# LOWERING THE THRESHOLD IS THE WRONG FIX and would undo a lesson already paid for: on 10 Aug two
+# GENUINE visitors produced 439 and 362 404s each, entirely on our own stale routes, and a volume
+# rule would have blocked both.
+#
+# So this is a second, much longer horizon keyed on the one thing a person does not produce:
+# many DISTINCT PROBE-SHAPED paths. A visitor with four hundred 404s has ZERO, because our own
+# routes are not probe shapes. That asymmetry is the whole safety argument, and test_shield.py
+# asserts both directions.
+SLOW_WINDOW_S = _i("SHIELD_SLOW_WINDOW_S", 86400)     # 24 hours
+SLOW_DISTINCT = _i("SHIELD_SLOW_DISTINCT", 12)        # distinct probe paths before it is a scan
+# Bounded, because this is per-worker memory and the input is chosen by the attacker.
+SLOW_MAX_IPS = _i("SHIELD_SLOW_MAX_IPS", 4000)
+SLOW_MAX_PATHS = _i("SHIELD_SLOW_MAX_PATHS", 64)      # enough to prove a scan, far short of a log
+
 # Addresses that may NEVER be blocked. The operator's own IPs plus anything they add.
 ALLOW_IPS = {x.strip() for x in os.environ.get("SHIELD_ALLOW_IPS", "").split(",") if x.strip()}
 
@@ -170,6 +197,19 @@ _PROBE_RE = re.compile(
     #    them. /telescope/ and /_ignition are already above; these are the rest of the family.
     r"|/(?:_?debugbar|_profiler|_debug|elmah\.axd|trace\.axd)(?:$|[/?])"
 
+    # 7. FRAMEWORK AND CLOUD CONFIG FILES, from the 2026-08-26 digest. `/amplifyconfiguration.json`
+    #    (AWS Amplify), `/application.properties` and `/appsettings.json` (Spring Boot and .NET)
+    #    all carry credentials and none of them was scored. Named files, not an extension rule:
+    #    the panel also proposed a bare `\.json$`, which would match `/.well-known/sbom.cdx.json`
+    #    that we now serve deliberately. That proposal was REFUSED for exactly that reason.
+    r"|(?:^|/)(?:amplifyconfiguration|awsconfiguration|appsettings(?:\.[a-z]+)?"
+    r"|application|application-[a-z]+)\.(?:json|properties|ya?ml|config)(?:$|[?/])"
+
+    # 8. WORDPRESS REST API ENUMERATION: /blog/wp/v2/users, /wp-json/wp/v2/users. The `/wp-` rule
+    #    above misses the `/blog/wp/v2/` form, which is what the digest actually saw.
+    r"|/wp/v2/(?:users|posts|media|categories|tags|pages)"
+    r"|/wp-json(?:$|/)"
+
     # 6. ROOT-LEVEL HEX DIRECTORIES: /1b7e06/ /2ff83958/ /3fa375/. Cache and WAF probing.
     #    DELIBERATELY ROOT-ONLY. The obvious `(?:^|/)[0-9a-f]{5,12}/?$` would also match the LAST
     #    SEGMENT of a legitimate path, and job identifiers are hex, so /app/<jobid> would have
@@ -232,7 +272,17 @@ def lane_of(path):
 # fails the build instead of silently arming the shield against a real customer route.
 OUR_TOP = ("", "login", "app", "privacy", "impressum", "contact", "demo", "experience",
            "partners")
-OUR_PREFIXES = ("/app/", "/assets/", "/media/")
+# THE CABINET ROUTES, EXACTLY. `/app/` was a blanket PREFIX for four days and that made it a
+# hiding place: `/app/wp-login.php`, `/app/.env` and `/assets/.env` all scored NOTHING, because
+# the exemption I added to stop the shield blocking the administrator from `/app/admin` also
+# exempted everything an attacker could append to it. Fifth instance of the same defect in this
+# file, introduced by me while fixing a different one. An exemption must name what it exempts.
+OUR_APP = ("admin", "assistant", "brand", "compliance", "history", "password")
+# Static assets are matched by SHAPE, not by prefix: a real build asset is a filename with a known
+# extension, so `/assets/index-a1b2c3.js` is ours and `/assets/.env` is not.
+_ASSET_RE = re.compile(r"^/(?:assets|media|icons|static)/[\w][\w.\-]*"
+                       r"\.(?:js|mjs|css|map|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot"
+                       r"|mp4|webm|json|txt)$", re.I)
 OUR_EXACT = ("/robots.txt", "/sitemap.xml", "/favicon.ico", "/manifest.webmanifest", "/sw.js",
              "/defense.html", "/defense.js", "/healthz", "/health")
 
@@ -256,10 +306,15 @@ def is_our_route(path):
     p = (raw.split("?")[0] or "/").rstrip("/") or "/"
     if p in OUR_EXACT or path in OUR_EXACT:
         return True
-    if p.startswith(OUR_PREFIXES) or (path or "").startswith(OUR_PREFIXES):
+    if _ASSET_RE.match(p):                       # a real build asset, matched by SHAPE
         return True
-    seg = p.strip("/").split("/")
-    return len(seg) == 1 and seg[0] in OUR_TOP
+    seg = [s for s in p.strip("/").split("/") if s]
+    if not seg:
+        return True                              # "/"
+    if len(seg) == 1:
+        return seg[0] in OUR_TOP
+    # Exactly one level under /app/, and only a route the cabinet actually registers.
+    return len(seg) == 2 and seg[0] == "app" and seg[1] in OUR_APP
 
 
 def probe_shape(path):
@@ -315,6 +370,7 @@ _seen_ips = {}      # ip -> last_seen  (denominator for the blast cap)
 _tarpits = [0]      # concurrent tarpitted requests, list so it is mutable from a closure
 _recent_paths = {}  # ip -> the last few paths, so an alert can show WHAT was asked for
 _miss = {}          # ip -> {distinct 404 path: ts} — variety separates a scan from a typo
+_slow = {}          # ip -> {distinct PROBE path: ts} over SLOW_WINDOW_S — the low-and-slow scan
 
 # OPERATOR-AUTHORISED STATE. Written only by shield_console.apply_decisions() after a Telegram tap,
 # never by a model and never by the inline path. Each entry is time-boxed like everything else.
@@ -397,7 +453,19 @@ def observe(ip, path, status, cls, method="GET"):
             reasons.append("honeytoken")                 # zero false positives, by construction
         if probe_shape(path):
             reasons.append("probe_path")                 # shape is scored even on exempt paths
-        if int(status or 0) == 404 and not _exempt:
+            # THE SLOW WINDOW. Remember the DISTINCT probe paths this address has asked for over
+            # the last 24 hours, so a scanner pacing itself under the 5-minute rule still
+            # accumulates. Only PROBE-SHAPED paths are recorded, which is what makes this safe:
+            # a real visitor with hundreds of 404s on our own stale routes records nothing here.
+            if len(_slow) < SLOW_MAX_IPS or ip in _slow:
+                seen = _slow.setdefault(ip, {})
+                if len(seen) < SLOW_MAX_PATHS or path in seen:
+                    seen[str(path)[:200]] = now
+        # A 404 ON ONE OF OUR OWN ROUTES IS A STALE LINK, not evidence, however many of them there
+        # are. The distinct-path floor alone was not enough: a visitor with eight old bookmarks
+        # clears a floor of six and was blocked in testing. Our routes are not probe shapes, so
+        # this costs nothing in detection and removes the whole class of false positive.
+        if int(status or 0) == 404 and not _exempt and not is_our_route(path):
             # A 404 ALONE IS NOT EVIDENCE, and the real log proves it: two sources (Germany and
             # Israel) produced 439 and 362 404s while asking only for our own routes -- people,
             # not scanners. VARIETY is the discriminator: a person misses the same few stale paths;
@@ -475,6 +543,29 @@ def blast_ok():
     return (len(_blocked) + 1) * 100.0 / max(1, len(_seen_ips)) <= BLAST_CAP
 
 
+def slow_scan(ip, now=None):
+    """How many DISTINCT probe paths this address has asked for inside SLOW_WINDOW_S.
+
+    Prunes as it reads, so the 24-hour state cannot grow without bound and an address that stops
+    scanning ages out of it by itself. Returns 0 for anything not being tracked, which is every
+    ordinary visitor: only probe-shaped paths are ever recorded.
+    """
+    try:
+        now = now or time.time()
+        seen = _slow.get(ip)
+        if not seen:
+            return 0
+        cutoff = now - SLOW_WINDOW_S
+        for p in [p for p, ts in seen.items() if ts < cutoff]:
+            seen.pop(p, None)
+        if not seen:
+            _slow.pop(ip, None)
+            return 0
+        return len(seen)
+    except Exception:
+        return 0
+
+
 def decide(ip, path):
     """ALLOW | TARPIT | BLOCK for this request. Pure function of recorded state. Never raises."""
     try:
@@ -493,6 +584,25 @@ def decide(ip, path):
             return "BLOCK", "operator-approved /24 hold"
         if STRICT_UNTIL[0] > now:
             return "TARPIT", "strict mode (operator-approved)"
+        # THE SLOW SCAN, checked BEFORE the fast score. Distinct probe paths over 24 hours, which
+        # is the evidence a five-minute window throws away. Escalates on its own because a source
+        # that has asked for a dozen different probe paths in a day has proved what it is,
+        # regardless of how patiently it did so.
+        slow_n = slow_scan(ip, now)
+        if slow_n >= SLOW_DISTINCT:
+            if not blast_ok():
+                _ev("shield_refused", ip=ip, distinct=slow_n, reason="blast cap on a slow scan")
+                return "TARPIT", "blast cap reached - slowing instead of blocking"
+            if ENFORCE:
+                _blocked[ip] = now + cfg("block_s")
+                _ev("shield_block", ip=ip, distinct=slow_n, seconds=cfg("block_s"),
+                    rule="slow_scan", window_s=SLOW_WINDOW_S)
+                _announce(ip, slow_n, slow_n, rule="slow_scan")
+                return "BLOCK", ("%d distinct probe paths in %dh - a low-and-slow scan"
+                                 % (slow_n, SLOW_WINDOW_S // 3600))
+            _ev("shield_would_block", ip=ip, distinct=slow_n, rule="slow_scan")
+            return "TARPIT", "enforcement off - would have blocked a slow scan"
+
         score, n = _score(ip, now, cfg("window_s"))
         if score >= cfg("block_after"):
             if not blast_ok():
@@ -578,20 +688,32 @@ def state():
     }
 
 
-def _announce(ip, score, n):
+def _announce(ip, score, n, rule=None):
     """Tell the operator, with the escalation menu. Best-effort and strictly non-blocking.
 
     The console is imported HERE rather than at module scope so that shield.py keeps no import of
     anything that talks to the network, and so a broken console can never take the request path
     down with it.
+
+    THE PATHS SHOWN MUST BE THE EVIDENCE, NOT THE LAST FEW REQUESTS. `_recent_paths` is a short
+    buffer, which is why an earlier alert read `Signals: probe_path, Paths: /` and told the
+    operator nothing: "/" was simply the most recent thing that address asked for. For a SLOW SCAN
+    the evidence is the set of distinct probe paths collected over 24 hours, so that is what the
+    alert carries.
     """
     try:
         from . import shield_console
         hits = _hits.get(ip, ())
+        if rule == "slow_scan":
+            paths = sorted(_slow.get(ip, {}))[:8]
+            reasons = ["slow_scan"]
+        else:
+            paths = sorted({p for p in _recent_paths.get(ip, ())})[:5]
+            reasons = sorted({r for (_t, r) in hits})
         shield_console.announce(ip, {
-            "reasons": sorted({r for (_t, r) in hits}),
-            "hits": n, "score": score,
-            "paths": sorted({p for p in _recent_paths.get(ip, ())})[:5],
+            "reasons": reasons,
+            "hits": n, "score": score, "rule": rule or "fast",
+            "paths": paths,
             "last_path": (_recent_paths.get(ip) or [""])[-1],
         })
     except Exception:

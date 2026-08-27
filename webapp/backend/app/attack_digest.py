@@ -141,8 +141,15 @@ def _ours(path):
     The route list is READ from main._APP_ROUTES, which is the same list _is_probe() uses, so a
     new page cannot be a route for one and an anomaly for the other.
     """
-    p = (path or "").split("?")[0].rstrip("/") or "/"
-    if any(p.startswith(x) for x in _STATIC_PREFIXES):
+    raw = (path or "").split("?")[0]
+    p = raw.rstrip("/") or "/"
+    # TEST THE PREFIX AGAINST THE UNSTRIPPED PATH. `rstrip("/")` turned "/.well-known/" into
+    # "/.well-known", which does NOT start with "/.well-known/", so a directory-style request for
+    # one of OUR OWN paths was reported to the operator as unrecognised attacker behaviour on
+    # every single digest. Both /.well-known/ and /assets/ appeared in the 2026-08-26 report for
+    # exactly this reason. Same family as the abakus substring bug: the comparison was run against
+    # a normalised string that no longer had the property being tested for.
+    if any(raw.startswith(x) or (p + "/").startswith(x) for x in _STATIC_PREFIXES):
         return True
     routes = None
     try:

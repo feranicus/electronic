@@ -88,3 +88,9 @@ marketing/campaign/targets.csv
 marketing/campaign/shortlist_*.csv
 marketing/campaign/sent.jsonl
 marketing/campaign/Connections.csv
+
+# Screen recordings and scratch media dropped into the campaign folder. A 16MB .webm is not source,
+# and a filename with spaces breaks git tooling in ways that look like other bugs.
+marketing/campaign/*.webm
+marketing/campaign/*.mp4
+marketing/campaign/*.png

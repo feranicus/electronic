@@ -164,6 +164,18 @@ def install(app, session_email_fn=None):
 
             if _v is not None and cls and _v.should_block(request.url.path, cls):
                 from starlette.responses import HTMLResponse
+                # OBSERVE BEFORE RETURNING. This early return used to skip shield.observe()
+                # entirely, so every request the bot gate handled left NO TRACE in the shield's
+                # memory: a self-declared scanner could enumerate the site forever and never
+                # accumulate a single hit, because the thing that answered it never told the thing
+                # that counts. Fourth instance of "an exemption became a blind spot" in this
+                # codebase, this time at the middleware layer rather than inside a matcher.
+                try:
+                    if _sh is not None:                   # already imported above; do NOT invent
+                        _sh.observe(client_ip(request), request.url.path, 404, cls or {},
+                                    request.method)
+                except Exception:
+                    pass                                  # fail open, always
                 _safe_emit(request, 404, t0, session_email_fn, cls=cls, blocked=True)
                 return HTMLResponse(_v.NOT_FOUND_HTML, status_code=404)
             try:

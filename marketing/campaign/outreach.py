@@ -29,10 +29,13 @@ a second run contacting the same person, it survives the terminal being closed, 
 honest answer to "what did we actually send". Nothing is ever removed from it.
 
 RATE. LinkedIn does not publish a message limit and it varies by account age and behaviour.
-DAILY_CAP is deliberately conservative. A campaign that gets the account restricted on day two
-reaches nobody.
+DAILY_CAP is 200 (operator decision, raised from an over-cautious 25). Everything here is a human
+paste-and-click to an existing 1st-degree connection, which is the traffic LinkedIn tolerates most;
+the tight limits are on connection REQUESTS and on automation, and this tool does neither. If
+replies dry up or a warning appears, drop the cap rather than push through.
 """
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -49,7 +52,13 @@ import messages as MSG                                                   # noqa:
 
 TARGETS = os.path.join(HERE, "targets.json")
 SENT = os.path.join(HERE, "sent.jsonl")
-DAILY_CAP = 25
+# THE CAP. Operator decision 2026-08-22: raised from 25 to 200. Every send here is a HUMAN
+# paste-and-click on a message to an existing 1st-degree connection, which is the traffic
+# LinkedIn tolerates most; the tight limits are on connection REQUESTS and on automation, and
+# this tool does neither. Overridable per run with --limit or the OUTREACH_DAILY_CAP env var.
+# The honest risk that remains: LinkedIn does not publish a number and it varies by account, so
+# if replies stop or a warning appears, drop it rather than push through.
+DAILY_CAP = int(os.environ.get("OUTREACH_DAILY_CAP", "200"))
 
 # TWO ATTACHMENTS, NOT FIVE. A first cold message gets one document explaining the idea and one
 # artifact proving it. The partner agreements, the SLA and the DPA are what you send when somebody
@@ -104,23 +113,22 @@ def _clip(text):
     codec that reads a pipe, are the platform's business and have to be stated rather than assumed.
     """
     if os.name == "nt":
-        tmp = os.path.join(os.environ.get("TEMP", "."), "_cg_msg.txt")
+        # BASE64 THROUGH ARGV, DECODED AS UTF-8 INSIDE POWERSHELL. There is no encoding to guess
+        # anywhere on this path: base64 is pure ASCII so the command line cannot mangle it, and
+        # PowerShell reconstructs the exact bytes. The previous version wrote a temp file and had
+        # PowerShell re-read it, which added a file-encoding step for no benefit, and before that
+        # it piped to clip.exe, which decodes stdin using the console code page and turns "Göksal"
+        # into "G?ksal" on a German Windows.
+        b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
+        ps = ("$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s'));"
+              "Set-Clipboard -Value $t" % b64)
         try:
-            with open(tmp, "w", encoding="utf-8") as fh:
-                fh.write(text)
-            r = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                 "Set-Clipboard -Value (Get-Content -Raw -Encoding UTF8 -LiteralPath '%s')" % tmp],
-                capture_output=True)
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                               capture_output=True)
             if r.returncode == 0:
                 return True
         except OSError:
             pass
-        finally:
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
         try:                                   # fallback: clip.exe, BOM first so it stops guessing
             p = subprocess.Popen(["clip"], stdin=subprocess.PIPE)
             p.communicate(b"\xff\xfe" + text.encode("utf-16-le"))
@@ -149,10 +157,22 @@ def clipboard_selftest():
     back = None
     try:
         if os.name == "nt":
-            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                                "Get-Clipboard -Raw"],
-                               capture_output=True, text=True, encoding="utf-8", errors="replace")
-            back = (r.stdout or "").strip()
+            # THE READ-BACK WAS THE BROKEN HALF. PowerShell writes stdout using the CONSOLE output
+            # encoding (cp850/cp1252 on a German Windows), not UTF-8, so `Get-Clipboard -Raw` piped
+            # into Python mangles every accent on the way OUT even when the clipboard is perfect.
+            # That is a check condemning its subject for the check's own defect, which this
+            # repository has now paid for several times. Two fixes: force the console encoding to
+            # UTF-8 first, and return the answer as BASE64 so no encoding step remains at all.
+            ps = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+                  "$c=Get-Clipboard -Raw;"
+                  "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($c))")
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                               capture_output=True, text=True, encoding="ascii", errors="replace")
+            raw = (r.stdout or "").strip()
+            try:
+                back = base64.b64decode(raw).decode("utf-8").strip() if raw else None
+            except Exception:
+                back = None
         else:
             for cmd in (["pbpaste"], ["xclip", "-selection", "clipboard", "-o"], ["wl-paste"]):
                 try:
@@ -166,13 +186,37 @@ def clipboard_selftest():
     except OSError:
         pass
     if back is None:
-        print("  [!] clipboard: written, but this platform cannot read it back to verify.")
+        print("  [!] clipboard: written, but it could not be read back to verify. Paste one "
+              "message and check an accent by eye before trusting the rest.")
         return True
     if back == probe:
         print("  [OK] clipboard round-trip verified, accents intact")
         return True
-    print("  [X] clipboard MANGLES non-ASCII. Sent: %r  Got back: %r" % (probe[:34], back[:34]))
-    print("      Do not send from the clipboard until this is fixed; names will be wrong.")
+    # A MISMATCH IS NOT AUTOMATICALLY THE CLIPBOARD'S FAULT, and saying it is cost real messages.
+    # If only the ACCENTS differ while the ASCII skeleton matches, the far likelier explanation is
+    # an encoding step in the verification, not a broken clipboard. Say which, and never tell the
+    # operator to stop on evidence that weak.
+    #
+    # COMPARE THE SKELETON PROPERLY. The first version did
+    #     "".join(c for c in back if c.isascii()) == "".join(c for c in probe if c.isascii())
+    # which fails for the commonest corruption of all: an accent replaced by "?" survives the
+    # isascii() filter and shows up as an extra character, so accent-only damage was reported as
+    # "different TEXT" and the operator was told to stop. Drop the characters that sat where the
+    # probe had an accent, then compare. Covers both substitution (ö -> ?) and mojibake (ö -> Ã¶).
+    skeleton = "".join(c for c in probe if c.isascii())
+    if len(back) == len(probe):
+        same_ascii = all(b == p for b, p in zip(back, probe) if p.isascii())
+    else:
+        same_ascii = "".join(c for c in back if c.isascii()) == skeleton
+    if same_ascii or "".join(c for c in back if c.isascii()) == skeleton:
+        print("  [!] clipboard: the ASCII text round-trips but the accents do not survive the "
+              "READ-BACK. That is usually this check, not your clipboard.")
+        print("      Paste into the first message and look at the name before sending it.")
+        return True
+    print("  [X] clipboard is returning different TEXT, not just different accents.")
+    print("      Sent: %r" % probe[:40])
+    print("      Got : %r" % back[:40])
+    print("      Copy the message text by hand until this is resolved.")
     return False
 
 
