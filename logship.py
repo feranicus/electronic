@@ -50,9 +50,10 @@ WantedBy=timers.target
 """
 
 
-def build_script(agent_b64):
+def build_script(agent_b64, hostpath_b64):
     return """set -u
-mkdir -p /opt/logship
+mkdir -p /opt/logship /opt/cybergod
+echo '%s' | base64 -d > /opt/cybergod/hostpath.py
 echo '%s' | base64 -d > /opt/logship/agent.py
 chmod 700 /opt/logship/agent.py
 echo '%s' | base64 -d > /etc/systemd/system/logship.service
@@ -80,17 +81,23 @@ systemctl daemon-reload
 systemctl enable --now logship.timer >/dev/null 2>&1
 systemctl list-timers logship.timer --no-pager | head -3
 echo '#### END'
-""" % (agent_b64,
+""" % (hostpath_b64, agent_b64,
        base64.b64encode(SERVICE.encode()).decode(),
        base64.b64encode(TIMER.encode()).decode())
 
 
 def main():
     agent = os.path.join(HERE, "deploy", "logship", "agent.py")
-    if not os.path.exists(agent):
-        sys.exit("[X] %s missing" % agent)
+    # ONE implementation of the container->host path resolution, shared with dbbackup. Shipping it
+    # is not optional: the agent imports it with no local fallback, precisely so that a second copy
+    # cannot drift away from the first the way this agent drifted away from dbbackup's fix.
+    hostpath = os.path.join(HERE, "deploy", "hostpath.py")
+    for p in (agent, hostpath):
+        if not os.path.exists(p):
+            sys.exit("[X] %s missing" % p)
     agent_b64 = base64.b64encode(open(agent, "rb").read()).decode()
-    script = build_script(agent_b64)
+    hostpath_b64 = base64.b64encode(open(hostpath, "rb").read()).decode()
+    script = build_script(agent_b64, hostpath_b64)
     print("=== logship: installing the off-box security-log archive on %s ===" % HOST)
     r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), "bash -s"],
                        input=script.encode("utf-8"),          # BINARY: Windows text mode = CRLF = broken bash

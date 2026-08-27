@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:6a363339-1ef3-7ced-77d9-191b94eb6f2c",
+  "serialNumber": "urn:uuid:2672d163-222c-da73-310d-4c78d38b1f9e",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-08-22T11:26:05Z",
+    "timestamp": "2026-08-27T10:41:39Z",
     "tools": [
       {
         "vendor": "Cybergod LLC",
@@ -15,7 +15,7 @@
     "component": {
       "type": "application",
       "name": "cybergod.ai",
-      "version": "3b1b35efb719",
+      "version": "3a5f5a8d9158",
       "supplier": {
         "name": "Cybergod LLC / S4Biz Group"
       }
@@ -865,8 +865,8 @@
     {
       "type": "library",
       "name": "python-multipart",
-      "version": "0.0.18",
-      "purl": "pkg:pypi/python-multipart@0.0.18",
+      "version": "0.0.32",
+      "purl": "pkg:pypi/python-multipart@0.0.32",
       "scope": "required"
     },
     {

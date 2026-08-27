@@ -42,6 +42,14 @@ import subprocess
 import sys
 import tempfile
 
+# ONE implementation of "where does a container path live on the host". See deploy/hostpath.py:
+# this resolution was written here, got it wrong once, was fixed here, and then logship made the
+# SAME mistake because the fix was not reachable from there. It is shared now. No local fallback
+# copy: a second implementation is the defect being removed.
+sys.path.insert(0, os.environ.get("CYBERGOD_LIB") or "/opt/cybergod")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hostpath import container_running, sh, volume_path   # noqa: E402
+
 BACKUP_DIR = os.environ.get("DBBACKUP_DIR", "/var/backups/cybergod-db")
 KEEP_LOCAL = int(os.environ.get("DBBACKUP_KEEP_LOCAL", "14"))
 KEEP_REMOTE = int(os.environ.get("DBBACKUP_KEEP_REMOTE", "60"))
@@ -70,11 +78,6 @@ DATABASES = [
 ]
 
 
-def sh(cmd, timeout=120):
-    p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
-    return p.returncode, (p.stdout or "").strip(), (p.stderr or "").strip()
-
-
 def log(msg):
     print(msg, flush=True)
 
@@ -98,53 +101,6 @@ def notify(text):
     except Exception as e:
         log("      [warn] could not alert: %s" % e)
     return False
-
-
-def container_running(name):
-    rc, out, _ = sh("docker inspect -f '{{.State.Running}}' %s 2>/dev/null" % name)
-    return rc == 0 and out.strip() == "true"
-
-
-def volume_path(container, inside, vol):
-    """Where does `inside` live on the HOST?
-
-    Ask the CONTAINER for its own mount table first. That is prefix-agnostic, so Compose naming
-    (`colt-stack_colt_events`) cannot break it - which is exactly what broke the first run.
-    Falls back to matching a volume whose name ENDS WITH the logical name, so the backup still
-    works when the container is stopped.
-    """
-    rc, out, _ = sh("docker inspect -f '{{range .Mounts}}{{.Destination}}|{{.Source}}{{\"\\n\"}}"
-                    "{{end}}' %s 2>/dev/null" % container)
-    if rc == 0 and out:
-        best = None
-        for line in out.splitlines():
-            if "|" not in line:
-                continue
-            dest, src = line.split("|", 1)
-            dest, src = dest.strip(), src.strip()
-            # the mount is a DIRECTORY; the file sits under it
-            if dest and src and (inside == dest or inside.startswith(dest.rstrip("/") + "/")):
-                if best is None or len(dest) > len(best[0]):
-                    best = (dest, src)
-        if best:
-            dest, src = best
-            p = os.path.join(src, os.path.relpath(inside, dest))
-            if os.path.exists(p):
-                return p
-
-    # FALLBACK: the container may be stopped. Match the volume by SUFFIX, because Compose prefixes
-    # every volume with the project name and the unprefixed name matches nothing.
-    rc, out, _ = sh("docker volume ls --format '{{.Name}}'")
-    if rc != 0:
-        return None
-    cands = [v for v in out.split() if v == vol or v.endswith("_" + vol)]
-    for v in cands:
-        rc, mp, _ = sh("docker volume inspect -f '{{.Mountpoint}}' %s" % v)
-        if rc == 0 and mp:
-            p = os.path.join(mp, os.path.basename(inside))
-            if os.path.exists(p):
-                return p
-    return None
 
 
 def table_counts(path):

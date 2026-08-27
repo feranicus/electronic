@@ -349,6 +349,21 @@ def test_a_fresh_deployment_with_nothing_running_is_still_a_clean_skip():
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _patch_sh(ag, fake):
+    """Stub docker WHERE THE RESOLVER IS DEFINED, not where it happens to be imported.
+
+    volume_path used to live in this agent; it now lives in deploy/hostpath.py because logship
+    needed the same answer and made the same mistake for want of it (2026-08-27). Setting
+    `ag.sh = fake` therefore stopped having any effect - the real function kept calling the real
+    docker, found nothing, and the test failed while the code was correct. Resolving the owning
+    module from the function itself keeps this honest if it ever moves again.
+    """
+    mod = sys.modules[ag.volume_path.__module__]
+    real = mod.sh
+    mod.sh = fake
+    return lambda: setattr(mod, "sh", real)
+
+
 def test_the_path_lookup_resolves_through_the_containers_mount_table():
     """RUN it, do not grep for it. Greping the source for ".Mounts" passed against a mutation that
     kept the string and disabled the branch - the wrong-subject defect this repo keeps paying for.
@@ -370,8 +385,11 @@ def test_the_path_lookup_resolves_through_the_containers_mount_table():
             if "volume ls" in cmd:
                 return 0, "totally_unrelated_volume", ""      # the fallback CANNOT help here
             return 1, "", ""
-        ag.sh = fake_sh
-        got = ag.volume_path("colt-web", "/var/log/colt/cost_ledger.sqlite", "colt_events")
+        restore = _patch_sh(ag, fake_sh)
+        try:
+            got = ag.volume_path("colt-web", "/var/log/colt/cost_ledger.sqlite", "colt_events")
+        finally:
+            restore()
         assert got == os.path.join(data, "cost_ledger.sqlite"), (
             "the file was not resolved through the container's mount table: %r" % got)
     finally:
@@ -396,8 +414,11 @@ def test_the_volume_fallback_tolerates_the_compose_project_prefix():
             if "volume inspect" in cmd and "colt-stack_colt_events" in cmd:
                 return 0, mp, ""
             return 1, "", ""
-        ag.sh = fake_sh
-        got = ag.volume_path("colt-web", "/var/log/colt/cost_ledger.sqlite", "colt_events")
+        restore = _patch_sh(ag, fake_sh)
+        try:
+            got = ag.volume_path("colt-web", "/var/log/colt/cost_ledger.sqlite", "colt_events")
+        finally:
+            restore()
         assert got == os.path.join(mp, "cost_ledger.sqlite"), (
             "the Compose-prefixed volume was not found - this is the exact first-run defect: %r"
             % got)

@@ -20,9 +20,22 @@ google-auth==2.*
 # GeoIP country lookup for the visitor log (DB-IP Lite .mmdb — MaxMind DB format, no licence key)
 maxminddb==2.*
 # White Label uploads: FastAPI needs this to parse multipart/form-data, and there is no way to
-# accept a file without it. Pinned >=0.0.18 DELIBERATELY, not merely "latest": this package has a
-# history that matters here — CVE-2024-24762 (ReDoS on a crafted Content-Type, fixed 0.0.7) and
-# CVE-2024-53981 (CPU exhaustion from many small parts, fixed 0.0.18). Both are reachable from an
-# unauthenticated-shaped request, and Trivy now fails the build on CRITICAL, so adding a dependency
-# is a considered act rather than a convenience.
-python-multipart>=0.0.18
+# accept a file without it. This package has a history that matters here - CVE-2024-24762 (ReDoS on
+# a crafted Content-Type, fixed 0.0.7) and CVE-2024-53981 (CPU exhaustion from many small parts,
+# fixed 0.0.18) - so adding it was a considered act rather than a convenience.
+#
+# EXACT PIN, not a floor (2026-08-27). Two reasons, and the second is the important one:
+#
+#  1. Trivy reported three HIGH CVEs against "installed version 0.0.18" on an image whose own pip
+#     log says `Successfully installed python-multipart-0.0.32`. 0.0.18 was the FLOOR in this file,
+#     which Trivy reads as a version when it analyses requirements.txt as a manifest. A scanner and
+#     a build log that disagree cost more than the finding is worth: either the scanner is lying or
+#     the image is vulnerable, and you cannot tell which. An exact pin makes the two agree by
+#     construction. 0.0.32 clears all three (fixed in 0.0.22, 0.0.27 and 0.0.30 respectively).
+#
+#  2. A FLOOR DEFEATS THE IMMUTABILITY GUARANTEE. deploy_web_direct.pack() ships `git archive HEAD`
+#     so staging and production build from identical bytes - that is the whole point of the
+#     2026-08-07 fix. But pip resolves independently in each build: the staging image was built at
+#     09:20 and production at 09:24, and with a floor there is nothing that makes them the same
+#     package. They matched today. Nothing asserted they would.
+python-multipart==0.0.32

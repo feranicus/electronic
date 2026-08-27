@@ -58,9 +58,10 @@ WantedBy=timers.target
 """
 
 
-def build_script(agent_b64, do_backup, do_verify, do_list):
+def build_script(agent_b64, hostpath_b64, do_backup, do_verify, do_list):
     return """set -u
-mkdir -p /opt/dbbackup
+mkdir -p /opt/dbbackup /opt/cybergod
+echo '%s' | base64 -d > /opt/cybergod/hostpath.py
 echo '%s' | base64 -d > /opt/dbbackup/agent.py
 chmod 700 /opt/dbbackup/agent.py
 echo '%s' | base64 -d > /etc/systemd/system/dbbackup.service
@@ -125,7 +126,7 @@ systemctl daemon-reload
 systemctl enable --now dbbackup.timer >/dev/null 2>&1
 systemctl list-timers dbbackup.timer --no-pager | head -3
 echo '#### END'
-""" % (agent_b64,
+""" % (hostpath_b64, agent_b64,
        base64.b64encode(SERVICE.encode()).decode(),
        base64.b64encode(TIMER.encode()).decode(),
        "python3 /opt/dbbackup/agent.py backup" if do_backup else "echo '   (skipped)'",
@@ -140,12 +141,17 @@ def main():
     do_backup = not (only_verify or only_list)
 
     agent = os.path.join(HERE, "deploy", "dbbackup", "agent.py")
-    if not os.path.exists(agent):
-        print("[X] missing %s" % agent); return 1
+    # Shared with logship - see deploy/hostpath.py. The agent imports it with no local fallback.
+    hostpath = os.path.join(HERE, "deploy", "hostpath.py")
+    for p in (agent, hostpath):
+        if not os.path.exists(p):
+            print("[X] missing %s" % p); return 1
     with open(agent, "rb") as fh:
         agent_b64 = base64.b64encode(fh.read()).decode()
+    with open(hostpath, "rb") as fh:
+        hostpath_b64 = base64.b64encode(fh.read()).decode()
 
-    script = build_script(agent_b64, do_backup, do_backup or only_verify, True)
+    script = build_script(agent_b64, hostpath_b64, do_backup, do_backup or only_verify, True)
 
     print("=" * 78)
     print("  DATABASE BACKUP  -  %s" % HOST)

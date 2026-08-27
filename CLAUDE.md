@@ -6033,3 +6033,65 @@ TWO FIXTURE DEFECTS OF MINE, both found by the tests failing against CORRECT cod
 RULE, restated: when a partner's artifact is wrong, read the ARTIFACT. Both of these were invisible
 in the theme.json and in the White Label page, and obvious in thirty seconds of counting colours and
 typefaces in the delivered .pptx.
+
+
+## THE OFF-BOX LOG ARCHIVE SHIPPED NOTHING FOR A WEEK AND REPORTED SUCCESS (2026-08-27)
+One ship log, two lines apart:
+```
+--- DATABASES ---   /var/lib/docker/volumes/colt-stack_colt_events/_data/cost_ledger.sqlite  53248 bytes
+#### FIRST SHIP     [i] no events log at /var/log/colt/events.log yet - nothing to ship
+```
+dbbackup found a file on the colt_events volume. logship, looking for a file on THE SAME VOLUME,
+used the path INSIDE colt-web, found nothing on the host, printed an `[i]` and exited 0. So the
+append-only copy that exists precisely because an attacker who owns the droplet owns Loki has been
+empty since installation, on an hourly timer, saying it was fine. It is also what a CRA Art.14
+report would have to be written from.
+**dbbackup made the identical mistake on 14 Aug and was fixed.** The fix lived inside dbbackup's
+agent where logship could not reach it, so it was made again thirteen days later. Two homes for one
+decision, the defect this file records more than any other.
+- `deploy/hostpath.py` is now the ONE implementation (`sh`, `container_running`, `mount_root`,
+  `volume_path`). Both agents import it; **there is no local fallback copy**, because a fallback is
+  the thing being removed. Both installers ship it to `/opt/cybergod/hostpath.py`, and the agents
+  also add their own parent dir so a repo checkout imports the same file with no env var.
+- **FINDING NOTHING ON A LIVE BOX IS A FAILURE.** Same rule and same wording as dbbackup: if
+  colt-web is running the events log exists by definition, so not finding it means the LOOKUP is
+  broken, not the estate empty. Exit 1 + Telegram. Only "the container is not running" is silent.
+- The offset state file now sits BESIDE the log on the persistent volume, so a redeploy cannot
+  reset it and re-upload the whole archive from byte zero.
+RULE, restated because writing it down was not enough: when a tool cannot see its subject, that is
+a different outcome from having nothing to do, and it must be reported differently.
+
+## A BASELINE THAT CANNOT SURVIVE A DEPLOY MAKES THE DIFF UNREACHABLE (model_watch)
+Two consecutive production ships both printed `first run - recording the baseline, nothing to diff`.
+That is the proof: `SNAPSHOT = os.path.join(HERE, "models_seen.json")` resolves inside
+`/opt/shodan-skill/scripts` in the colt-web image, and every deploy recreates that container with
+`--force-recreate`. The NEW/DISAPPEARED comparison the check exists for could never fire — the same
+"a check that cannot run is not a check" family as the ruff gate that silently skipped for weeks.
+Now defaults to `/var/log/colt/models_seen.json` (the persistent colt_events volume, same home and
+same reason as cost_ledger.sqlite), overridable with `MODEL_WATCH_SNAPSHOT`, and it READS THE
+SNAPSHOT BACK after writing: an unwritable path says so loudly instead of looking like a first run.
+
+## A `>=` FLOOR DEFEATS THE IMMUTABLE-COMMIT GUARANTEE (python-multipart)
+Trivy reported three HIGH CVEs against "installed version 0.0.18" on an image whose own pip log
+says `Successfully installed python-multipart-0.0.32`. 0.0.18 was the FLOOR in requirements.txt,
+which Trivy reads as a version when it analyses the manifest COPY'd into the image. A scanner and a
+build log that disagree cost more than the finding is worth: you cannot tell which one is lying.
+The deeper point is not the false positive. `deploy_web_direct.pack()` ships `git archive HEAD` so
+staging and production build from identical bytes — but pip resolves independently in each build
+(staging 09:20, production 09:24). With a floor, nothing makes them the same package. They matched
+that day; nothing asserted they would. Pinned `python-multipart==0.0.32`, which also clears all
+three CVEs. Guarded by `tests/test_hostpath.py`. Other floors in that file remain; a lockfile is
+the real answer and is not yet done.
+
+## AND MY OWN CHECK MATCHED ITS OWN DOCSTRING — the fifth instance
+The first model_watch test asserted `"/var/log/colt" in source` and PASSED against a mutation that
+pointed the resolver at `/nope/nope`, because the string it matched was in the docstring explaining
+the fix. `_strip_comments` removes `#` comments, not docstrings. Replaced with a functional test
+that RUNS `_snapshot_path()` against a stubbed filesystem. Same wrong-subject defect the brand gate,
+recover.py, the caddyguard TAMPER check and the secaudit assertion have each already paid for.
+Six mutations run against the new tests, all caught; two more against `hostpath.py` prove the MOVED
+implementation is still guarded by dbbackup's existing tests, so the refactor lost no coverage.
+NOTE for the next person: `tests/test_dbbackup.py` used to stub `ag.sh`. Once `volume_path` moved,
+that patched a module the resolver no longer calls, and two correct tests failed against correct
+code. `_patch_sh()` now resolves the owning module from the function itself
+(`sys.modules[ag.volume_path.__module__]`), so it stays honest if it moves again.

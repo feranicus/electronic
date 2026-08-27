@@ -45,7 +45,31 @@ USAGE
 import argparse, json, os, re, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SNAPSHOT = os.path.join(HERE, "models_seen.json")
+
+
+def _snapshot_path():
+    """WHERE THE BASELINE LIVES, and why it is not next to this file.
+
+    THE BUG (2026-08-27): SNAPSHOT was os.path.join(HERE, "models_seen.json"), i.e. inside
+    /opt/shodan-skill/scripts in the colt-web IMAGE. ship.py runs this check with `docker exec`,
+    and every deploy recreates that container with --force-recreate, so the baseline was destroyed
+    on each ship. Two consecutive production runs both printed "first run - recording the baseline,
+    nothing to diff", which is the proof: the NEW / DISAPPEARED diff this check exists to produce
+    could never fire. A check that cannot reach its own previous answer is not a check.
+
+    /var/log/colt is the shared colt_events volume - the same persistent home as cost_ledger.sqlite
+    and for the same reason: it survives redeploys, image rebuilds and container recreation.
+    """
+    p = os.environ.get("MODEL_WATCH_SNAPSHOT")
+    if p:
+        return p, True
+    vol = "/var/log/colt"
+    if os.path.isdir(vol) and os.access(vol, os.W_OK):
+        return os.path.join(vol, "models_seen.json"), True
+    return os.path.join(HERE, "models_seen.json"), False
+
+
+SNAPSHOT, SNAPSHOT_PERSISTS = _snapshot_path()
 BASE = os.environ.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
 KEY = os.environ.get("OPENAI_API_KEY") or os.environ.get("DO_INFERENCE_KEY") or ""
 
@@ -155,7 +179,14 @@ def main():
 
     print("[model-watch] %d models visible on %s" % (len(ids), BASE))
     if not known:
-        print("[model-watch] first run - recording the baseline, nothing to diff")
+        print("[model-watch] first run - recording the baseline at %s, nothing to diff" % SNAPSHOT)
+        if not SNAPSHOT_PERSISTS:
+            # If this prints on two consecutive ships, the baseline is being destroyed between
+            # them and the diff can never fire. Say so rather than letting "first run" look normal.
+            print("[model-watch] !! the baseline is being written INSIDE the container image "
+                  "(%s). Container recreation on the next deploy will delete it and this will "
+                  "say 'first run' again, forever. Mount a persistent path or set "
+                  "MODEL_WATCH_SNAPSHOT." % SNAPSHOT)
     if gone:
         print("[model-watch] !! %d model(s) DISAPPEARED (deprecation breaks the chain): %s"
               % (len(gone), ", ".join(gone)))
@@ -190,8 +221,18 @@ def main():
             print("[model-watch] to adopt, re-run the artifact bake-off FIRST "
                   "(python compare_models.py --lang de), then: python set_secret.py ENRICH_MODELS")
 
-    json.dump({"models": ids, "checked": out["checked"]},
-              open(SNAPSHOT, "w", encoding="utf-8"), indent=1)
+    # WRITE, THEN READ IT BACK. A snapshot that silently fails to persist is exactly how this
+    # check spent its whole life reporting "first run"; an unwritable path must be loud.
+    try:
+        json.dump({"models": ids, "checked": out["checked"]},
+                  open(SNAPSHOT, "w", encoding="utf-8"), indent=1)
+        back = json.load(open(SNAPSHOT, encoding="utf-8"))
+        if sorted(back.get("models") or []) != sorted(ids):
+            print("[model-watch] !! baseline read-back does not match what was written (%s) - "
+                  "the next run will not diff correctly" % SNAPSHOT)
+    except Exception as e:
+        print("[model-watch] !! could NOT persist the baseline to %s (%s). The NEW/DISAPPEARED "
+              "diff cannot fire on the next run." % (SNAPSHOT, e))
     if a.json:
         print(json.dumps(out, indent=2))
     return 0

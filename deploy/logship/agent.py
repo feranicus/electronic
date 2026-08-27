@@ -40,10 +40,44 @@ import json
 import os
 import sys
 
-EVENTS_LOG = os.environ.get("EVENTS_LOG", "/var/log/colt/events.log")
-STATE = os.environ.get("LOGSHIP_STATE", "/var/log/colt/.logship_state.json")
+# ONE implementation of "where does a container path live on the host" - see deploy/hostpath.py.
+# THE BUG THIS REPLACES (2026-08-27): EVENTS_LOG defaulted to /var/log/colt/events.log, which is
+# the path INSIDE colt-web. This agent runs on the HOST under systemd, where the same file lives
+# under the colt_events volume mountpoint. os.path.exists() was therefore always False, and every
+# run since installation printed "no events log yet - nothing to ship" and exited 0. The off-box
+# security archive contained nothing, and said it was fine. dbbackup had already solved this
+# exact question, on this exact volume, thirteen days earlier.
+sys.path.insert(0, os.environ.get("CYBERGOD_LIB") or "/opt/cybergod")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hostpath import container_running, volume_path   # noqa: E402
+
+CONTAINER = os.environ.get("LOGSHIP_CONTAINER", "colt-web")
+EVENTS_INSIDE = os.environ.get("EVENTS_LOG", "/var/log/colt/events.log")
+EVENTS_VOLUME = os.environ.get("LOGSHIP_VOLUME", "colt_events")
 PW_ENV = os.environ.get("PATCHWATCH_ENV", "/etc/patchwatch/patchwatch.env")
 CHUNK_CAP = int(os.environ.get("LOGSHIP_MAX_BYTES", str(64 * 1024 * 1024)))   # 64 MB per run
+
+
+def resolve_log():
+    """(host path to events.log or None, how it was found).
+
+    Tries the literal path first so that running inside the container, or with a bind mount, still
+    works; then asks docker where colt-web's own mount actually is.
+    """
+    if os.path.exists(EVENTS_INSIDE):
+        return EVENTS_INSIDE, "direct path"
+    p = volume_path(CONTAINER, EVENTS_INSIDE, EVENTS_VOLUME)
+    if p:
+        return p, "%s mount table" % CONTAINER
+    return None, "not found"
+
+
+def state_path(host_log):
+    """The offset file sits BESIDE the log, on the same persistent volume, so a redeploy cannot
+    reset it and cause the whole archive to be re-uploaded from byte zero."""
+    if os.environ.get("LOGSHIP_STATE"):
+        return os.environ["LOGSHIP_STATE"]
+    return os.path.join(os.path.dirname(host_log), ".logship_state.json")
 
 
 def log(m):
@@ -75,18 +109,18 @@ def _spaces():
     return cl, env["SPACES_BUCKET"], env.get("LOGSHIP_PREFIX", "cybergod-logs")
 
 
-def _load_state():
+def _load_state(path):
     try:
-        return json.load(open(STATE, encoding="utf-8"))
+        return json.load(open(path, encoding="utf-8"))
     except Exception:
         return {"offset": 0, "inode": None}
 
 
-def _save_state(st):
+def _save_state(path, st):
     try:
-        tmp = STATE + ".tmp"
+        tmp = path + ".tmp"
         json.dump(st, open(tmp, "w", encoding="utf-8"))
-        os.replace(tmp, STATE)
+        os.replace(tmp, path)
     except Exception as e:
         log("   [!] could not persist state: %s" % e)
 
@@ -104,9 +138,28 @@ def _notify(msg):
 
 
 def cmd_ship():
-    if not os.path.exists(EVENTS_LOG):
-        log("[i] no events log at %s yet - nothing to ship" % EVENTS_LOG)
+    EVENTS_LOG, how = resolve_log()
+
+    # ---- NOT FINDING THE LOG ON A LIVE BOX IS A FAILURE, NOT A SUCCESS -------------------------
+    # Same rule, same wording and the same reason as dbbackup: if colt-web is running then the
+    # events log exists by definition (the app writes to it on every request), so failing to find
+    # it means the RESOLUTION is broken, not that there is nothing to archive. Printing an "[i]"
+    # and exiting 0 is how this shipped nothing for a week while reporting success.
+    if not EVENTS_LOG:
+        if container_running(CONTAINER):
+            log("[X] %s is RUNNING but %s could not be located on the host - the security trail "
+                "is NOT being archived." % (CONTAINER, EVENTS_INSIDE))
+            log("    This is a broken lookup, not an empty system. Check the mount table:")
+            log("    docker inspect -f '{{range .Mounts}}{{.Destination}} {{.Source}}"
+                "{{\"\\n\"}}{{end}}' %s" % CONTAINER)
+            _notify("cannot locate %s on the host while %s is running. Nothing is being archived "
+                    "off-box." % (EVENTS_INSIDE, CONTAINER))
+            return 1
+        log("[i] no events log yet and %s is not running - nothing to ship" % CONTAINER)
         return 0
+    log("   log: %s  (via %s)" % (EVENTS_LOG, how))
+
+    STATE = state_path(EVENTS_LOG)
     cl, bucket_or_err, prefix = _spaces()
     if cl is None:
         log("[!] %s" % bucket_or_err)
@@ -114,7 +167,7 @@ def cmd_ship():
         return 0                                   # not configured is not a failure
 
     size = os.path.getsize(EVENTS_LOG)
-    st = _load_state()
+    st = _load_state(STATE)
     ino = os.stat(EVENTS_LOG).st_ino
     start = st.get("offset", 0)
     # ROTATION DETECTION: a smaller file, or a new inode, means the log was rotated. Re-ship from 0
@@ -143,7 +196,7 @@ def cmd_ship():
         _notify("upload to Spaces FAILED (%s). The security trail is not being archived." % e)
         return 1
     st.update({"offset": end, "inode": ino})
-    _save_state(st)
+    _save_state(STATE, st)
     log("   shipped %d bytes (offset %d..%d) -> s3://%s/%s" % (end - start, start, end,
                                                               bucket_or_err, key))
     return 0
