@@ -92,7 +92,7 @@ jobs:
           # The digest is what provenance binds to: a tag can be moved, a digest cannot.
           echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_BASE/colttechbot:${{ steps.meta.outputs.tag }}" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
       - name: Attest colttechbot provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE_BASE }}/colttechbot
           subject-digest: ${{ steps.push_bot.outputs.digest }}
@@ -117,7 +117,7 @@ jobs:
           docker push "$IMAGE_BASE/cassandra:latest"
           echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_BASE/cassandra:${{ steps.meta.outputs.tag }}" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
       - name: Attest cassandra provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE_BASE }}/cassandra
           subject-digest: ${{ steps.push_cass.outputs.digest }}
