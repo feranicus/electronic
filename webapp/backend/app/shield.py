@@ -98,9 +98,28 @@ NF_DISTINCT = _i("SHIELD_NF_DISTINCT", 6)
 # asserts both directions.
 SLOW_WINDOW_S = _i("SHIELD_SLOW_WINDOW_S", 86400)     # 24 hours
 SLOW_DISTINCT = _i("SHIELD_SLOW_DISTINCT", 12)        # distinct probe paths before it is a scan
-# Bounded, because this is per-worker memory and the input is chosen by the attacker.
+# Bounded, because the input is chosen by the attacker.
 SLOW_MAX_IPS = _i("SHIELD_SLOW_MAX_IPS", 4000)
 SLOW_MAX_PATHS = _i("SHIELD_SLOW_MAX_PATHS", 64)      # enough to prove a scan, far short of a log
+
+# THE NETWORK HORIZON (added 2026-08-29 after fourteen days at zero blocks).
+#
+# The 24-hour rule above still could not see the actors we actually have. 212.58.119.0/24 had been
+# probing for FIFTEEN DAYS at about 1.3 requests a day: it cannot reach twelve distinct paths in
+# any twenty-four hours, no matter how long we watch. The daily digest folds returning actors to a
+# /24 and could see the pattern plainly; the blocker could not, because it only ever looked at one
+# address at a time.
+#
+# SCORING IS PER /24. BLOCKING STAYS PER ADDRESS, and a /24 hold remains an operator decision
+# behind a Telegram button, because a /24 is up to 256 addresses and may be an office or a carrier.
+#
+# AND THE NETWORK EVIDENCE ALONE MAY NOT CONVICT. An address is blocked on it only once that
+# address has ITSELF asked for SLOW_MIN_OWN probe paths. Otherwise one hostile host would put its
+# 255 neighbours one request away from a block, which is the collateral this design exists to
+# avoid. Corroboration before conviction, the same rule every ownership anchor in the engine obeys.
+SLOW_NET_WINDOW_S = _i("SHIELD_SLOW_NET_WINDOW_S", 14 * 86400)
+SLOW_NET_DISTINCT = _i("SHIELD_SLOW_NET_DISTINCT", 12)
+SLOW_MIN_OWN = _i("SHIELD_SLOW_MIN_OWN", 2)
 
 # Addresses that may NEVER be blocked. The operator's own IPs plus anything they add.
 ALLOW_IPS = {x.strip() for x in os.environ.get("SHIELD_ALLOW_IPS", "").split(",") if x.strip()}
@@ -214,7 +233,42 @@ _PROBE_RE = re.compile(
     #    DELIBERATELY ROOT-ONLY. The obvious `(?:^|/)[0-9a-f]{5,12}/?$` would also match the LAST
     #    SEGMENT of a legitimate path, and job identifiers are hex, so /app/<jobid> would have
     #    been read as an attack on the operator's own cabinet. Anchor at ^ and the risk is gone.
-    r"|^/[0-9a-f]{5,12}/?$",
+    r"|^/[0-9a-f]{5,12}/?$"
+
+    # ------------------------------------------------------------------------------------------
+    # 9. THE EIGHT PATHS FROM THE 2026-08-29 DIGEST (added 2026-08-29).
+    #
+    # WHY THEY WERE MISSED IS MORE IMPORTANT THAN THE PATHS. Every rule above matches a dot, an
+    # extension or a well-known product name. These eight carry NONE of those: `/env` is `.env`
+    # with the dot removed, `/phpinfo` is the classic PHP disclosure page without its extension,
+    # and `/Gaia/` and `/WebInterface/` are appliance consoles whose names look like ordinary
+    # English words. A rule set built around punctuation cannot see a bare word.
+    #
+    # ALL EIGHT ARE ROOT-ANCHORED AND EXACT. That is the whole safety argument, and it matters
+    # more here than anywhere else in this regex: `/info` and `/environment` ARE plausible routes
+    # on somebody's site. They are not routes on OURS (main.py::_APP_ROUTES), and an anchored
+    # exact match cannot reach `/api/info`, `/app/environment` or any asset path. Both directions
+    # are asserted in test_shield.py against the real route list.
+    #
+    # `/crusader-404-probe` is DELIBERATELY LEFT OUT even though it appeared alongside these. It
+    # arrived from three separate Google Cloud addresses, which is the shape of a commercial
+    # scanning service rather than an attacker, and "we do not recognise it" is the honest state
+    # until somebody establishes what it is. Absence of evidence is not a detection rule.
+    # TWO RULES, NOT ONE, AND THE SPLIT IS THE POINT. `Gaia`, `WebInterface` and `geoserver` are
+    # PRODUCT NAMES: unambiguous wherever they appear, so a subpath is allowed and must be, because
+    # the real request in the digest was `/geoserver/web/` and an exact rule scored it False.
+    # `env`, `environment`, `info`, `phpinfo` and `flight` are ORDINARY WORDS and stay exact at the
+    # root: `^/info/?$` cannot reach `/api/info` or `/information`, and a prefix rule would.
+    r"|^/(?:Gaia|WebInterface|geoserver)(?:$|[/?])"
+    r"|^/(?:env|environment|phpinfo|info|flight)/?$"
+
+    # 10. CLOUD INSTANCE METADATA, the SSRF payoff path. 169.254.169.254 is only reachable from
+    #     inside the instance, so a request arriving over the internet for one of these is an
+    #     attacker testing whether our front end will proxy it. We run no such proxy, which is
+    #     exactly why a request for it is unambiguous: nothing legitimate ever asks.
+    r"|(?:^|/)latest/(?:meta-data|user-data|dynamic)(?:$|/)"
+    r"|(?:^|/)computeMetadata/(?:v\d|$)"
+    r"|(?:^|/)metadata/(?:instance|identity|v1)(?:$|/)",
     re.I)
 
 
@@ -252,6 +306,14 @@ CLASSES = [
     ("debug_panel", re.compile(r"(?i)/(_?debugbar|_profiler|_debug|elmah\.axd|trace\.axd"
                                r"|_ignition|telescope)(?:$|[/?])")),
     ("hex_spray",   re.compile(r"(?i)^/[0-9a-f]{5,12}/?$")),
+    # Added 2026-08-29 with section 9 and 10 of _PROBE_RE. THE TWO MUST MOVE TOGETHER, per the
+    # note above: a class here with no scoring rule there is a name for something we still cannot
+    # block, and a scoring rule with no class here is a block the digest cannot explain.
+    # Root-anchored and exact, for the same reason the regex is: these are ordinary words.
+    ("bare_secret", re.compile(r"(?i)^/(env|environment|phpinfo|info)/?$")),
+    ("appliance_ui", re.compile(r"(?i)^/(Gaia|WebInterface|geoserver)(?:$|[/?])|^/flight/?$")),
+    ("cloud_metadata", re.compile(r"(?i)(?:^|/)(latest/(meta-data|user-data|dynamic)"
+                                  r"|computeMetadata/v\d|metadata/(instance|identity|v1))(?:$|/)")),
 ]
 
 
@@ -370,7 +432,26 @@ _seen_ips = {}      # ip -> last_seen  (denominator for the blast cap)
 _tarpits = [0]      # concurrent tarpitted requests, list so it is mutable from a closure
 _recent_paths = {}  # ip -> the last few paths, so an alert can show WHAT was asked for
 _miss = {}          # ip -> {distinct 404 path: ts} — variety separates a scan from a typo
-_slow = {}          # ip -> {distinct PROBE path: ts} over SLOW_WINDOW_S — the low-and-slow scan
+# key -> {distinct PROBE path: ts}. The key is an ADDRESS for the 24-hour rule and a /24 for the
+# fourteen-day rule; both live in one dict because they are the same kind of evidence at two
+# horizons, and one dict is one thing to bound, flush and prune.
+#
+# LOADED FROM DISK AT IMPORT. This used to be plain `{}` and was therefore reset by every deploy,
+# which is why a window measured in days never once fired. slow_store fails open: if the database
+# is unreadable this is `{}` and the shield behaves exactly as it did before, no worse.
+_slow = {}
+try:
+    from . import slow_store as _ss
+except Exception:                                        # pragma: no cover - direct execution
+    try:
+        import slow_store as _ss
+    except Exception:
+        _ss = None
+if _ss is not None:
+    try:
+        _slow = _ss.load()
+    except Exception:
+        _slow = {}
 
 # OPERATOR-AUTHORISED STATE. Written only by shield_console.apply_decisions() after a Telegram tap,
 # never by a model and never by the inline path. Each entry is time-boxed like everything else.
@@ -457,10 +538,25 @@ def observe(ip, path, status, cls, method="GET"):
             # the last 24 hours, so a scanner pacing itself under the 5-minute rule still
             # accumulates. Only PROBE-SHAPED paths are recorded, which is what makes this safe:
             # a real visitor with hundreds of 404s on our own stale routes records nothing here.
-            if len(_slow) < SLOW_MAX_IPS or ip in _slow:
-                seen = _slow.setdefault(ip, {})
-                if len(seen) < SLOW_MAX_PATHS or path in seen:
-                    seen[str(path)[:200]] = now
+            # RECORDED TWICE, UNDER THE ADDRESS AND UNDER THE /24. The address answers "is this
+            # host scanning me today"; the network answers "has this neighbourhood been scanning
+            # me for a fortnight", which is the question the fifteen-day actors made necessary.
+            for _k in (ip, _ss.net_key(ip) if _ss else ""):
+                if not _k:
+                    continue
+                if len(_slow) < SLOW_MAX_IPS or _k in _slow:
+                    seen = _slow.setdefault(_k, {})
+                    if len(seen) < SLOW_MAX_PATHS or path in seen:
+                        seen[str(path)[:200]] = now
+            # WRITE-BEHIND, off the hot path: a check against a timestamp on every probe, an
+            # actual transaction once a minute. Wrapped, because losing the evidence store must
+            # never cost us the request.
+            if _ss is not None:
+                try:
+                    if _ss.due(now):
+                        _slow.update(_ss.flush(_slow, now))
+                except Exception:
+                    pass
         # A 404 ON ONE OF OUR OWN ROUTES IS A STALE LINK, not evidence, however many of them there
         # are. The distinct-path floor alone was not enough: a visitor with eight old bookmarks
         # clears a floor of six and was blocked in testing. Our routes are not probe shapes, so
@@ -543,27 +639,39 @@ def blast_ok():
     return (len(_blocked) + 1) * 100.0 / max(1, len(_seen_ips)) <= BLAST_CAP
 
 
-def slow_scan(ip, now=None):
-    """How many DISTINCT probe paths this address has asked for inside SLOW_WINDOW_S.
+def _distinct(key, window, now):
+    """Distinct probe paths recorded under `key` inside `window`. Prunes as it reads.
 
-    Prunes as it reads, so the 24-hour state cannot grow without bound and an address that stops
-    scanning ages out of it by itself. Returns 0 for anything not being tracked, which is every
-    ordinary visitor: only probe-shaped paths are ever recorded.
+    Pruning on read is what keeps the state bounded without a sweeper: a key that stops scanning
+    ages out of memory by itself, and slow_store applies the same cutoff on disk.
+    """
+    seen = _slow.get(key)
+    if not seen:
+        return 0
+    cutoff = now - window
+    for p in [p for p, ts in seen.items() if ts < cutoff]:
+        seen.pop(p, None)
+    if not seen:
+        _slow.pop(key, None)
+        return 0
+    return len(seen)
+
+
+def slow_scan(ip, now=None):
+    """(own, net) distinct probe paths: this address over 24h, its /24 over fourteen days.
+
+    Returns (0, 0) for anything not being tracked, which is every ordinary visitor, because only
+    probe-shaped paths are ever recorded. A person with four hundred 404s on our own stale routes
+    contributes nothing here, and that asymmetry is the entire safety argument for the rule.
     """
     try:
         now = now or time.time()
-        seen = _slow.get(ip)
-        if not seen:
-            return 0
-        cutoff = now - SLOW_WINDOW_S
-        for p in [p for p, ts in seen.items() if ts < cutoff]:
-            seen.pop(p, None)
-        if not seen:
-            _slow.pop(ip, None)
-            return 0
-        return len(seen)
+        own = _distinct(ip, SLOW_WINDOW_S, now)
+        nk = _ss.net_key(ip) if _ss else ""
+        net = _distinct(nk, SLOW_NET_WINDOW_S, now) if nk else 0
+        return own, net
     except Exception:
-        return 0
+        return 0, 0
 
 
 def decide(ip, path):
@@ -588,19 +696,30 @@ def decide(ip, path):
         # is the evidence a five-minute window throws away. Escalates on its own because a source
         # that has asked for a dozen different probe paths in a day has proved what it is,
         # regardless of how patiently it did so.
-        slow_n = slow_scan(ip, now)
-        if slow_n >= SLOW_DISTINCT:
+        slow_n, net_n = slow_scan(ip, now)
+        # TWO HORIZONS. The address on its own over a day, or its /24 over a fortnight WITH this
+        # address having contributed probe paths of its own. The second clause is what catches the
+        # actors that had run for fifteen days untouched; SLOW_MIN_OWN is what stops one hostile
+        # host putting its 255 neighbours one request away from a block.
+        _rule = ("slow_scan" if slow_n >= SLOW_DISTINCT else
+                 "slow_scan_net" if (net_n >= SLOW_NET_DISTINCT and slow_n >= SLOW_MIN_OWN)
+                 else "")
+        if _rule:
+            _why = ("%d distinct probe paths in %dh - a low-and-slow scan"
+                    % (slow_n, SLOW_WINDOW_S // 3600) if _rule == "slow_scan" else
+                    "%d distinct probe paths from %s over %dd, %d from this address"
+                    % (net_n, _ss.net_key(ip) if _ss else "?", SLOW_NET_WINDOW_S // 86400, slow_n))
             if not blast_ok():
-                _ev("shield_refused", ip=ip, distinct=slow_n, reason="blast cap on a slow scan")
+                _ev("shield_refused", ip=ip, distinct=slow_n, net=net_n,
+                    reason="blast cap on a slow scan")
                 return "TARPIT", "blast cap reached - slowing instead of blocking"
             if ENFORCE:
                 _blocked[ip] = now + cfg("block_s")
-                _ev("shield_block", ip=ip, distinct=slow_n, seconds=cfg("block_s"),
-                    rule="slow_scan", window_s=SLOW_WINDOW_S)
-                _announce(ip, slow_n, slow_n, rule="slow_scan")
-                return "BLOCK", ("%d distinct probe paths in %dh - a low-and-slow scan"
-                                 % (slow_n, SLOW_WINDOW_S // 3600))
-            _ev("shield_would_block", ip=ip, distinct=slow_n, rule="slow_scan")
+                _ev("shield_block", ip=ip, distinct=slow_n, net=net_n, seconds=cfg("block_s"),
+                    rule=_rule, window_s=SLOW_WINDOW_S, net_window_s=SLOW_NET_WINDOW_S)
+                _announce(ip, max(slow_n, net_n), slow_n, rule=_rule)
+                return "BLOCK", _why
+            _ev("shield_would_block", ip=ip, distinct=slow_n, net=net_n, rule=_rule)
             return "TARPIT", "enforcement off - would have blocked a slow scan"
 
         score, n = _score(ip, now, cfg("window_s"))
@@ -671,6 +790,17 @@ def unblock(ip):
     was = _blocked.pop(ip, None) is not None
     _hits.pop(ip, None)
     _fps.pop(ip, None)
+    # THE SLOW WINDOW HAS TO BE FORGIVEN TOO, in memory AND on disk. It now survives restarts, so
+    # leaving it would re-convict the address on its very next probe and reproduce the same
+    # do-nothing hand brake through persistence. The /24's evidence is deliberately kept: forgiving
+    # one host must not forgive 255 neighbours, and the network rule cannot fire on its own anyway
+    # because it requires SLOW_MIN_OWN paths from the address itself, which this just cleared.
+    _slow.pop(ip, None)
+    if _ss is not None:
+        try:
+            _ss.forget(ip)
+        except Exception:
+            pass
     _ev("shield_unblock", ip=ip, was_blocked=was)
     return was
 
@@ -683,6 +813,10 @@ def state():
         "config": {k: cfg(k) for k in BOUNDS},
         "bounds": {k: list(v) for k, v in BOUNDS.items()},
         "blocked": {ip: int(exp - now) for ip, exp in _blocked.items() if exp > now},
+        # THE EVIDENCE STORE IS REPORTED, because it fails open and a store that has quietly
+        # stopped persisting looks exactly like a quiet fortnight. That confusion is what this
+        # whole change set exists to end: a number that cannot fall tells you nothing.
+        "slow_store": (_ss.stats() if _ss else {"healthy": False, "rows": 0, "keys": 0}),
         "watching": len(_hits), "seen_ips_1h": len(_seen_ips),
         "blast_cap_pct": BLAST_CAP, "tarpits_in_flight": _tarpits[0],
     }
@@ -704,9 +838,15 @@ def _announce(ip, score, n, rule=None):
     try:
         from . import shield_console
         hits = _hits.get(ip, ())
-        if rule == "slow_scan":
-            paths = sorted(_slow.get(ip, {}))[:8]
-            reasons = ["slow_scan"]
+        if rule in ("slow_scan", "slow_scan_net"):
+            # On the network rule the address's OWN paths are few by definition (SLOW_MIN_OWN is
+            # 2), so an alert showing only those would understate the case that convicted it. Show
+            # the neighbourhood's evidence, which is what the operator is being asked to judge.
+            paths = sorted(_slow.get(ip, {}))
+            if rule == "slow_scan_net" and _ss:
+                paths = sorted(set(paths) | set(_slow.get(_ss.net_key(ip), {})))
+            paths = paths[:8]
+            reasons = [rule]
         else:
             paths = sorted({p for p in _recent_paths.get(ip, ())})[:5]
             reasons = sorted({r for (_t, r) in hits})

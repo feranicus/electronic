@@ -93,22 +93,46 @@ def per_day(days=DAYS, log=None):
     out = defaultdict(lambda: {"attacks": 0, "blocked": 0, "visits": 0, "sources": set()})
     classes = defaultdict(int)
     countries = defaultdict(int)
-    # A BOUNDED SAMPLE OF THE PATHS THE CORPUS CALLED AN ATTACK, so the digest can measure how many
-    # of them the BLOCKER can actually score. That is the number which was ~47% while the summary
-    # line printed a bare "0 blocked" and told nobody anything. Capped, because this runs over
-    # fourteen days of events and the digest is not a place to hold a log in memory.
-    samples, SAMPLE_CAP = [], 400
+    # A BOUNDED SAMPLE OF THE PATHS THE BLOCKER'S COVERAGE IS MEASURED AGAINST.
+    #
+    # THE FIRST VERSION OF THIS SAMPLED INSIDE `if lane:` AND WAS THEREFORE A CHECK THAT COULD NOT
+    # FAIL. `lane_of()` is the corpus and `probe_shape()` is the blocker, and the two agree on
+    # essentially everything, so asking "of the paths we already recognised, how many do we
+    # recognise" printed 100% forever. On 2026-08-29 it printed `coverage 100%` in the same email
+    # whose unknowns section listed eight paths scoring False: /env /environment /phpinfo /info
+    # /Gaia/ /WebInterface/ /flight /crusader-404-probe. Because coverage read 100%, the summary
+    # then printed "nothing reached the block threshold", which was the wrong conclusion, and the
+    # gap survived a fortnight behind a reassuring number.
+    #
+    # THE DENOMINATOR MUST BE ABLE TO CONTAIN SOMETHING WE CANNOT SCORE. It is now every DISTINCT
+    # path that RETURNED 404 to a non-bot caller: the set of things somebody asked us for that we
+    # do not serve. Scanners dominate it, a person's stale bookmarks add a handful, and an
+    # unrecognised technique pushes the number DOWN, which is the entire point.
+    #
+    # THE STATUS CODE IS THE PREDICATE, AND DELIBERATELY NOT is_our_route(). The first attempt
+    # excluded "our routes" and immediately reported /api/me as an unscorable gap, because that
+    # endpoint is not in the route list even though the React app requests it on every logged-out
+    # page load. It would have printed the same benign warning every single day, and a warning
+    # that is benign every time is how the one that matters gets read past. A 404 is the app's own
+    # statement that it does not serve the path, which is a fact from a different layer than the
+    # classifier being measured, so the metric cannot quietly grade its own homework again.
+    #
+    # DISTINCT, NOT PER-REQUEST: one scanner hammering /wp-login.php ten thousand times would
+    # otherwise drown out fifty different unrecognised paths and restore the same false comfort by
+    # a different route. Coverage is a question about the vocabulary, not about the volume.
+    samples, SAMPLE_CAP = set(), 4000
     for e in _events(since, log):
         d = _day(e.get("ts") or 0)
         row = out[d]
         pth = e.get("path") or ""
         lane = sh.lane_of(pth) if sh else None
+        if pth and not e.get("bot") and int(e.get("status") or 0) == 404 \
+                and len(samples) < SAMPLE_CAP:
+            samples.add(pth)
         if lane:
             row["attacks"] += 1
             row["sources"].add(e.get("ip") or "")
             classes[lane] += 1
-            if len(samples) < SAMPLE_CAP:
-                samples.append(pth)
             cc = e.get("country") or ""
             if cc and cc != "-":
                 countries[cc] += 1
@@ -123,7 +147,7 @@ def per_day(days=DAYS, log=None):
         series.append({"day": d, "attacks": r["attacks"], "blocked": r["blocked"],
                        "visits": r["visits"], "sources": len(r["sources"] - {""})})
     return {"series": series, "classes": dict(classes), "countries": dict(countries),
-            "samples": samples}
+            "samples": sorted(samples)}
 
 
 _STATIC_PREFIXES = ("/api/", "/assets/", "/media/", "/static/", "/.well-known/", "/icons/")
@@ -246,17 +270,29 @@ def _explain_block_rate(stats, blocked):
     paths = [p for p in (stats.get("samples") or []) if p]
     if not paths:
         return ""
-    scored = sum(1 for p in paths if shield.probe_shape(p))
+    missed = [p for p in paths if not shield.probe_shape(p)]
+    scored = len(paths) - len(missed)
     cover = 100.0 * scored / len(paths)
-    bits = ["coverage %.0f%% (%d of %d sampled paths are scorable)" % (cover, scored, len(paths))]
+    bits = ["coverage %.0f%% (%d of %d distinct unserved paths are scorable)"
+            % (cover, scored, len(paths))]
+    # NAME THE MISSES. A percentage tells you there is a gap; the paths tell you what to write a
+    # rule for, and it is the difference between a metric and an action. The eight paths of the
+    # 2026-08-29 digest sat in a separate section of the same email and nobody joined them up.
+    if missed:
+        bits.append("NOT SCORABLE: " + ", ".join(sorted(missed)[:5])
+                    + ("" if len(missed) <= 5 else " (+%d more)" % (len(missed) - 5)))
     if not shield.ENABLED:
         bits.append("SHIELD=off")
     elif not shield.ENFORCE:
         bits.append("SHIELD_ENFORCE=off, detection only")
     elif blocked == 0:
+        # WITH A GAP PRESENT, "nothing reached the threshold" IS NOT A SAFE THING TO PRINT: it
+        # reads as "the traffic was harmless" when the truth may be "the blocker is blind to it".
+        # Only claim the threshold explanation when there is nothing unscorable to blame.
         bits.append("nothing reached the block threshold"
-                    if cover >= 80 else
-                    "MOST OF THIS TRAFFIC CANNOT BE SCORED, so it can never be blocked")
+                    if not missed else
+                    "UNSCORABLE TRAFFIC IS PRESENT, so a zero here does NOT mean the traffic was "
+                    "below the threshold")
     return "  ".join(bits)
 
 

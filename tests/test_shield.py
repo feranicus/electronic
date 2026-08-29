@@ -63,12 +63,28 @@ INCIDENT = [
 
 @pytest.fixture
 def sh():
-    """A fresh shield per test — the state is module-level, so it must not leak between cases."""
+    """A fresh shield per test — the state is module-level, so it must not leak between cases.
+
+    THE SLOW WINDOW NOW SURVIVES A RELOAD, which is the entire point of it and is also a new way
+    for one test to contaminate the next. `importlib.reload(shield)` re-runs the import-time
+    `slow_store.load()`, so without an explicit clear a scanner recorded in one case would still
+    be convicted in the next. Redirecting the database to a temporary file is not enough on its
+    own: the module-level flags inside slow_store are NOT reset by reloading shield.
+    """
     _import_app()
-    from app import shield
+    import tempfile
+    from app import shield, slow_store
+    db = os.path.join(tempfile.mkdtemp(prefix="slowdb-"), "slow.sqlite")
+    slow_store.DB_PATH = db
+    slow_store._broken[0] = False
+    slow_store._last_flush[0] = 0.0
     importlib.reload(shield)
-    shield._hits.clear(); shield._fps.clear()
+    shield._hits.clear(); shield._fps.clear(); shield._slow.clear()
     shield._blocked.clear(); shield._seen_ips.clear(); shield._tarpits[0] = 0
+    # The reload rebinds shield's own reference to the module object, so re-apply the redirect:
+    # a test that writes to /var/log/colt would either fail on a developer machine or, worse,
+    # succeed and share state with production paths.
+    shield._ss.DB_PATH = db
     return shield
 
 
@@ -780,8 +796,80 @@ def test_a_coverage_gap_is_named_as_the_reason_for_zero(sh, monkeypatch):
                         and "php7" not in p and "Dockerfile" not in p
                         and "service-account" not in p and "1b7e06" not in p)
     line = _digest()._explain_block_rate(_STATS, 0)
-    assert "CANNOT BE SCORED" in line, \
+    assert "does NOT mean the traffic was below the threshold" in line, \
         "a zero caused by blindness must SAY so rather than printing a bare 0: %s" % line
+    # THE PATHS, NOT JUST THE PERCENTAGE. On 2026-08-29 the digest carried both a coverage figure
+    # and a list of unrecognised paths, in different sections of the same email, and nobody joined
+    # them up. A number tells you there is a gap; the paths tell you what to write a rule for.
+    assert "/@fs/etc/passwd" in line and "NOT SCORABLE" in line, \
+        "the unscorable paths must be named where the zero is explained: %s" % line
+
+
+def test_the_coverage_metric_can_actually_fall(sh, tmp_path):
+    """THE DEFECT THIS WHOLE CHECK EXISTS TO PREVENT, and it was mine.
+
+    `per_day()` used to append to `samples` only INSIDE `if lane:`, so coverage asked "of the
+    paths we already recognised, how many do we recognise" and could print nothing but 100%. On
+    2026-08-29 it printed `coverage 100%` in the same email whose unknowns section listed eight
+    paths that scored False, and because coverage looked perfect the summary then concluded
+    "nothing reached the block threshold" -- the wrong conclusion, from a metric that was
+    incapable of producing any other.
+
+    A percentage that cannot go down is not a measurement. So this asserts the FALL, on a fixture
+    where the only difference is traffic the shield cannot see.
+    """
+    import json
+    import time as _t
+    ad = _digest()
+
+    def _log(rows):
+        p = tmp_path / ("ev%d.log" % len(list(tmp_path.iterdir())))
+        with open(p, "w") as f:
+            for r in rows:
+                r = dict(r); r.setdefault("ts", _t.time()); r.setdefault("status", 404)
+                r["evt"] = "http"
+                f.write(json.dumps(r) + "\n")
+        return str(p)
+
+    served = [{"path": "/", "status": 200}, {"path": "/api/me", "status": 401}]
+    scan = [{"path": "/wp-login.php"}] * 50 + [{"path": "/.env"}, {"path": "/xmlrpc.php"}]
+    unseen = [{"path": "/zzz-technique-%d" % i} for i in range(12)]
+
+    def cover(rows):
+        line = ad._explain_block_rate(ad.per_day(days=1, log=_log(rows)), 0)
+        return int(line.split("coverage ")[1].split("%")[0])
+
+    good, bad = cover(served + scan), cover(served + scan + unseen)
+    assert good == 100, "a fully recognised day must read 100%%, got %d" % good
+    assert bad < 50, ("twelve unrecognised techniques must drag coverage DOWN; it read %d%%, "
+                      "which means the metric is measuring itself again" % bad)
+
+
+def test_the_coverage_denominator_excludes_what_we_actually_serve(sh, tmp_path):
+    """/api/me answers 401 on every logged-out page load and is not in the route list.
+
+    The first attempt at the fix above used `is_our_route()` as the filter and immediately
+    reported /api/me as an unscorable gap -- a warning that would have been benign every single
+    day. A warning that cries wolf daily is how the one that matters gets read past, which is the
+    same reason the roster's www exemption and the bot-gate 8/10 line were both silenced.
+
+    The status code is the predicate instead: a 404 is the app's own statement that it does not
+    serve the path, and it comes from a different layer than the classifier being measured.
+    """
+    import json
+    import time as _t
+    ad = _digest()
+    p = tmp_path / "served.log"
+    with open(p, "w") as f:
+        for r in [{"path": "/api/me", "status": 401}, {"path": "/", "status": 200},
+                  {"path": "/media/cassandra.mp4", "status": 206},
+                  {"path": "/assets/index-abc.js", "status": 200},
+                  {"path": "/.env", "status": 404}]:
+            r = dict(r); r["ts"] = _t.time(); r["evt"] = "http"
+            f.write(json.dumps(r) + "\n")
+    st = ad.per_day(days=1, log=str(p))
+    assert st["samples"] == ["/.env"], \
+        "only paths we did NOT serve belong in the denominator, got %r" % (st["samples"],)
 
 
 def test_the_digest_says_when_the_shield_is_simply_off(sh, monkeypatch):
@@ -827,7 +915,8 @@ def test_a_low_and_slow_scan_is_caught(sh):
     sh._miss[ip] = {p: old for p in sh._miss.get(ip, {})}
     assert sh._score(ip, time.time(), sh.cfg("window_s"))[0] < sh.cfg("tarpit_after"), (
         "the fast window must be empty, or this test is measuring the wrong rule")
-    assert sh.slow_scan(ip) >= sh.SLOW_DISTINCT
+    own, _net = sh.slow_scan(ip)
+    assert own >= sh.SLOW_DISTINCT
     assert sh.decide(ip, "/")[0] == "BLOCK"
 
 
@@ -840,7 +929,8 @@ def test_the_slow_window_never_touches_a_real_visitor(sh):
     for i in range(400):
         sh.observe("203.0.113.55", ours[i % len(ours)], 404,
                    {"browser": "Firefox", "os": "Windows 10", "device": "desktop"})
-    assert sh.slow_scan("203.0.113.55") == 0, "a visitor's 404s must never enter the slow window"
+    assert sh.slow_scan("203.0.113.55") == (0, 0), \
+        "a visitor's 404s must never enter the slow window, by address OR by /24"
     assert sh.decide("203.0.113.55", "/")[0] == "ALLOW"
 
 
@@ -848,10 +938,13 @@ def test_the_slow_window_ages_out(sh):
     """A scanner that stopped yesterday must be forgotten, or this becomes a permanent blocklist
     and an unbounded memory leak."""
     import time as _t
-    old = _t.time() - (sh.SLOW_WINDOW_S + 3600)
+    old = _t.time() - (sh.SLOW_NET_WINDOW_S + 3600)      # past BOTH horizons
     sh._slow["198.51.100.9"] = {"/p%d" % i: old for i in range(sh.SLOW_DISTINCT + 8)}
-    assert sh.slow_scan("198.51.100.9") == 0
+    sh._slow["198.51.100.0/24"] = {"/p%d" % i: old for i in range(sh.SLOW_NET_DISTINCT + 8)}
+    assert sh.slow_scan("198.51.100.9") == (0, 0)
     assert "198.51.100.9" not in sh._slow, "expired entries must be dropped, not just ignored"
+    assert "198.51.100.0/24" not in sh._slow, "the /24 record must age out too, or the fourteen-" \
+        "day horizon becomes a permanent blocklist and an unbounded leak"
 
 
 def test_the_slow_window_is_bounded(sh):
@@ -892,7 +985,7 @@ def test_the_new_config_and_wp_patterns(sh):
 
 
 def test_the_unanchored_json_proposal_stays_refused(sh):
-    """The panel proposed `/\.(env|json|properties|py)$`. Unanchored `\.json$` matches the SBOM we
+    r"""The panel proposed `/\.(env|json|properties|py)$`. Unanchored `\.json$` matches the SBOM we
     now serve at /.well-known/sbom.cdx.json. Accepting it would have made a published compliance
     artifact look like an attack, and blocked anyone who fetched it."""
     for p in ("/.well-known/sbom.cdx.json", "/manifest.webmanifest", "/assets/data-a1b2.json"):
@@ -919,3 +1012,305 @@ def test_our_own_directories_are_not_reported_as_attacks():
         assert ad._ours(p), "%s is our own path and must not be reported as an anomaly" % p
     for p in ("/images/", "/chosen", "/search/label/PHP-Shells"):
         assert not ad._ours(p), "%s is not ours" % p
+
+
+# ==============================================================================================
+# THE 2026-08-29 DIGEST: 52,879 attack-shaped requests over fourteen days, ZERO blocked, and a
+# returning actor on 212.58.119.0/24 that had been probing for FIFTEEN DAYS at about 1.3 requests
+# a day. Two causes, both structural rather than a threshold being slightly wrong:
+#
+#   1. the 24-hour evidence lived in a module-level dict, and every `python ship.py` recreates
+#      colt-web with --force-recreate, so a window measured in DAYS was kept in state that died
+#      in HOURS and was reset several times on a release day;
+#   2. nothing accumulated across an actor's /24, so a pattern the digest could see plainly by
+#      folding sources to a network was invisible to the blocker, which only ever looked at one
+#      address at a time.
+# ==============================================================================================
+
+_NET_PROBES = ["/wp-login.php", "/.env", "/1.php7", "/@fs/etc/passwd", "/Dockerfile",
+               "/service-account.json", "/backup.sql", "/swagger.json", "/shell.php",
+               "/administrator/index.php", "/.git/config", "/terraform.tfstate"]
+
+
+def _age_fast_window(sh, ip):
+    """Push every FAST hit past its window, leaving only the long-horizon record.
+
+    Without this a test asserting the slow rule passes even with the slow rule deleted, because a
+    dozen probes in one instant trip the five-minute window on their own. That mistake was made
+    once already in this file and is called out in test_a_low_and_slow_scan_is_caught.
+    """
+    old = time.time() - (sh.cfg("window_s") * 3)
+    sh._hits[ip] = [(old, r) for (_t, r) in sh._hits.get(ip, [])]
+    sh._miss[ip] = {p: old for p in sh._miss.get(ip, {})}
+    assert sh._score(ip, time.time(), sh.cfg("window_s"))[0] < sh.cfg("tarpit_after"), \
+        "the fast window must be empty, or the test is measuring the wrong rule"
+
+
+def test_a_fifteen_day_scan_across_one_network_is_caught(sh):
+    """212.58.119.0/24, the actor that ran untouched for fifteen days.
+
+    Every address is UNDER the 24-hour threshold on its own -- which is the whole reason it was
+    never blocked -- and the neighbourhood is plainly over it.
+    """
+    hosts = ["212.58.119.%d" % i for i in (11, 12, 13, 14)]
+    for i, p in enumerate(_NET_PROBES):
+        sh.observe(hosts[i % len(hosts)], p, 404, _CLS)
+    ip = hosts[0]
+    _age_fast_window(sh, ip)
+    own, net = sh.slow_scan(ip)
+    assert own < sh.SLOW_DISTINCT, \
+        "the point of this case is that NO single address reaches the 24h rule (own=%d)" % own
+    assert net >= sh.SLOW_NET_DISTINCT, "the /24 must accumulate what the addresses cannot"
+    assert sh.decide(ip, "/")[0] == "BLOCK"
+
+
+def test_network_evidence_alone_may_not_convict_a_neighbour(sh):
+    """THE COLLATERAL THIS DESIGN EXISTS TO AVOID.
+
+    A /24 is up to 256 addresses and may be an office or a mobile carrier. If the neighbourhood's
+    score alone were enough, one hostile host would put its 255 neighbours ONE REQUEST away from a
+    block. So an address is convicted on network evidence only once it has itself asked for
+    SLOW_MIN_OWN probe paths: corroboration before conviction, the same rule every ownership
+    anchor in the engine obeys.
+    """
+    for p in _NET_PROBES:
+        sh.observe("212.58.119.11", p, 404, _CLS)
+    _age_fast_window(sh, "212.58.119.11")
+    innocent = "212.58.119.200"
+    own, net = sh.slow_scan(innocent)
+    assert own == 0 and net >= sh.SLOW_NET_DISTINCT, "fixture: hostile /24, silent neighbour"
+    assert sh.decide(innocent, "/")[0] == "ALLOW", \
+        "a neighbour that has asked for nothing must not inherit the /24's conviction"
+    # One probe is still under SLOW_MIN_OWN, so it is still not enough on its own.
+    sh.observe(innocent, "/.env", 404, _CLS)
+    _age_fast_window(sh, innocent)
+    if sh.SLOW_MIN_OWN > 1:
+        assert sh.decide(innocent, "/")[0] != "BLOCK", \
+            "one probe is below SLOW_MIN_OWN and must not be enough"
+
+
+def test_the_slow_window_survives_a_restart(sh):
+    """THE HEADLINE DEFECT. The rule was right and the evidence was being thrown away.
+
+    Reloading the module is exactly what a redeploy does to the process: `deploy_web_direct.py`
+    recreates colt-web with --force-recreate. Before this, the reload produced an empty dict and
+    fourteen days of patience beat a twenty-four hour memory every time.
+    """
+    ip = "158.23.147.79"
+    for p in _NET_PROBES:
+        sh.observe(ip, p, 404, _CLS)
+    assert sh.slow_scan(ip)[0] >= sh.SLOW_DISTINCT
+    sh._ss.flush(sh._slow)                      # the write-behind flush a live process would do
+
+    db = sh._ss.DB_PATH
+    importlib.reload(sh)                        # <- the redeploy
+    sh._ss.DB_PATH = db
+    assert sh._slow, "the evidence must be reloaded from disk, not started from nothing"
+    assert sh.slow_scan(ip)[0] >= sh.SLOW_DISTINCT, \
+        "a scanner must not be forgiven by our own deploy"
+
+
+def test_releasing_an_address_forgets_its_slow_evidence(sh):
+    """A HAND BRAKE THAT DOES NOTHING IS WORSE THAN NO HAND BRAKE.
+
+    unblock() already clears the fast hits, and its docstring records why: the first version
+    popped only the timer, so the next request re-scored the same history and re-blocked
+    instantly. Persisting the slow window reintroduces exactly that defect through the back door
+    unless the release deletes the evidence from the DATABASE as well as from memory.
+    """
+    ip = "158.23.147.79"
+    for p in _NET_PROBES:
+        sh.observe(ip, p, 404, _CLS)
+    sh._ss.flush(sh._slow)
+    assert sh.decide(ip, "/")[0] == "BLOCK"
+
+    sh.unblock(ip)
+    assert sh.slow_scan(ip)[0] == 0, "release must forgive the slow evidence in memory"
+    assert sh._ss.load().get(ip) in (None, {}), \
+        "and on disk, or the next flush merges it straight back and re-convicts"
+    assert sh.decide(ip, "/")[0] != "BLOCK"
+
+
+def test_a_release_does_not_forgive_the_whole_neighbourhood(sh):
+    """Releasing one host must not clear 255 others. It cannot re-convict the released address on
+    its own, because the network rule needs SLOW_MIN_OWN paths from the address itself."""
+    for p in _NET_PROBES:
+        sh.observe("212.58.119.11", p, 404, _CLS)
+    sh.unblock("212.58.119.11")
+    assert sh.slow_scan("212.58.119.77")[1] >= sh.SLOW_NET_DISTINCT, \
+        "the /24's record belongs to the neighbourhood, not to the host that was released"
+
+
+def test_a_broken_evidence_store_never_breaks_the_shield(sh):
+    """FAIL OPEN, ALWAYS. A defensive store that raises takes the site down to protect it, which
+    is a worse outcome than the scan it was watching."""
+    # AN UNUSABLE PATH THAT IS UNUSABLE ON EVERY PLATFORM. The first version used
+    # "/proc/definitely/not/writable/slow.sqlite", which is unwritable on Linux and MEANINGLESS ON
+    # WINDOWS: there is no /proc, so os.makedirs happily created C:\proc\definitely\not\writable,
+    # sqlite created the file, the store was never broken, and forget() correctly deleted a row and
+    # returned 1. The test then failed on the operator's machine for a reason that had nothing to
+    # do with the code. Seventh instance in this repository of validating on one toolchain and
+    # shipping to another.
+    #
+    # A DIRECTORY WHOSE PARENT IS A FILE cannot be created anywhere: os.makedirs raises
+    # NotADirectoryError on POSIX and on Windows alike. No platform branch, no /proc, no guessing.
+    import tempfile
+    blocker = tempfile.NamedTemporaryFile(suffix=".notadir", delete=False)
+    blocker.write(b"x"); blocker.close()
+    sh._ss.DB_PATH = os.path.join(blocker.name, "slow.sqlite")
+    mem = {"1.2.3.4": {"/x": time.time()}}
+
+    # PROVE THE FIXTURE IS ACTUALLY BROKEN BEFORE ASSERTING ANYTHING ABOUT IT. Without this the
+    # whole test can pass on a platform where the path happens to work, which is precisely how the
+    # /proc version went green here and red on Windows.
+    sh._ss._broken[0] = False
+    sh._ss.load()
+    assert sh._ss._broken[0] is True, \
+        "the fixture must really be unusable, or this test is measuring nothing: %s" % sh._ss.DB_PATH
+
+    # EACH ENTRY POINT IS EXERCISED WITH THE BREAKER RESET, or this proves nothing about the one
+    # under test. The first version called load() first, which sets _broken, so flush() then
+    # returned at its own `if _broken` guard and never reached the code being measured -- and a
+    # negative test that deleted flush's exception handler passed. A negative test that passes
+    # because of a DIFFERENT guard is measuring the other guard.
+    for fn, expect, what in ((lambda: sh._ss.load(), {}, "load"),
+                             (lambda: sh._ss.flush(mem), mem, "flush"),
+                             (lambda: sh._ss.forget("1.2.3.4"), 0, "forget")):
+        sh._ss._broken[0] = False
+        assert fn() == expect, "%s() must degrade quietly, not raise" % what
+    sh._ss._broken[0] = False
+    for p in _NET_PROBES:
+        sh.observe("203.0.113.9", p, 404, _CLS)           # must not raise
+    assert sh.decide("203.0.113.9", "/")[0] in ("ALLOW", "TARPIT", "BLOCK")
+    # AND THE 24-HOUR RULE MUST STILL WORK IN MEMORY. Losing persistence may cost us the fortnight
+    # horizon; it must not cost us the detection we had before this file was written.
+    _age_fast_window(sh, "203.0.113.9")
+    assert sh.slow_scan("203.0.113.9")[0] >= sh.SLOW_DISTINCT
+    assert sh.state()["slow_store"]["healthy"] is False, \
+        "a store that has quietly stopped persisting must be VISIBLE, or a broken evidence " \
+        "database looks exactly like a quiet fortnight"
+
+
+def test_the_network_key_is_a_24_and_a_48(sh):
+    ss = sh._ss
+    assert ss.net_key("212.58.119.138") == "212.58.119.0/24"
+    assert ss.net_key("2a00:1450:4001:80e::200e").endswith("::/48")
+    for junk in ("", None, "not-an-ip", "999.1.1"):
+        assert ss.net_key(junk) == "", "unparseable input must be no group, not a wrong group"
+
+
+# ---------------------------------------------------------------- the eight 2026-08-29 paths
+def test_the_eight_unrecognised_paths_are_now_scored(sh):
+    """From the unknowns section of the 2026-08-29 digest, measured False at the time.
+
+    They were missed because every rule in _PROBE_RE keys on a dot, an extension or a product
+    name, and these carry none: /env is /.env with the dot removed, /phpinfo is the PHP
+    disclosure page without its extension, and /Gaia/ and /WebInterface/ are appliance consoles
+    whose names read as ordinary English.
+    """
+    for p in ("/env", "/environment", "/phpinfo", "/info", "/flight",
+              "/Gaia/", "/WebInterface/", "/geoserver/web/", "/geoserver",
+              "/latest/meta-data/iam/security-credentials/", "/computeMetadata/v1/"):
+        assert sh.probe_shape(p), "%s was in the digest and must now be scorable" % p
+        assert sh.lane_of(p), "%s must also have a CLASS, or the digest cannot name it" % p
+
+
+def test_an_unidentified_scanner_canary_is_left_alone(sh):
+    """/crusader-404-probe arrived from three separate Google Cloud addresses, which is the shape
+    of a commercial scanning service and not of an attacker. "We do not recognise it" is the
+    honest state until somebody establishes what it is. Absence of evidence is not a rule."""
+    assert not sh.probe_shape("/crusader-404-probe")
+
+
+def test_the_ordinary_word_rules_are_anchored_at_the_root(sh):
+    """THE SAFETY ARGUMENT FOR ADMITTING WORDS LIKE `info` AND `environment` AT ALL.
+
+    An unanchored rule would reach /api/info, /information and /app/environment. This repository
+    has already paid for one bare-substring match: `struktur` matching inside `infrastruktur`
+    pulled a WhatsApp footer link into an assessment and produced 236 Meta hosts.
+    """
+    for p in ("/api/info", "/information", "/app/environment", "/env-setup", "/flights",
+              "/geoserverless", "/investors", "/app/a1b2c3d4"):
+        assert not sh.probe_shape(p), "%s is not a probe and must not be scored" % p
+
+
+# ---------------------------------------------------------------------------- referrer spam
+def _vis(sh):
+    from app import visitors
+    importlib.reload(visitors)
+    return visitors
+
+
+SPAM_REF = "https://chordmp3.net/all/748/2.html"
+
+
+def test_referrer_spam_is_suppressed_only_once_it_is_proven(sh):
+    """The real sighting: ONE forged referrer URL from three unrelated networks in three
+    countries, one request each. Every per-source rule here is blind to it by construction,
+    because no single source does anything twice.
+
+    The FIRST sighting must still alert. We do not know it is spam yet, and a rule that suppresses
+    on sight would need a maintained blocklist, which is stale the day after it is written.
+    """
+    v = _vis(sh)
+    assert not v._ref_is_spam(SPAM_REF, "169.224.104.5"), "one sighting proves nothing"
+    assert not v._ref_is_spam(SPAM_REF, "154.208.58.227"), "two is still not a pattern"
+    assert v._ref_is_spam(SPAM_REF, "103.251.255.85"), \
+        "one URL claimed by three unrelated networks is forged"
+
+
+def test_many_addresses_in_one_network_are_not_a_pattern(sh):
+    """A real link CAN send several visitors from one office or one carrier. The evidence is
+    UNRELATED networks, so the count is of distinct /24s and not of distinct addresses."""
+    v = _vis(sh)
+    for i in range(2, 40):
+        assert not v._ref_is_spam("https://example-blog.tld/post/1", "203.0.113.%d" % i), \
+            "38 visitors from one /24 is an office, not a spam campaign"
+
+
+def test_search_engines_and_social_networks_are_never_suppressed(sh):
+    """They send exactly the pattern the rule looks for. Without this exemption, the first day
+    cybergod.ai appears on LinkedIn every real prospect is silently suppressed."""
+    v = _vis(sh)
+    for ref in ("https://www.google.com/", "https://www.google.co.uk/search?q=x",
+                "https://www.linkedin.com/feed/", "https://t.co/abc",
+                "https://duckduckgo.com/", "https://cybergod.ai/partners"):
+        for i in (1, 2, 3, 4, 5):
+            assert not v._ref_is_spam(ref, "198.51.100.%d" % (i * 40)), \
+                "%s legitimately sends many unrelated sources" % ref
+
+
+def test_the_referrer_exemption_matches_labels_not_substrings(sh):
+    """`google.evil.tld` is precisely the domain a referrer spammer would register."""
+    v = _vis(sh)
+    assert v._ref_exempt("www.google.co.uk") and v._ref_exempt("t.co")
+    assert not v._ref_exempt("google.evil.tld"), "a LABEL match, never a substring match"
+    assert not v._ref_exempt("notlinkedin.com")
+    assert not v._ref_exempt("cybergod.ai.evil.tld")
+
+
+def test_a_missing_or_broken_referrer_is_treated_as_a_person(sh):
+    """FAILS OPEN. Wrongly suppressing a prospect is the expensive error; wrongly alerting on a
+    spam bot is merely annoying."""
+    v = _vis(sh)
+    for ref in (None, "", "direct", "not a url", "javascript:void(0)"):
+        for i in range(6):
+            assert not v._ref_is_spam(ref, "192.0.2.%d" % (i * 40))
+
+
+def test_referrer_spam_suppresses_the_alert_and_nothing_else(sh):
+    """It is an ALERT rule, not an enforcement rule. Nothing is blocked and no packet is answered
+    differently, because a forged header is not an attack -- it is analytics poisoning, and the
+    only real cost is that it fires the alert that is supposed to mean a human arrived."""
+    v = _vis(sh)
+    for ip in ("169.224.104.5", "154.208.58.227", "103.251.255.85"):
+        v._ref_is_spam(SPAM_REF, ip)
+    assert sh.decide("103.251.255.85", "/")[0] == "ALLOW", \
+        "referrer spam must never cause a block"
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "webapp", "backend", "app", "visitors.py")).read()
+    i = src.index("def note_visit")
+    body = src[i:]
+    j = body.index("_ref_is_spam(")
+    assert "visit_suppressed" in body[j:j + 400], \
+        "the sighting must still be LOGGED, or suppressing it makes it unqueryable in Grafana"

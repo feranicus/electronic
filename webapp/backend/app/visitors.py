@@ -142,6 +142,118 @@ def _probe_path(path):
         "struts", "vendor/", "id_rsa", "credentials", "backup", "dump", "/null"))
 
 
+# ---------------------------------------------------------------------------------------------
+# REFERRER SPAM.
+#
+# THE SIGHTING: the same referrer, `https://chordmp3.net/all/748/2.html`, arrived on `/` from
+# 169.224.104.0 (IQ), 154.208.58.227 (PK) and 103.251.255.85 (PK) across three days. Three
+# unrelated networks, three countries, one byte-identical referrer URL, one request each. Every
+# per-source rule in this codebase is blind to it by construction, because no single source does
+# anything twice.
+#
+# It is not an attack. It is analytics poisoning: the operator sees the domain in his logs and
+# visits it. The cost is that it raises "A PERSON JUST OPENED CYBERGOD.AI", which is the alert
+# that is supposed to mean something, and an alert that cries wolf is how the real one gets read
+# past. Same reasoning as the spoofed user agent: THE HEADER IS ATTACKER-CONTROLLED, so it must
+# never be the thing that convinces us a human arrived.
+#
+# THE RULE IS EVIDENCE, NOT A BLOCKLIST. A maintained list of spam domains is stale the day after
+# it is written. What actually distinguishes forged referral traffic is the shape: ONE EXACT URL
+# arriving from SEVERAL UNRELATED NETWORKS. A genuine link on a real page sends visitors from many
+# different pages of that site and, on a site with our traffic, will not produce the identical URL
+# from three different countries.
+#
+# LEGITIMATE MULTI-SOURCE REFERRERS ARE EXEMPT. Search engines and social networks send exactly
+# the pattern the rule looks for, so they are excluded by name; otherwise the first day cybergod.ai
+# appears on LinkedIn every real prospect is silently suppressed. Our own domains too: an internal
+# navigation is not a referral.
+#
+# It SUPPRESSES THE ALERT ONLY. Nothing is blocked, no packet is answered differently, and the
+# sighting is still logged as visit_suppressed so it stays queryable in Grafana. Suppressing a
+# notification is the smallest action that fixes the actual complaint.
+REF_SPAM_NETS = int(os.environ.get("VISIT_REF_SPAM_NETS", "3") or 3)
+REF_WINDOW_S = int(os.environ.get("VISIT_REF_WINDOW_S", str(14 * 86400)) or 14 * 86400)
+_REF_EXEMPT = (
+    "google.", "bing.", "duckduckgo.", "yandex.", "baidu.", "ecosia.", "startpage.",
+    "linkedin.", "lnkd.in", "t.co", "twitter.", "x.com", "facebook.", "reddit.", "news.ycombinator",
+    "github.", "telegram.", "t.me", "whatsapp.", "web.whatsapp.com",
+    "cybergod.ai", "s4biz.io", "jobhuntwow.com",
+)
+_ref_nets = {}          # referrer URL -> {/24 or /48: last seen}
+
+
+def _ref_host(ref):
+    s = str(ref or "")
+    if "//" not in s:
+        return ""
+    return s.split("//", 1)[1].split("/", 1)[0].split(":")[0].lower()
+
+
+def _ref_exempt(host):
+    """Is this referrer host one that legitimately sends traffic from many unrelated networks?
+
+    A trailing dot in _REF_EXEMPT means "this label under ANY top-level domain", so `google.`
+    covers google.com, google.de and www.google.co.uk without listing two hundred country
+    domains. Everything else is an exact host or a subdomain of it.
+
+    MATCHING ON LABELS, NOT ON SUBSTRINGS. `"google" in host` would exempt `google.evil.tld`,
+    which is precisely the domain a referrer spammer would register, and this repository has
+    already paid for a bare-substring match once: `struktur` matching inside `infrastruktur` put
+    a WhatsApp link into an assessment's scope and produced 236 Meta hosts.
+
+    AND A LABEL MATCH IS NOT ENOUGH EITHER. My first version checked only that the label appeared
+    somewhere in the host, and its own negative test caught that `google.evil.tld` and
+    `google.co.uk` are structurally identical under that rule: label, then two more components.
+    The discriminator is that a country domain's remaining components are TLD-SHAPED, so the
+    label only counts when everything after it is at most three characters.
+
+    THE RESIDUAL HOLE IS DELIBERATE AND IN THE SAFE DIRECTION: `google.xyz` would be exempted,
+    because .xyz is three characters. The cost of that is one un-suppressed alert about a spam
+    bot. The cost of the opposite error is silently swallowing a real prospect arriving from a
+    search engine, so the rule leans this way on purpose.
+    """
+    parts = host.split(".")
+    for e in _REF_EXEMPT:
+        if e.endswith("."):
+            label = e[:-1]
+            for i, part in enumerate(parts[:-1]):
+                if part == label and all(len(x) <= 3 for x in parts[i + 1:]):
+                    return True
+        elif host == e or host.endswith("." + e):
+            return True
+    return False
+
+
+def _ref_is_spam(ref, ip, now=None):
+    """True once this exact referrer URL has been claimed by REF_SPAM_NETS unrelated networks.
+
+    Fails OPEN in every direction: no referrer, an exempt host, an unparseable address or any
+    exception all return False, i.e. "treat it as a real person". Wrongly suppressing a prospect
+    is the expensive error here; wrongly alerting on a spam bot is merely annoying.
+    """
+    try:
+        host = _ref_host(ref)
+        if not host or _ref_exempt(host):
+            return False
+        try:
+            from . import slow_store as _ss
+            net = _ss.net_key(ip)
+        except Exception:
+            net = ".".join(str(ip or "").split(".")[:3])
+        if not net:
+            return False
+        now = now or time.time()
+        if len(_ref_nets) > 2000 and ref not in _ref_nets:
+            return False                                  # bounded; the input is attacker-chosen
+        seen = _ref_nets.setdefault(str(ref)[:300], {})
+        seen[net] = now
+        for k in [k for k, ts in seen.items() if now - ts > REF_WINDOW_S]:
+            seen.pop(k, None)
+        return len(seen) >= REF_SPAM_NETS
+    except Exception:
+        return False
+
+
 def _key(ip, cls):
     """One human = one alert. Keyed on IP plus a coarse client fingerprint, so a phone and a laptop
     on the same office NAT are still two visitors, while one person clicking around is one."""
@@ -184,6 +296,12 @@ def note_visit(ev, cls):
         if _probe_path(path):
             notify._log(evt="visit_suppressed", reason="probe path (spoofed UA)",
                         ip=ev.get("ip", "-"), path=path, ua=(ev.get("ua") or "")[:120])
+            return
+        # REFERRER SPAM. Same forged URL, unrelated networks. See _ref_is_spam above for why this
+        # is measured rather than kept in a blocklist, and why it suppresses the alert only.
+        if _ref_is_spam(ev.get("ref"), ev.get("ip")):
+            notify._log(evt="visit_suppressed", reason="referrer spam (same URL, unrelated networks)",
+                        ip=ev.get("ip", "-"), path=path, ref=(ev.get("ref") or "")[:200])
             return
         # ONLY BULLETPROOF HOSTING AND SCANNERS ARE SUPPRESSED - THEY ARE NEVER A PERSON.
         # 45.148.10.5 (AS48090 TECHOFF / DMZHOST, bulletproof) triggered "A person just opened

@@ -6095,3 +6095,143 @@ NOTE for the next person: `tests/test_dbbackup.py` used to stub `ag.sh`. Once `v
 that patched a module the resolver no longer calls, and two correct tests failed against correct
 code. `_patch_sh()` now resolves the owning module from the function itself
 (`sys.modules[ag.volume_path.__module__]`), so it stays honest if it moves again.
+
+## THE COVERAGE METRIC WAS GRADING ITS OWN HOMEWORK (2026-08-29, and it was mine)
+The digest, verbatim: `52,879 attack-shaped requests, 0 blocked (0%)` over fourteen days,
+`coverage 100% (400 of 400 sampled paths are scorable)`, and therefore
+`nothing reached the block threshold`. In the SAME EMAIL, the unknowns section listed eight paths.
+Measured against the live shield, ALL EIGHT scored False: `/env /environment /phpinfo /info
+/Gaia/ /WebInterface/ /flight /crusader-404-probe`.
+CAUSE: `per_day()` appended to `samples` only INSIDE `if lane:`. `lane_of()` is the corpus and
+`probe_shape()` is the blocker and they agree on essentially everything, so the metric asked "of
+the paths we already recognised, how many do we recognise" and could print nothing but 100%. It is
+the disease this file records more than any other, in its purest form: **a check that cannot fail,
+which then produced a WRONG CONCLUSION** — "the traffic was below the threshold" when the truth
+was "the blocker is blind to it". The gap sat behind a reassuring number for a fortnight.
+FIX: the denominator is every DISTINCT path that RETURNED 404 to a non-bot caller, i.e. things
+somebody asked for that we do not serve. It can contain something unscorable, so it can fall.
+  * **THE STATUS CODE IS THE PREDICATE, NOT `is_our_route()`.** My first fix used the route list
+    and immediately reported `/api/me` as a gap, because the React app requests it on every
+    logged-out page load and it is not in `_APP_ROUTES`. That would have printed the same benign
+    warning every single day, and a warning that is benign every time is how the one that matters
+    gets read past (the roster `www` exemption and the bot-gate `8/10` line were both silenced for
+    exactly this reason). A 404 is the APP's own statement, from a different layer than the
+    classifier being measured, so the metric cannot quietly grade itself again.
+  * **DISTINCT, NOT PER-REQUEST.** One scanner hammering /wp-login.php ten thousand times would
+    otherwise drown out fifty unrecognised paths and restore the false comfort by another route.
+  * **THE MISSES ARE NAMED** next to the number. A percentage says there is a gap; the paths say
+    what to write a rule for. Both facts were already in that email, in different sections, and
+    nobody joined them up.
+RULE: if a metric's denominator is produced by the thing it measures, it is not a measurement.
+Guarded by `test_the_coverage_metric_can_actually_fall`, which asserts the FALL (100% -> under
+50%) rather than the presence of a string.
+
+## A 24-HOUR WINDOW KEPT IN STATE THAT DIES IN HOURS (2026-08-29)
+The low-and-slow rule added on 27 Aug was correct and never fired once. `shield._slow` was a
+module-level dict, and `deploy_web_direct.py` recreates colt-web with `--force-recreate` on every
+`python ship.py`, so on a release day the fourteen-day evidence was reset several times before
+lunch. A window measured in DAYS cannot live in state measured in HOURS.
+`app/slow_store.py` moves it to SQLite on the persistent `colt_events` volume, the same home and
+the same reasoning as `cost_ledger.sqlite` and `users.sqlite`. Four decisions worth keeping:
+  * **WRITE-BEHIND, NOT WRITE-THROUGH.** A SQLite write per request puts disk I/O on the hot path
+    of a server whose whole job during an attack is to stay up. The dict stays hot; a flush every
+    60s costs at most a minute of evidence against a fourteen-day window.
+  * **MERGE (`ts = MAX(...)`), NEVER REPLACE.** If colt-web is ever run multi-worker each process
+    holds a partial view, and a replace would have them clobbering each other into permanent
+    amnesia. The periodic re-read is what carries one worker's sighting to the others.
+  * **FAILS OPEN EVERYWHERE.** A defensive store that raises takes the site down to protect it.
+    Every entry point returns a safe empty value, and `state()` REPORTS `slow_store.healthy`,
+    because a store that has quietly stopped persisting looks exactly like a quiet fortnight.
+  * **RELEASE MUST DELETE FROM DISK.** `unblock()` already cleared the fast hits — its docstring
+    records why: the first version popped only the timer and the next request re-blocked
+    instantly, a hand brake that did nothing. Persistence reintroduces that defect through the
+    back door unless the release also calls `slow_store.forget()`. The /24's record is
+    deliberately KEPT: forgiving one host must not forgive 255 neighbours.
+NOTE THE NEW TEST HAZARD I CREATED: the `sh` fixture reloads the module, which now re-runs
+`load()`, so state leaks between cases unless the fixture clears `_slow` AND resets slow_store's
+module-level flags, which reloading shield does not touch.
+
+## THE /24 IS THE ACTOR — SCORING, NEVER BLOCKING (2026-08-29)
+`212.58.119.0/24` had been probing for FIFTEEN DAYS at about 1.3 requests a day. No address in it
+can ever reach twelve distinct paths in twenty-four hours, so the 24-hour rule could not see it no
+matter how long we watched. The daily digest folds returning actors to a /24 and could see the
+pattern plainly; the blocker only ever looked at one address at a time. **The evidence and the
+enforcement were keyed differently, so a fact that was obvious in an email was unreachable in
+code.**
+Distinct probe paths now accumulate per /24 (IPv4) or /48 (IPv6) over fourteen days. **BLOCKING
+STAYS PER ADDRESS**, and a /24 hold remains an operator decision behind a Telegram button, because
+a /24 is up to 256 addresses and may be an office or a carrier.
+**AND THE NETWORK EVIDENCE MAY NOT CONVICT ALONE**: an address is blocked on it only once it has
+itself asked for `SLOW_MIN_OWN` probe paths. Otherwise one hostile host puts its 255 neighbours one
+request away from a block. Corroboration before conviction, the same rule every ownership anchor in
+the engine obeys. Both directions are asserted.
+
+## A BARE WORD IS NOT A PUNCTUATION MARK — the eight paths (2026-08-29)
+Every rule in `_PROBE_RE` keyed on a dot, an extension or a product name. The eight missed paths
+carry none: `/env` is `.env` with the dot removed, `/phpinfo` is the disclosure page without its
+extension, `/Gaia/` and `/WebInterface/` are appliance consoles whose names read as ordinary
+English. A rule set built around punctuation is structurally unable to see a word.
+TWO RULES, NOT ONE, AND THE SPLIT IS THE POINT: product names (`Gaia`, `WebInterface`,
+`geoserver`) allow a subpath, because the real request in the digest was `/geoserver/web/` and an
+exact rule scored it False. Ordinary words (`env`, `environment`, `info`, `phpinfo`, `flight`) stay
+EXACT at the root, so `^/info/?$` cannot reach `/api/info` or `/information`. Unanchored, this
+would have been the `struktur`-inside-`infrastruktur` incident again.
+`/crusader-404-probe` is deliberately LEFT UNRECOGNISED: it arrived from three separate Google
+Cloud addresses, which is the shape of a commercial scanning service, and "we do not recognise it"
+is the honest state until somebody establishes what it is.
+
+## REFERRER SPAM: THE HEADER IS ATTACKER-CONTROLLED, SO IT CANNOT PROVE A HUMAN (2026-08-29)
+`https://chordmp3.net/all/748/2.html` arrived on `/` from 169.224.104.0 (IQ), 154.208.58.227 (PK)
+and 103.251.255.85 (PK) across three days. One request each, so every per-source rule in the
+codebase is blind to it by construction. It is not an attack, it is analytics poisoning; the cost
+is that it fires "A PERSON JUST OPENED CYBERGOD.AI", which is the alert that is supposed to mean
+something. Same doctrine as the spoofed user agent already recorded here.
+**EVIDENCE, NOT A BLOCKLIST**: a maintained list of spam domains is stale the day after it is
+written. What distinguishes forged referral traffic is the shape — ONE EXACT URL from SEVERAL
+UNRELATED NETWORKS — so the rule counts distinct /24s per referrer URL and fires at three. The
+FIRST sighting still alerts, because at that point we do not know.
+Search engines and social networks are exempt BY LABEL, never by substring, and my own negative
+test caught that a label match alone still exempts `google.evil.tld`: it is structurally identical
+to `google.co.uk`. The discriminator is that a country domain's remaining components are
+TLD-shaped, so the label counts only when everything after it is at most three characters. The
+residual hole (`google.xyz`) is deliberate and in the safe direction: the cost is one un-suppressed
+alert, and the opposite error silently swallows a real prospect.
+It suppresses the ALERT and nothing else. No block, no different response, and the sighting is
+still logged as `visit_suppressed` so it stays queryable in Grafana.
+
+## A NEGATIVE TEST THAT PASSES BECAUSE OF A DIFFERENT GUARD — the fourth instance
+Fourteen mutations were run against this change set and thirteen were caught by name. The
+fourteenth, "flush no longer fails open", was NOT — because the test called `load()` first, which
+sets `slow_store._broken`, so `flush()` then returned at its own `if _broken` guard and never
+reached the code being measured. The handler could be deleted entirely and the suite stayed green.
+FIX: exercise each entry point with the breaker explicitly reset, and assert all three (`load`,
+`flush`, `forget`) separately. Same lesson as the CertSpotter fail-closed test and the shield
+allowlist enforced in both `observe()` and `decide()`: **defeat every guard on the path before
+believing a negative test, or you are measuring the other one.**
+
+## `/proc` IS NOT A THING ON WINDOWS — the seventh wasted ship, same root cause (2026-08-29)
+`python ship.py` refused to deploy on one assertion, after 198 engine checks and 78 other tests
+passed:
+```
+  FAILED tests/test_shield.py::test_a_broken_evidence_store_never_breaks_the_shield
+  AssertionError: forget() must degrade quietly, not raise;  assert 1 == 0
+```
+The test needed an UNUSABLE database path and I wrote `/proc/definitely/not/writable/slow.sqlite`.
+That is unwritable on Linux, where I validated it, and MEANINGLESS ON WINDOWS: there is no `/proc`,
+so `os.makedirs` cheerfully created `C:\proc\definitely\not\writable`, sqlite created the file, the
+store was never broken, and `forget()` correctly deleted its row and returned 1. The code was
+right; the fixture did not reproduce the condition it was named for.
+Same root cause as the httpx incident, the esbuild/win32 incident, the `os.uname()` incident, the
+python-multipart incident and the cp1252 console incident. **A fixture that does not reproduce the
+condition under test is a test of the fixture** — already written down here after the abakus
+`WPEngine` fixture, and broken again.
+FIX, portable by construction rather than by platform branch: create a temporary FILE and use
+`<that file>/slow.sqlite` as the path. A directory whose PARENT IS A FILE cannot be created on any
+operating system, so `os.makedirs` raises everywhere (FileExistsError on Linux, NotADirectoryError
+on Windows; both are caught by the same `except Exception`).
+AND THE TEST NOW PROVES ITS OWN FIXTURE FIRST: it calls `load()` and asserts `_broken[0] is True`
+before asserting anything else. Without that, the whole case passes on any platform where the path
+happens to work, which is exactly how the `/proc` version went green in the sandbox and red on the
+operator's machine.
+HOUSEKEEPING: that failed run left an empty `C:\proc\definitely\not\writable\slow.sqlite` on the
+operator's box. Harmless, and safe to delete.
