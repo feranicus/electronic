@@ -6367,3 +6367,34 @@ It also SKIPS (with a reason) when bash is absent entirely, rather than failing:
 and CI still run the check, so the gate is not lost, and the operator is not blocked over a
 toolchain he never installed. Proven to still FAIL on a genuinely broken script, or the fix would
 have quietly turned it into a check that cannot fail.
+
+## THE SPENDER NAMED: jobhuntwow's LOCAL agent (2026-09-01, `cost_report.py --trace`)
+The trace's LOCAL scan answered it on the first run, and the operator's own hunch was right:
+```
+agent/jhw_bot.py:26         JHW_BOT_MODELS defaults to "deepseek-v4-pro,deepseek-3.2,llama-4-maverick"
+agent/agent.py:93           retry chain "Gemma 4 -> DeepSeek 3.2 -> GLM-5.2"
+agent/AGENT_GUIDE.md:44     driver3 glm-5.2 "strong tool-caller, last resort"
+backend/app/electronic.py:91  role "content" -> deepseek-v4-pro
+agent/docker-compose.local.yml:52,81  OPENAI_BASE_URL=http://backend:8000/v1  -> the jhw backend
+                              proxy, which holds DO_INFERENCE_KEY and calls the SAME DO account
+```
+Those are the two models that were >96% of the account's tokens, and they appear in NO cybergod
+configuration. The shape fits: it is a browser-use / LLM DOM driver loop, which sends the page DOM
+on every step, so 518K input for 134K output in one 25-minute sample is exactly what it looks like.
+The operator said the local project "is not working at all" — a broken agentic loop that RETRIES is
+the runaway, and it ran on his own machine, which is why nothing on either droplet showed it.
+RULE, restated: when several projects share one vendor account, per-project API KEYS are the only
+thing that makes an invoice attributable. Note also that `enrich.py`'s daily cap protects CYBERGOD
+ONLY — jobhuntwow is a separate codebase with its own proxy and needs its own ceiling.
+
+## `ssh_script` RETURNS A 3-TUPLE — and I "defended" the guess instead of reading it (2026-09-01)
+`cost_report.py --trace` failed on both droplets with:
+    [!] production: 'tuple' object has no attribute 'splitlines'
+`recover.ssh_script` returns `(stdout, stderr, returncode)`. I assumed a bare string and wrote
+`sections(out if isinstance(out, str) else (out or ""))` as a guard. **That is not a defence: a
+tuple is truthy**, so it sailed past the check into `sections()` and died there. Writing a guard
+around a guess is worse than reading six lines of the helper, because it looks like care.
+Same family as calling `.returncode` on ship.py's `run()` (an int), destructuring `{ok, data}` from
+a getJSON-backed call, `_get_json(headers=)` with no such parameter, and `sp.E` / `notify._log`.
+Guarded by tests/test_llm_meter.py: the trace must unpack three values, and a non-zero rc with no
+output must be REPORTED rather than rendered as an empty (clean-looking) section map.

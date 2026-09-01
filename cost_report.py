@@ -263,6 +263,24 @@ for c in $(docker ps --format '{{.Names}}' 2>/dev/null); do
   h=$(docker exec "$c" sh -c "grep -rlI 'inference.do-ai' %s 2>/dev/null | head -3" 2>/dev/null)
   [ -n "$h" ] && echo "$c|$(echo $h | tr '\n' ' ')"
 done
+echo "#### STARTED"
+# WHEN, not just what. The spike began on 08/31 against a flat baseline, so anything that started
+# or restarted around then is a suspect and anything running untouched since 08/19 is much less
+# likely to be it. A list of names cannot answer that; a list of start times can.
+for c in $(docker ps -a --format '{{.Names}}' 2>/dev/null); do
+  t=$(docker inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null)
+  r=$(docker inspect -f '{{.RestartCount}}' "$c" 2>/dev/null)
+  echo "$t|$c|restarts=$r"
+done | sort -r
+echo "#### OUTBOUND_NOW"
+# Anything holding a connection to the inference endpoint RIGHT NOW. A live socket is proof of a
+# caller in a way that a config file never is - which is the mistake that named the wrong project.
+(ss -tnp 2>/dev/null || netstat -tnp 2>/dev/null) | grep -iE 'ESTAB' | head -20
+echo "#### RECENT_LLM_LOGS"
+for c in $(docker ps --format '{{.Names}}' 2>/dev/null); do
+  docker logs --since 48h --timestamps "$c" 2>&1 \
+    | grep -iE "$PAT|inference\.do-ai|chat/completions" | tail -4 | sed "s|^|$c\||"
+done
 """ % (pattern, TRACE_DIRS, TRACE_DIRS)
 
 
@@ -274,8 +292,15 @@ def trace_remote(host, label):
     prev = os.environ.get("DROPLET_HOST")
     os.environ["DROPLET_HOST"] = host
     try:
-        out = ssh_script(_trace_script("|".join(TRACE_MODELS)), timeout=300)
-        return sections(out if isinstance(out, str) else (out or ""))
+        # ssh_script returns (stdout, stderr, returncode) -- READ, not guessed. The first version
+        # of this line assumed a bare string and "defended" with `isinstance(out, str)`, which is
+        # not a defence: a tuple is truthy, so it sailed through to sections() and died on
+        # 'tuple' object has no attribute 'splitlines'. Guessing a helper's contract and then
+        # writing a guard around the guess is worse than reading six lines of the helper.
+        out, err, rc = ssh_script(_trace_script("|".join(TRACE_MODELS)), timeout=300)
+        if rc != 0 and not (out or "").strip():
+            return {"error": "%s: ssh rc=%s %s" % (label, rc, (err or "").strip()[:140])}
+        return sections(out or "")
     except Exception as e:
         return {"error": "%s: %s" % (label, str(e)[:160])}
     finally:

@@ -219,3 +219,42 @@ def test_the_operator_diagnostics_that_spend_are_named_and_deliberate(mod):
     assert spenders == ["model_probe.py"], \
         ("a new file talks to the inference endpoint directly. Route it through enrich._call so "
          "it is metered and capped, or add it here with a reason: %s" % spenders)
+
+
+# ------------------------------------------------------------------ the trace helper
+def test_the_remote_trace_unpacks_ssh_script_correctly(mod, monkeypatch):
+    """`recover.ssh_script` returns (stdout, stderr, returncode), NOT a string.
+
+    THE DEFECT THIS PINS, which shipped and failed on the operator's first run:
+        [!] production: 'tuple' object has no attribute 'splitlines'
+    I assumed a bare string and then "defended" the guess with `isinstance(out, str)`. That is not
+    a defence: a tuple is truthy, so it sailed past the guard into sections() and died there.
+    Guessing a helper's contract and writing a guard around the guess is worse than reading the
+    helper -- this is the same family as calling .returncode on ship.py's run() (an int) and
+    destructuring {ok, data} from a getJSON-backed call.
+    """
+    import cost_report as C
+    calls = {}
+
+    def fake(script, timeout=None):
+        calls["script"] = script
+        return ("#### CONTAINERS\ncolt-web|img|Up 2h|\n#### KEYS\ncolt-web|K|sha256:aa|len=7\n",
+                "", 0)
+
+    monkeypatch.setattr(C, "ssh_script", fake, raising=False)
+    import recover
+    monkeypatch.setattr(recover, "ssh_script", fake)
+    d = C.trace_remote("198.51.100.1", "test")
+    assert "error" not in d, d
+    assert "colt-web" in d.get("CONTAINERS", ""), "sections() must receive stdout, not the tuple"
+    assert "deepseek-v4-pro" in calls["script"], "the model pattern must reach the remote script"
+
+
+def test_a_failed_ssh_is_reported_not_swallowed(mod, monkeypatch):
+    """A non-zero rc with no output must say so. Returning an empty section map would render as
+    'no data' and read like a clean box, which is the logship defect one level over."""
+    import cost_report as C
+    import recover
+    monkeypatch.setattr(recover, "ssh_script", lambda s, timeout=None: ("", "permission denied", 255))
+    d = C.trace_remote("198.51.100.1", "test")
+    assert "error" in d and "255" in d["error"]
