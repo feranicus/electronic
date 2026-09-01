@@ -132,9 +132,31 @@ try:
                 except Exception as exc:
                     print('{"evt":"digest_error","err":"%s"}' % repr(exc)[:160], flush=True)
 
+        async def _spend_loop():
+            """AI SERVERLESS SPEND: is today unlike the last fortnight?
+
+            A different question again from the cap. `llm_meter.DAILY_USD` is a wall that stops a
+            runaway once the day has already cost $3; this asks whether something CHANGED, which on
+            2026-09-01 was the question nobody could answer -- the spend was still small in absolute
+            terms and had jumped hard against every previous day.
+
+            It reads the DO account balance as well as our own meter, and that second source is the
+            point: >96% of the tokens in that incident belonged to two model ids that appear in no
+            configuration in this repository, so a watcher built only on what we meter would have
+            reported a perfectly normal fortnight while the invoice tripled.
+            """
+            from . import spend_watch as _sw
+            while True:
+                await _aio.sleep(max(300, _sw.EVERY_S))
+                try:
+                    await _aio.get_event_loop().run_in_executor(None, _sw.run_once)
+                except Exception as exc:
+                    print('{"evt":"spend_watch_error","err":"%s"}' % repr(exc)[:160], flush=True)
+
         _aio.create_task(_decisions_loop())
         _aio.create_task(_panel_loop())
         _aio.create_task(_digest_loop())
+        _aio.create_task(_spend_loop())
 except Exception as _e:  # telemetry must never stop the app from booting
     print('{"evt":"telemetry_init","result":"error","err":"%s"}' % repr(_e)[:120], flush=True)
 

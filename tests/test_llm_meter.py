@@ -258,3 +258,95 @@ def test_a_failed_ssh_is_reported_not_swallowed(mod, monkeypatch):
     monkeypatch.setattr(recover, "ssh_script", lambda s, timeout=None: ("", "permission denied", 255))
     d = C.trace_remote("198.51.100.1", "test")
     assert "error" in d and "255" in d["error"]
+
+
+# ================================================================== Loki correlation
+# The spike is over. Every other probe in cost_report.py is a SNAPSHOT -- `--trace` lists sockets
+# open at the moment it runs, which is why it reported "only tailscale and sshd" and settled
+# nothing. Loki is the only thing on this estate that holds the PAST.
+def test_the_correlation_reads_the_event_the_engine_actually_emits(mod):
+    """LogQL built from a guessed field name returns an empty series, which renders exactly like a
+    quiet project. enrich.py emits evt=qwen carrying model/tokens_in/tokens_out/cost_usd in the
+    LINE (promtail promotes only evt/bot/company/status to labels), so the numbers must be
+    unwrapped with `| json` -- and that is asserted against the emitter, not from memory."""
+    import cost_report as C
+    src = open(os.path.join(SCRIPTS, "enrich.py"), encoding="utf-8").read()
+    assert '"evt": "qwen"' in src, "the emitter changed; the queries below are now aimed at nothing"
+    for field in ("tokens_out", "cost_usd"):
+        assert field in src, "%s is no longer emitted" % field
+    joined = " ".join(q for _t, q, _w in C.LOKI_QUERIES)
+    assert 'evt="qwen"' in joined and "| json" in joined
+    assert "unwrap cost_usd" in joined and "unwrap tokens_out" in joined
+    assert 'job="jobhuntwow"' in joined, "the sibling project on the shared key must be queried too"
+
+
+def test_the_attack_overlay_is_present_so_the_hypothesis_can_be_tested(mod):
+    """The operator asked whether the attacks are burning the AI budget. That is answerable only if
+    attack volume and AI cost are plotted over the SAME window; a table of AI cost alone cannot
+    confirm or refute it."""
+    import cost_report as C
+    titles = [t for t, _q, _w in C.LOKI_QUERIES]
+    assert any("attack" in t.lower() for t in titles)
+    assert any("cost" in t.lower() for t in titles)
+
+
+def test_an_empty_series_renders_as_evidence_not_as_silence(mod, capsys):
+    """'Loki holds no matching line' is a FINDING. Printing nothing makes it indistinguishable from
+    a query that never ran -- the logship defect, which reported success for a week while shipping
+    an empty archive."""
+    import cost_report as C
+    C.render_correlate({"loki": "videodead-loki-1",
+                        "series": [{"title": "cybergod model calls, per model",
+                                    "why": "w", "rows": []}]}, 10)
+    out = capsys.readouterr().out
+    assert "NONE. That is evidence" in out
+
+
+def test_a_failed_correlation_does_not_read_as_a_quiet_window(mod, capsys):
+    import cost_report as C
+    C.render_correlate({"error": "no Loki container is running on 198.51.100.1"}, 10)
+    out = capsys.readouterr().out
+    assert "NOT 'nothing was happening'" in out
+
+
+def test_the_correlation_states_the_jobhuntwow_blind_spot(mod, capsys):
+    """jhw's electronic.py receives `_usage` from call_model and DISCARDS it, so Loki holds its
+    HTTP and security events and not one model call. Its AI spend therefore cannot be excluded the
+    way cybergod's can, and a reader must be told that rather than left to infer a quiet project
+    from an empty row."""
+    import cost_report as C
+    C.render_correlate({"loki": "l", "series": []}, 10)
+    out = capsys.readouterr().out
+    assert "jobhuntwow" in out and "blind spot" in out
+    jhw = open(os.path.join(ROOT, "jobhuntwow-app", "backend", "app", "electronic.py"),
+               encoding="utf-8").read()
+    assert "_usage" in jhw, "if jhw starts recording usage, delete this caveat from the renderer"
+
+
+def test_the_correlation_targets_the_host_by_module_attribute(mod, monkeypatch):
+    """recover.py does `HOST = os.environ.get("DROPLET_HOST", ...)` at IMPORT time, so setting the
+    environment variable after importing it changes nothing. That defect already shipped once: the
+    trace's "staging" block came back a verbatim copy of production, and two identical blocks under
+    different headings read as corroboration when they are one measurement twice."""
+    import cost_report as C
+    import recover
+    seen = {}
+
+    def fake(script, timeout=None):
+        seen["host"] = recover.HOST
+        return ("#### LOKI\nNONE\n", "", 0)
+
+    monkeypatch.setattr(recover, "ssh_script", fake)
+    before = recover.HOST
+    C.loki_correlate("198.51.100.7", days=3)
+    assert seen["host"] == "198.51.100.7", "the query must be sent to the host that was asked for"
+    assert recover.HOST == before, "and the module attribute must be restored afterwards"
+
+
+def test_the_correlation_unpacks_ssh_script_as_three_values(mod, monkeypatch):
+    import cost_report as C
+    import recover
+    monkeypatch.setattr(recover, "ssh_script",
+                        lambda s, timeout=None: ("", "connect: network unreachable", 255))
+    d = C.loki_correlate("198.51.100.7", days=3)
+    assert "error" in d and "255" in d["error"], "a dead transport must be reported, not rendered"

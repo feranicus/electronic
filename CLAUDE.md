@@ -6464,3 +6464,112 @@ continuously-running droplet process and towards something episodic or off-box.
    informative negative result indistinguishable from a check that did not run. They now print
    `NONE. That is evidence.` Same doctrine as logship's "finding nothing on a live box is a
    failure, not a success".
+
+## THE SPEND QUESTION IS "WHO", AND FOUR OF FIVE PROJECTS COULD NOT ANSWER IT (2026-09-01)
+The operator was right to disbelieve the first answer. Loki and Grafana are deployed, per-run cost
+is instrumented, and I reached for a live `--trace` instead of the data. That was the wrong tool:
+**every probe in `cost_report.py --trace` is a SNAPSHOT** -- open sockets, container start times --
+which is why it reported "OUTBOUND_NOW: only tailscale and sshd" and settled nothing about a spike
+that had already finished. **Loki is the only thing on this estate that holds the PAST.**
+Then the honest measurement, which is worse than the misdiagnosis:
+```
+{job="coltbots"}    evt=qwen per model call, with model + tokens_in + tokens_out + cost_usd
+{job="jobhuntwow"}  http, auth, security_alert ... and NOT ONE model call
+```
+`electronic.py:104` did `txt, _usage, _fin = await RC.call_model(...)` and threw the usage away;
+`llm.py::complete` never read `data["usage"]` at all. So jobhuntwow rendered in Grafana as a silence
+indistinguishable from a quiet project -- **it could be neither blamed nor cleared**, which is the
+worst of the three outcomes and the same disease as logship reporting success for a week while
+shipping an empty archive.
+FOUR CHOKEPOINTS, NOT TWO, and I only knew about two. `test_no_call_to_the_inference_endpoint_
+bypasses_the_meter` DERIVES them from the source instead of trusting a list, and its first run
+failed naming `proxy.py` and `qwen.py`. **`proxy.py` is the most important of the four**: it is an
+OpenAI-compatible endpoint that forwards to DigitalOcean *with our key*, so any client holding the
+proxy token spends on this account without a key of its own. An external caller is invisible until
+the thing it comes through writes a line. A meter on three of four is worse than none -- it produces
+a confident number that is short by an unknown amount and would be used to clear a project of spend
+it actually made.
+**ZERO IS A MEASUREMENT; UNKNOWN IS NOT.** A streamed response carries no `usage` block unless the
+request sets `stream_options.include_usage`, and adding that would change the bytes a client
+receives on an endpoint whose own comment says never to reframe SSE by hand (it already broke Hermes
+once). So a stream records `tokens_known=false`. Writing 0 would make a busy external client look
+free and poison every sum built from those lines -- the same rule as `llm_meter.spent_today()`
+returning None rather than 0.0. An UNPRICED model is likewise charged at the most expensive rate we
+know, never an average: the whole point is to notice a caller nobody configured, and rounding an
+unknown down hides exactly that.
+
+## A DAILY CAP IS NOT A SPIKE DETECTOR, AND A METER-ONLY WATCHER WOULD HAVE SEEN NOTHING
+`llm_meter.DAILY_USD` is a wall: it stops a runaway once the day has already cost $3. It answers
+"make it stop" and cannot answer "something changed", which was the actual question -- the spend was
+small in absolute terms and had jumped hard against every previous day. A fixed threshold set high
+enough not to cry wolf is set too high to see a 20x change at the bottom of the range.
+`spend_watch.py` therefore measures a DEVIATION FROM THIS ACCOUNT'S OWN BASELINE, hourly, and:
+- **MEDIAN, never mean.** The thing being detected is an outlier, and one prior spike inside the
+  window drags a mean up far enough to swallow the next one. Guarded by a test that fails on `mean`.
+- **A ratio AND an absolute floor.** $0.0005 -> $0.01 is a twentyfold rise and is noise. An alarm
+  that is benign every time is how the one that matters gets read past -- already paid for here with
+  the roster `www` warning and the bot-gate 8/10 line.
+- **A minimum baseline.** Under four days it offers no verdict at all. Absence of evidence.
+- **Silent days count as ZERO, not as absent**, or the baseline silently rises and hides a return to
+  spending.
+- **It names what is NEW.** A model called today that appears on no earlier day is named in the
+  message. That single signal would have caught 2026-09-01 in its first hour instead of from an
+  invoice. `rep["per_model"]` cannot answer it: that window INCLUDES today, so everything active now
+  appears in it and nothing would ever look new -- it needs its own `day < today` query.
+- **TWO SOURCES, and the second is the whole point.** A watcher built only on our meter would have
+  reported a perfectly normal fortnight during the incident, because the spender was not us. The DO
+  balance delta is coarse (it cannot say who) and is the only signal covering callers we do not
+  control -- another project on the shared key, or **a GenAI agent created in the DigitalOcean
+  console, which runs on their infrastructure and appears in no repository and on no droplet.**
+  The DISAGREEMENT between the two is the diagnosis: "the account moved $4.10 and this codebase
+  accounts for $0.06" is a sentence neither source can produce alone.
+Guarded by `tests/test_spend_watch.py`; `test_a_caller_we_do_not_control_is_still_caught` reproduces
+the incident and asserts the meter-only verdict is quiet BEFORE asserting the combined one fires.
+Eight mutations, each verified to fail by name and restore.
+
+## `alerted` MUST MEAN DELIVERED (found by my own test, 2026-09-01)
+The first `run_once` set `alerted = True` whenever `notify` merely IMPORTED, so a container with no
+Telegram token and no Gmail credentials reported that it had warned somebody about a spend spike.
+That is reporting success for work it did not do -- the logship defect, in a file written the same
+afternoon to criticise it. `notify.telegram()` and `notify.email()` both return truthy only on real
+delivery, so ask them; an undelivered alert now prints `evt=spend_alert result=undelivered` to
+stdout so a muted channel is at least queryable. The cooldown is stamped even on a failed delivery,
+deliberately: retrying hourly against a misconfigured channel turns one problem into twenty queued
+messages the moment it starts working.
+THE TEST THAT FOUND IT PASSED FOR THE WRONG REASON FIRST. It registered its fake as a bare top-level
+`notify`, but the code does `from . import notify`, which succeeds inside the package -- so the real
+module ran, logged "skipped", and the assertion still went green. **Patch the module the code
+actually reaches.**
+
+## THE ATTACK-RESPONSE HYPOTHESIS, ANSWERED FROM THE CODE (2026-09-01)
+The operator asked whether the attacks are burning the AI budget. For cybergod, refuted by
+arithmetic: attack-driven AI is SCHEDULE-bounded, not volume-bounded -- `shield_panel` is 4 models
+every 6h and `attack_digest` 4 models daily, about 20 calls and ~60k tokens a day, against 836k
+tokens in a 25-minute sample of the spike. And `abuse_report.draft_complaint` **calls no model at
+all**: it is pure string formatting, despite a comment above it claiming "the four models draft" --
+a documentation overclaim, not a spend path. The attack-volume overlay is nonetheless in
+`--correlate`, because answering "is it the attacks?" from a table of AI cost alone is impossible;
+the two have to be plotted over the same window.
+
+## ONE KEY, SEVEN CONTAINERS, FIVE PROJECTS -- and DO's per-key page cannot help
+`cost_report.py --trace` grouped containers by API-key fingerprint and found `sha256:9327f186`
+shared by colt-web, colt-assessbot, colt-cassandra, s4biz-web, jhw-web, polara-web and jev-api.
+DigitalOcean therefore sees ONE caller, which **corrects advice I gave earlier in the same session**
+("check per-key usage, it will settle it"): it cannot, until the keys are split. Per-project keys are
+not hygiene here, they are the only thing that makes an invoice attributable after the fact, and it
+is a console job no script can do.
+NEITHER RUNAWAY ID EXISTS IN ANY CODEBASE WE HAVE. `glm-5.3` appears nowhere in jobhuntwow and
+`deepseek-v4-pro` was deliberately REMOVED from its chain; both billed ids carry snapshot suffixes
+(`-0813`, `-flash`). Combined with `OUTBOUND_NOW` holding no inference connection on either droplet,
+that points away from a continuously-running droplet process and at something episodic or off-box --
+which is what `do_agents()` (`/v2/gen-ai/agents`) exists to check, and it needs only the token.
+
+## I NAMED A CULPRIT FROM CONFIG AND THE OPERATOR DISPROVED IT IN ONE LINE
+I told him the spend was jobhuntwow's local docker agent because a grep found `JHW_BOT_MODELS =
+"deepseek-v4-pro,..."`. He replied with `failed to connect to the docker API at npipe://` -- Docker
+Desktop was not running, so that container had executed nothing.
+**Source that NAMES a model proves a project COULD call it. It does not prove a process DID.** That
+is the same category error as reading a Shodan record on a shared VIP as the customer's, or treating
+a domain on a group page as an owned estate. I made it because my remote evidence-gathering had just
+crashed (the `ssh_script` tuple bug) and I filled the gap with the weakest available evidence instead
+of saying "I have not looked at the droplets yet". When half the evidence fails, say so.

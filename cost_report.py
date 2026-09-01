@@ -590,7 +590,177 @@ def _is_ai(name):
     return any(k in n for k in ("inference", "gen ai", "genai", "serverless ai", "model", "agent"))
 
 
+# =================================================================================================
+# LOKI CORRELATION -- "which project was calling the inference endpoint while the money moved?"
+#
+# WHY LOKI AND NOT ANOTHER PROBE. Everything else in this file is a SNAPSHOT: `--trace` lists the
+# sockets open at the moment it runs and the containers started before it, which is why it produced
+# "OUTBOUND_NOW: only tailscale and sshd" -- true, and worth nothing about a spike that happened
+# last Sunday. Loki is the only thing on this estate that holds the PAST. The spike is over; a
+# snapshot cannot be pointed at it, and a log can.
+#
+# WHAT IS ACTUALLY IN THERE, measured rather than assumed:
+#   * {job="coltbots"}   -- /logs/events.log, shipped by colt-promtail. `evt=qwen` is emitted by
+#                           enrich.py once per model call and carries model, tokens_in, tokens_out
+#                           and cost_usd IN THE LINE (promtail promotes only evt/bot/company/status
+#                           to labels, so the numbers have to be unwrapped with `| json`).
+#   * {job="jobhuntwow"} -- /logs/jhw-web.log, on the SAME shared colt_events volume. It carries
+#                           http, auth and security_alert events and NOT ONE model call:
+#                           electronic.py:104 receives `_usage` from call_model and discards it.
+#
+# THAT SECOND POINT IS THE HONEST ANSWER TO "use the data we have". For cybergod the data is there
+# and this query reads it. For jobhuntwow it is not there to read, so this prints the gap by name
+# instead of rendering an empty series as if it were a quiet project -- the same distinction
+# logship got wrong when it reported success for a week while shipping nothing.
+#
+# EVEN WITH THE GAP, THE CORRELATION IS DECISIVE BY EXCLUSION. If DigitalOcean bills 836k tokens in
+# a window and coltbots' own log accounts for 30k against models that are all in our committed
+# chain, then the remaining 806k did not come from this codebase -- and neither runaway id has ever
+# appeared in a `evt=qwen` line, which is a positive statement about the past rather than a guess.
+# =================================================================================================
+LOKI_QUERIES = [
+    # (title, LogQL, what a number here MEANS)
+    ("cybergod model calls, per model",
+     'sum by (model) (count_over_time({job="coltbots"} | json | evt="qwen" [%(step)s]))',
+     "one entry per call enrich.py made; a model absent here was not called by this codebase"),
+    ("cybergod output tokens, per model",
+     'sum by (model) (sum_over_time({job="coltbots"} | json | evt="qwen"'
+     ' | unwrap tokens_out [%(step)s]))',
+     "compare against DO's Insights page: a large gap is spend that is not ours"),
+    ("cybergod AI cost (USD)",
+     'sum(sum_over_time({job="coltbots"} | json | evt="qwen" | unwrap cost_usd [%(step)s]))',
+     "our own metered cost over the window"),
+    ("attack volume (404s to non-bots)",
+     'sum(count_over_time({job="coltbots"} | json | evt="http" | status="404" [%(step)s]))',
+     "OVERLAY. If AI spend tracks this, attack response is driving cost; if it does not, it is not"),
+    ("jobhuntwow requests",
+     'sum(count_over_time({job="jobhuntwow"} [%(step)s]))',
+     "activity only -- jhw emits NO model event, so its AI spend is NOT in Loki (see below)"),
+]
+
+
+def _loki_script(queries, start, end, step):
+    """One ssh session that asks Loki every question. Built as a bash script rather than a series of
+    `ssh` calls because the Windows OpenSSH client has no ControlMaster multiplexing and sshd
+    penalises rapid repeat connections -- the rule this repository already paid for twice."""
+    body = ["L=$(docker ps --format '{{.Names}}' | grep -iE 'loki' | head -1)",
+            'echo "#### LOKI"; echo "${L:-NONE}"',
+            '[ -z "$L" ] && exit 0',
+            "q(){ docker exec \"$L\" wget -qO- --header='Content-Type: application/json' "
+            "\"http://127.0.0.1:3100/loki/api/v1/query_range?query=$1&start=%s&end=%s&step=%s\" "
+            "2>/dev/null; }" % (start, end, step)]
+    for i, (title, q, _why) in enumerate(queries):
+        # urlencode just enough: LogQL is full of characters wget would mangle in a query string.
+        enc = (q % {"step": step + "s" if step.isdigit() else step})
+        for a, b in (("%", "%25"), ("{", "%7B"), ("}", "%7D"), ('"', "%22"), (" ", "%20"),
+                     ("|", "%7C"), ("(", "%28"), (")", "%29"), ("[", "%5B"), ("]", "%5D"),
+                     ("=", "%3D"), ("+", "%2B"), ("&", "%26")):
+            enc = enc.replace(a, b)
+        body.append('echo; echo "#### Q%d"; q "%s"' % (i, enc))
+    return "\n".join(body) + "\n"
+
+
+def loki_correlate(host, days=10, step_hours=6):
+    """Ask Loki what each project was doing, hour by hour, across the window."""
+    try:
+        from recover import ssh_script, sections
+    except Exception as e:
+        return {"error": "recover.py not importable: %s" % repr(e)[:100]}
+    import recover as _rc
+    prev = _rc.HOST
+    _rc.HOST = host          # MODULE ATTRIBUTE. recover reads DROPLET_HOST at IMPORT time, so
+    try:                     # setting the env var here does nothing -- already found once, when
+        end = int(datetime.datetime.now(datetime.timezone.utc).timestamp())   # "staging" came back
+        start = end - days * 86400                                            # a copy of production.
+        step = str(step_hours * 3600)
+        # ssh_script returns (stdout, stderr, returncode). READ, not guessed.
+        out, err, rc = ssh_script(_loki_script(LOKI_QUERIES, start, end, step), timeout=180)
+    except Exception as e:
+        return {"error": repr(e)[:160]}
+    finally:
+        _rc.HOST = prev
+    if rc != 0 and not out:
+        return {"error": "ssh failed (rc=%s): %s" % (rc, (err or "")[:200])}
+    sec = sections(out or "")
+    if (sec.get("LOKI") or "").strip() in ("", "NONE"):
+        return {"error": "no Loki container is running on %s" % host}
+    res = {"loki": (sec.get("LOKI") or "").strip(), "series": []}
+    for i, (title, _q, why) in enumerate(LOKI_QUERIES):
+        raw = (sec.get("Q%d" % i) or "").strip()
+        try:
+            d = json.loads(raw)
+            rows = d.get("data", {}).get("result", [])
+        except Exception:
+            res["series"].append({"title": title, "why": why, "error": raw[:160] or "no answer"})
+            continue
+        got = []
+        for r in rows:
+            name = (r.get("metric") or {}).get("model") or "(total)"
+            vals = [(int(float(t)), float(v)) for t, v in (r.get("values") or [])
+                    if str(v) not in ("NaN",)]
+            got.append({"name": name, "total": round(sum(v for _, v in vals), 4), "points": vals})
+        res["series"].append({"title": title, "why": why,
+                              "rows": sorted(got, key=lambda x: -x["total"])})
+    return res
+
+
+def render_correlate(c, days):
+    print()
+    print("=" * 78)
+    print("LOKI CORRELATION - what each project was doing while the money moved")
+    print("=" * 78)
+    if c.get("error"):
+        print("  [!] %s" % c["error"])
+        print("      NOT 'nothing was happening'. The query did not run, so it says nothing about")
+        print("      the window at all. Those are different answers and must not render the same.")
+        return
+    print("  loki: %s     window: last %d days" % (c.get("loki"), days))
+    for s in c.get("series", []):
+        print()
+        print("  %s" % s["title"])
+        print("    (%s)" % s["why"])
+        if s.get("error"):
+            print("      [!] query error: %s" % s["error"])
+            continue
+        rows = s.get("rows") or []
+        if not rows:
+            print("      NONE. That is evidence: Loki holds no matching line in this window.")
+            continue
+        for r in rows[:8]:
+            spark = "".join(" .:-=+*#@"[min(8, int(8 * v / (max(1e-9, max(x for _, x in r["points"])))))]
+                            for _, v in r["points"][-40:]) if r["points"] else ""
+            print("      %-26s total %12.4f   %s" % (r["name"][:26], r["total"], spark))
+    print()
+    print("  HOW TO READ THIS")
+    print("    * A model in DigitalOcean's Insights that appears in NO row above was not called by")
+    print("      this codebase. That is a statement about the recorded past, not a guess.")
+    print("    * If AI cost does NOT track the attack-volume row, attack response is not the")
+    print("      spender. Measured from code: cybergod's attack-driven AI is SCHEDULE-bounded")
+    print("      (shield panel 4 models/6h + digest 4 models/day, roughly 20 calls a day), and")
+    print("      abuse_report.draft_complaint calls no model at all - it is string formatting.")
+    print("    * jobhuntwow shows request volume only. It emits NO model event, so its AI spend is")
+    print("      NOT in Loki and cannot be excluded the way cybergod's can. That is the one real")
+    print("      blind spot left, and it is a missing emitter rather than a missing query.")
+
+
 def main():
+    if "--correlate" in sys.argv:
+        days = 10
+        if "--days" in sys.argv:
+            i = sys.argv.index("--days")
+            if len(sys.argv) > i + 1:
+                try:
+                    days = max(1, min(60, int(sys.argv[i + 1])))
+                except ValueError:
+                    pass
+        host = os.environ.get("DROPLET_HOST", "64.225.108.200")
+        c = loki_correlate(host, days=days)
+        if "--json" in sys.argv:
+            print(json.dumps(c, indent=2, default=str))
+        else:
+            render_correlate(c, days)
+        return
+
     if "--trace" in sys.argv:
         here = os.path.dirname(os.path.abspath(__file__))
         roots = [here] + [p for p in (os.environ.get("TRACE_ROOTS", "").split(os.pathsep)) if p]

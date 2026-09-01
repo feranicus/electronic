@@ -676,6 +676,44 @@ def do_tests():
         except Exception as _e:
             print('  [!] could not clean local assess-bot/.env (%s)' % type(_e).__name__)
 
+    # d) THE SPEND WATCHER'S ACCOUNT-WIDE HALF NEEDS DO_API_TOKEN INSIDE colt-web.
+    #
+    # `spend_watch` compares two sources: our own meter (which knows WHO, per caller and per model)
+    # and the DigitalOcean account balance (which knows WHETHER, including callers we do not
+    # control). The second one is the point: in the 2026-09-01 incident >96% of the account's
+    # tokens belonged to two model ids that appear in no configuration in this repository, so a
+    # watcher built only on our meter would have reported a perfectly normal fortnight while the
+    # invoice tripled. Without the token that half is unavailable and the watcher says so -- honest,
+    # and blind to exactly the case it exists for.
+    #
+    # The operator already HAS the token (cost_report reads it from the environment or a gitignored
+    # env file). So resolve it the same way and upsert it through the committed tool, rather than
+    # printing "now run set_secret.py" -- a second command is a defect (operating principle 7) and
+    # a reminder printed every deploy becomes a line nobody reads.
+    try:
+        sys.path.insert(0, HERE)
+        import cost_report as _cr
+        _tok = _cr._do_token()
+        _has = False
+        if os.path.exists(_lenv):
+            _has = any(l.strip().startswith('DO_API_TOKEN=')
+                       for l in open(_lenv, encoding='utf-8').read().splitlines())
+        if _has:
+            print('  DO_API_TOKEN: already in assess-bot/.env - account-wide spend watch is armed')
+        elif _tok:
+            import set_secret as _ss
+            _ss.run('DO_API_TOKEN', _tok)     # value on stdin only, never argv
+            print('  DO_API_TOKEN: installed from your environment - the spend watcher can now see')
+            print('    ACCOUNT-wide AI spend, not just the calls this codebase makes')
+        else:
+            print('  [!] DO_API_TOKEN not found locally. The spend watcher still runs, but only on')
+            print('      OUR OWN metered calls - it cannot see a caller we do not control, which is')
+            print('      precisely the 2026-09-01 case. Mint one at cloud.digitalocean.com and put')
+            print('      DO_API_TOKEN=... in assess-bot/.env (gitignored); the next ship installs it.')
+    except Exception as _e:
+        print('  [!] could not check DO_API_TOKEN (%s) - the spend watcher degrades to meter-only'
+              % type(_e).__name__)
+
     # c'''''''') NOTHING may hardcode ENRICH_MODELS. docker-compose `environment:` BEATS
     #            `env_file`, so a value committed there silently outranks enrich.py::_FALLBACKS —
     #            that is exactly why gemma stayed at the head of the chain and deepseek-v4-flash
