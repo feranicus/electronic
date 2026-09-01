@@ -109,6 +109,31 @@ def do_billing(token):
     return out
 
 
+def do_agents(token):
+    """Agents running on DO's OWN Agent Platform, plus the model access keys on the account.
+
+    WHY THIS IS HERE AND NOT IN THE CODE SCAN: an agent created in the DO console runs on DO's
+    infrastructure. It appears in no repository, on no droplet, and in no container -- so grepping
+    source for a model name can never find it, however thorough the grep. The console sidebar in
+    the operator's screenshot lists "Agent Platform", so this is a live possibility and not a
+    hypothetical, and it is exactly the sort of caller that produces a step-change on one day
+    against a flat baseline.
+
+    Best-effort: these endpoints are newer than the billing API and may not be enabled on every
+    account. A failure is REPORTED, never silently swallowed as "no agents" - the difference
+    between "there are none" and "I could not look" is the whole point.
+    """
+    out = {}
+    for label, path in (("agents", "/gen-ai/agents"),
+                        ("model_keys", "/gen-ai/models/api_keys")):
+        try:
+            d = _do_get(path, token)
+            out[label] = d
+        except Exception as e:
+            out[label + "_error"] = _http_reason(e)
+    return out
+
+
 def _http_reason(e):
     if isinstance(e, urllib.error.HTTPError):
         if e.code == 401:
@@ -289,8 +314,16 @@ def trace_remote(host, label):
         from recover import ssh_script, sections
     except Exception as e:
         return {"error": "cannot import recover.py: %s" % e}
-    prev = os.environ.get("DROPLET_HOST")
-    os.environ["DROPLET_HOST"] = host
+    # OVERRIDE THE MODULE ATTRIBUTE, NOT THE ENVIRONMENT.
+    # recover.py does `HOST = os.environ.get("DROPLET_HOST", "64.225...")` at IMPORT time, so
+    # setting the env var after importing it changes nothing. The first version did exactly that
+    # and both calls went to production: the "STAGING" block in the 2026-09-01 output was a
+    # verbatim duplicate of production, right down to an OUTBOUND_NOW listing 64.225.108.200.
+    # Two identical blocks under different headings is worse than one, because it reads as
+    # corroboration when it is the same measurement twice.
+    import recover as _rc
+    prev = _rc.HOST
+    _rc.HOST = host
     try:
         # ssh_script returns (stdout, stderr, returncode) -- READ, not guessed. The first version
         # of this line assumed a bare string and "defended" with `isinstance(out, str)`, which is
@@ -304,10 +337,7 @@ def trace_remote(host, label):
     except Exception as e:
         return {"error": "%s: %s" % (label, str(e)[:160])}
     finally:
-        if prev is None:
-            os.environ.pop("DROPLET_HOST", None)
-        else:
-            os.environ["DROPLET_HOST"] = prev
+        _rc.HOST = prev
 
 
 def trace_local(roots=None):
@@ -342,7 +372,7 @@ def trace_local(roots=None):
     return hits
 
 
-def render_trace(prod, stage, local):
+def render_trace(prod, stage, local, agents=None):
     print("\n" + "=" * 74)
     print("  WHO IS CALLING %s" % ", ".join(TRACE_MODELS))
     print("=" * 74)
@@ -373,7 +403,10 @@ def render_trace(prod, stage, local):
                 for w in who:
                     print("          %s" % w)
 
-        for sec, title in (("MODEL_ENV", "the model id is in these containers' ENVIRONMENT"),
+        for sec, title in (("STARTED", "container start times (the spike began 08/31 - look here)"),
+                           ("OUTBOUND_NOW", "live connections (a socket proves a caller, config does not)"),
+                           ("RECENT_LLM_LOGS", "the last 48h of model traffic, with timestamps"),
+                           ("MODEL_ENV", "the model id is in these containers' ENVIRONMENT"),
                            ("MODEL_FILES_IN_CONTAINERS", "...and in these files inside containers"),
                            ("MODEL_FILES_ON_HOST", "...and in these files on the host"),
                            ("MODEL_IN_LOGS_72H", "...and appears this many times in 72h of logs"),
@@ -383,9 +416,18 @@ def render_trace(prod, stage, local):
                 print("\n    %s" % title.upper())
                 for l in body[:14]:
                     print("      %s" % l[:110])
+            elif sec in ("OUTBOUND_NOW", "RECENT_LLM_LOGS"):
+                # AN EMPTY DECISIVE SECTION IS A FINDING, NOT AN ABSENCE TO HIDE. Silently
+                # omitting it makes "nothing is calling models here" indistinguishable from "the
+                # check did not run", which is the logship defect in miniature.
+                print("\n    %s" % title.upper())
+                print("      NONE. That is evidence: no model traffic seen on this box.")
 
     print("\n  " + "-" * 70)
-    print("  THIS MACHINE (the local docker project you suspected)")
+    print("  CONFIGURED TO USE THESE MODELS (source only - NOT proof anything ran)")
+    print("  A file naming a model says the project COULD call it. It does not say a process did.")
+    print("  On 2026-09-01 that distinction was got wrong here: jobhuntwow was named from its")
+    print("  config, and the operator then showed that Docker Desktop was not even running.")
     if not local:
         print("    no reference to those models in the local working copies")
     else:
@@ -393,10 +435,40 @@ def render_trace(prod, stage, local):
             print("    %s:%d" % (p, i))
             print("        %s" % line)
     print()
-    print("  IF NOTHING ABOVE NAMES A CALLER, the spender is not on these droplets and not in")
-    print("  these checkouts. Then the answer is in DO's own per-key usage:")
-    print("    Serverless Inference -> Manage -> model access keys, and read usage per key.")
-    print("  A key you cannot account for should be REVOKED, not investigated further.\n")
+    if agents is not None:
+        print("  " + "-" * 70)
+        print("  DIGITALOCEAN AGENT PLATFORM (runs on DO's side - invisible to any code scan)")
+        for k in ("agents", "model_keys"):
+            if agents.get(k + "_error"):
+                print("    [!] %-11s could not be read: %s" % (k, agents[k + "_error"]))
+                continue
+            d = agents.get(k) or {}
+            items = d.get(k) or d.get("agents") or d.get("api_key_infos") or []
+            if not items:
+                print("    %-11s none on this account" % k)
+            else:
+                print("    %-11s %d found" % (k, len(items)))
+                for it in items[:10]:
+                    print("      %s  created=%s" % (str(it.get("name") or it.get("uuid"))[:40],
+                                                    str(it.get("created_at"))[:19]))
+        print()
+
+    print("  " + "=" * 68)
+    print("  HOW TO ACTUALLY SETTLE THIS")
+    print()
+    print("  If the key table above shows ONE fingerprint across several containers, then DO's")
+    print("  per-key usage page CANNOT separate them either - every project is the same key, so")
+    print("  the vendor sees one caller. That is the real reason this is hard to attribute, and")
+    print("  no amount of grepping will fix it.")
+    print()
+    print("    1. Issue a SEPARATE model access key per project (DO -> Serverless Inference ->")
+    print("       Manage -> model access keys), put each in that project's env, and redeploy.")
+    print("       Within hours the Insights page attributes spend by key, permanently.")
+    print("    2. Until then, DO -> Agent Platform in the console: an agent there runs on DO's")
+    print("       infrastructure and appears nowhere in this output except the section above.")
+    print("    3. A key you cannot account for should be REVOKED, not investigated further.")
+    print()
+    print("  Everything this script gathers is weaker than the vendor's own per-key record.\n")
 
 
 def meter_report():
@@ -528,9 +600,11 @@ def main():
             p = sib if os.path.isabs(sib) else os.path.join(here, sib)
             if os.path.isdir(p) and p not in roots:
                 roots.append(p)
+        tok = _do_token()
         render_trace(trace_remote(os.environ.get("DROPLET_HOST", "64.225.108.200"), "production"),
                      trace_remote(os.environ.get("STAGING_HOST", "165.245.244.174"), "staging"),
-                     trace_local(roots))
+                     trace_local(roots),
+                     do_agents(tok) if tok else None)
         return
 
     local = None

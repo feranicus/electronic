@@ -6398,3 +6398,69 @@ Same family as calling `.returncode` on ship.py's `run()` (an int), destructurin
 a getJSON-backed call, `_get_json(headers=)` with no such parameter, and `sp.E` / `notify._log`.
 Guarded by tests/test_llm_meter.py: the trace must unpack three values, and a non-zero rc with no
 output must be REPORTED rather than rendered as an empty (clean-looking) section map.
+
+## I NAMED A CULPRIT FROM CONFIG AND THE OPERATOR DISPROVED IT IN ONE LINE (2026-09-01)
+I told the operator the spend was jobhuntwow's LOCAL docker agent, because the grep found
+`JHW_BOT_MODELS = "deepseek-v4-pro,..."` and a GLM fallback chain in that project. He replied with:
+```
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine
+```
+Docker Desktop was not running, so that container had not executed anything.
+THE ERROR IS A CATEGORY ERROR AND IT IS THE SAME ONE THIS FILE WARNS ABOUT ELSEWHERE: **source that
+NAMES a model proves the project COULD call it; it does not prove a process DID.** That is the
+identical mistake as reading a Shodan record on a shared VIP as the customer's, or treating a
+domain in a group page as an owned estate: a match is not evidence of the thing you want it to
+prove. I had also just built the tool whose whole purpose is to distinguish them and then reasoned
+past it, because my remote half CRASHED (the ssh_script tuple bug) and I filled the gap with the
+weakest available evidence instead of saying "I have not looked at the droplets yet".
+WHAT `--trace` NOW COLLECTS, in descending order of strength:
+  1. **DO's own per-key usage** (console) — the vendor's record, unarguable. Named first in the
+     output, because everything the script gathers is weaker than this.
+  2. **DO Agent Platform** (`/v2/gen-ai/agents`, best-effort) — an agent created in the console
+     runs on DO's infrastructure and appears in NO repository and on NO droplet, so a code scan
+     can NEVER find it. That whole class was missing from the first version.
+  3. **STARTED / OUTBOUND_NOW / RECENT_LLM_LOGS** — container start times (the spike was a step
+     change on 08/31, so timing is discriminating), live ESTABLISHED sockets, and 48h of
+     timestamped log lines. A socket proves a caller; a config file does not.
+  4. Source that merely names a model, now explicitly labelled "NOT proof anything ran".
+A failed endpoint lookup is REPORTED, never rendered as "no agents": "there are none" and "I could
+not look" must stay distinguishable, which is the logship lesson one level over.
+RULE: before naming a cause, ask what would have to be TRUE for it to be the cause, and check that
+— not what merely fits. And when half the evidence-gathering fails, say so instead of concluding
+from the half that worked.
+
+## ONE KEY, SEVEN CONTAINERS — the reason the invoice cannot be attributed (2026-09-01)
+`cost_report.py --trace` did NOT name the spender, and the reason it could not is the finding:
+```
+sha256:9327f186  <-- SHARED by 7 containers
+   colt-web (OPENAI_API_KEY) · colt-assessbot · colt-cassandra · s4biz-web
+   jhw-web (DO_INFERENCE_KEY) · polara-web · jev-api (OPENAI_API_KEY)
+```
+FIVE PROJECTS, ONE MODEL ACCESS KEY. DigitalOcean therefore sees ONE caller, so its per-key usage
+page cannot separate them either — which corrects the advice I gave in the previous entry ("check
+per-key usage, it will settle it"). It will not, until the keys are split. Issuing one key per
+project and redeploying is the ONLY thing that makes future spend attributable, and it is a
+two-minute console job that no amount of grepping substitutes for.
+NEGATIVE EVIDENCE WORTH KEEPING: `OUTBOUND_NOW` showed only tailscale and sshd, and
+`RECENT_LLM_LOGS` was empty on both boxes. At the moment of the check nothing on the droplet held
+a connection to the inference endpoint. That is a snapshot, not a proof, but it points away from a
+continuously-running droplet process and towards something episodic or off-box.
+
+## THREE DEFECTS IN MY OWN TRACE, ALL VISIBLE IN ITS FIRST REAL OUTPUT (2026-09-01)
+1. **"STAGING" WAS A VERBATIM COPY OF PRODUCTION.** `recover.py` does
+   `HOST = os.environ.get("DROPLET_HOST", "64.225...")` **at import time**, and `trace_remote` set
+   the env var *after* importing it — so both calls went to production, and the staging block
+   listed production's containers and an OUTBOUND_NOW full of 64.225.108.200. Two identical blocks
+   under different headings is worse than one, because it reads as corroboration when it is the
+   same measurement twice. FIX: override the module attribute (`recover.HOST`), not the
+   environment. Same family as every other assumed-contract bug in this file.
+2. **`do_agents()` WAS DEFINED AND CALLED NOWHERE.** I wrote a whole function for the one evidence
+   class a code scan can never reach — an agent running on DO's own Agent Platform — and never
+   wired it into `--trace`. A control that is correct and unreachable is not a control; that is
+   the exact assertion tests/test_shield.py makes about the middleware, committed by me one file
+   over.
+3. **AN EMPTY DECISIVE SECTION VANISHED.** `render_trace` only printed sections with content, so
+   "no model traffic in 48h" and "no outbound connections" were silently omitted — making the most
+   informative negative result indistinguishable from a check that did not run. They now print
+   `NONE. That is evidence.` Same doctrine as logship's "finding nothing on a live box is a
+   failure, not a success".
