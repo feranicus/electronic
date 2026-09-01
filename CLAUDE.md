@@ -6235,3 +6235,135 @@ happens to work, which is exactly how the `/proc` version went green in the sand
 operator's machine.
 HOUSEKEEPING: that failed run left an empty `C:\proc\definitely\not\writable\slow.sqlite` on the
 operator's box. Harmless, and safe to delete.
+
+## THE AI SPEND SPIKE WAS NOT OURS — read the model names before writing any code (2026-09-01)
+DigitalOcean auto-recharged the prepaid balance by $5 three times in under two days. I began by
+auditing our own callers, which was the wrong first move. The operator's screenshot of
+**Serverless Inference -> Insights** settled it in one line, at 2026-09-01 10:22 (input) and 10:47
+(output):
+```
+deepseek-v4-pro-0813   318.1K in / 251.1K out
+glm-5.3-flash          518.2K in / 134.6K out
+deepseek-3.2            13.9K in /   1.5K out     <- ours
+kimi-k2.6               16.2K in /   2.8K out     <- ours
+gemma-4-31B-it               0   /      0         <- ours
+llama-4-maverick             0   /      0         <- ours
+```
+**`deepseek-v4-pro-0813` and `glm-5.3-flash` appear NOWHERE in this repository's configuration.**
+`enrich._FALLBACKS` is deepseek-3.2 -> llama-4-maverick -> gemma-4-31B-it -> kimi-k2.6, there is no
+ENRICH_MODELS override, and `engine_config.py` printed exactly that chain on the same day's ship.
+The two unknown models account for **>96% of input and >98% of output tokens**. Our four account
+for the rest, and two of ours were flat zero.
+The shape confirms it: flat baseline 08/25-08/29, a small bump on 08/30, then a near-vertical cliff
+on 08/31-09/01. Our traffic did not change; something else started.
+THE ACCOUNT IS SHARED. The droplet runs `colt-web`, `colt-assessbot`, `colt-cassandra`,
+**`polara-web`** and **`jhw-web`**, and `jobhuntwow-app/backend/app/settings.py` posts to the SAME
+`https://inference.do-ai.run/v1` with its own `DO_INFERENCE_KEY` and a configurable `QWEN_MODEL`.
+One DO account, one invoice, several projects, and no way to tell them apart after the fact.
+RULE, and it is the same one this file keeps recording in other forms: **when a number surprises
+you, read the vendor's own breakdown before auditing your own code.** Half a day of reasoning about
+our callers could not have produced this answer, and one screenshot did.
+
+## COST HAD NO METER, AND WHAT LITTLE IT HAD WAS WRONG (2026-09-01)
+The investigation was slow because there was nothing to investigate WITH. Three defects:
+1. **`cost_ledger.record()` is called from ONE caller**, `run_assessment.py`. The Cassandra
+   assistant, the daily attack digest panel, the six-hourly shield panel, release notes, the White
+   Label brand panel, the FP auditor, the GEOPOL author, compliance enrichment and every
+   map-reduce shard spent money that no report could see. Four of those run on TIMERS with nobody
+   watching. A ledger that can see one caller reports a reassuring total while answering nothing.
+2. **The arithmetic priced input and output the same**: `(tokens_in + tokens_out) / 1e6 * 0.80`.
+   DeepSeek 3.2 is $0.425 in and $1.36 out, a factor of 3.2 apart, and our workload is output-heavy
+   by contract. That is why "lifetime $0.95" and a bank statement could never be reconciled.
+3. **Nothing stopped anything.** There was no cap at any layer.
+FIXED, at the one function every caller goes through (`enrich._call`), because a new caller must be
+metered by construction rather than by somebody remembering:
+  * `llm_meter.py` — SQLite on the persistent `colt_events` volume, beside cost_ledger and
+    users.sqlite. Records caller, model, both token directions, real cost, latency.
+  * `rate_for()` / `cost_of()` — per-DIRECTION pricing, one implementation. An UNKNOWN model is
+    priced at the most expensive rate we know, never an average: an unpriced model must not look
+    cheap, or the budget below is a budget for a number we invented.
+  * `allow()` is checked BEFORE the request. Counting afterwards produces a better post-mortem and
+    exactly the same bill. It **fails OPEN on a storage fault and CLOSED on the budget** — those
+    are different things, and failing open when the meter WORKS is not a budget. A refusal degrades
+    enrichment to its deterministic template text, which is a tested path.
+  * `BudgetExceeded` is its own exception type and is explicitly NOT retryable, or one stop would
+    become four as the chain tries every model.
+  * `cost_report.py` gained the DO billing API side (balance, invoice BY PRODUCT, billing history)
+    and prints the RECONCILIATION: what DO charges for AI, what our meter accounts for, and the
+    gap. Printing either number alone is what caused two days of guessing.
+TWO OF MY OWN CHECKS WERE WRONG AGAIN, both caught by running them: the cap test set a $0.02 cap
+against a $0.012 call and could not trip; and the bypass test matched any function named `_post`,
+so it accused `asn_sources.py` of spending money on RIPE lookups. A check that cannot tell its
+subject from a same-named neighbour is how a gate gets switched off.
+STILL TRUE AND WORTH REMEMBERING: a call that TIMES OUT is still billed for what it generated, and
+we cannot record what we never received. Since 2026-08-14 `max_tokens` is dropped whenever
+`response_format` is sent (the gateway rejects both together), so the only ceiling on those models
+is wall-clock. `ALERT_SINGLE_USD` exists to catch the runaway that produces.
+
+## FINDING THE SPENDER: the model id is the fingerprint (`cost_report.py --trace`, 2026-09-01)
+Reading our own code proved the two runaway models are NOT ours and could get no further, because
+the droplet hosts five containers from four projects (colt-web, colt-assessbot, colt-cassandra,
+polara-web, jhw-web) sharing ONE DigitalOcean account. "Not ours" is not "whose".
+A process that calls a model carries that model's id somewhere: in its environment, in code or
+config on disk, or in its logs. So `--trace` greps `deepseek-v4-pro` and `glm-5.3` across every
+container on both droplets, every mounted host path, and the local working copies (the operator
+suspected a LOCAL docker project, and a machine he runs can spend on that key while leaving no
+trace on either droplet).
+**IT ALSO GROUPS CONTAINERS BY API-KEY FINGERPRINT, which is the question underneath the question:**
+not "who called it" but "who CAN spend on this bill". The key value is never printed, only
+sha256[:8] and its length, so the sharing is visible and the secret is not. A `<-- SHARED by N
+containers` line is the whole diagnosis in one row.
+It lives in cost_report.py rather than a new script: "where did the money go" already had a home,
+and a second cost command is the two-homes defect this file records more than any other.
+RULE: when several projects share one vendor account, per-project API KEYS are not hygiene, they
+are the only thing that makes an invoice attributable after the fact. One key across four projects
+means every future spend question costs a day.
+
+## `decommission.py` — retiring a site from the SHARED proxy without repeating 2026-08-07
+Removing a vhost is EXACTLY the operation that caused the six-hour outage: a deploy truncated
+another project's block in the shared Caddyfile, Caddy served from memory for twelve hours, and the
+next kernel reboot took cybergod.ai, godeyes.ai, jobhuntwow.com and klimaanlage-preise.de down
+together. So this goes through caddyguard, never a hand-edit, and it refuses rather than guesses.
+  * **THE COLLATERAL CHECK IS THE POINT.** A fragment can declare several site names. If one we are
+    about to remove also serves a domain not on the list, the plan REFUSES and names both. Verified
+    in both directions: a fragment carrying `jev.best cybergod.ai` is refused, a clean split runs.
+  * **`docker update --restart=no` BEFORE `docker stop`.** A stopped container whose policy is
+    `always` is decommissioned until the next reboot, and this droplet reboots itself for kernel
+    patches. Asserted by test, because the order is the whole property.
+  * **NOTHING IS DELETED.** Fragments are MOVED to `/opt/caddyguard/decommissioned/<stamp>/`;
+    volumes, images and databases are untouched; `--undo <stamp>` restores the routing. An
+    irreversible action taken on a Tuesday to save a few euros is a bad trade, and undo only means
+    something if the data is still there.
+  * **DRY RUN IS THE DEFAULT.** A destructive tool whose default is destructive gets run by accident.
+  * **THE SURVIVORS ARE PROBED AFTERWARDS.** A decommission that reports success while having broken
+    cybergod.ai is worse than one that fails. The survivor list must be non-empty or `verify()` is a
+    check that cannot fail — asserted.
+  * `--undo` restores ROUTING ONLY and deliberately does not start containers: putting a vhost back
+    must not silently restart something that was spending money.
+NEGATIVE-TESTED, 12 mutations, each caught by the test that NAMES the property. Three of my first
+mutations were misattributed: removing a `%s` broke the format arity, so the bash-parse test fired
+instead of the property test. **A mutation that crashes the harness proves the harness runs, not
+that the check works** — arity-preserving mutations were needed to prove the real ones.
+
+## `bash -n <windows path>` — the EIGHTH wasted ship, same root cause (2026-09-01)
+`python ship.py` refused to deploy on three assertions:
+```
+  FAILED tests/test_decommission.py::test_every_generated_script_is_valid_bash[plan]
+  /bin/bash: C:UsersferanAppDataLocalTemppytest-of-feranpytest-181...plan.sh: No such file
+```
+The scripts were valid. My harness wrote them to `tmp_path` and passed the PATH to `bash -n`, which
+works on Linux where I checked it and cannot work on Windows: pytest's tmp_path is `C:\Users\...`,
+and the bash on that machine cannot resolve a Windows drive path -- the backslashes were eaten and
+it got `C:UsersferanAppData...`, exit 127.
+Same root cause as httpx, esbuild/win32, `os.uname()`, python-multipart, the cp1252 console and the
+`/proc` fixture. **A fixture that does not reproduce the condition under test is a test of the
+fixture**, and a check that cannot run on the invoking platform is not a check.
+FIX, portable by construction: pipe the script to `bash -n` on **stdin**. There is no path to
+mangle, so it behaves identically everywhere. BYTES, not text: Python's text mode on Windows
+rewrites every `\n` into `\r\n` and bash then chokes on the `\r` — the same CRLF trap already
+recorded for the ssh payloads and for `git archive`. Demonstrated: a CRLF script fails `bash -n`
+with "unexpected end of file".
+It also SKIPS (with a reason) when bash is absent entirely, rather than failing: the image build
+and CI still run the check, so the gate is not lost, and the operator is not blocked over a
+toolchain he never installed. Proven to still FAIL on a genuinely broken script, or the fix would
+have quietly turned it into a check that cannot fail.

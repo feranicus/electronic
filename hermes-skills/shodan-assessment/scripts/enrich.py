@@ -524,8 +524,38 @@ def feasible_max_tokens(seconds, ceiling=11000, floor=2500):
     return int(max(floor, min(ceiling, seconds * TOK_PER_S * 0.8)))
 
 
+class BudgetExceeded(RuntimeError):
+    """The day's AI spend cap was reached. Deliberately its own type so callers can tell it apart
+    from a model failure: this is not something a different model or a retry can fix."""
+
+
 def _call(text, model=None, timeout=None, max_tokens=None):
     model = model or MODEL
+    _t0 = time.time()
+
+    # THE CEILING, CHECKED BEFORE THE REQUEST IS SENT. Counting afterwards produces a better
+    # post-mortem and exactly the same bill. This is the whole reason the meter exists; the
+    # reporting is a by-product.
+    #
+    # IT FAILS OPEN ON A STORAGE FAULT AND CLOSED ON THE BUDGET, which are different things. An
+    # unreadable meter must not take the product down to protect it. A readable meter that says we
+    # are over the cap must refuse, or it is not a cap.
+    #
+    # A REFUSAL IS SAFE BY DESIGN: enrichment falls back to its deterministic template text, which
+    # is a tested path (it is the same one taken when every model in the chain times out), so the
+    # decks still build and nothing crashes. That is a much better outcome than an invoice.
+    try:
+        import llm_meter as _LM
+        _ok, _why = _LM.allow()
+        if not _ok:
+            _alert("LLM BUDGET STOP: %s. No further model calls today. Raise LLM_DAILY_USD in "
+                   "assess-bot/.env if this is genuinely expected." % _why)
+            raise BudgetExceeded(_why)
+    except BudgetExceeded:
+        raise
+    except Exception:
+        pass                                        # the meter is not allowed to break the product
+
     payload = {"model": model, "messages": [{"role": "user", "content": text}],
                # 6500 TRUNCATED deepseek-3.2 mid-JSON on a 6-finding estate (finish_reason=length
                # at 13,290 chars -> JSONDecodeError -> failover to a model that writes far less,
@@ -634,7 +664,75 @@ def _call(text, model=None, timeout=None, max_tokens=None):
             json.dump({"model": model, "finish": d["choices"][0].get("finish_reason"),
                        "usage": d.get("usage", {}), "raw": txt[:8000]}, fh, indent=2)
     except Exception: pass
+    _meter(model, d.get("usage", {}) or {}, t0=_t0, status="ok")
     return txt, d.get("usage", {}) or {}
+
+
+# ---------------------------------------------------------------------------------------------
+# THE METER. Every model call in this system goes through _call(), so this is the only place that
+# can see all of them, and therefore the only place worth putting the counter.
+#
+# On 2026-09-01 DigitalOcean auto-recharged $5 three times in under two days while cost_report.py
+# said the lifetime spend was under a dollar. Both were honest. `cost_ledger.record()` is called
+# from ONE caller, run_assessment.py, so the assistant, the daily digest panel, the six-hourly
+# shield panel, release notes, the brand panel, the FP auditor, the GEOPOL author, compliance
+# enrichment and every map-reduce shard spent money that no report could see.
+#
+# WHO IS CALLING is inferred from the process, because passing a caller argument through nine
+# call sites is nine chances to forget one and the ones that forget are exactly the ones nobody
+# is watching. LLM_CALLER overrides it where a process runs more than one job.
+def _caller():
+    v = os.environ.get("LLM_CALLER")
+    if v:
+        return v[:40]
+    try:
+        import __main__
+        n = os.path.basename(getattr(__main__, "__file__", "") or "")
+        if n:
+            return n.replace(".py", "")[:40]
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _meter(model, usage, t0=None, status="ok"):
+    """Record one call and alert on the two things worth interrupting somebody for."""
+    try:
+        import llm_meter as _LM
+    except Exception:
+        return
+    try:
+        ti = int(usage.get("prompt_tokens") or 0)
+        to = int(usage.get("completion_tokens") or 0)
+        usd = cost_of(model, ti, to)
+        ms = int((time.time() - t0) * 1000) if t0 else 0
+        total = _LM.record(_caller(), model, ti, to, usd, ms, status,
+                           os.environ.get("COLT_USER", ""))
+        # A single call an order of magnitude past our largest legitimate one means a prompt was
+        # built from a log or a model ran away. Worth knowing on the call that did it.
+        if usd >= _LM.ALERT_SINGLE_USD:
+            _alert("LLM: one call cost $%.4f (%s, %s, %d in / %d out). That is far above the "
+                   "~$0.02 a full assessment enrichment should cost." % (usd, _caller(), model, ti, to))
+        if _LM.should_warn(total):
+            _alert("LLM spend today is $%.4f of the $%.2f daily cap (%s). Run `python "
+                   "cost_report.py` to see which caller." % (total, _LM.DAILY_USD, _caller()))
+    except Exception:
+        pass                                        # metering must never cost us a request
+
+
+def _alert(msg):
+    """Best-effort Telegram/email. Never raises, never blocks the call it is reporting on."""
+    print("[cost] " + msg, file=sys.stderr)
+    # The engine runs in three places: colt-web (where `app` is importable), colt-assessbot, and a
+    # bare shell. Only the first can reach Telegram directly, so this is best-effort by design and
+    # the stderr line above is the guaranteed record. NOT a /opt path hack: the app package lives
+    # at the image's WORKDIR, and guessing an absolute path is how the last two import bugs here
+    # started.
+    try:
+        from app import notify
+        notify.telegram(msg)
+    except Exception:
+        pass
 
 def _normalise(j):
     """Make `findings` a flat list of DICTS, whatever the model nested.
@@ -756,8 +854,60 @@ def _emit(company, status, ti, to, cost, ms, error="", model=None, attempts=0, c
                       "tokens_in": ti, "tokens_out": to, "cost_usd": cost, "ms": ms,
                       "attempts": attempts, "chain": chain or MODELS, "error": error}), flush=True)
 
+# ---------------------------------------------------------------------------------------------
+# REAL PRICING, AND WHY THE OLD NUMBER WAS ALWAYS WRONG (2026-09-01)
+#
+# The ledger computed `cost = (tokens_in + tokens_out) / 1e6 * 0.80`: ONE flat rate applied to both
+# directions. No provider prices them the same. DeepSeek 3.2 on this endpoint is $0.425 per million
+# IN and $1.36 per million OUT — a factor of 3.2 between them — so a flat 0.80 overcharges input
+# and undercharges output by 40%, and our work is output-heavy by design (the deck contract asks
+# for ~1.5k tokens of prose per finding).
+#
+# That is why "lifetime $0.95" and a bank statement disagreed. A cost figure computed with the
+# wrong arithmetic is not a small error, it is a number that cannot be reconciled against anything.
+#
+# Rates are per MILLION tokens, (input, output). Override the whole table with ENRICH_PRICE_MAP
+# as JSON: {"model": [in, out]} or {"model": flat}. Unknown models fall back to FALLBACK_PRICE,
+# which is deliberately the most EXPENSIVE rate we know of rather than an average: an unknown
+# model must never look cheap, or the budget below is a budget for a number we made up.
+RATES = {
+    "deepseek-3.2":        (0.425, 1.360),
+    "deepseek-4-flash":    (0.112, 0.224),
+    "llama-4-maverick":    (0.250, 0.850),
+    "gemma-4-31B-it":      (0.150, 0.600),
+    "kimi-k2.6":           (0.600, 2.500),
+    "openai-gpt-oss-120b": (0.150, 0.600),
+}
+try:
+    for _m, _v in (json.loads(os.environ.get("ENRICH_PRICE_MAP", "{}")) or {}).items():
+        RATES[_m] = tuple(_v) if isinstance(_v, (list, tuple)) else (float(_v), float(_v))
+except Exception:
+    pass
+FALLBACK_PRICE = (float(os.environ.get("QWEN_PRICE_IN_PER_M", "0.60")),
+                  float(os.environ.get("QWEN_PRICE_OUT_PER_M", "2.50")))
+
+
+def rate_for(model):
+    """(input, output) USD per million tokens. Prefix match, because ids carry version suffixes."""
+    m = str(model or "")
+    if m in RATES:
+        return RATES[m]
+    for k, v in RATES.items():
+        if m.startswith(k) or k.startswith(m):
+            return v
+    return FALLBACK_PRICE
+
+
+def cost_of(model, tokens_in, tokens_out):
+    """USD for one call, priced per DIRECTION. This is the only cost arithmetic in the codebase."""
+    ri, ro = rate_for(model)
+    return round((int(tokens_in or 0) / 1e6) * ri + (int(tokens_out or 0) / 1e6) * ro, 6)
+
+
 def _price(model):
-    return float(PRICE_MAP.get(model, PRICE))
+    """DEPRECATED single-rate accessor, kept only so old callers do not crash. Returns the OUTPUT
+    rate, which is the conservative direction: nothing that still uses this can understate."""
+    return float(rate_for(model)[1])
 
 def _retryable(e):
     """429 = account RPM/TPM quota; 5xx/timeouts = transient. Both are worth a retry / failover."""
