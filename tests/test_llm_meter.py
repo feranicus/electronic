@@ -350,3 +350,124 @@ def test_the_correlation_unpacks_ssh_script_as_three_values(mod, monkeypatch):
                         lambda s, timeout=None: ("", "connect: network unreachable", 255))
     d = C.loki_correlate("198.51.100.7", days=3)
     assert "error" in d and "255" in d["error"], "a dead transport must be reported, not rendered"
+
+
+def test_a_blind_query_is_never_reported_as_innocence(mod, capsys):
+    """THE TRAP THIS CLOSES, and it decides a real operational action.
+
+    If jobhuntwow's promtail is not shipping, every jhw row is empty -- and the renderer's own
+    "NONE. That is evidence" line would then read as PROOF THE PROXY WAS NOT CALLED. It is not; it
+    is the query failing to see its subject. Acting on it means either rotating the DO key for
+    nothing, or clearing the one project that could actually have spent the money.
+
+    Same disease as logship reporting success for a week while shipping an empty archive, applied
+    to an investigation instead of a backup."""
+    import cost_report as C
+    C.render_correlate({"loki": "l", "series": [
+        {"title": "CAN WE SEE jobhuntwow AT ALL (any line, any type)", "why": "w", "rows": []},
+        {"title": "CAN WE SEE cybergod AT ALL (any line, any type)", "why": "w",
+         "rows": [{"name": "(total)", "total": 900.0, "points": []}]},
+        {"title": "WHO called the jobhuntwow LLM proxy (by source IP)", "why": "w", "rows": []},
+    ]}, 10)
+    out = capsys.readouterr().out
+    assert "NOT SHIPPING TO LOKI: jobhuntwow" in out
+    assert "BLIND, not innocent" in out
+    assert out.index("NOT SHIPPING") < out.index("WHO called"), \
+        "the warning must come BEFORE the rows it invalidates, or it is read too late"
+    assert "%s" not in out, "a dangling format placeholder would print literally"
+
+
+def test_a_visible_project_raises_no_false_alarm(mod, capsys):
+    """A banner on every run is a banner nobody reads."""
+    import cost_report as C
+    C.render_correlate({"loki": "l", "series": [
+        {"title": "CAN WE SEE jobhuntwow AT ALL (any line, any type)", "why": "w",
+         "rows": [{"name": "(total)", "total": 8123.0, "points": []}]},
+        {"title": "CAN WE SEE cybergod AT ALL (any line, any type)", "why": "w",
+         "rows": [{"name": "(total)", "total": 900.0, "points": []}]},
+    ]}, 10)
+    out = capsys.readouterr().out
+    assert "NOT SHIPPING" not in out and "BLIND" not in out
+
+
+def test_the_visibility_probes_run_before_everything_else(mod):
+    """They decide how every other row is read, so they must be asked first -- and they must query
+    the whole stream, not a filtered subset, or an empty filter would look like a dead shipper."""
+    import cost_report as C
+    t0, q0, _w0 = C.LOKI_QUERIES[0]
+    t1, q1, _w1 = C.LOKI_QUERIES[1]
+    assert t0.startswith("CAN WE SEE ") and t1.startswith("CAN WE SEE ")
+    assert '{job="jobhuntwow"} [' in q0, "the probe must be unfiltered"
+    assert '{job="coltbots"} [' in q1
+
+
+# ================================================================== --whodunit: one verdict
+def _wd(monkeypatch, jhw, colt, proxy_rows, err=None):
+    import cost_report as C
+    V = lambda p, n: {"title": "CAN WE SEE %s AT ALL (any line, any type)" % p, "why": "w",  # noqa: E731
+                      "rows": ([{"name": "(total)", "total": n, "points": []}] if n else [])}
+    series = [V("jobhuntwow", jhw), V("cybergod", colt),
+              {"title": "WHO called the jobhuntwow LLM proxy (by source IP)", "why": "w",
+               "rows": proxy_rows}]
+    monkeypatch.setattr(C, "loki_correlate",
+                        lambda h, days=10: ({"error": err} if err
+                                            else {"loki": "l", "series": series}))
+    return C.whodunit("h", 10)
+
+
+def test_proxy_hits_name_the_spender(mod, monkeypatch):
+    """The decisive branch. jhw's telemetry has logged every /v1/chat/completions hit with its
+    source address since the day it was written; nobody had asked."""
+    w = _wd(monkeypatch, 8123, 51231, [{"name": "203.0.113.44", "total": 381.0, "points": []}])
+    assert w["verdict"] == "THE PROXY IS THE PATH"
+    assert w["proxy_sources"][0]["ip"] == "203.0.113.44"
+    assert "AGENT_PROXY_TOKEN" in w["action"]
+
+
+def test_visible_and_zero_hits_means_rotate_the_key(mod, monkeypatch):
+    """The OTHER decisive branch, and it must not be softened: if the project IS observable and
+    shows no proxy calls, nothing we run spent that money. The only remaining explanation is the
+    raw key being used somewhere we do not control, and no code change fixes that."""
+    w = _wd(monkeypatch, 8123, 51231, [])
+    assert w["verdict"] == "NOT THE PROXY - ROTATE THE KEY"
+    assert "ROTATE" in w["action"] and "per project" in w["action"].lower()
+
+
+def test_a_blind_project_never_yields_a_verdict(mod, monkeypatch):
+    """THE ONE THAT PREVENTS A WRONG ACTION. Zero proxy hits from a project that is not shipping
+    is the query failing to see its subject, not proof of innocence -- and acting on it would mean
+    rotating a key for nothing. It must NOT reach the rotate verdict."""
+    w = _wd(monkeypatch, 0, 51231, [])
+    assert w["verdict"] == "BLIND - NOT INNOCENT"
+    assert "ROTATE" not in w["action"].upper()
+    assert "Decide NOTHING" in w["action"]
+
+
+def test_a_failed_query_is_not_a_verdict(mod, monkeypatch):
+    w = _wd(monkeypatch, 0, 0, [], err="no Loki container is running")
+    assert w["verdict"] == "CANNOT DECIDE" and "not evidence" in w["action"]
+
+
+def test_a_refused_model_pages_immediately(mod):
+    """A LOG LINE NOBODY IS WATCHING WASTES THE ONE EVENT WE HAVE BEEN WAITING FOR. The refusal is
+    the smoking gun: it carries who asked, from where, for what -- and it costs nothing because the
+    request was blocked. It has to reach a phone, not a file."""
+    p = os.path.join(ROOT, "jobhuntwow-app", "backend", "app", "proxy.py")
+    if not os.path.exists(p):
+        import pytest as _p
+        _p.skip("jobhuntwow-app not checked out")
+    s = open(p, encoding="utf-8").read()
+    i = s.index('caller="proxy.REFUSED"')
+    j = s.index("raise HTTPException(403", i)
+    seg = s[i:j]
+    assert "notify.telegram(" in seg, "a refusal must alert, not only log"
+    # SCOPE TO THE ALERT'S OWN ARGUMENTS. The first version searched the whole refusal block for
+    # "ip", which matched the `user=ip` in the llm_events.record call above it -- so a mutation
+    # that replaced the address in the ALERT with a literal still passed. Aimed next to its subject.
+    alert = seg.split("notify.telegram(", 1)[1]
+    assert "ip or" in alert, "the ALERT itself must carry the client address, not just the log line"
+    assert "requested" in alert, "and the model that was asked for"
+    for md in ("*", "`", "_bold"):
+        assert md not in seg.split("notify.telegram(")[1][:400], \
+            "no Markdown: an attacker-controlled model id or IP with an underscore makes Telegram " \
+            "reject the whole message, losing the one alert that matters most"

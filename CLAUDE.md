@@ -6652,3 +6652,45 @@ reason. **DETECTION IS DELIBERATELY UNCHANGED**: a new id is still reported by n
 is exactly the signal that would have caught `deepseek-v4-pro-0813` and `glm-5.3-flash` on the day
 they appeared. It is the probe that is skipped, not the notice.
 `MODEL_WATCH_PROBE_ALL_VENDORS=1` overrides it, for the day entitlement is bought.
+
+## A BLIND QUERY IS NOT AN INNOCENT ONE — the visibility probe (2026-09-06)
+`--correlate` was one edit away from causing the wrong operational decision. If jobhuntwow's
+promtail is not shipping, every jhw row comes back empty and the renderer printed
+`NONE. That is evidence: Loki holds no matching line in this window.` — which reads as PROOF the
+proxy was never called. It is not; it is the query failing to see its subject. Acting on it means
+rotating the DO key for nothing, or clearing the one project that could actually have spent the
+money. Same disease as logship reporting success for a week while shipping an empty archive, this
+time applied to an investigation instead of a backup.
+FIX: two UNFILTERED probes run FIRST — `sum(count_over_time({job="jobhuntwow"}[w]))` and the same
+for `coltbots` — and a project with zero lines is named in a banner ABOVE the rows it invalidates,
+saying they are BLIND, not innocent. Verified in both directions (blind banner fires; a visible
+project raises no false alarm) and negative-tested.
+FIELD NAMES WERE READ, NOT ASSUMED: jhw's telemetry emits `evt="http"` with `ip` and `path`, and
+`SKIP_PATH_RE` only drops static assets, so `/v1/chat/completions` has been logged with its source
+address the whole time. NOTE `_maybe_hash(ip)`: with `TELEMETRY_HASH_IPS=1` the address is a salted
+hash — still correlates, cannot name a network.
+AND A TEST OF MINE PINNED A POSITION INSTEAD OF A PROPERTY: `LOKI_QUERIES[0]` was asserted to be
+the attribution query, so inserting the visibility probes ahead of it failed a correct file. It now
+asserts that only visibility probes may precede it.
+
+## "HOW DO I TEST WHO IS CAUSING IT" — asked three times, so it became one command (2026-09-06)
+Every previous answer was "read these logs and cross-reference the console". That is not a test.
+`python cost_report.py --whodunit` gathers the evidence, applies the rule, and prints the ACTION.
+Four branches, all decisive, all negative-tested:
+  * PROXY HITS in the window -> the spender came through jobhuntwow's OpenAI-compatible proxy on
+    our key; the source IPs are listed. The allowlist has closed that path.
+  * VISIBLE and ZERO hits -> nothing we run spent it. The raw DO_INFERENCE_KEY is in use somewhere
+    we do not control (another holder, or a GenAI agent created in the DO console, which runs on
+    their infrastructure and appears in no repository and on no droplet). ROTATE THE KEY.
+  * NOT SHIPPING to Loki -> BLIND, not innocent. Decide NOTHING. This branch exists because the
+    other two would otherwise fire on an unobserved project and rotate a key for nothing.
+  * QUERY FAILED -> CANNOT DECIDE. A dead query is not evidence about the window.
+**AND THE TRAP.** A refusal is the single event this whole investigation has been waiting for: it
+carries who asked, from where, for what, and it costs nothing because the request was blocked. It
+now PAGES Telegram immediately instead of writing a log line nobody is watching. No Markdown: the
+model id and the address are attacker-controlled, and one stray underscore makes Telegram reject
+the whole message — silently losing the one alert that matters most.
+MY OWN CHECK WAS AIMED NEXT TO ITS SUBJECT AGAIN: the assertion that the alert carries the client
+address searched the whole refusal block for `"ip"`, which matched the `user=ip` in the
+`llm_events.record` call above it — so a mutation replacing the address in the ALERT with a literal
+still passed. Scoped to the telegram call's own arguments. Five mutations, all caught after the fix.

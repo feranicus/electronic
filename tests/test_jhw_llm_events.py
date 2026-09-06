@@ -275,5 +275,13 @@ def test_the_correlation_names_the_proxy_caller_first():
     query simply had never been written. It goes FIRST because it is the one row that names a
     source rather than a model."""
     import cost_report as C
-    t, q, _w = C.LOKI_QUERIES[0]
-    assert "WHO" in t and "sum by (ip)" in q and "/v1/chat/completions" in q
+    titles = [t for t, _q, _w in C.LOKI_QUERIES]
+    # It leads the SUBSTANTIVE rows. Two visibility probes now precede it deliberately: they decide
+    # whether an empty result below means innocent or blind, so they have to be answered first.
+    # Anchor on the PROPERTY, not on index 0 -- pinning a position makes a test fail the moment a
+    # legitimate row is inserted ahead of it, which is exactly what happened.
+    who = next(i for i, t in enumerate(titles) if t.startswith("WHO called"))
+    assert all(titles[i].startswith("CAN WE SEE ") for i in range(who)), \
+        "only the visibility probes may precede the attribution query"
+    q = C.LOKI_QUERIES[who][1]
+    assert "sum by (ip)" in q and "/v1/chat/completions" in q

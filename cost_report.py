@@ -620,6 +620,19 @@ def _is_ai(name):
 # =================================================================================================
 LOKI_QUERIES = [
     # (title, LogQL, what a number here MEANS)
+    # ZEROTH, AND IT DECIDES HOW EVERY OTHER ROW IS READ. If jobhuntwow's promtail is not shipping,
+    # every jhw row below is empty -- and an empty row would otherwise render as "Loki holds no
+    # matching line", i.e. as PROOF OF INNOCENCE, when the truth is that the query is blind. That
+    # is the logship defect (success reported for a week while shipping nothing) applied to an
+    # investigation, and acting on it would mean rotating a key for nothing or clearing a project
+    # that was never observed. So: prove the project is in Loki AT ALL before reading anything else.
+    ("CAN WE SEE jobhuntwow AT ALL (any line, any type)",
+     'sum(count_over_time({job="jobhuntwow"} [%(step)s]))',
+     "IF THIS IS ZERO, every jobhuntwow row below is BLIND, not innocent - fix the log shipper "
+     "before drawing any conclusion from them"),
+    ("CAN WE SEE cybergod AT ALL (any line, any type)",
+     'sum(count_over_time({job="coltbots"} [%(step)s]))',
+     "same, for the other project"),
     # FIRST, because it is the one that names a source. jhw-web's telemetry middleware logs every
     # request with its client IP and skips only static assets, so the OpenAI-compatible proxy at
     # /v1/chat/completions -- the endpoint that forwards ANY model slug to DigitalOcean on our key --
@@ -724,6 +737,26 @@ def render_correlate(c, days):
         print("      the window at all. Those are different answers and must not render the same.")
         return
     print("  loki: %s     window: last %d days" % (c.get("loki"), days))
+
+    # VISIBILITY FIRST. Read the two "can we see this project at all" rows before anything else,
+    # because they decide whether an empty row below means INNOCENT or BLIND. Getting that backwards
+    # would mean either rotating a key for nothing or clearing a project that was never observed.
+    blind = []
+    for s in c.get("series", []):
+        if s["title"].startswith("CAN WE SEE "):
+            proj = s["title"].split("CAN WE SEE ", 1)[1].split(" AT ALL")[0]
+            total = sum(r["total"] for r in (s.get("rows") or []))
+            if not s.get("rows") or total <= 0:
+                blind.append(proj)
+    if blind:
+        print()
+        print("  " + "!" * 72)
+        print("  NOT SHIPPING TO LOKI: %s" % ", ".join(blind))
+        print("  Every row for those below is BLIND, not innocent. An empty result is the query")
+        print("  failing to see its subject, NOT evidence that nothing happened. Fix the log")
+        print("  shipper for that project first; do not conclude anything from its rows.")
+        print("  " + "!" * 72)
+
     for s in c.get("series", []):
         print()
         print("  %s" % s["title"])
@@ -752,7 +785,116 @@ def render_correlate(c, days):
     print("      blind spot left, and it is a missing emitter rather than a missing query.")
 
 
+def whodunit(host, days=10):
+    """ONE COMMAND, ONE VERDICT: is the spender reachable through our proxy, or not?
+
+    The operator has asked three times how to TEST this, and every answer so far has been "read
+    these logs and cross-reference the console". That is not a test. This is: it gathers the three
+    evidence sources, applies the decision rule, and prints the action.
+
+    The rule is a genuine fork and both branches are decisive:
+      * PROXY HITS in the window  -> the spender came through jobhuntwow's OpenAI-compatible proxy
+        on our key. The IP names them. The allowlist has already closed that path, so the next
+        attempt is a 403 that pages immediately.
+      * NO PROXY HITS, and jhw is demonstrably visible in Loki -> nothing came through the proxy,
+        so the raw DO_INFERENCE_KEY is being used from somewhere we do not run. No code change can
+        fix that. ROTATE THE KEY.
+      * NO PROXY HITS and jhw NOT visible -> the query is BLIND. Decide nothing; fix the shipper.
+    """
+    c = loki_correlate(host, days=days)
+    out = {"loki": c.get("error") or c.get("loki"), "days": days,
+           "visible": {}, "proxy_hits": 0, "proxy_sources": [], "verdict": "", "action": ""}
+    if c.get("error"):
+        out["verdict"] = "CANNOT DECIDE"
+        out["action"] = ("the Loki query did not run (%s). That is not evidence about the window; "
+                         "fix the query path and re-run." % c["error"])
+        return out
+    for s in c.get("series", []):
+        t = s.get("title", "")
+        rows = s.get("rows") or []
+        total = sum(r["total"] for r in rows)
+        if t.startswith("CAN WE SEE "):
+            out["visible"][t.split("CAN WE SEE ", 1)[1].split(" AT ALL")[0]] = total
+        elif t.startswith("WHO called"):
+            out["proxy_hits"] = total
+            out["proxy_sources"] = [{"ip": r["name"], "hits": r["total"]} for r in rows[:10]]
+
+    jhw_seen = out["visible"].get("jobhuntwow", 0) > 0
+    if not jhw_seen:
+        out["verdict"] = "BLIND - NOT INNOCENT"
+        out["action"] = ("jobhuntwow is not shipping to Loki, so 'no proxy hits' means the query "
+                         "cannot see its subject. Decide NOTHING from it. Fix the log shipper "
+                         "(promtail on /logs/jhw-web.log) and re-run this command.")
+    elif out["proxy_hits"] > 0:
+        out["verdict"] = "THE PROXY IS THE PATH"
+        out["action"] = ("the addresses above spent on the shared key through jobhuntwow's proxy. "
+                         "The model allowlist now refuses anything outside DEFAULT_MODELS and "
+                         "pages on every refusal, so that path is closed and the next attempt "
+                         "names them again. Decide whether each address should hold "
+                         "AGENT_PROXY_TOKEN at all; rotate it to cut off the ones that should not.")
+    else:
+        out["verdict"] = "NOT THE PROXY - ROTATE THE KEY"
+        out["action"] = ("jobhuntwow IS visible in Loki and shows ZERO calls to its proxy in this "
+                         "window, so the spend did not come through anything we run. That leaves "
+                         "the raw DO_INFERENCE_KEY being used from elsewhere - another holder of "
+                         "the key, or a GenAI agent created in the DigitalOcean console (which "
+                         "runs on their infrastructure and appears in no repository and on no "
+                         "droplet). No code change can fix that: ROTATE the model key in the DO "
+                         "console, and issue one key PER PROJECT so the next invoice is "
+                         "attributable.")
+    return out
+
+
+def render_whodunit(w):
+    print()
+    print("=" * 78)
+    print("WHO IS SPENDING ON THE SHARED DIGITALOCEAN KEY")
+    print("=" * 78)
+    print("  window: last %s days" % w.get("days"))
+    for proj, n in sorted((w.get("visible") or {}).items()):
+        print("  %-14s %s" % (proj, ("%d log lines - VISIBLE" % n) if n else
+                              "0 log lines - NOT SHIPPING (any conclusion about it is invalid)"))
+    print()
+    print("  calls to the jobhuntwow LLM proxy: %d" % w.get("proxy_hits", 0))
+    for s in w.get("proxy_sources") or []:
+        print("      %-40s %d" % (s["ip"], s["hits"]))
+    print()
+    print("  VERDICT: %s" % w.get("verdict"))
+    print()
+    for line in _wrap(w.get("action") or "", 74):
+        print("    " + line)
+    print()
+
+
+def _wrap(text, width):
+    words, line, out = str(text).split(), "", []
+    for wd in words:
+        if len(line) + len(wd) + 1 > width:
+            out.append(line); line = wd
+        else:
+            line = (line + " " + wd).strip()
+    if line:
+        out.append(line)
+    return out
+
+
 def main():
+    if "--whodunit" in sys.argv:
+        days = 10
+        if "--days" in sys.argv:
+            i = sys.argv.index("--days")
+            if len(sys.argv) > i + 1:
+                try:
+                    days = max(1, min(60, int(sys.argv[i + 1])))
+                except ValueError:
+                    pass
+        w = whodunit(os.environ.get("DROPLET_HOST", "64.225.108.200"), days=days)
+        if "--json" in sys.argv:
+            print(json.dumps(w, indent=2, default=str))
+        else:
+            render_whodunit(w)
+        return
+
     if "--correlate" in sys.argv:
         days = 10
         if "--days" in sys.argv:
