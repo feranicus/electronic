@@ -1037,3 +1037,89 @@ def test_the_completeness_check_names_what_went_missing():
     blk = blk[:blk.index("checks += post")]
     assert '", ".join(lost)' in blk, "the failure does not name the missing checks"
     assert "ok\": False" in blk or '"ok": False' in blk, "missing evidence does not FAIL"
+
+
+# ================================================================== 2026-09-06: the two questions
+def test_a_substantiated_abstention_is_surfaced_not_buried():
+    """THE 2026-09-06 RUN. gemma returned UNSURE whose only bullet was POSITIVE and carried zero
+    risks; kimi returned UNSURE with three named risks, one of which was a REAL defect (the ARCH
+    briefing still described proxy_config as validity-only after that check had gained the drift
+    comparison, so the reviewer was reading a genuine contradiction in the document we handed it).
+
+    The halt rule treats both as 'unsure' and neither blocked -- correctly, because making UNSURE
+    block would halt on the empty one every release, and neither an agreeable nor a grumpy model
+    may veto a green gate. But they are not the same thing, and the summary said nothing to tell
+    them apart. An abstention that NAMES a risk now leads the digest; a shrug stays a footnote."""
+    import stagegate as S
+    v = {"gate": "GO", "checks": [{"ok": True}], "reviews": [
+        {"model": "deepseek-3.2", "verdict": "GO", "risks": []},
+        {"model": "llama-4-maverick", "verdict": "GO", "risks": []},
+        {"model": "gemma-4-31B-it", "verdict": "UNSURE", "risks": []},
+        {"model": "kimi-k2.6", "verdict": "UNSURE",
+         "risks": ["proxy_config's detail contradicts the briefing"]}], "digest": "body"}
+    gate, digest = S._decide_from_verdict(v)
+    assert gate == "GO", "two abstentions with no hard NO-GO must not halt a green gate"
+    assert len(v["concerns"]) == 1, "only the abstention carrying a risk counts as a concern"
+    assert v["concerns"][0]["model"] == "kimi-k2.6"
+    assert "NAMED CONCERN" in digest and "contradicts the briefing" in digest
+    assert digest.index("NAMED CONCERN") < digest.index("body"), "it must lead, not trail"
+
+
+def test_a_clean_go_says_nothing_extra():
+    """A banner printed on every release is a banner nobody reads -- already paid for here with the
+    roster www warning and the bot-gate 8/10 line."""
+    import stagegate as S
+    v = {"gate": "GO", "checks": [{"ok": True}],
+         "reviews": [{"model": "m", "verdict": "GO", "risks": []},
+                     {"model": "n", "verdict": "UNSURE", "risks": []}], "digest": "body"}
+    gate, digest = S._decide_from_verdict(v)
+    assert gate == "GO" and "NAMED CONCERN" not in digest
+
+
+def test_the_halt_rule_is_unchanged_by_the_concern_reporting():
+    """Visibility is not authority. Two dissenters WITH a hard NO-GO still halt."""
+    import stagegate as S
+    v = {"gate": "GO", "checks": [{"ok": True}], "reviews": [
+        {"model": "a", "verdict": "NO-GO", "risks": ["x"]},
+        {"model": "b", "verdict": "UNSURE", "risks": []}], "digest": "body"}
+    gate, _ = S._decide_from_verdict(v)
+    assert gate == "NO-GO"
+
+
+def test_the_proxy_config_detail_carries_a_measurement():
+    """A detail that renders byte-for-byte identically whether or not anything was measured is
+    indistinguishable from templated output -- a reviewer said exactly that and was right.
+    config_drift never had the problem: it prints the hash and the counts it actually compared.
+
+    SCOPED TO THE PASS BRANCH. The first version searched a fixed window from `chk proxy_config
+    yes` and swept up the `|| chk proxy_config no "...$CGOUT"` line beneath it, so a mutation that
+    stripped the measurement from the PASS detail still passed."""
+    src = _code_only(open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read())
+    i = src.index("chk proxy_config yes")
+    j = src.index("chk proxy_config no", i)
+    assert "$CGOUT" in src[i:j], "the PASS detail must include the agent's real measured output"
+
+
+def test_the_watchdog_exit_code_is_captured_before_the_detail_is_built():
+    """`CGOUT=$(...)` RESETS $?. Reading it afterwards tests the grep pipeline's exit code and
+    reports a FAILING watchdog as a pass. I introduced exactly this while making the detail carry a
+    measurement, and caught it before it shipped."""
+    src = _code_only(open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read())
+    assert src.index("CGRC=$?") < src.index("CGOUT=$("), "capture $? BEFORE anything resets it"
+    assert "[ $? -eq 0 ] && chk proxy_config" not in src, "must not read a stale $?"
+
+
+def test_a_check_detail_is_never_amputated_below_a_real_diagnosis():
+    """My CGOUT cap was 320 chars, which is below the 400-char floor an existing guard enforces --
+    reintroducing the truncation defect a reviewer had already flagged three times. The cap exists
+    only so a crashing command cannot dump a traceback into one CHECK line.
+    SCOPED TO DETAIL CUTS. The first version matched every `cut -c1-N` in the file and so flagged
+    `md5sum | cut -c1-12`, which is hash truncation and entirely correct. A check that cannot tell
+    its subject from a same-shaped neighbour fails on working code. A detail cut is the one that
+    follows the `tr` that squashes newlines for the CHECK protocol.
+    """
+    src = _code_only(open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read())
+    detail_cuts = re.findall(r"tr\s+'[^']*'[^|]*\|\s*cut -c1-(\d+)", src)
+    assert detail_cuts, "no detail cut found - has the CHECK protocol changed?"
+    for n in detail_cuts:
+        assert int(n) >= 400, "a detail cap of %s amputates the diagnosis" % n

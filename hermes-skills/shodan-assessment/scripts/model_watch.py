@@ -126,8 +126,42 @@ def _price(mid):
     return "$%.3f/$%.3f" % p if p else "?"
 
 
+# VENDORS THIS ACCOUNT IS NOT ENTITLED TO CALL. Measured, not assumed, and recorded in CLAUDE.md
+# since the first bake-off: every `anthropic-*` and every commercial `openai-gpt-*` returns
+# HTTP 403 Forbidden on this key. Visibility in /v1/models is not entitlement -- that is the whole
+# reason model_probe exists.
+#
+# So probing a NEW model from one of those vendors is a round-trip whose answer we already know,
+# and it prints `FAIL ... 403 Forbidden` in a column headed CONTRACT on every deploy. That is
+# doubly wrong: it wastes the call, and it reports an ENTITLEMENT fact as a CONTRACT failure, which
+# reads like the model is broken when the truth is that we are not allowed to call it. A line that
+# says FAIL every time for a reason that will never change is noise, and noise in a deploy log is
+# how the one real line gets skipped.
+#
+# DETECTION IS UNAFFECTED AND DELIBERATELY SO. A new id appearing in the catalog is still reported
+# by name -- that is exactly the signal that would have caught `deepseek-v4-pro-0813` and
+# `glm-5.3-flash` on the day they appeared. It is the PROBE that is skipped, not the notice.
+# Set MODEL_WATCH_PROBE_ALL_VENDORS=1 to probe them anyway (e.g. after buying entitlement).
+UNENTITLED_PREFIXES = ("anthropic-", "openai-gpt-5", "openai-gpt-4", "openai-o1", "openai-o3")
+
+
+def entitled(mid):
+    """(ok, why). False for a vendor prefix this account has been MEASURED to be refused by."""
+    if os.environ.get("MODEL_WATCH_PROBE_ALL_VENDORS", "").strip() in ("1", "true", "yes"):
+        return True, ""
+    m = str(mid or "")
+    for p in UNENTITLED_PREFIXES:
+        if m.startswith(p):
+            return False, ("not entitled on this account (%s* returns HTTP 403; measured, "
+                           "see CLAUDE.md) - not a contract failure" % p)
+    return True, ""
+
+
 def probe(mid, timeout=60):
     """Call the model with the REAL enrichment prompt. -> dict(ok, ms, err, tokens_out)."""
+    ok_ent, why = entitled(mid)
+    if not ok_ent:
+        return {"ok": None, "ms": 0, "err": why, "tokens_out": 0, "skipped": True}
     try:
         sys.path.insert(0, HERE)
         import enrich as E
@@ -199,11 +233,18 @@ def main():
     todo = [m for m in (ids if a.probe_all else new)
             if not NON_TEXT_RE.search(m)]
     skipped = [m for m in todo if THINKING_RE.search(m)]
-    todo = [m for m in todo if not THINKING_RE.search(m)][:6]
+    todo = [m for m in todo if not THINKING_RE.search(m)]
+    # Vendors we are MEASURED to be refused by never reach the probe. Named, so the reader knows
+    # the model was seen and deliberately not called -- silence would look like it was missed.
+    barred = [m for m in todo if not entitled(m)[0]]
+    todo = [m for m in todo if entitled(m)[0]][:6]
     for m in skipped:
         print("  %-34s DO-NOT-CHAIN  reasoning/thinking model - breaks the strict-JSON contract"
               % m)
         out["probed"].append({"model": m, "verdict": "do-not-chain", "price": _price(m)})
+    for m in barred:
+        print("  %-34s NOT-ENTITLED  %s" % (m, entitled(m)[1]))
+        out["probed"].append({"model": m, "verdict": "not-entitled", "price": _price(m)})
 
     if todo and not a.no_probe:
         print("\n  %-34s %-9s %-8s %-14s %s" % ("MODEL", "CONTRACT", "ms", "$/1M in,out", "note"))

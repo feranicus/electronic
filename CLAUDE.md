@@ -6596,3 +6596,59 @@ THE FORK THAT QUERY RESOLVES: proxy hits in those windows -> the IP names the sp
 allowlist has already closed the path. NO proxy hits -> the raw DO key itself is being used from
 somewhere we do not run, and the only fix is to ROTATE it. Either outcome is decisive; neither can
 be reached by reading more code.
+
+## TWO GO, TWO UNSURE — and the operator was right to ask why (2026-09-06)
+**"Why if 2 LLMs are saying unsure we still give this a go?"** The halt rule needs >= 2 dissenters
+AND >= 1 hard NO-GO. There were zero NO-GOs, so nothing fired. That is deliberate and stays: making
+UNSURE block would halt on noise every release, and this file already records that neither an
+agreeable nor a grumpy model may veto a green gate.
+BUT THE TWO ABSTENTIONS WERE NOT THE SAME THING and the summary could not tell them apart:
+  * gemma-4-31B-it — UNSURE whose only bullet was POSITIVE, zero risks. A shrug.
+  * kimi-k2.6 — UNSURE with three named risks, and the first one was CORRECT AND MINE.
+KIMI'S CATCH: *"proxy_config's detail says 'AND the running config compared to the file' but the
+evidence states proxy_config measures 'ONLY that the config is VALID... Not that it is loaded'.
+These are directly contradictory claims in the same evidence document."* Both true. I had changed
+`proxy_config` to run `agent.py check`, which now calls `cmd_drift()` (the watchdog fix), updated
+the check's detail string, and left `quorum.ARCH` line 87 saying the opposite. The reviewer was
+reading a real contradiction in the document I handed it. THE CHECK WAS RIGHT; THE BRIEFING WAS
+WRONG — the same class as the config_drift misreading that cost three review slots, and this file
+already says "if a reviewer makes the same wrong call three times, fix the briefing."
+KIMI'S THIRD POINT WAS ALSO RIGHT: the pre- and post-reboot `proxy_config` details were byte-for-
+byte identical because the detail was a FIXED LITERAL. `config_drift` never had that problem — it
+prints the hash and the host/handler counts it actually compared. **A detail that renders
+identically whether or not anything was measured is indistinguishable from templated output.** Now
+carries `MEASURED: $CGOUT`.
+FIX FOR THE GOVERNANCE GAP, and it is visibility not authority: `verdict["concerns"]` collects any
+dissent that NAMES a risk, and a GO that ships with one leads the digest with
+`PROMOTED WITH N NAMED CONCERN(S)`. A shrug stays a footnote. The halt rule is untouched (asserted).
+
+**THREE DEFECTS OF MY OWN WHILE FIXING IT, all caught before shipping:**
+1. `CGOUT=$(...)` RESETS `$?`. Reading it afterwards tests the grep pipeline, so a FAILING watchdog
+   would be reported as a pass. Capture `CGRC=$?` first.
+2. My cap was `cut -c1-320`, below the 400-char floor an EXISTING guard enforces — reintroducing
+   the truncation defect kimi had already flagged three times. The existing test caught me.
+3. **`open(path, "w")` TRUNCATES BEFORE IT VALIDATES ITS OWN ARGUMENTS.** A typo (`newline="\\n"`)
+   raised ValueError *after* the file was emptied, and `tests/test_gate_integrity.py` went to 0
+   bytes; it had to be restored from HEAD. Any harness that edits a real file must write to a temp
+   file and `os.replace` it — a `finally` cannot help when the damage happens inside `open`.
+Plus two vacuous assertions of mine: one searched a fixed window from `chk proxy_config yes` and
+matched `$CGOUT` in the FAILURE branch beneath it, so stripping the measurement from the PASS
+branch still passed; the other matched every `cut -c1-N` in the file and flagged `md5sum |
+cut -c1-12`, which is hash truncation and entirely correct. Scope an assertion to its subject.
+
+## WE WERE PROBING A MODEL WE ARE MEASURED TO BE FORBIDDEN FROM CALLING (2026-09-06)
+**"Why the heck are we testing Fable?"** `model_watch` probes genuinely NEW catalog ids with the
+real contract. `anthropic-claude-fable-5.1` appeared, was probed, and returned
+`FAIL 329ms HTTP Error 403: Forbidden`. Three things wrong with that line:
+  * this file has recorded since the first bake-off that **every `anthropic-*` and commercial
+    `openai-gpt-*` returns 403 on this account** — visibility in /v1/models is not entitlement. So
+    the round-trip's answer was known before it was sent;
+  * a 403 is an ENTITLEMENT fact, not a CONTRACT failure, and printing it under a column headed
+    CONTRACT reads as "the model is broken" when the truth is "we are not allowed to call it";
+  * it will print FAIL on every deploy forever, and a line that always says FAIL for a reason that
+    can never change is noise — which is how the one real line gets skipped.
+`entitled(mid)` now bars those vendor prefixes from the PROBE and prints `NOT-ENTITLED` with the
+reason. **DETECTION IS DELIBERATELY UNCHANGED**: a new id is still reported by name, because that
+is exactly the signal that would have caught `deepseek-v4-pro-0813` and `glm-5.3-flash` on the day
+they appeared. It is the probe that is skipped, not the notice.
+`MODEL_WATCH_PROBE_ALL_VENDORS=1` overrides it, for the day entitlement is bought.

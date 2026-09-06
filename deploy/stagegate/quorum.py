@@ -84,7 +84,15 @@ consecutive panels have proposed fixes for checks that already work this way):
                   has no authentication of its own) is bound to loopback and is not docker-published.
   * config_write_ordering  ONLY that the process started after the file was written. It proves
                   ordering, nothing about content. It says so itself.
-  * proxy_config  that the config is VALID and the proxy is healthy. Not that it is loaded.
+  * proxy_config  runs `agent.py check` -- the SAME code the 10-minute production watchdog runs.
+                  It measures FOUR things: the config is valid, the proxy is running, :443/:8080 is
+                  bound, the bind mount is fresh, AND (since the watchdog gained it) it calls the
+                  same cmd_drift comparison described above, so an external edit that was never
+                  reloaded is caught here too. It does NOT reload anything itself.
+                  NOTE FOR REVIEWERS: this description was STALE for one release. It used to read
+                  "Not that it is loaded", which was true before the drift comparison was added and
+                  false after. A reviewer correctly flagged the contradiction between that sentence
+                  and the check's own detail string. The check was right; the briefing was wrong.
 """
 
 SOLDIER_PROMPT = """You are a release engineer reviewing a STAGING validation run before the change

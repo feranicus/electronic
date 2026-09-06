@@ -157,8 +157,19 @@ if [ -f /opt/caddyguard/agent.py ] && docker ps --format '{{.Names}}' | grep -qi
   # NEVER truncate a failure detail to the last 2 lines: the line that names the cause is usually
   # not the last one. Show the whole diagnosis (minus the alerting noise) — that omission turned a
   # port mismatch into "FAIL ... structural: ok validate: ok", which reads as a contradiction.
-  [ $? -eq 0 ] && chk proxy_config yes "caddyguard watchdog (agent.py check, the SAME code the 10-minute timer runs on production): config valid, proxy running, :8080 bound, bind mount fresh, AND the running config compared to the file - so an external edit that was never reloaded is caught here too" \
-                || chk proxy_config no "caddyguard: $(grep -v -i 'telegram' /tmp/cg.out | tr '\n' ' | ')"
+  # THE DETAIL MUST CARRY THE MEASUREMENT, NOT A SENTENCE ABOUT IT. This used to be a fixed
+  # literal, so it rendered byte-for-byte identically before and after the reboot -- and a reviewer
+  # correctly called that out: a detail that reads the same whether or not anything was measured is
+  # indistinguishable from templated output. config_drift never had the problem because it prints
+  # the hash and the host/handler counts it actually compared. Same fix as the vhost_roster count
+  # that was flagged as unexplained: print the evidence next to the claim.
+  # CAPTURE $? FIRST. Any command in between resets it -- including the grep that builds the
+  # detail string -- so reading it afterwards would test the PIPELINE's exit code and report a
+  # failing watchdog as a pass. Nth instance in this repo of a check pointed at the wrong subject.
+  CGRC=$?
+  CGOUT=$(grep -v -i 'telegram' /tmp/cg.out | tr '\n' ' | ' | cut -c1-1200)
+  [ "$CGRC" -eq 0 ] && chk proxy_config yes "agent.py check (the SAME code the 10-minute production watchdog runs; it validates, checks the mount, and runs the cmd_drift comparison - it does not reload). MEASURED: $CGOUT" \
+                    || chk proxy_config no "caddyguard: $CGOUT"
   P=$(curl -s -A "$UA" -o /dev/null -w '%{http_code}' --max-time 15 -H 'Host: cybergod.ai' http://127.0.0.1:8080/api/me)
   [ "$P" = "401" ] && chk proxy_routes yes "proxy -> colt-web -> 401 (the production path)" \
                    || chk proxy_routes no "through the proxy /api/me -> $P (want 401)"
@@ -557,6 +568,23 @@ def _decide_from_verdict(verdict):
     # >= 2 dissenters AND at least one outright NO-GO. Two UNSUREs alone are hesitation, not a
     # finding; requiring one hard NO-GO keeps the bar at "somebody actually objects".
     verdict["panel_dissent"] = len(dissent) >= 2 and len(hard) >= 1
+
+    # A SUBSTANTIATED ABSTENTION IS NOT THE SAME AS A SHRUG, and the rule above cannot tell them
+    # apart -- both are just "unsure". The 2026-09-06 run is the case in point: gemma returned
+    # UNSURE whose only bullet was POSITIVE and carried zero risks, while kimi returned UNSURE with
+    # three named risks, one of which was a REAL defect (the ARCH briefing still described
+    # proxy_config as validity-only after that check had gained the drift comparison, so the
+    # reviewer was reading a genuine contradiction in the document we handed it).
+    #
+    # Making UNSURE block would halt on gemma's noise every release, and this repository is
+    # explicit that neither an agreeable nor a grumpy model may veto a green gate. So the fix is
+    # VISIBILITY, not authority: an abstention that NAMES a risk is promoted to the top of the
+    # summary and survives into the release notes, where the standing rule ("the panel's findings
+    # get acted on, every run") can actually be applied to it. An abstention with nothing behind it
+    # stays a footnote.
+    verdict["concerns"] = [
+        {"model": r.get("model", "?"), "verdict": _v(r), "risks": list(r.get("risks") or [])}
+        for r in revs if (r.get("risks") or []) and _v(r) in ("no-go", "unsure")]
     verdict["unanimous_dissent"] = bool(revs) and len(hard) == len(revs) and len(revs) >= 3
     if gate == "GO" and verdict["panel_dissent"] and not os.environ.get("OVERRIDE_PANEL"):
         who = ", ".join("%s=%s" % (r.get("model", "?"), _v(r) or "?") for r in dissent)
@@ -569,6 +597,19 @@ def _decide_from_verdict(verdict):
             "Read their reasons above, and check the CHECK COUNT against the previous run.\n"
             "To promote anyway: set OVERRIDE_PANEL=1 and re-run.\n\n"
             % (len(dissent), len(revs), who)) + verdict.get("digest", "")
+
+    # A GO THAT SHIPS WITH NAMED RISKS SAYS SO AT THE TOP. Not a veto -- the deterministic checks
+    # still decide -- but the standing rule is that the panel's correct findings get acted on, and
+    # a finding buried in a wall of reviewer prose is a finding nobody acts on. On 2026-09-06 a
+    # reviewer named a genuine stale-briefing defect from an UNSURE and it read as noise.
+    if gate == "GO" and verdict.get("concerns"):
+        head = ["", "PROMOTED WITH %d NAMED CONCERN(S) — the deterministic checks decided; these did"
+                    " not block, and are not dismissed either:" % len(verdict["concerns"])]
+        for c in verdict["concerns"]:
+            for rk in c["risks"][:3]:
+                head.append("   [%s %s] %s" % (c["model"], c["verdict"], str(rk)[:300]))
+        head.append("   -> confirm or refute each against the CODE before the next release.")
+        verdict["digest"] = "\n".join(head) + "\n" + verdict.get("digest", "")
     return gate, verdict.get("digest", "")
 
 
