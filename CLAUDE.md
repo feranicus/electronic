@@ -6694,3 +6694,132 @@ MY OWN CHECK WAS AIMED NEXT TO ITS SUBJECT AGAIN: the assertion that the alert c
 address searched the whole refusal block for `"ip"`, which matched the `user=ip` in the
 `llm_events.record` call above it — so a mutation replacing the address in the ALERT with a literal
 still passed. Scoped to the telegram call's own arguments. Five mutations, all caught after the fix.
+
+## THE INVESTIGATION WAS BLIND BECAUSE A CONTAINER WAS NEVER STARTED (2026-09-06)
+`--whodunit` returned, on its first real run against production:
+```
+  cybergod       161299 log lines - VISIBLE
+  jobhuntwow          0 log lines - NOT SHIPPING (any conclusion about it is invalid)
+  VERDICT: BLIND - NOT INNOCENT
+```
+That is the guard doing exactly its job -- it REFUSED to give a verdict -- and it is also the whole
+explanation for the last six days. `jhw-promtail` is defined in `jobhuntwow-app/obs/promtail-prod.yml`
+and started by `python jhw.py obs`. **It is not in the droplet's container list and never has been.**
+So jobhuntwow's events have never reached Loki, which is why every attempt to attribute the spend
+could see cybergod in full detail and jobhuntwow not at all.
+WITHOUT THE VISIBILITY PROBE ADDED HOURS EARLIER, that same run would have printed "no proxy hits"
+and led straight to rotating the DO key over a project nobody had ever observed. The probe was
+written for exactly this and paid for itself on its first execution.
+
+## jobhuntwow's ship.py CALLED A FUNCTION THAT HAS NEVER EXISTED (2026-09-06)
+```
+  File "jobhuntwow-app/ship.py", line 99, in do_tests
+    jhw._check_requirements()
+AttributeError: module 'jhw' has no attribute '_check_requirements'
+```
+jhw.py defines `ensure_prereqs()` and nothing of that shape. So the project's ONE command crashed on
+its very first step and jobhuntwow could not be released at all -- invisible until somebody actually
+ran a release, because nothing exercised `do_tests()`. The Nth assumed-helper defect in this
+codebase family, and the reason the standing rule is to READ the signature.
+FIXED BY IMPLEMENTING THE CHECK WHERE IT IS USED (parse each line with `packaging.requirements`,
+which is what pip parses with) rather than pointing at another module's private function. Absent
+`packaging` it prints SKIPPED -- a check that cannot run must never look like one that passed.
+Verified in both directions: the real requirements.txt parses, and `fastapi==` / `>>>nonsense<<<`
+are rejected while `uvicorn[standard]>=0.30` is accepted.
+ALSO CORRECTED: `jhw.py deploy` is NOT a subcommand -- the argparse registers 22 verbs and `deploy`
+is not among them -- yet jobhuntwow's README, its ship.py header and deploy_direct.py's docstring
+all claimed it was. I repeated the claim to the operator twice and sent him to a command that
+cannot run. All three docs now name `python ship.py`, which is the real verb.
+
+## FIVE FAILURES IN jobhuntwow, ONE ROOT CAUSE, ALREADY FIXED IN THE SIBLING (2026-09-06)
+`python ship.py` in jobhuntwow failed on five checks and NOT ONE was a code defect:
+```
+FAIL health:    bash -n says the shell is valid (/bin/bash: C:UsersferanAppDataLocalTemptmp....sh: No such file)
+FAIL provision: bash -n says the shell is valid (same)
+FAIL section 12 could not run: No module named 'docx'
+FAIL section 13/14 could not run: No module named 'httpx'
+```
+Both classes were solved in the sibling repo weeks ago and NEVER CARRIED ACROSS:
+- **`bash -n <windows path>`** — the harness wrote a temp file and passed its PATH; bash on Windows
+  cannot resolve a drive path, the backslashes are eaten and it answers 127. Fixed identically to
+  tests/test_decommission.py: pipe the script to `bash -n` on STDIN as BYTES (no path to mangle, and
+  text mode would rewrite \n to \r\n and choke bash). Verified in three directions: a valid script
+  passes, an unbalanced one is rejected, and a CRLF one is rejected.
+- **`httpx` / `python-docx` missing** — both are DECLARED in backend/requirements.txt and installed
+  on the droplet by the Dockerfile; nothing ever installed them on the machine that runs the tests.
+  `ensure_app_requirements()` was PORTED from the sibling (not rewritten) and called first in
+  do_tests. Proven in a clean venv reproducing the operator's box: the probe names both.
+AND THE WORSE HALF: those three sections printed `SKIP` and then appended to FAILS, so the run said
+SKIP and counted FAIL in the same breath. A check that cannot run must say so; it must not do both.
+RULE, now the second time it has cost a release: **a fix recorded in one project's CLAUDE.md is not
+applied to the sibling until somebody applies it.** When a defect class is platform-shaped
+(`bash -n`, CRLF, missing declared deps, `os.uname`), grep BOTH repos for the same shape.
+
+## jobhuntwow's ONE COMMAND HAD NEVER RUN TO COMPLETION (2026-09-06)
+Three crashes in a row, each a different line, all the same defect:
+```
+AttributeError: module 'jhw' has no attribute '_check_requirements'   (1/6 TESTS)
+AttributeError: module 'jhw' has no attribute '_commit_and_push'      (2/6 COMMIT)
+```
+Rather than fix the third one, I resolved EVERY `jhw.<attr>` in ship.py against what jhw.py
+actually defines. **FOUR of the five were imaginary**: `_check_requirements`, `_commit_and_push`,
+`cmd_deploy`, and `py`. ship.py had been written against an API that never existed, so the release
+would have died at 1/6, then 2/6, then 4/6 -- it has never once reached the end.
+A FIFTH was subtler and would have failed silently: `jhw.cmd_status` DOES exist, but it takes an
+argument (`def cmd_status(_)`) and returns None, and it prints the LOCAL docker sandbox, not the
+public site. So `bool(public and ok)` in 5/6 VERIFY could never have been True.
+FIXED AGAINST WHAT EXISTS: commit+push implemented with the file's own `git()` helper (jhw.py has
+no git helper at all); the deploy delegated to `deploy_direct.deploy()`, which is the real engine
+and which ship.py already imported for its fingerprint check; and verify replaced with a public
+probe that reads CODE **AND BYTES**, because an empty 200 is what a dead upstream behind a healthy
+proxy looks like.
+**WHY NOTHING CAUGHT IT, AND THIS IS THE PART THAT GENERALISES.** The test read:
+    check("jhw.cmd_deploy" in sh, "the deploy is delegated to the EXISTING orchestrator")
+It GREPPED SHIP.PY'S OWN SOURCE for the string. A grep proves a string is present; it proves
+nothing about whether the call can be made. The assertion passed for as long as the line existed
+and crashed. Replaced with an AST resolution of every attribute ship.py reaches for on `jhw` and on
+`deploy_direct`, against what those modules actually define.
+AND MY FIRST VERSION OF THAT GUARD WAS ITSELF AIMED AT THE WRONG SUBJECT: a regex over the text
+matched `jhw.py` inside the STRING LITERAL `"jhw.py"` (a filename in a file list) and reported a
+missing attribute. An AST walk sees attribute ACCESSES and nothing else. Negative-tested by
+reintroducing `jhw._commit_and_push`: caught by name.
+RULE: to prove a cross-module call works, RESOLVE it. Grepping for the call site is the same
+mistake as validating a temp copy instead of the mounted file.
+
+## jobhuntwow WAS NEVER BLIND -- I QUERIED A LABEL THAT WAS NEVER DEPLOYED (2026-09-06)
+`--whodunit` said `jobhuntwow 0 log lines - NOT SHIPPING` and I built a whole story on it: the
+jhw-promtail container never started, fix the shipper, decide nothing. The probe was honest and the
+conclusion was wrong. `jobhuntwow-app/docker-compose.web.yml` sets
+`EVENTS_LOG=/var/log/colt/events.log` on the SAME volume as cybergod, with the comment "already
+tailed by colt-promtail". Every jobhuntwow line has been in Loki since the day jhw-web deployed --
+under `job="coltbots"`, told apart by `service="jhw-web"` IN THE LINE (colt-promtail promotes only
+evt/bot/company/status to labels). `obs/promtail-prod.yml` with `job: jobhuntwow` tailing
+`/logs/jhw-web.log` describes a design that was never deployed and never matched compose.
+Every query is now `{job="coltbots"} | json | service="jhw-web"` / `service!="jhw-web"`. The Sep 1
+and Sep 3 proxy hits were queryable the whole time. Three tests had encoded the dead label and
+were rewritten to the real stream shape.
+CONSEQUENCE WORTH NOTING: the earlier "cybergod attack volume" row was cybergod PLUS jobhuntwow
+combined, because `evt="http"` without a service filter matched both. Now split.
+RULE: before writing a LogQL selector, read the compose file that sets EVENTS_LOG and the promtail
+config that tails it. A label that exists in a config file is not a label that exists in Loki.
+
+## THE GUARDRAIL IS AT DIGITALOCEAN'S GATEWAY, NOT IN OUR PROXY (2026-09-06, from DO's docs)
+docs.digitalocean.com/products/inference/how-to/manage-model-access-keys, verified 2026-09-06:
+  * a model access key can be SCOPED TO SPECIFIC MODELS at creation; an unscoped model is then
+    refused by DO itself, for ANYONE holding the key;
+  * a key can be VPC-RESTRICTED: "only requests originating from that VPC network can
+    authenticate" -- a stolen key is useless from outside the droplet's network;
+  * "LEGACY keys: created before model and VPC scoping were available. Legacy keys grant access to
+    ALL foundation models and have NO VPC restriction. You cannot edit their scope."
+Our shared key (sha256:9327f186, seven containers, five projects) predates scoping and is almost
+certainly legacy: an open wallet at DO's level. Our proxy allowlist closes ONE path; a scoped,
+VPC-bound key per project closes EVERY path, including ones we have never seen, and makes the next
+invoice attributable. DO's Insights is per-request and per-model but NOT per-key, so with one key
+DO cannot tell the projects apart either. `cost_report.py --whodunit` now prints the account's
+keys and their scope fields (defensively -- the endpoint's shape is undocumented here) beside the
+verdict. Creating the keys is a console job; no script can do it.
+INDUSTRY SHAPE, for the record: our `evt=llm_call` / `evt=qwen` lines carry the same fields the
+OpenTelemetry GenAI semantic conventions standardise (`gen_ai.request.model`,
+`gen_ai.usage.input_tokens/output_tokens`, finish reason) -- opentelemetry.io/docs/specs/semconv/
+registry/attributes/gen-ai. The names differ; the discipline is the same: one record per model
+call, at the chokepoint, with model + both token directions + who asked.

@@ -277,7 +277,13 @@ def test_the_correlation_reads_the_event_the_engine_actually_emits(mod):
     joined = " ".join(q for _t, q, _w in C.LOKI_QUERIES)
     assert 'evt="qwen"' in joined and "| json" in joined
     assert "unwrap cost_usd" in joined and "unwrap tokens_out" in joined
-    assert 'job="jobhuntwow"' in joined, "the sibling project on the shared key must be queried too"
+    # BY SERVICE, NOT BY JOB. jhw-web writes to the SAME events.log as cybergod (its compose says
+    # "already tailed by colt-promtail"), so its lines live under job="coltbots" and are told apart
+    # by the `service` field in the line. The first version of this assertion demanded
+    # job="jobhuntwow" -- a label only a never-deployed promtail config would set -- and the
+    # queries built to satisfy it returned zero for six days and were read as "not shipping".
+    assert 'service="jhw-web"' in joined, "the sibling project on the shared key must be queried too"
+    assert 'job="jobhuntwow"' not in joined, "that label was never deployed; querying it is blind"
 
 
 def test_the_attack_overlay_is_present_so_the_hypothesis_can_be_tested(mod):
@@ -309,7 +315,7 @@ def test_a_failed_correlation_does_not_read_as_a_quiet_window(mod, capsys):
     assert "NOT 'nothing was happening'" in out
 
 
-def test_the_correlation_states_the_jobhuntwow_blind_spot(mod, capsys):
+def test_the_correlation_states_what_jobhuntwow_evidence_covers(mod, capsys):
     """jhw's electronic.py receives `_usage` from call_model and DISCARDS it, so Loki holds its
     HTTP and security events and not one model call. Its AI spend therefore cannot be excluded the
     way cybergod's can, and a reader must be told that rather than left to infer a quiet project
@@ -317,10 +323,10 @@ def test_the_correlation_states_the_jobhuntwow_blind_spot(mod, capsys):
     import cost_report as C
     C.render_correlate({"loki": "l", "series": []}, 10)
     out = capsys.readouterr().out
-    assert "jobhuntwow" in out and "blind spot" in out
-    jhw = open(os.path.join(ROOT, "jobhuntwow-app", "backend", "app", "electronic.py"),
-               encoding="utf-8").read()
-    assert "_usage" in jhw, "if jhw starts recording usage, delete this caveat from the renderer"
+    # jhw now EMITS llm_call, but only since 2026-09-06 -- so for the 1 and 3 Sep spike its model
+    # rows are empty by construction, while its PROXY-HIT row is not. The renderer must say both.
+    assert "jobhuntwow" in out and "since 2026-09-06" in out
+    assert "since day one" in out, "the reader must be told the proxy-hit evidence predates the emitter"
 
 
 def test_the_correlation_targets_the_host_by_module_attribute(mod, monkeypatch):
@@ -397,8 +403,12 @@ def test_the_visibility_probes_run_before_everything_else(mod):
     t0, q0, _w0 = C.LOKI_QUERIES[0]
     t1, q1, _w1 = C.LOKI_QUERIES[1]
     assert t0.startswith("CAN WE SEE ") and t1.startswith("CAN WE SEE ")
-    assert '{job="jobhuntwow"} [' in q0, "the probe must be unfiltered"
-    assert '{job="coltbots"} [' in q1
+    # "Unfiltered" means no evt/path/status filter -- the probe must count EVERY line of the
+    # project, or an empty filtered subset would look like a dead shipper. The service selector is
+    # the project boundary itself, not a filter on it.
+    for q in (q0, q1):
+        assert 'evt=' not in q and 'path=' not in q and 'status=' not in q, "the probe must be unfiltered"
+    assert 'service="jhw-web"' in q0 and 'service!="jhw-web"' in q1
 
 
 # ================================================================== --whodunit: one verdict

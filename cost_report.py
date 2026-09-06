@@ -620,44 +620,57 @@ def _is_ai(name):
 # =================================================================================================
 LOKI_QUERIES = [
     # (title, LogQL, what a number here MEANS)
-    # ZEROTH, AND IT DECIDES HOW EVERY OTHER ROW IS READ. If jobhuntwow's promtail is not shipping,
-    # every jhw row below is empty -- and an empty row would otherwise render as "Loki holds no
-    # matching line", i.e. as PROOF OF INNOCENCE, when the truth is that the query is blind. That
-    # is the logship defect (success reported for a week while shipping nothing) applied to an
-    # investigation, and acting on it would mean rotating a key for nothing or clearing a project
-    # that was never observed. So: prove the project is in Loki AT ALL before reading anything else.
+    #
+    # THE LABEL WAS WRONG FOR SIX DAYS. jhw-web writes to /var/log/colt/events.log -- the SAME file
+    # as cybergod, on the same volume -- and its compose file says so ("already tailed by
+    # colt-promtail"). So every jobhuntwow line has been in Loki the whole time under
+    # job="coltbots", distinguished by the `service` field IN THE LINE (colt-promtail promotes only
+    # evt/bot/company/status to labels). The first version of these queries asked for
+    # job="jobhuntwow", a label that only a never-deployed promtail config would have set, got
+    # zero, and concluded "NOT SHIPPING". The probe was honest; the conclusion was not. The
+    # project was never blind. I was reading the wrong label.
+    #
+    # ONE STREAM, TWO SERVICES. Everything below selects by service, and the two visibility probes
+    # now prove each SERVICE is present rather than each job.
     ("CAN WE SEE jobhuntwow AT ALL (any line, any type)",
-     'sum(count_over_time({job="jobhuntwow"} [%(step)s]))',
-     "IF THIS IS ZERO, every jobhuntwow row below is BLIND, not innocent - fix the log shipper "
-     "before drawing any conclusion from them"),
+     'sum(count_over_time({job="coltbots"} | json | service="jhw-web" [%(step)s]))',
+     "IF THIS IS ZERO, every jobhuntwow row below is BLIND, not innocent"),
     ("CAN WE SEE cybergod AT ALL (any line, any type)",
-     'sum(count_over_time({job="coltbots"} [%(step)s]))',
+     'sum(count_over_time({job="coltbots"} | json | service!="jhw-web" [%(step)s]))',
      "same, for the other project"),
-    # FIRST, because it is the one that names a source. jhw-web's telemetry middleware logs every
-    # request with its client IP and skips only static assets, so the OpenAI-compatible proxy at
-    # /v1/chat/completions -- the endpoint that forwards ANY model slug to DigitalOcean on our key --
-    # has been in Loki the whole time. This query did not need a deploy; it needed asking.
+    # FIRST SUBSTANTIVE ROW, because it is the one that names a SOURCE. jhw-web's telemetry logs
+    # every request with its client IP and skips only static assets, so the OpenAI-compatible proxy
+    # at /v1/chat/completions -- the endpoint that forwarded ANY model slug to DigitalOcean on our
+    # key -- has been queryable since day one. It needed the right label, not a deploy.
     ("WHO called the jobhuntwow LLM proxy (by source IP)",
-     'sum by (ip) (count_over_time({job="jobhuntwow"} | json | evt="http"'
+     'sum by (ip) (count_over_time({job="coltbots"} | json | service="jhw-web" | evt="http"'
      ' | path=~"/v1/chat/completions.*" [%(step)s]))',
      "each row is an address that spent on the shared key through the proxy; match the hours"
      " against DigitalOcean's Insights and the spender has a source address"),
+    ("jobhuntwow model calls, per model (NEW - emitted since 2026-09-06)",
+     'sum by (model) (count_over_time({job="coltbots"} | json | service="jhw-web"'
+     ' | evt="llm_call" [%(step)s]))',
+     "jhw's own metered calls; before 6 Sep it emitted none, so this row is empty for the spike"),
     ("cybergod model calls, per model",
-     'sum by (model) (count_over_time({job="coltbots"} | json | evt="qwen" [%(step)s]))',
+     'sum by (model) (count_over_time({job="coltbots"} | json | service!="jhw-web"'
+     ' | evt="qwen" [%(step)s]))',
      "one entry per call enrich.py made; a model absent here was not called by this codebase"),
     ("cybergod output tokens, per model",
-     'sum by (model) (sum_over_time({job="coltbots"} | json | evt="qwen"'
+     'sum by (model) (sum_over_time({job="coltbots"} | json | service!="jhw-web" | evt="qwen"'
      ' | unwrap tokens_out [%(step)s]))',
      "compare against DO's Insights page: a large gap is spend that is not ours"),
     ("cybergod AI cost (USD)",
-     'sum(sum_over_time({job="coltbots"} | json | evt="qwen" | unwrap cost_usd [%(step)s]))',
+     'sum(sum_over_time({job="coltbots"} | json | service!="jhw-web" | evt="qwen"'
+     ' | unwrap cost_usd [%(step)s]))',
      "our own metered cost over the window"),
-    ("attack volume (404s to non-bots)",
-     'sum(count_over_time({job="coltbots"} | json | evt="http" | status="404" [%(step)s]))',
+    ("attack volume, cybergod (404s to non-bots)",
+     'sum(count_over_time({job="coltbots"} | json | service!="jhw-web" | evt="http"'
+     ' | status="404" [%(step)s]))',
      "OVERLAY. If AI spend tracks this, attack response is driving cost; if it does not, it is not"),
-    ("jobhuntwow requests",
-     'sum(count_over_time({job="jobhuntwow"} [%(step)s]))',
-     "activity only -- jhw emits NO model event, so its AI spend is NOT in Loki (see below)"),
+    ("attack volume, jobhuntwow (404s to non-bots)",
+     'sum(count_over_time({job="coltbots"} | json | service="jhw-web" | evt="http"'
+     ' | status="404" [%(step)s]))',
+     "same overlay for the other project - it was under active scan on 1 and 3 Sep"),
 ]
 
 
@@ -780,9 +793,9 @@ def render_correlate(c, days):
     print("      spender. Measured from code: cybergod's attack-driven AI is SCHEDULE-bounded")
     print("      (shield panel 4 models/6h + digest 4 models/day, roughly 20 calls a day), and")
     print("      abuse_report.draft_complaint calls no model at all - it is string formatting.")
-    print("    * jobhuntwow shows request volume only. It emits NO model event, so its AI spend is")
-    print("      NOT in Loki and cannot be excluded the way cybergod's can. That is the one real")
-    print("      blind spot left, and it is a missing emitter rather than a missing query.")
+    print("    * jobhuntwow emits evt=llm_call only since 2026-09-06, so for the 1 and 3 Sep spike")
+    print("      its MODEL rows are empty by construction. Its PROXY HITS row is not: the HTTP")
+    print("      telemetry has logged /v1/chat/completions with the source IP since day one.")
 
 
 def whodunit(host, days=10):
@@ -845,6 +858,66 @@ def whodunit(host, days=10):
     return out
 
 
+def key_audit(token):
+    """The model access keys on the account, and whether each is SCOPED.
+
+    THE GUARDRAIL THAT COVERS CALLERS WE DO NOT CONTROL, from DigitalOcean's own documentation
+    (docs.digitalocean.com/products/inference/how-to/manage-model-access-keys, verified 2026-09-06):
+      * a key can be scoped to SPECIFIC MODELS at creation -- an unscoped model is then refused by
+        DO's gateway itself, for ANYONE holding the key;
+      * a key can be restricted to a VPC -- "only requests originating from that VPC network can
+        authenticate", so a stolen key is useless from outside the droplet's network;
+      * "Legacy keys: keys created before model and VPC scoping were available. Legacy keys grant
+        access to ALL foundation models and have NO VPC restriction. You cannot edit their scope."
+    Our shared key (sha256:9327f186, seven containers) predates scoping. It is almost certainly a
+    legacy key, i.e. an open wallet at DO's level and not just at our proxy. Our proxy allowlist
+    protects one path; a scoped key protects every path, including ones we have never seen.
+
+    DEFENSIVE ON SHAPE: the endpoint is newer than the billing API and its response fields are not
+    documented here, so this prints what it finds and reads any field whose name suggests scope,
+    rather than asserting a structure it has not observed. A lookup that fails is REPORTED.
+    """
+    if not token:
+        return {"error": "DO_API_TOKEN not set - cannot read the account's model access keys"}
+    try:
+        d = _do_get("/gen-ai/models/api_keys", token)
+    except Exception as e:
+        return {"error": "model keys lookup failed: %s" % _http_reason(e)}
+    keys = d.get("api_keys") or d.get("keys") or d.get("data") or []
+    if isinstance(keys, dict):
+        keys = list(keys.values())
+    out = {"count": len(keys), "keys": []}
+    for k in keys if isinstance(keys, list) else []:
+        if not isinstance(k, dict):
+            continue
+        scope_fields = {kk: vv for kk, vv in k.items()
+                        if any(t in kk.lower() for t in ("model", "scope", "vpc", "router", "batch"))}
+        out["keys"].append({"name": k.get("name") or k.get("api_key_name") or "?",
+                            "created": k.get("created_at") or k.get("created") or "?",
+                            "scope": scope_fields or "(no scope-shaped field returned)"})
+    return out
+
+
+def render_key_audit(k):
+    print()
+    print("  MODEL ACCESS KEYS ON THE ACCOUNT (the guardrail at DigitalOcean's level)")
+    if k.get("error"):
+        print("    [!] %s" % k["error"])
+    else:
+        print("    %d key(s)" % k.get("count", 0))
+        for x in k.get("keys", []):
+            print("    - %-28s created %s" % (str(x["name"])[:28], str(x["created"])[:19]))
+            print("        scope: %s" % json.dumps(x["scope"], default=str)[:160])
+    print()
+    print("    DO's docs: a LEGACY key (created before scoping) reaches ALL models with NO VPC")
+    print("    restriction and its scope cannot be edited - only replaced. Recommended end state:")
+    print("      * ONE key PER PROJECT, scoped to exactly the models that project uses;")
+    print("      * VPC-restricted to the droplet's network, so a leaked key is useless elsewhere;")
+    print("      * the old shared key REGENERATED once every project holds its own.")
+    print("    That makes deepseek-v4-pro impossible for anyone holding a project key, and makes")
+    print("    the next invoice attributable per project. Neither is possible from code.")
+
+
 def render_whodunit(w):
     print()
     print("=" * 78)
@@ -889,10 +962,12 @@ def main():
                 except ValueError:
                     pass
         w = whodunit(os.environ.get("DROPLET_HOST", "64.225.108.200"), days=days)
+        w["keys"] = key_audit(_do_token())
         if "--json" in sys.argv:
             print(json.dumps(w, indent=2, default=str))
         else:
             render_whodunit(w)
+            render_key_audit(w["keys"])
         return
 
     if "--correlate" in sys.argv:
