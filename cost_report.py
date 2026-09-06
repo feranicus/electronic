@@ -620,6 +620,15 @@ def _is_ai(name):
 # =================================================================================================
 LOKI_QUERIES = [
     # (title, LogQL, what a number here MEANS)
+    # FIRST, because it is the one that names a source. jhw-web's telemetry middleware logs every
+    # request with its client IP and skips only static assets, so the OpenAI-compatible proxy at
+    # /v1/chat/completions -- the endpoint that forwards ANY model slug to DigitalOcean on our key --
+    # has been in Loki the whole time. This query did not need a deploy; it needed asking.
+    ("WHO called the jobhuntwow LLM proxy (by source IP)",
+     'sum by (ip) (count_over_time({job="jobhuntwow"} | json | evt="http"'
+     ' | path=~"/v1/chat/completions.*" [%(step)s]))',
+     "each row is an address that spent on the shared key through the proxy; match the hours"
+     " against DigitalOcean's Insights and the spender has a source address"),
     ("cybergod model calls, per model",
      'sum by (model) (count_over_time({job="coltbots"} | json | evt="qwen" [%(step)s]))',
      "one entry per call enrich.py made; a model absent here was not called by this codebase"),

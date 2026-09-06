@@ -20,6 +20,7 @@ import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JHW = os.path.join(ROOT, "jobhuntwow-app", "backend", "app")
+sys.path.insert(0, ROOT)
 if not os.path.isdir(JHW):
     pytest.skip("jobhuntwow-app is not checked out beside this repo", allow_module_level=True)
 sys.path.insert(0, JHW)
@@ -222,3 +223,57 @@ def test_the_proxy_still_fails_the_way_it_used_to_on_a_non_json_body():
     s = _src("proxy.py")
     i = s.index("_body = r.json()")
     assert "raise" in s[i:i + 700], "the original failure mode must be preserved explicitly"
+
+
+# ------------------------------------------------------------------ THE OPEN WALLET
+def _proxy_allow():
+    """Import just the allowlist logic without the FastAPI app: read DEFAULT_MODELS and replicate
+    the env union exactly as proxy._allowed_models does, then assert the SOURCE enforces it."""
+    # llm.py uses relative imports (`from .settings import ...`) so it cannot be imported bare.
+    # Read DEFAULT_MODELS out of the AST: no toolchain, and it is the same source the proxy reads.
+    tree = ast.parse(_src("llm.py"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "DEFAULT_MODELS" for t in node.targets):
+            return set(ast.literal_eval(node.value).values())
+    raise AssertionError("DEFAULT_MODELS not found in llm.py")
+
+
+def test_the_proxy_refuses_a_model_we_never_chose():
+    """THE INCIDENT. `deepseek-v4-pro-0813` and `glm-5.3-flash` appear in no configuration in any
+    project we own and accounted for >96% of the account's tokens across two multi-hour bursts on
+    1 and 3 Sep. The proxy forwarded any concrete slug a client sent, on our key. A proxy on a
+    shared key with no model policy is an open wallet."""
+    allowed = _proxy_allow()
+    for runaway in ("deepseek-v4-pro-0813", "glm-5.3-flash"):
+        assert runaway not in allowed, "%s must never be forwardable" % runaway
+    s = _src("proxy.py")
+    assert "_allowed_models()" in s and "HTTPException(403" in s
+    i = s.index('if payload["model"] not in _allowed_models()')
+    j = s.index("httpx.AsyncClient(timeout=180)")
+    assert i < j, "the allowlist must be checked BEFORE the request is forwarded, or it is a log"
+
+
+def test_a_refused_model_is_recorded_with_the_source_ip():
+    """The refusal line IS the evidence: who asked, from where, for what. Without it a blocked
+    attacker is indistinguishable from nothing happening."""
+    s = _src("proxy.py")
+    i = s.index('caller="proxy.REFUSED"')
+    assert "user=ip" in s[i:i + 120], "the refusal must carry the client address"
+
+
+def test_every_forwarded_proxy_call_carries_the_source_ip():
+    """'What IP is using it' was the operator's literal question. Both branches answer it."""
+    s = _src("proxy.py")
+    for caller in ('caller="proxy.chat_completions"', 'caller="proxy.chat_completions.stream"'):
+        i = s.index(caller)
+        assert "user=ip" in s[i:i + 200], "%s does not record the client address" % caller
+
+
+def test_the_correlation_names_the_proxy_caller_first():
+    """jhw's telemetry logs every /v1/chat/completions hit with its IP and has since day one; the
+    query simply had never been written. It goes FIRST because it is the one row that names a
+    source rather than a model."""
+    import cost_report as C
+    t, q, _w = C.LOKI_QUERIES[0]
+    assert "WHO" in t and "sum by (ip)" in q and "/v1/chat/completions" in q

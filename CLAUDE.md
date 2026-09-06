@@ -6573,3 +6573,26 @@ is the same category error as reading a Shodan record on a shared VIP as the cus
 a domain on a group page as an owned estate. I made it because my remote evidence-gathering had just
 crashed (the `ssh_script` tuple bug) and I filled the gap with the weakest available evidence instead
 of saying "I have not looked at the droplets yet". When half the evidence fails, say so.
+
+## THE PROXY WAS AN OPEN WALLET (2026-09-06, from the DO Insights screenshots)
+The screenshots settled what the code could not. 31 Aug 08:57: only our four models, normal
+volume. 1 Sep 11:57: `deepseek-v4-pro-0813` 318K in / `glm-5.3-flash` 518K in, from zero. And it
+HAPPENED AGAIN on 3 Sep, 07:00-18:00, v4-pro at **1.1M input tokens**. Two multi-hour plateaus on
+different days at different hours: episodic, human- or agent-session shaped, not a cron.
+THE PATH: `jobhuntwow-app/backend/app/proxy.py` is an OpenAI-compatible endpoint that forwards to
+DigitalOcean on OUR key, and `_resolve_model` returned `bare or req` -- **any concrete slug a client
+sent was forwarded untouched.** Both runaway ids are exact catalog slugs with snapshot suffixes,
+the string a client sends after listing `/v1/models`. jobhuntwow's own config had DEMOTED v4-pro on
+16 Aug, so its own code paths could not produce this; a holder of `AGENT_PROXY_TOKEN` could, and
+did. A proxy on a shared key with no model policy is an open wallet.
+FIXES: an ALLOWLIST (`DEFAULT_MODELS.values()` + `JHW_PROXY_ALLOW`) checked BEFORE the forward,
+refusals recorded with the source IP (`caller=proxy.REFUSED`), and the client IP on every forwarded
+call. Negative-tested: allowlist disabled, v4-pro put back in config, IP dropped from the refusal.
+**THE EVIDENCE HAD BEEN IN LOKI THE WHOLE TIME.** jhw's telemetry middleware logs every request
+with its IP and skips only static assets, so `/v1/chat/completions` hits on 1 and 3 Sep are
+queryable today with `{job="jobhuntwow"} | json | path=~"/v1/chat/completions.*"` -- now the FIRST
+query in `cost_report.py --correlate`. It needed asking, not a deploy.
+THE FORK THAT QUERY RESOLVES: proxy hits in those windows -> the IP names the spender and the
+allowlist has already closed the path. NO proxy hits -> the raw DO key itself is being used from
+somewhere we do not run, and the only fix is to ROTATE it. Either outcome is decisive; neither can
+be reached by reading more code.
