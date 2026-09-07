@@ -56,6 +56,46 @@ TIER_DETECT, TIER_BLOCK, TIER_RETIRED = "detect", "block", "retired"
 STORE = os.environ.get("PERSEUS_RULESET", "/var/log/colt/perseus_ruleset.json")
 
 
+def atomic_write(path, render):
+    """Write a file so no reader ever sees it half-written. THE one implementation in this package.
+
+    `render` is called with an open handle, so the caller decides the format (json.dump, write...).
+
+    THE RETRY IS A PLATFORM FIX. On POSIX a rename over an open file always succeeds and a reader
+    keeps its handle to the old inode. On WINDOWS os.replace raises PermissionError while any
+    handle is open, because Python's open() does not pass FILE_SHARE_DELETE. The hub only ever runs
+    on the Linux droplet -- but perseus/client.py is COPIED INTO SIX PROJECTS and reads these files,
+    and the test suite runs on the operator's Windows box. A control that behaves differently there
+    is one he has to take on trust, and this repository has paid six times for exactly that gap.
+    """
+    tmp = "%s.tmp-%d" % (path, os.getpid())
+    try:
+        d = os.path.dirname(path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            render(fh)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return False
+    for _ in range(30):
+        try:
+            os.replace(tmp, path)
+            return True
+        except PermissionError:          # Windows: a reader is holding the destination open
+            time.sleep(0.02)
+        except Exception:
+            break
+    try:
+        os.remove(tmp)
+    except Exception:
+        pass
+    return False
+
+
 def _now():
     return time.time()
 
@@ -94,16 +134,7 @@ def load(path=None):
 
 
 def save(rs, path=None):
-    p = path or STORE
-    tmp = p + ".tmp"
-    try:
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(rs, fh, indent=1, sort_keys=True)
-        os.replace(tmp, p)
-        return True
-    except Exception:
-        return False
+    return atomic_write(path or STORE, lambda fh: json.dump(rs, fh, indent=1, sort_keys=True))
 
 
 def thresholds(rs):

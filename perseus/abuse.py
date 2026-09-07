@@ -63,15 +63,13 @@ def _load():
 
 
 def _save(d):
+    # ONE atomic-write implementation for the whole package; see ruleset.atomic_write for why the
+    # replace is retried.
     try:
-        os.makedirs(os.path.dirname(STATE), exist_ok=True)
-        tmp = STATE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(d, fh, indent=1)
-        os.replace(tmp, STATE)
-        return True
+        from . import ruleset as _RS
     except Exception:
-        return False
+        import ruleset as _RS
+    return _RS.atomic_write(STATE, lambda fh: json.dump(d, fh, indent=1))
 
 
 def net_of(ip):

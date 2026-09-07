@@ -488,12 +488,9 @@ def publish(rs, events):
                     for r, _rx in RS.active_patterns(rs, RS.TIER_BLOCK)]
         doc = {"generated": _now(), "cycle": rs.get("cycle", 0),
                "thresholds": RS.thresholds(rs), "patterns": blocking}
-        os.makedirs(os.path.dirname(BLOCKLIST), exist_ok=True)
-        tmp = BLOCKLIST + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(doc, fh, indent=1)
-        os.replace(tmp, BLOCKLIST)
-        return True
+        # The thin client in every project polls this file every 30s, so it MUST never be
+        # readable half-written. One implementation, in ruleset.
+        return RS.atomic_write(BLOCKLIST, lambda fh: json.dump(doc, fh, indent=1))
     except Exception:
         return False
 

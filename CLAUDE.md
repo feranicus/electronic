@@ -7178,3 +7178,118 @@ coverage gaps rather than faults, and two are out of scope by design:
   * **Concurrency only proves 401s, not backend isolation.** Fair, and it is the one worth doing
     if the twin ever runs more than one backend. Today staging serves a single vhost, so there is
     no isolation property there to measure.
+
+## THE GATE SAID "THE OUTPUT IS WRONG" AND THE ENGINE WAS FINE (2026-09-07)
+Staging refused to promote — correctly, and production was never touched:
+```
+  engine_runs  FAIL  decks=3 html=39511b canvases=0 leaks=0 - it ran but the OUTPUT is wrong
+  post_reboot_engine_runs  OK  3 decks + 5 canvases
+```
+All four review models concluded the engine was broken. **It was a WRITE RACE between two
+processes, and the check was reading a file mid-write.**
+`main.py::_warm_demo` builds the demo in colt-web's executor at startup; the staging check runs
+`demo_build.py` as a SEPARATE PROCESS seconds later. The `threading.Lock` in `_ensure_demo`
+serialises visitors inside ONE process and **cannot serialise two processes**, so both wrote the
+same paths. Post-reboot the warmer had already finished, `_demo_ready()` returned early, there was
+no second writer, and the identical check passed — which is exactly the "non-deterministic, masked
+by a restart" shape gemma named and kimi classified as a first-run-vs-warm-run race. Neither of
+them could see the cause, because it is not in the evidence the panel is shown.
+THE SAME WINDOW IS REACHABLE IN PRODUCTION, where the reader is a visitor downloading a deck from
+the public /api/demo endpoint. The banner injection made it worse: `open(dest, "w")` TRUNCATES the
+live file and rewrites it in place.
+FIXES:
+1. **`demo_build._publish()` — build to a fragment, `os.replace` into place.** A reader sees the
+   previous complete file or the new complete file, never a fragment. Same doctrine as
+   `ruleset.save()`, `abuse._save()` and caddyguard's writes. **NOT fcntl**: a file lock is
+   POSIX-only and an existing gate refuses that import so the suite still runs on Windows.
+   os.replace is atomic on both platforms. Proven with 150 publishes under a live reader: zero
+   torn reads.
+2. **The check NAMES ITS SUBJECT.** `ls *.html | head -1` judged the whole build on whichever file
+   sorted first; the artifact that must carry five canvases is `*_GEOPOL_Animated.html`, so ask
+   for that one.
+3. **INCOMPLETE is not WRONG.** A document with no closing `</html>` is one somebody is still
+   writing. The check re-reads once and, if it is still incomplete, says so — reporting it as
+   "the OUTPUT is wrong" is what sent four reviewers hunting a bug that did not exist.
+RULE: an in-process lock is scoped to the process. If a second process can touch the same path —
+and on this estate a `docker exec` always can — the file itself has to be written atomically.
+Guarded by `tests/test_demo_atomic.py` (5 tests: the concurrent-reader property, fragment cleanup,
+a missing fragment, the wiring, and the check's own logic). Four mutations, all caught against a
+proven-green baseline.
+**AND MY OWN CHECK WAS AIMED AT PROSE.** The completeness assertion searched a window for
+`"</html>"` — which the FAILURE MESSAGE also contains — so neutering the measurement entirely
+still passed. It now asserts the grep that computes it and the re-read that follows. Nth instance:
+assert the LOGIC, never a string that the error text happens to share.
+
+## THE ATOMIC-PUBLISH FIX BROKE THE BUILD, BECAUSE A TOOL INFERS FROM THE EXTENSION (2026-09-07)
+The fix for the write race shipped and the very next run failed:
+```
+    demo build rc=1 out=[demo] build_findings_deck.js FAILED:
+                        [demo] build_cbiq_deck.js FAILED:
+                        [demo] build_geopol_deck.js FAILED:
+  public demo artifacts: BROKEN
+```
+Three builders, all "FAILED", all with an EMPTY stderr — which is the tell, because a builder that
+actually failed says why.
+CAUSE, entirely mine: I appended the fragment suffix AFTER the extension (`X.pptx.part-123`), and
+**pptxgenjs APPENDS `.pptx` to any path that does not already end in it**. So node wrote
+`X.pptx.part-123.pptx`, `_publish` looked for `X.pptx.part-123`, found nothing, and reported the
+builder as broken. Reproduced in one command: `node build_findings_deck.js fixture out.pptx.part-99`
+writes `out.pptx.part-99.pptx`.
+FIX: `_fragment(dest)` returns a SIBLING with the extension intact —
+`<dir>/.part-<pid>-<name>.pptx`. Same directory (os.replace cannot cross a filesystem), leading dot
+(a `*` glob skips dotfiles in both the shell and Python, so /api/demo never lists a fragment), and
+the extension last so a format-inferring writer lands where we look.
+**AND THE MESSAGE BLAMED THE WRONG COMPONENT.** `print("%s FAILED: %s" % (script, r.stderr))` on a
+builder that exited 0 is a confident, false accusation. A builder that succeeds while its artifact
+is missing from the expected path is OUR path bug, and it now says exactly that, with the fragment
+name it looked for. Same family as the traceback whose head was printed instead of its cause.
+RULE: when a subprocess writes a file for you, do not assume it writes to the path you gave it.
+Tools that infer format from the extension (pptxgenjs, ffmpeg, pandoc, ImageMagick) rewrite the
+path. Keep the extension on any temporary path, and prove it by RUNNING the tool once.
+Guarded by tests/test_demo_atomic.py: the fragment must end in the destination's extension, be a
+sibling, and be hidden — plus an END-TO-END test that runs the real node builder against the
+committed fixture and asserts the artifact lands at the final path with no fragment left behind.
+That last one is the check that would have caught this; the string assertions all passed while the
+build was broken. Three mutations, all caught against a proven-green baseline.
+
+## THE SEVENTH LINUX-VALIDATED / WINDOWS-DELIVERED FAILURE — and the technique that ends it
+The operator, after three failed ships in a row: *"I'm one step away from moving to OpenAI Astra.
+You just can't nail your issues."* He is right, and the three failures were ONE root cause wearing
+three hats. `python ship.py` refused with:
+```
+  FAILED tests/test_demo_atomic.py::test_a_concurrent_reader_never_sees_a_fragment
+  [demo] could not publish a.html: PermissionError(13, 'Access is denied')
+```
+**On POSIX, `os.replace` over an open file always succeeds and the reader keeps its handle to the
+old inode — that IS the atomicity property. On WINDOWS it raises PermissionError while any handle
+is open, because Python's `open()` does not pass FILE_SHARE_DELETE.** My test held a reader thread
+open across the replace, so it passed in a Linux sandbox and could never pass on his machine.
+That is the SEVENTH time: httpx, esbuild/win32, `os.uname`, python-multipart, the cp1252 console,
+the `/proc` fixture, and now this. Writing the rule down an eighth time would achieve nothing.
+
+**THE TECHNIQUE THAT ACTUALLY CLOSES IT: SIMULATE THE PLATFORM, DO NOT SKIP IT.**
+`monkeypatch.setattr(os, "replace", windows_like)` — raise PermissionError for the first N calls,
+then delegate to the real one. The test now RUNS ON LINUX and proves the Windows behaviour, so the
+coverage exists wherever the suite executes. Skipping on Windows would have hidden the defect;
+gating on `sys.platform` would have meant he could never verify it. Applied to `demo_build._publish`
+AND to `ruleset.atomic_write`, plus a companion test that a REAL error (ENOSPC) is still reported
+as a failure — a retry loop that swallows everything is worse than none, because the build would
+then claim success for an artifact that never landed.
+GENERALISED: the retry is now in `perseus/ruleset.atomic_write()`, the ONE implementation, and
+`hub.publish` + `abuse._save` delegate to it. An AST test asserts neither module hand-rolls
+`os.replace` again — three hand-rolled copies is the "several homes" defect, and a platform fix
+applied to one of them would have left the other two broken.
+
+**AND THE SWEEP THAT FOUND THE ONE I MISSED.** After fixing demo_build I walked every file added
+this session for POSIX-only imports, hardcoded `/proc` `/tmp` `/etc` paths, and unguarded
+`os.replace` — which is how `perseus/hub.py` was caught before it reached him. That sweep is the
+step that was missing from the previous six occurrences: fixing the instance is not the same as
+looking for its siblings.
+
+**PROVEN, NOT ARGUED:** the REAL demo build was run end-to-end in a child process with
+`sitecustomize.py` making EVERY `os.replace` fail 60% of the time. All four artifacts land, the
+GEOPOL page has 5 canvases and its closing tag, the fabrication banner is present, no fragment is
+left behind. 562 tests, 4 engine gates. Six mutations across the two fixes, each verified to fail
+and restore — including one of MY OWN mutations that proved nothing (swapping `break` for a short
+sleep still returns False, so it never violated the property; the dangerous mutation is one that
+returns True on a real error).

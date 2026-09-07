@@ -172,3 +172,59 @@ def test_vet_batch_reports_refusals_as_loudly_as_acceptances():
     acc, ref = V.vet_batch([{"pattern": r"/\.env\.backup"}, {"pattern": ".*"}])
     assert len(acc) == 1 and len(ref) == 1
     assert ref[0]["vet"] and acc[0]["vet"], "both carry the reason; a silent refusal teaches nothing"
+
+
+# ── the write path, on the operator's platform ───────────────────────────────────────────
+def test_atomic_write_survives_a_windows_style_lock(tmp_path, monkeypatch):
+    """REPRODUCE WINDOWS ON LINUX, because the suite runs on his machine and the hub runs on ours.
+
+    On POSIX a rename over an open file always succeeds. On WINDOWS os.replace raises
+    PermissionError(13) while any handle is open, and perseus/client.py -- copied into six
+    projects -- polls the blocklist this writes. A control that behaves differently on the platform
+    the operator verifies it on is a control he has to take on trust."""
+    import json as _j
+    import os as _os
+    real = _os.replace
+    calls = {"n": 0}
+
+    def windows_like(a, b):
+        calls["n"] += 1
+        if calls["n"] <= 5:
+            raise PermissionError(13, "Access is denied")
+        return real(a, b)
+
+    monkeypatch.setattr(_os, "replace", windows_like)
+    dest = str(tmp_path / "bl.json")
+    assert R.atomic_write(dest, lambda fh: _j.dump({"ok": True}, fh))
+    assert calls["n"] > 1, "the retry never fired, so this proved nothing"
+    monkeypatch.setattr(_os, "replace", real)
+    assert _j.load(open(dest, encoding="utf-8"))["ok"] is True
+
+
+def test_atomic_write_reports_a_real_failure_instead_of_claiming_success(tmp_path, monkeypatch):
+    """A retry loop that swallows every error would report a blocklist as published when it never
+    landed -- the thin clients would then enforce yesterday's rules with nobody saying so."""
+    import os as _os
+    monkeypatch.setattr(_os, "replace",
+                        lambda a, b: (_ for _ in ()).throw(OSError(28, "No space left")))
+    assert R.atomic_write(str(tmp_path / "x.json"), lambda fh: fh.write("{}")) is False
+    assert not [f for f in os.listdir(tmp_path) if ".tmp-" in f], "no temp litter may be left"
+
+
+def test_every_perseus_write_goes_through_the_one_implementation():
+    """WIRING. Three modules used to hand-roll temp+replace; a fix applied to one of them would
+    have left the other two on the old behaviour -- the 'several homes' defect this repo records
+    more than any other."""
+    import ast
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "perseus")
+    for name in ("hub.py", "abuse.py", "ruleset.py"):
+        src = open(os.path.join(base, name), encoding="utf-8").read()
+        tree = ast.parse(src)
+        calls = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                 and n.func.attr == "replace"
+                 and isinstance(n.func.value, ast.Name) and n.func.value.id == "os"]
+        if name == "ruleset.py":
+            assert len(calls) == 1, "ruleset owns the ONE implementation"
+        else:
+            assert not calls, "%s must not hand-roll its own replace" % name

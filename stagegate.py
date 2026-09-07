@@ -191,7 +191,12 @@ if [ $RC -ne 0 ]; then
   chk engine_runs no "$(tail -3 /tmp/demo.out | tr '\n' ' ')"
 else
   N=$(docker exec "$C" sh -c 'ls -1 /data/demo/*.pptx 2>/dev/null | wc -l')
-  H=$(docker exec "$C" sh -c 'ls -1 /data/demo/*.html 2>/dev/null | head -1')
+  # NAME THE SUBJECT. This used to be `ls *.html | head -1`, i.e. whichever file sorted first --
+  # so the whole build was judged on an arbitrary artifact. The file that must carry 5 canvases is
+  # the animated GEOPOL page; check THAT one. A check aimed next to its subject is the defect this
+  # repository has paid for more times than any other.
+  H=$(docker exec "$C" sh -c 'ls -1 /data/demo/*_GEOPOL_Animated.html 2>/dev/null | head -1')
+  [ -z "$H" ] && H=$(docker exec "$C" sh -c 'ls -1 /data/demo/*.html 2>/dev/null | head -1')
   # `grep -c` prints "0" AND exits 1 when nothing matches, so `|| echo 0` produced TWO lines.
   # `[ "0\n0" -eq 0 ]` is a syntax error -> the whole condition failed -> a passing artifact was
   # reported as broken, and the embedded newline also split the CHECK| line so the detail was
@@ -200,7 +205,20 @@ else
   BAD=${BAD:-0}
   SZ=$(docker exec "$C" sh -c "stat -c %s '$H' 2>/dev/null || echo 0")
   CV=$(docker exec "$C" sh -c "grep -o '<canvas' '$H' 2>/dev/null | wc -l" | head -1); CV=${CV:-0}
-  if [ "${N:-0}" -ge 3 ] && [ "${SZ:-0}" -gt 20000 ] && [ "${BAD:-1}" -eq 0 ] && [ "${CV:-0}" -ge 5 ]; then
+  # A FRAGMENT IS NOT A WRONG ANSWER. demo_build now publishes atomically, but the check must
+  # still be able to tell the two apart: a document without its closing tag is one somebody is
+  # mid-way through writing, and reporting that as "the OUTPUT is wrong" sent four reviewers
+  # hunting an engine bug that did not exist.
+  FIN=$(docker exec "$C" sh -c "grep -c '</html>' '$H' 2>/dev/null" | head -1); FIN=${FIN:-0}
+  if [ "${FIN:-0}" -eq 0 ] && [ "${SZ:-0}" -gt 0 ]; then
+    sleep 8
+    SZ=$(docker exec "$C" sh -c "stat -c %s '$H' 2>/dev/null || echo 0")
+    CV=$(docker exec "$C" sh -c "grep -o '<canvas' '$H' 2>/dev/null | wc -l" | head -1); CV=${CV:-0}
+    FIN=$(docker exec "$C" sh -c "grep -c '</html>' '$H' 2>/dev/null" | head -1); FIN=${FIN:-0}
+  fi
+  if [ "${FIN:-0}" -eq 0 ]; then
+    chk engine_runs no "the artifact has no closing </html> after a re-read: it is INCOMPLETE (a writer is still running or died mid-write), which is a different fault from wrong output. html=${SZ}b"
+  elif [ "${N:-0}" -ge 3 ] && [ "${SZ:-0}" -gt 20000 ] && [ "${BAD:-1}" -eq 0 ] && [ "${CV:-0}" -ge 5 ]; then
     chk engine_runs yes "${N} decks + ${CV} canvases, no undefined/NaN/blank-heading leaks (output CHECKED, not exit 0). html prose is model-authored so its SIZE varies by design and is not a signature"
   else
     chk engine_runs no "decks=${N} html=${SZ}b canvases=${CV} leaks=${BAD} — it ran but the OUTPUT is wrong"

@@ -22,7 +22,7 @@ a demo finding for a live one, and no real organisation is ever named.
 
     python demo_build.py --out /data/demo
 """
-import argparse, json, os, subprocess, sys
+import argparse, json, os, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -246,6 +246,66 @@ def findings():
     }
 
 
+def _fragment(dest):
+    """A sibling path for the in-progress artifact, with the EXTENSION PRESERVED.
+
+    THE BUG THIS FIXES WAS MINE. The first version appended the suffix AFTER the extension
+    (`X.pptx.part-123`), and pptxgenjs APPENDS `.pptx` to any path that does not already end in
+    it -- so node wrote `X.pptx.part-123.pptx`, _publish looked for `X.pptx.part-123`, found
+    nothing, and reported "build_findings_deck.js FAILED:" with an EMPTY stderr. The builder had
+    worked perfectly; the message blamed it anyway.
+
+    So: same directory (os.replace cannot cross a filesystem), leading dot (a `*` glob skips
+    dotfiles in both the shell and Python, so /api/demo never lists a fragment), extension last.
+    """
+    d, name = os.path.split(dest)
+    return os.path.join(d, ".part-%d-%s" % (os.getpid(), name))
+
+
+def _publish(part, dest):
+    """Move a finished artifact into place ATOMICALLY, or remove the fragment.
+
+    WHY THIS EXISTS (2026-09-07). `_warm_demo` builds the demo in colt-web's executor at startup
+    and the staging check runs demo_build.py as a SEPARATE PROCESS seconds later. The
+    threading.Lock in main.py serialises visitors inside ONE process; it cannot serialise two
+    processes, so both wrote the same paths and a reader saw a half-written file: right size,
+    zero canvases, reported as "the OUTPUT is wrong". The engine was fine.
+
+    os.replace is atomic on POSIX and on Windows, so a reader sees either the previous complete
+    file or the new complete file and never a fragment. Same doctrine as ruleset.save(),
+    abuse._save() and caddyguard's writes -- and it protects /api/demo too, where the reader is a
+    visitor downloading a deck.
+
+    NOT fcntl: a file lock is POSIX-only and an existing gate refuses that import, because the
+    test suite has to run on the operator's Windows machine.
+
+    THE RETRY IS A PLATFORM FIX, NOT A WORKAROUND. On POSIX a rename over an open file always
+    succeeds and the reader keeps its handle to the old inode. On WINDOWS the replace raises
+    PermissionError while any handle is open, because Python's open() does not pass
+    FILE_SHARE_DELETE. This module only ever runs on the Linux droplet -- but the TEST SUITE runs
+    on the operator's Windows box, and a control that cannot be verified there is a control he has
+    to take on trust. Readers open and close in microseconds, so 30 x 20ms closes the gap.
+    """
+    if not os.path.exists(part):
+        return False
+    err = None
+    for _ in range(30):
+        try:
+            os.replace(part, dest)
+            return True
+        except PermissionError as e:          # Windows: a reader is holding the destination open
+            err = e
+            time.sleep(0.02)
+        except Exception as e:                # anything else is not going to fix itself
+            err = e
+            break
+    print("[demo] could not publish %s: %r" % (os.path.basename(dest), err), file=sys.stderr)
+    try:
+        os.remove(part)
+    except Exception:
+        pass
+    return False
+
 def build(outdir):
     os.makedirs(outdir, exist_ok=True)
     import run_assessment as RA
@@ -271,12 +331,19 @@ def build(outdir):
     built = []
     for script, args, out in jobs:
         dest = os.path.join(outdir, out)
-        r = subprocess.run(["node", os.path.join(HERE, script)] + args + [dest],
+        part = _fragment(dest)
+        r = subprocess.run(["node", os.path.join(HERE, script)] + args + [part],
                            capture_output=True, text=True, timeout=180, env=env)
-        if os.path.exists(dest):
+        if _publish(part, dest):
             built.append(out)
+        elif r.returncode == 0:
+            # THE BUILDER SUCCEEDED AND THE ARTIFACT IS NOT WHERE WE EXPECTED IT. That is our
+            # path, not its code -- say so, instead of printing "FAILED:" with an empty stderr.
+            print("[demo] %s exited 0 but produced no %s — expected the fragment at %s"
+                  % (script, out, os.path.basename(part)), file=sys.stderr)
         else:
-            print("[demo] %s FAILED: %s" % (script, (r.stderr or "")[-200:]), file=sys.stderr)
+            print("[demo] %s FAILED rc=%s: %s"
+                  % (script, r.returncode, (r.stderr or r.stdout or "")[-200:]), file=sys.stderr)
 
     # The animated GEOPOL HTML (5th deliverable).
     #
@@ -288,10 +355,14 @@ def build(outdir):
     # author_geopol has a DETERMINISTIC path (it only reaches for a model if one is configured), so
     # the demo is reproducible and costs nothing — which is the whole premise of a pre-baked demo.
     dest = os.path.join(outdir, "%s_GEOPOL_Animated.html" % SAFE)
+    # Author into a fragment. Everything below -- the hollow-shell check and the banner injection
+    # -- operates on the fragment, so the published file is validated and complete or absent.
+    part = _fragment(dest)
     r = subprocess.run([sys.executable, os.path.join(HERE, "author_geopol.py"),
-                        fp, os.path.join(outdir, "geopol.json"), dest, "--company", COMPANY],
+                        fp, os.path.join(outdir, "geopol.json"), part, "--company", COMPANY],
                        capture_output=True, text=True, timeout=240,
                        env={**env, "OUTDIR": outdir})
+    dest, published = part, dest          # operate on the fragment; `published` is the real path
     if not os.path.exists(dest):
         print("[demo] author_geopol FAILED: %s" % ((r.stderr or r.stdout or "")[-300:]),
               file=sys.stderr)
@@ -322,8 +393,11 @@ def build(outdir):
         if "<body" in html:
             i = html.index(">", html.index("<body")) + 1
             html = html[:i] + banner + html[i:]
+            # Still the FRAGMENT. The previous version truncated the live file with open(...,"w"),
+            # so a visitor mid-download got a torn page.
             open(dest, "w", encoding="utf-8").write(html)
-        built.append(os.path.basename(dest))
+        if _publish(dest, published):
+            built.append(os.path.basename(published))
 
     print("[demo] built %d artifact(s) in %s: %s" % (len(built), outdir, ", ".join(built)))
     return built
