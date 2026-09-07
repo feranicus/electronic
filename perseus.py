@@ -154,6 +154,31 @@ APP_FILES = ("main.py", "app.py", "server.py", "api.py")
 WIRE_MARK = "perseus_client.Middleware"
 
 
+def _call_end(s, i):
+    """Index just past the closing paren of a call that starts at s[i:]. FastAPI is routinely
+    constructed across several lines, and a matcher that demands the whole call on one line reported
+    'no ASGI app found' for three real projects."""
+    d, j, q = 0, s.index("(", i), None
+    while j < len(s):
+        c = s[j]
+        if q:
+            if c == "\\":
+                j += 2
+                continue
+            if c == q:
+                q = None
+        elif c in "\"'":
+            q = c
+        elif c == "(":
+            d += 1
+        elif c == ")":
+            d -= 1
+            if d == 0:
+                return j + 1
+        j += 1
+    return -1
+
+
 def wire_middleware(pkg_dir):
     """COPYING A FILE IS NOT INSTALLING A CONTROL.
 
@@ -162,10 +187,23 @@ def wire_middleware(pkg_dir):
     rule this repository already carries -- a control that is correct and unreachable is not a
     control -- and the copy step made it look done.
 
-    So the wiring is automated too: find the module that builds the ASGI app and add the middleware.
-    Idempotent (the marker is checked first), reported by name, and it REFUSES rather than guesses
-    when it cannot find an `app = FastAPI(...)` to attach to -- a silent no-op here is the exact
-    failure being fixed."""
+    TWO THINGS THE FIRST VERSION GOT WRONG, both visible on the Fleet page as "not installed":
+
+    1. IT EMITTED A BARE `import perseus_client` INTO A PACKAGE. `webapp/backend/app` has an
+       __init__.py and every sibling is imported with `from . import store, assistant, brand`. A
+       bare import raises ModuleNotFoundError there, the wrapper's `except` swallowed it, and
+       cybergod ran UNGUARDED while the deploy reported success. CLAUDE.md already records exactly
+       this: "app is a PACKAGE -- use `from . import telemetry`; a bare `import telemetry` fails at
+       runtime and the except-swallow would hide it." So: package -> relative import.
+
+    2. IT REQUIRED `app = FastAPI(...)` ON ONE LINE. Three real projects construct it across
+       several, so it reported "no ASGI app found" for all of them. `_call_end` walks to the real
+       closing paren instead.
+
+    Idempotent on a marker, and it REFUSES with a printed instruction rather than silently doing
+    nothing when there is no app to attach to -- a silent no-op here is the failure being fixed."""
+    is_pkg = os.path.exists(os.path.join(pkg_dir, "__init__.py"))
+    imp = "from . import perseus_client" if is_pkg else "import perseus_client"
     for fn in APP_FILES:
         p = os.path.join(pkg_dir, fn)
         if not os.path.exists(p):
@@ -173,24 +211,27 @@ def wire_middleware(pkg_dir):
         s = io.open(p, encoding="utf-8").read()
         if WIRE_MARK in s:
             return (fn, "already wired")
-        m = re.search(r"^(app\s*=\s*FastAPI\([^\n]*\)[^\n]*)$", s, re.M)
-        if not m:
-            m = re.search(r"^(app\s*=\s*Starlette\([^\n]*\)[^\n]*)$", s, re.M)
+        m = re.search(r"^app\s*=\s*(?:FastAPI|Starlette)\s*\(", s, re.M)
         if not m:
             continue
-        add = (m.group(1) + "\n\n"
-               "# PERSEUS SIDECAR — blocks what the hub published and reports every request to the\n"
+        end = _call_end(s, m.start())
+        if end < 0:
+            continue
+        nl = s.find("\n", end)
+        end = len(s) if nl < 0 else nl + 1
+        add = ("\n# PERSEUS SIDECAR — blocks what the hub published and reports every request to the\n"
                "# shared event log, which is what makes this project visible in cybergod.ai ->\n"
                "# Admin -> Fleet and what lets the ONE alerting brain page the operator about it.\n"
                "# It holds no credentials and sends nothing itself. Wrapped because a defence that\n"
-               "# stops the site it protects is worse than no defence.\n"
+               "# stops the site it protects is worse than no defence -- but the failure is PRINTED,\n"
+               "# because a swallowed import is how this ran unguarded while reporting success.\n"
                "try:\n"
-               "    import perseus_client\n"
+               "    %s\n"
                "    app.add_middleware(perseus_client.Middleware)\n"
                "except Exception as _perseus_exc:  # never take the app down over telemetry\n"
-               "    print('perseus sidecar not wired: %r' % (_perseus_exc,), flush=True)\n")
-        s = s[:m.start(1)] + add + s[m.end(1):]
-        io.open(p, "w", encoding="utf-8").write(s)
+               "    print('PERSEUS SIDECAR NOT WIRED: %%r' %% (_perseus_exc,), flush=True)\n" % imp)
+        s = s[:end] + add + s[end:]
+        io.open(p, "w", encoding="utf-8", newline="\n").write(s)
         return (fn, "WIRED")
     return (None, "no ASGI app found - wire it by hand: app.add_middleware(perseus_client.Middleware)")
 

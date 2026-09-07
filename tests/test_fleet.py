@@ -359,3 +359,75 @@ def test_the_watch_advances_so_it_cannot_re_alert(tmp_path, monkeypatch):
     assert len(sent) == 1 and ts >= now - 5
     fleet.watch(ts, lambda m: sent.append(m))
     assert len(sent) == 1, "the same lines must not alert twice"
+
+
+def test_wiring_into_a_PACKAGE_uses_a_relative_import():
+    """THE DEFECT THE FLEET PAGE CAUGHT ON ITS FIRST REAL RUN.
+
+    cybergod deployed with the middleware wired and still showed `sidecar: not installed`. The
+    page was right: `webapp/backend/app` has an __init__.py and every sibling is imported with
+    `from . import store, assistant, brand`. My auto-wiring emitted a BARE `import perseus_client`,
+    which raises ModuleNotFoundError there -- and the wrapper's `except` swallowed it, so colt-web
+    ran UNGUARDED while the deploy reported success.
+
+    CLAUDE.md already records exactly this: "app is a PACKAGE -- use `from . import telemetry`; a
+    bare `import telemetry` fails at runtime and the except-swallow would hide it."
+    """
+    import ast
+    import importlib.util
+    import tempfile
+    spec = importlib.util.spec_from_file_location("pcli", os.path.join(ROOT, "perseus.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    pkg = tempfile.mkdtemp()
+    open(os.path.join(pkg, "__init__.py"), "w").close()
+    with open(os.path.join(pkg, "main.py"), "w", encoding="utf-8") as fh:
+        fh.write('from fastapi import FastAPI\napp = FastAPI(title="x")\n')
+    assert m.wire_middleware(pkg)[1] == "WIRED"
+    src = open(os.path.join(pkg, "main.py"), encoding="utf-8").read()
+    ast.parse(src)
+    assert "from . import perseus_client" in src, "a package needs a RELATIVE import"
+
+    plain = tempfile.mkdtemp()                       # no __init__.py -> bare import is correct
+    with open(os.path.join(plain, "main.py"), "w", encoding="utf-8") as fh:
+        fh.write('from fastapi import FastAPI\napp = FastAPI()\n')
+    m.wire_middleware(plain)
+    src = open(os.path.join(plain, "main.py"), encoding="utf-8").read()
+    assert "from . import" not in src and "import perseus_client" in src
+
+
+def test_a_multiline_fastapi_constructor_is_found():
+    """It reported 'no ASGI app found' for jobhuntwow, Klima AND jev.best, because it required the
+    whole `app = FastAPI(...)` call on one line and all three span several."""
+    import ast
+    import importlib.util
+    import tempfile
+    spec = importlib.util.spec_from_file_location("pcli", os.path.join(ROOT, "perseus.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    d = tempfile.mkdtemp()
+    with open(os.path.join(d, "main.py"), "w", encoding="utf-8") as fh:
+        fh.write('from fastapi import FastAPI\napp = FastAPI(\n    title="x (y)",\n'
+                 '    docs_url=None,\n)\n\n@app.get("/")\ndef r(): return 1\n')
+    assert m.wire_middleware(d)[1] == "WIRED"
+    src = open(os.path.join(d, "main.py"), encoding="utf-8").read()
+    ast.parse(src)                                   # the rewritten module must still parse
+    assert src.index("add_middleware") > src.index("docs_url=None"), \
+        "the insert must land AFTER the whole call, not inside it"
+
+
+def test_the_live_cybergod_wiring_is_a_relative_import():
+    """The file that actually shipped unguarded. Assert the deployed shape, not just the generator."""
+    src = open(os.path.join(ROOT, "webapp", "backend", "app", "main.py"), encoding="utf-8").read()
+    i = src.index("app.add_middleware(perseus_client.Middleware)")
+    block = src[max(0, i - 300):i]
+    assert "from . import perseus_client" in block, \
+        "app/ is a package: a bare import raises and the except-swallow hides it"
+
+
+def test_a_swallowed_wiring_failure_is_printed_loudly():
+    """It must never fail silently again. The whole incident is that the deploy said success while
+    the control was not installed."""
+    src = open(os.path.join(ROOT, "perseus.py"), encoding="utf-8").read()
+    assert "PERSEUS SIDECAR NOT WIRED" in src

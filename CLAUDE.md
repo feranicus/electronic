@@ -7554,3 +7554,27 @@ the first would report a healthy, busy log as missing and then print nothing abo
 Guarded by tests/test_fleet_cli.py; four mutations (percent re-doubled, parse un-guarded, unreadable
 size read as missing, NOLOG ignored), each verified to fail and restore green.
 
+## THE FLEET PAGE CAUGHT ITS OWN AUTHOR ON ITS FIRST REAL RUN (2026-09-07)
+cybergod deployed with the middleware wired, engine CURRENT, 42/42 staging checks -- and the page
+said `cybergod.ai · sidecar: not installed`. **The page was right.** Two defects in the auto-wiring:
+1. **IT EMITTED A BARE `import perseus_client` INTO A PACKAGE.** `webapp/backend/app` has an
+   `__init__.py` and every sibling is imported with `from . import store, assistant, brand`. A bare
+   import raises ModuleNotFoundError there, the wrapper's `except` swallowed it, and colt-web ran
+   UNGUARDED while every gate reported success. CLAUDE.md ALREADY records this exact failure --
+   *"app is a PACKAGE -- use `from . import telemetry`; a bare `import telemetry` fails at runtime
+   and the except-swallow would hide it"* -- and I generated the forbidden form automatically, at
+   scale, into four projects. `wire_middleware` now checks for `__init__.py` and emits the relative
+   form, and the handler prints **PERSEUS SIDECAR NOT WIRED** instead of a lowercase note.
+2. **IT REQUIRED `app = FastAPI(...)` ON ONE LINE**, so it reported "no ASGI app found" for
+   jobhuntwow, Klima and jev.best -- all three span several lines. `_call_end()` walks to the real
+   closing paren (quote- and nesting-aware) and inserts after it.
+**THE LESSON IS ABOUT THE OBSERVABILITY, NOT THE BUG.** Every deterministic gate passed: tests,
+staging, engine hashes, the deploy verify. The thing that found it was a page whose only job is to
+say what is ACTUALLY running, and which deliberately refuses to collapse "the file is there" into
+"it is installed". Three separate columns -- present / wired / beating -- is what made a green
+deploy and an unguarded service distinguishable at a glance.
+Guarded by tests/test_fleet.py: a package gets a relative import, a plain directory does not, a
+multi-line constructor is found and the insert lands AFTER the call, the rewritten module still
+parses, the LIVE main.py carries the relative form, and the failure path shouts. Five mutations,
+all caught.
+

@@ -46,10 +46,10 @@ app = FastAPI(title="Cybergod.ai Sales & Pre-Sales API", version="1.0.0")
 # It holds no credentials and sends nothing itself. Wrapped because a defence that
 # stops the site it protects is worse than no defence.
 try:
-    import perseus_client
+    from . import perseus_client
     app.add_middleware(perseus_client.Middleware)
 except Exception as _perseus_exc:  # never take the app down over telemetry
-    print('perseus sidecar not wired: %r' % (_perseus_exc,), flush=True)
+    print('PERSEUS SIDECAR NOT WIRED: %r' % (_perseus_exc,), flush=True)
 
 
 # ---- visitor telemetry + security alerting -------------------------------------------------------
