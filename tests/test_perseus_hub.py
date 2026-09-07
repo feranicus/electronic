@@ -306,3 +306,63 @@ def test_install_only_returns_before_the_cycle():
     assert i_cycle != -1, "the cycle marker moved; re-anchor this check"
     assert i_guard < i_cycle, "--install-only must return BEFORE the cycle"
     assert "return 0" in body[i_guard:i_cycle], "the guard must actually return"
+
+
+# ── the shipped package, unpacked exactly as the droplet unpacks it ───────────────────────
+def test_the_shipped_package_imports_both_ways(tmp_path):
+    """TWO ENTRY POINTS, and only one of them was ever exercised.
+
+    `import abuse` resolves when hub.py runs AS A SCRIPT, because Python puts the script's own
+    directory on sys.path. Imported as `perseus.hub` -- which is precisely what the install's
+    verification does -- that directory is absent and it raises ModuleNotFoundError. The systemd
+    unit runs it as a script, so production would have worked and the INSTALL still failed, and
+    with `set -e` the timer was never enabled either.
+
+    So this unpacks the REAL tarball `perseus.pack()` produces, into a directory that is not this
+    repository, and exercises both. Reproducing the target environment beats reasoning about it --
+    the same rule that put the i18n gate inside the Docker build.
+    """
+    import base64
+    import importlib.util
+    import io as _io
+    import subprocess
+    import tarfile
+
+    spec = importlib.util.spec_from_file_location("perseus_cli", os.path.join(ROOT, "perseus.py"))
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    dest = tmp_path / "opt_perseus"
+    dest.mkdir()
+    with tarfile.open(fileobj=_io.BytesIO(base64.b64decode(cli.pack())), mode="r:gz") as tf:
+        tf.extractall(str(dest))
+
+    # 1. AS A PACKAGE -- the install's own verification, the exact command it runs.
+    r = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, %r); from perseus import ruleset, vet, hub, abuse; "
+         "print('modules import cleanly')" % str(dest)],
+        capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, (
+        "the install's own import check fails on the shipped package:\n"
+        + (r.stderr or "").strip()[-600:])
+
+    # 2. AS A SCRIPT -- what the systemd unit runs.
+    r2 = subprocess.run([sys.executable, str(dest / "perseus" / "hub.py"), "--report"],
+                        capture_output=True, text=True, timeout=120)
+    assert r2.returncode == 0, "the systemd entry point fails:\n" + (r2.stderr or "").strip()[-600:]
+
+
+def test_a_failed_install_reports_the_CAUSE_not_the_first_line_of_a_traceback():
+    """A traceback's cause is its LAST line. The previous version printed `err[:400]`, which on a
+    Python failure is "Traceback (most recent call last):" plus frames -- everything except the
+    exception. The operator got one useless line and the deploy cycle was wasted."""
+    src = open(os.path.join(ROOT, "perseus.py"), encoding="utf-8").read()
+    body = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    i = body.find("install failed rc=")
+    assert i != -1, "the install failure message is gone"
+    # Look BOTH ways: the tail is sliced a few lines ABOVE the message that prints it.
+    window = body[max(0, i - 600):i + 400]
+    assert "[-12:]" in window or "[-20:]" in window, \
+        "the failure must print the TAIL of the remote output, where the exception is"
+    assert "err.strip()[:400]" not in body, "printing the HEAD of a traceback tells you nothing"

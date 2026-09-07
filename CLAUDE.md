@@ -7135,3 +7135,46 @@ Gate 42/42, promoted. kimi-k2.6 returned NO-GO. Reviewed against the code:
 anything containing `/config/` returned the running-config JSON, so the host probe "answered" and
 a healthy box scored EXPOSED. A fixture that does not model the condition under test is a test of
 the fixture — fixed, plus the exposed case it never had.
+
+## TWO ENTRY POINTS, ONE TESTED — the hub install failed on `import abuse` (2026-09-07)
+The install wiring worked and the install itself did not:
+```
+  [X] install failed rc=1: Traceback (most recent call last):
+  [!] perseus hub NOT installed (rc=1)
+```
+`perseus/hub.py` carries `import abuse as AB, vet as VET`. That resolves when the file runs AS A
+SCRIPT, because Python puts the script's own directory on sys.path for you — which is what the
+systemd unit does, so PRODUCTION would have been fine. It does NOT resolve when the file is
+imported as `perseus.hub`, which is exactly what the install's own verification does. So the
+verification failed, and because the remote script runs under `set -e`, **the timer was never
+enabled either** — one import error took out the thing it was checking.
+FIX: hub.py inserts BOTH `HERE` and its own directory. Guarded by a test that unpacks the REAL
+tarball `perseus.pack()` produces into a directory outside this repository and exercises both
+entry points — the install's exact `python3 -c "from perseus import ..."` command and the unit's
+`python3 .../hub.py`. Reproducing the target beats reasoning about it, the same rule that put the
+i18n gate inside the Docker build.
+
+**AND MY DIAGNOSTIC THREW AWAY THE ANSWER.** `say("install failed rc=%s: %s" % (rc, err[:400]))`
+prints the HEAD of a traceback — "Traceback (most recent call last):" and the frames, i.e.
+everything except the exception. **A traceback's cause is its LAST line.** ship.py made it worse:
+it filtered the subprocess output by line prefix, which is fine for a successful run's summary and
+useless for a diagnosis, so the operator got one meaningless line. Both now print the TAIL, and
+ship.py prints everything on a non-zero exit. This is the same rule already recorded for the
+co-tenant guard's arithmetic and the mis-sliced dirty path: a diagnostic that does not name its
+subject sends the next investigation down the wrong road, and this one cost a deploy cycle.
+
+## THE PANEL, 7 Sep 2026 (second run): all three of kimi's risks were fair, none was a defect
+Gate 42/42, three GO. kimi returned NO-GO while explicitly AGREEING with the three checks it had
+challenged the run before (the reworded selftest path, the CONTEXT framing and the identical
+pre/post hashes) — the wording fixes landed and it read them correctly. Its three new risks are
+coverage gaps rather than faults, and two are out of scope by design:
+  * **TLS is not exercised on the twin.** True. Staging has no public name and no certificate, so
+    there is nothing to present; production checks expiry on all five domains every deploy and the
+    off-box uptime workflow checks it every 10 minutes.
+  * **The admin API is not tested under load or with spoofed headers.** The three probes measure
+    what the running config BINDS, what Docker PUBLISHES, and whether it ANSWERS from another
+    container and from the host. A bind address does not change under load, and the endpoint has
+    no header-based auth to spoof — loopback-only IS the control.
+  * **Concurrency only proves 401s, not backend isolation.** Fair, and it is the one worth doing
+    if the twin ever runs more than one backend. Today staging serves a single vhost, so there is
+    no isolation property there to measure.

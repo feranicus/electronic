@@ -196,7 +196,16 @@ def main():
         out, err, rc = ssh_script(install_script(pack()))
         say(out.strip() or "(no output)")
         if rc != 0:
-            say("[X] install failed rc=%s: %s" % (rc, err.strip()[:400]))
+            # A TRACEBACK'S CAUSE IS ITS LAST LINE, NEVER ITS FIRST. The previous version printed
+            # `err[:400]`, which on a Python failure is "Traceback (most recent call last):" and
+            # the frames -- everything except the exception. A diagnostic that does not name its
+            # subject sends the next investigation down the wrong road, and this one cost a
+            # deploy cycle.
+            blob = ((out or "") + "\n" + (err or "")).strip()
+            tail = [l for l in blob.splitlines() if l.strip()][-12:]
+            say("[X] install failed rc=%s. Last %d line(s) of the remote output:" % (rc, len(tail)))
+            for l in tail:
+                say("    " + l)
             return 1
 
     if a.install_only:

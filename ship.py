@@ -2005,9 +2005,16 @@ def main():
                              capture_output=True, text=True, encoding="utf-8",
                              errors="replace", timeout=300)
         _po = (_ph.stdout or "") + (_ph.stderr or "")
-        for _l in _po.splitlines():
-            if _l.strip().startswith(("modules import", "NEXT", "[X]", "[!]", "Installed.")):
-                print("  " + _l.strip())
+        if _ph.returncode != 0:
+            # ON FAILURE, SHOW EVERYTHING. A prefix filter is fine for a successful run's summary
+            # and useless for a diagnosis: the previous version reduced a real traceback to its
+            # first line and the operator had nothing to act on.
+            for _l in [x for x in _po.splitlines() if x.strip()][-20:]:
+                print("  " + _l)
+        else:
+            for _l in _po.splitlines():
+                if _l.strip().startswith(("modules import", "NEXT", "Installed.")):
+                    print("  " + _l.strip())
         if _ph.returncode != 0:
             # NON-BLOCKING, deliberately. The estate's inline defence is shield.py inside colt-web
             # and it is already deployed; the hub is the daily REVIEW of that defence. A hub that

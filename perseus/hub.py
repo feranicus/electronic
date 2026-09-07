@@ -40,10 +40,17 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_MINE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+# ...AND ITS OWN DIRECTORY. `import abuse` resolves only when this file runs AS A SCRIPT (Python
+# puts the script's directory on sys.path for you). Imported as `perseus.hub` -- which is exactly
+# what the install's own verification does -- that directory is NOT on the path and the import
+# raises ModuleNotFoundError. The systemd unit runs it as a script, so production would have been
+# fine and the INSTALL still failed, taking the timer down with it under `set -e`.
+sys.path.insert(0, _MINE)
 
-from perseus import ruleset as RS
-import abuse as AB, vet as VET          # noqa: E402
+from perseus import ruleset as RS         # noqa: E402
+import abuse as AB, vet as VET            # noqa: E402
 
 # Every property, and the Loki selector that finds it. Three event volumes, four promtails, one
 # Loki: these selectors are the only place that knows the difference.
