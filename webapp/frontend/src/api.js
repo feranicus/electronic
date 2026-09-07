@@ -39,6 +39,7 @@ export const changePassword = (currentPassword, newPassword) =>
 // ---- Administration (server-side gated on colt_auth.ADMIN_EMAILS; the nav item is cosmetic) ----
 // getJSON-backed: the parsed body { users, store_ok, min_password_len, shared_password_active }.
 export const adminUsers = () => getJSON("/api/admin/users");
+export const adminFleet = () => getJSON("/api/admin/fleet");
 // postJSON-backed: { ok, status, data }. data.password is the plaintext, returned ONCE.
 export const adminSetUser = (email, password, mustChange = true, note = "") =>
   postJSON("/api/admin/users", { email, password, must_change: mustChange, note });

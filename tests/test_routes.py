@@ -102,9 +102,23 @@ def test_every_public_page_keeps_the_phone_tab_bar():
     # exactly what happened when Admin.jsx and ChangePassword.jsx arrived and this test failed for
     # them despite them being cabinet pages with the sidebar's own bottom bar. Cabinet.jsx's imports
     # ARE the definition of "a cabinet page", so read them.
-    cab_src = _read(os.path.join(pages, "Cabinet.jsx"))
-    CABINET = {"Cabinet.jsx"} | {m + ".jsx" for m in
-                                 re.findall(r'import\s+\w+\s+from\s+"\./(\w+)\.jsx"', cab_src)}
+    # THE CLOSURE MUST BE TRANSITIVE. Cabinet.jsx imports Admin.jsx, and Admin.jsx imports
+    # Fleet.jsx -- a sub-tab of an existing cabinet page. Reading only Cabinet's direct imports
+    # called Fleet a public page and demanded a phone tab bar on a screen that already sits inside
+    # the cabinet's own bottom navigation. A page is a cabinet page if it is reachable from
+    # Cabinet.jsx through ANY chain of page imports, so follow the chain instead of one hop.
+    CABINET, todo = {"Cabinet.jsx"}, ["Cabinet.jsx"]
+    while todo:
+        cur = todo.pop()
+        try:
+            src = _read(os.path.join(pages, cur))
+        except Exception:
+            continue
+        for m in re.findall(r'import\s+\w+(?:\s*,\s*\{[^}]*\})?\s+from\s+"\./(\w+)\.jsx"', src):
+            f = m + ".jsx"
+            if f not in CABINET:
+                CABINET.add(f)
+                todo.append(f)
     missing = []
     for f in sorted(os.listdir(pages)):
         if not f.endswith(".jsx") or f in CABINET:

@@ -7293,3 +7293,264 @@ left behind. 562 tests, 4 engine gates. Six mutations across the two fixes, each
 and restore — including one of MY OWN mutations that proved nothing (swapping `break` for a short
 sleep still returns False, so it never violated the property; the dangerous mutation is one that
 returns True on a real error).
+
+## WAS THE LLMJACKER A HUMAN, A SCRIPT, OR AN AGENT? -- `python agent_forensics.py` (2026-09-07)
+The question after the jobhuntwow abuse (1,538 requests from 24.199.91.170 over 8 days, UA
+`python-requests/2.34.2`, `caller="qwen.chat_stream"`, ~17,794 tokens_in per call, deepseek-v4-pro
+and glm-5.3-flash, an 11-hour plateau on 3 Sep). The answer has to come from BEHAVIOUR, because
+**request bodies are deliberately not logged** -- they are third-party content and may carry other
+people's personal data. Content attribution is therefore impossible and starting to log prompts is
+not the answer; the report says so in its own output rather than letting a reader assume intent was
+measured.
+
+WHAT THE LOGS CAN AND CANNOT SETTLE, stated in the file and printed with every verdict:
+  * ESTABLISHED -- automated vs a person (inter-arrival CV, hours-of-day coverage, longest plateau,
+    concurrency); a FIXED scaffold vs a growing conversation (the variance and trend of tokens_in);
+    model ROUTING vs a hardcoded model, and whether a switch FOLLOWS an error (a fallback chain);
+    how fast the API was mapped (/openapi.json -> /api/models -> /api/chat).
+  * INFERENCE ONLY -- "agentic" as opposed to a competent script. The tell is a DEPENDENT loop: the
+    next request begins a short, CONSISTENT interval after the previous response completed. An
+    engineer can hand-write that, and no log separates them.
+  * NEVER -- identity, intent, or framework. An address is not a person.
+
+**TIMING COMES FROM LOKI'S NANOSECOND TIMESTAMP, NOT THE APP'S `ts`.** telemetry stamps
+`int(time.time())`; one-second granularity would destroy the inter-arrival signal that most of the
+analysis rests on. Read the field, do not assume it.
+
+**AN `evt=llm_call` LINE CARRIES NO IP.** It records model, caller and tokens only, so the model and
+token signals can be tied to an actor only BY TIME. They are narrowed to the actor's own request
+window and the report PRINTS the overlap ("N of M in the window") plus the warning that another
+concurrent client would share them. A correlation presented as an attribution is how a forensic
+report becomes a false accusation.
+
+**A SIGNAL THAT IS AN ARTIFACT OF ANOTHER SIGNAL MUST BE SUPPRESSED, NOT AVERAGED IN.** The
+self-test caught this: on a fixed-interval loop the gap between a response finishing and the next
+request is set by the SCHEDULE, so "think time" scored a spurious HUMAN-LIKE vote on a cron trace.
+It is now skipped when the rhythm is metronomic, and the skip is STATED rather than silent.
+
+**THE SELF-TEST IS THE GATE, AND IT INCLUDES A CASE THE CLASSIFIER MUST REJECT.**
+`--selftest` runs three synthetic traces whose ground truth we know (human / cron / agent) and
+requires three DIFFERENT verdicts -- three individually passing assertions could all be reading one
+constant. `tests/test_agent_forensics.py` asserts the false-positive direction FIRST (a person must
+not be called a bot: reporting a real customer costs far more than missing an automated one), that
+an empty window renders as BLIND NOT INNOCENT, that `_ts` keeps sub-second precision, and that the
+report states its own limits. Five mutations, each verified to fail by name and restore green.
+READ-ONLY, one ssh session, log queries only. Nothing is sent to the address under analysis.
+
+## THE ZERO THAT WAS MY QUERY, NOT THE CLIENT (2026-09-07, agent_forensics)
+First real run: `http requests attributed : 0` for an actor with 1,538 requests, and NO error. I had
+interpolated raw LogQL -- braces, quotes, pipes, spaces -- straight into a query string. Loki
+rejected it, `_parse` found no streams, and the report rendered that as a measurement. **A failed
+query presented as absence of evidence** is the defect this repository records more than any other,
+and I committed it inside the tool written to avoid it, one paragraph under a docstring that says
+BLIND IS NOT INNOCENT. `cost_report._enc` -- the ONE encoder, written for exactly this -- already
+existed and I did not use it.
+THREE FIXES, and only the first is about encoding:
+  * `_enc()` on every selector. Verified by printing the generated script, not by reading the code.
+  * `_answered()` -- a body that is not a `status: success` envelope means the question was never
+    asked. That is a different fact from "the client made no requests" and may never render as one.
+  * A VISIBILITY PROBE runs first: the UNFILTERED stream. If jhw-web shipped nothing, every
+    conclusion below it is about our blindness. `collect()` refuses; it does not return a clean zero.
+    And when the probe IS populated the report says so, so a genuine zero reads as a real result.
+ALSO: the address filter is now the ONLY server-side filter, and what counts as an event is decided
+in Python. `json.dumps` separator spacing (`"evt": "http"` vs `"evt":"http"`) is not something to
+guess at inside a substring filter -- an assumption there fails silently and looks like innocence.
+Guarded by test_agent_forensics.py (encoded query · error bodies are not success · an unshipped
+stream aborts). Three mutations, each verified to fail and restore green.
+
+## THE FIRST REAL VERDICT, AND THE THREE THINGS THE TOOL WAS HIDING (2026-09-07)
+`agent_forensics.py` returned AUTOMATED, AGENT-SHAPED on 24.199.91.170: 1,539 requests, active in
+24 of 24 hours, longest silence in twelve days **17 minutes**, strictly serial (concurrency 1), and
+**4 model switches, every one of them immediately after a failed call** -- a fallback chain, i.e.
+framework behaviour. Reading the output found three defects, two in the analysis and one in the
+code, and the sharpest one was a fact the tool declined to show.
+1. **A SPURIOUS `HUMAN-LIKE` VOTE: "374s of think-time".** The actor beat every ~6 minutes; its
+   think-time CV was **0.771 and its inter-arrival CV was 0.771** -- IDENTICAL, which is the tell.
+   When the response is short next to the interval, the gap after the answer IS the inter-arrival
+   gap, so it measures the schedule and says nothing about a person. The original suppression only
+   caught a metronome (CV < 0.35) and missed a jittered poller. Suppressed on same-shape now.
+2. **1,539 REQUESTS, 34 MODEL CALLS.** 98% of the traffic never reached inference and the report
+   showed neither what those requests asked for nor whether they were being REFUSED -- which is the
+   decisive cut, because the auth and allowlist fixes landed on 6 Sep. A client that keeps its
+   rhythm while being refused is a retry loop with nobody watching it, and that says more about
+   automation than any timing statistic. `breakdown()` now prints per-day counts, the response-code
+   distribution and the top paths.
+3. **`recon` REPORTED -1000s AND STILL VOTED "a program read the schema".** A negative interval
+   means the endpoint was called BEFORE the schema was ever read: this client did not learn the API
+   here. Now reported as not measurable, with the reason.
+**TWO OF MY FIVE MUTATIONS SURVIVED, AND BOTH WERE WEAK TESTS OF MINE, NOT SAFE CODE.** The
+think-time fixture had an inter-arrival CV of 0.265, so the OLD metronome rule already suppressed it
+and deleting the NEW rule changed nothing -- a negative test that passes because of a different
+guard measures that other guard (fourth instance). And the path-table assertion checked for
+`/api/chat`, which also appears in the reconnaissance vote, so blanking the table still passed:
+assert the ROW (`90  /api/chat`), never a string the rest of the report shares. The -1000s defect
+was found only because those mutations forced me to render the output and look at it.
+
+## I NEARLY READ MY OWN INSTRUMENTATION DATE AS THE ATTACKER'S BEHAVIOUR (2026-09-07)
+The second real run printed `200 x1521, 401 x18` on `/api/chat` and `34 llm_call events`, and my
+tool concluded "most of this traffic never reached inference". **That conclusion was probably about
+US.** `evt=llm_call` was added to jobhuntwow days earlier, and jhw-web's writes to the shared
+events.log had been failing on a UID-10001-vs-root permission bug for most of the window, so a thin
+ratio may be measuring WHEN WE STARTED LOOKING rather than what the client did. The provider's
+billed tokens are authoritative there, not our log.
+`instrumentation_overlap()` now compares the two coverage windows and the report refuses the
+conclusion when the model-call log does not span the traffic. RULE: before attributing a ratio to a
+subject, check that both of its terms were measured over the same period. This is the same disease
+as the circular coverage metric in the attack digest, one level over: a number whose denominator
+comes from our own plumbing is not a measurement of anyone else.
+
+THREE MORE DEFECTS THE SAME OUTPUT EXPOSED:
+1. **`plateau_h 0.75` for a client whose longest silence in twelve days was SEVENTEEN MINUTES.**
+   The threshold was a fixed 5 minutes while the actor's median interval was 6.2 minutes, so nearly
+   every ordinary gap "broke" the plateau and the number understated a client that never stopped.
+   It now scales to three times the client's own median gap, floor 5 minutes.
+2. **`recon: not determinable` was hiding a finding.** All 1,539 requests went to ONE path and
+   nothing else was ever probed. It did not search for the endpoint, it arrived knowing it -- which
+   points at prior knowledge (a schema read earlier or from another address, or a shared target
+   list) rather than opportunistic scanning. Now reported as ZERO RECONNAISSANCE.
+3. **It had STOPPED and nothing said so.** The last day in an 8-day window was 6 Sep. The tool now
+   prints LAST SEEN and explicitly refuses to say why it stopped: locked out, gave up or finished
+   are not separable from these logs.
+
+MUTATION NOTE: five run, four caught, and the survivor ("last-seen never reported") was simply a
+behaviour I had shipped with NO test at all -- which is what a mutation run is for. Twenty tests now.
+
+## "I DO NOT GET NOTHING ON MY TELEGRAM FROM jev.best, jobhuntwow, polara" (2026-09-07)
+He was right, and the answer was worse than a bug. Three facts, measured:
+  * **`perseus_client.py` was copied into jobhuntwow and jev.best and imported by NOTHING.** Correct
+    code, wired to no request path. This file already carries the rule -- *a control that is correct
+    and unreachable is not a control* -- and I broke it in the very change that shipped the hub.
+    `perseus.py --clients` copies a FILE; copying a file is not installing a control, and the run
+    printed "copied" either way.
+  * **Even wired, the client is ENFORCEMENT ONLY.** It reads a blocklist and answers allow/deny. No
+    telemetry, no alerting. It was never going to tell anyone who visited jev.best.
+  * **Every alert he does receive comes from colt-web's `notify.py` + `alerts.py`**, which the other
+    projects do not run. There was no path for a message to travel down. Nothing was broken; nothing
+    was built. Saying "the guardrails are deployed" was true of the hub and false of the fleet.
+WHAT SHIPPED:
+1. **A HEARTBEAT, so "is the sidecar connected" is measured rather than assumed.** `client._beat()`
+   writes one small JSON per service to a volume the hub already reads, at most once a minute, never
+   per request, naming the service and the blocklist cycle it is ACTUALLY running. **Absence of a
+   file then means exactly one thing: that project is not running this code.** Fails open and silent.
+2. **`app/fleet.py` + `GET /api/admin/fleet`**, and the design decision that matters is refusing to
+   collapse three states into "OK / not OK":
+       LIVE      logging AND beating      -> protected and observed
+       OBSERVED  logging, no heartbeat    -> visible and UNGUARDED  (jobhuntwow, jev.best today)
+       SILENT    no log line at all       -> WE ARE BLIND, not "quiet"
+   The third is the whole point. A dashboard rendering "0 attacks" for a project shipping no logs is
+   the same defect as logship reporting success for a week while shipping an empty archive. SILENT
+   is drawn as the loudest state and the caveat is printed ON the page, not left in a comment.
+3. **Admin sub-menu (Users | Fleet)**, 27 keys x 6 locales at 100%, and the tab is PRESENTATION
+   ONLY -- every /api/admin/* route independently depends on `_require_admin`.
+4. **An hourly Telegram watch that is EDGE-TRIGGERED.** It fires when a project ENTERS or LEAVES a
+   state, never on the state itself: a project silent for a month must not page every hour, which is
+   how the roster warning and the 8/10 bot-gate line trained him to read past a warning.
+THREE MISTAKES OF MINE IN THIS CHANGE, all caught before shipping:
+  * `t()` takes ONE argument and has no interpolation; `t("fleet.window", {h})` would have printed a
+    raw template. Read the signature (16th time in this workstream).
+  * I wrote `var(--crit)` / `var(--amber)` / `var(--muted)` into the stylesheet. **None of those
+    tokens exist** -- the palette is `--red` / `--gold` / `--mut`. Invented names again, caught by
+    grepping the variable block instead of trusting memory.
+  * **The SSR gate passed while proving nothing.** SSR does not run `useEffect`, so rendering the
+    page only ever showed the loading state and my content assertions failed against correct code.
+    Fixed by SPLITTING the fetch shell from the view: `FleetView` takes the data as a prop and is
+    rendered with a real fixture in all six languages. A test that cannot reach the thing it checks
+    is not a test, and the fix was structural rather than a looser assertion.
+STILL HONEST ABOUT THE GAP: the fleet page shows the state; it does not yet give jobhuntwow, jev.best
+or polara their own visitor alerting, because those projects have no `visitors.py`. Wiring
+`perseus_client.check()` into their middlewares is the next increment and it is THEIR deploy, not
+this one. Guarded by tests/test_fleet.py (11 tests, 7 mutations, all caught).
+
+## THE SIDECAR NOW OBSERVES, AND perseus.py WIRES IT IN (2026-09-07, the second half)
+The operator: *"I need to see everything exactly like in cybergod.ai project so either we copy or we
+reuse our stack or deploy side car."* Right. The fleet page showed the state; it did not fix it.
+THE DESIGN IS THE SAME DOCTRINE, EXTENDED FROM ENFORCEMENT TO OBSERVATION.
+  * `client.observe()` writes the SAME `evt=http` line colt-web's telemetry writes, to the SAME
+    shared events log, stamped with this project's SERVICE. `client.Middleware` is pure ASGI (no
+    Starlette import, no new dependency) so a project needs ONE line.
+  * **THE CLIENT HOLDS NO CREDENTIALS AND SENDS NOTHING.** Five copies of a bot token is the "one
+    value, several homes" defect, and five copies of alerts.py is five things that drift. The
+    projects emit; `fleet.watch()` in colt-web reads, applies the SAME `shield.probe_shape`
+    detector, and pages through the ONE notify.py. Asserted by a test that fails if the client ever
+    learns `BOT_TOKEN`, `api.telegram.org`, `sendMessage` or `smtplib`.
+  * **VARIETY, NOT VOLUME**, carried across from the 10 Aug lesson: an address asking for many
+    DIFFERENT things it cannot have is a scan; one probe path hit sixty times is a stale link. And
+    colt-web is skipped, because alerts.py already covers it and a doubled alert teaches an operator
+    to ignore alerts.
+  * `observe()` prints to stdout BEFORE writing the file. That accident -- the docker log driver
+    scraping stdout -- is the only reason the jobhuntwow abuse could be reconstructed at all after
+    the UID-10001 permission bug silently discarded every shared-volume write for the project's
+    whole life. The `except` now prints ONCE instead of swallowing.
+**AND `perseus.py` NOW WIRES THE MIDDLEWARE, because copying a file is not installing a control.**
+`wire_middleware()` finds the module that builds the ASGI app, inserts the import + add_middleware
+after `app = FastAPI(...)`, is idempotent on a marker, and REFUSES with a printed instruction rather
+than silently doing nothing when it cannot find an app -- a silent no-op there is the exact failure
+being fixed. It also covers Klima, which is not reachable from my sandbox, so there is no manual
+step for the one project I cannot edit.
+PROVEN END TO END, not argued: a real ASGI call through the real middleware returns 200 on `/app`
+and 429 on a blocklisted `/.env`, BOTH are written to the event log with the client address taken
+from the FIRST forwarded entry, the heartbeat lands with the right cycle, and `fleet.status()` then
+reports jhw-web as LIVE with 2 requests and 1 attack.
+TWO OF MY ELEVEN MUTATIONS SURVIVED AND BOTH WERE MY OWN ERROR, not safe code:
+  * the "variety threshold" fixture used `/app`, which is not probe-shaped, so it never reached the
+    threshold it claimed to test and lowering that threshold changed nothing. **To test a threshold
+    the fixture must actually be counted by it.**
+  * the "watch never advances" mutation hit the FIRST `return newest`, which is the no-classifier
+    fallback, leaving the real one intact. **A mutation that does not violate the property proves
+    nothing** -- target the last occurrence, or scope it to the function.
+ALSO FIXED: `test_routes.py`'s cabinet-page derivation was one hop deep, so Fleet.jsx (imported by
+Admin.jsx, which Cabinet.jsx imports) was judged a PUBLIC page and demanded a phone tab bar on a
+screen that already sits inside the cabinet's own bottom navigation. The closure is now transitive,
+which is what "DERIVED, NOT LISTED" was always supposed to mean.
+
+## A DASHBOARD BEHIND THE AUTH GATE CANNOT BE PREVIEWED -- `python fleet.py` (2026-09-07)
+The operator, on being sent to preview.py to look at Admin -> Fleet: *"this is bull it will not show
+anything because it needs to show this post IAM and IAM is on the server side so this is money for
+nothing give me the real stuff."* He is right on both counts:
+  * the page is behind the session gate, and preview.py's /api proxy is READ-ONLY and cross-origin,
+    so no session cookie reaches it. The screen can only ever render its empty state locally. My
+    preview gate demanded a visual check of a page that is structurally incapable of showing data.
+  * and even deployed, it would have said OBSERVED for three projects until THEIR deploys pick up
+    the middleware -- so it answers "is it wired yet", not "who visited jev.best".
+`fleet.py` is the answer, and it follows the pattern that has actually worked this month
+(recover.py, cost_report.py, agent_forensics.py): ONE ssh session, READ-ONLY, straight from the
+operator's machine, no browser and no IAM. It reads the shared events.log, the heartbeat directory
+and `docker inspect`, and prints per project.
+**IT KEEPS THREE QUESTIONS APART, because conflating them is the whole incident:**
+    1. IS THE CODE THERE?   perseus_client.py present in the RUNNING container
+    2. IS IT WIRED IN?      something actually calls add_middleware -- a file nothing imports is
+                            not a control, which is exactly the state that produced the silence
+    3. IS IT RUNNING?       a heartbeat newer than 15 minutes
+A project passes 1 and fails 2 for days while a copy step prints "copied". That is not a hypothetical.
+**AND IT REFUSES TO TURN BLINDNESS INTO REASSURANCE**, in three separate places: no log lines is
+"we CANNOT SEE this project", not "no attacks"; a missing events.log reports nothing at all rather
+than a page of zeroes; and if `shield.probe_shape` cannot be imported it says the attack counts are
+"0 by inability, not by measurement". Same doctrine as logship and the whodunit visibility probe.
+Guarded by tests/test_fleet_cli.py (9 tests, 5 mutations, all caught) -- including one asserting the
+tool can never write to a droplet it does not own, and one that a failed ssh decides nothing.
+TWO OF MY OWN ERRORS, both the recurring kind: an assertion that spanned a LINE WRAP could never
+match (the same mistake as grepping with a padded regex), and a mutation that softened only the
+HEADLINE while leaving the explanation intact went unnoticed -- **a partial mutation proves only
+that the part you asserted is still there**, so the block is now pinned at both ends.
+
+## `stat -c%%s` IN A STRING THAT IS NOT %-FORMATTED (2026-09-07, fleet.py's first real run)
+```
+ValueError: invalid literal for int() with base 10: '%s'
+```
+`_script()` builds its text with `"\n".join(...)` and NO %-formatting, so doubling the percent was
+wrong: stat received `%%s` and printed the literal `%s`. This repository's standing rule -- *a
+literal % in a %-FORMATTED string must be `%%`* -- is correct and I applied it to a PLAIN string,
+where it breaks the command. The rule has a precondition and I dropped it.
+**AND MY FIXTURE COULD NEVER HAVE CAUGHT IT.** Every test fed `"SIZE 1000"` straight into
+`analyse()`, bypassing the generator entirely -- a fixture that does not exercise the code under
+test is a test of the fixture, which is the sixth instance of that lesson in this file. The new
+check RUNS the real script fragment through bash against a real file and asserts stat printed a
+NUMBER (skipping, with a reason, where bash is absent).
+SECOND DEFECT, and the more dangerous one: the parser crashed instead of degrading, and the
+traceback named `int()` rather than the shell command that produced the bad line. `analyse()` now
+distinguishes THREE states that a status tool must never conflate -- the log is ABSENT (`NOLOG`),
+the log is present but its SIZE is unreadable, and the log is fine. Collapsing the middle one into
+the first would report a healthy, busy log as missing and then print nothing about a real attack.
+Guarded by tests/test_fleet_cli.py; four mutations (percent re-doubled, parse un-guarded, unreadable
+size read as missing, NOLOG ignored), each verified to fail and restore green.
+

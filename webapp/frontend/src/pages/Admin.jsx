@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { adminUsers, adminSetUser, adminDisable, adminDeleteUser } from "../api.js";
 import { useT } from "../i18n";
+import Fleet from "./Fleet.jsx";
 
 // ADMINISTRATION — create users, assign and reset passwords, see who can reach the platform.
 //
@@ -29,6 +30,10 @@ export default function Admin() {
   const [note, setNote] = useState("");
   const [issued, setIssued] = useState(null);   // { email, password } — shown once, then cleared
   const [q, setQ] = useState("");
+  // A sub-menu, as asked for: Users | Fleet. The tab is PRESENTATION ONLY -- every
+  // /api/admin/* route independently depends on _require_admin, so hiding a tab is not
+  // a control and showing one grants nothing.
+  const [adminTab, setAdminTab] = useState("users");
 
   async function load() {
     setErr("");
@@ -76,6 +81,17 @@ export default function Admin() {
     <div className="page">
       <h1>{t("admin.h1")}</h1>
       <p className="lede">{t("admin.lede")}</p>
+
+      <div className="admin-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={adminTab === "users"}
+                className={"admin-tab" + (adminTab === "users" ? " on" : "")}
+                onClick={() => setAdminTab("users")}>{t("admin.tabUsers")}</button>
+        <button type="button" role="tab" aria-selected={adminTab === "fleet"}
+                className={"admin-tab" + (adminTab === "fleet" ? " on" : "")}
+                onClick={() => setAdminTab("fleet")}>{t("admin.tabFleet")}</button>
+      </div>
+
+      {adminTab === "fleet" ? <Fleet /> : (<>
 
       {err ? <div className="err">{err}</div> : null}
 
@@ -192,6 +208,7 @@ export default function Admin() {
         </table>
       </div>
       <p className="hint">{t("admin.removeNote")}</p>
+      </>)}
     </div>
   );
 }

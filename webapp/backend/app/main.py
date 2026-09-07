@@ -40,6 +40,18 @@ from .settings import (
 
 app = FastAPI(title="Cybergod.ai Sales & Pre-Sales API", version="1.0.0")
 
+# PERSEUS SIDECAR — blocks what the hub published and reports every request to the
+# shared event log, which is what makes this project visible in cybergod.ai ->
+# Admin -> Fleet and what lets the ONE alerting brain page the operator about it.
+# It holds no credentials and sends nothing itself. Wrapped because a defence that
+# stops the site it protects is worse than no defence.
+try:
+    import perseus_client
+    app.add_middleware(perseus_client.Middleware)
+except Exception as _perseus_exc:  # never take the app down over telemetry
+    print('perseus sidecar not wired: %r' % (_perseus_exc,), flush=True)
+
+
 # ---- visitor telemetry + security alerting -------------------------------------------------------
 # One JSON event per request (ip/device/bot/status/ms) -> Loki -> Grafana "Visitor Log", and the same
 # event feeds the alert rules (DDoS, scanners, IDOR probing, exfil). Detection only: it never blocks
@@ -153,10 +165,47 @@ try:
                 except Exception as exc:
                     print('{"evt":"spend_watch_error","err":"%s"}' % repr(exc)[:160], flush=True)
 
+        async def _fleet_loop():
+            """DID A PROJECT GO DARK? Telegram, hourly, and only when the state CHANGES.
+
+            The operator: "after implementing our security guardrails I do not get nothing on to my
+            telegram from jev.best from jobhuntwow from polara". He was right, and the reason was
+            that nothing was ever wired to tell him -- perseus_client was copied into those projects
+            and imported by nothing, and it carries no telemetry in any case.
+
+            EDGE-TRIGGERED, NOT LEVEL-TRIGGERED. A project that has been silent for a month must not
+            page every hour: an alert that fires every time is how the one that matters gets read
+            past, which this repository has already paid for with the roster warning and the 8/10
+            bot-gate line. So the message is sent when a project ENTERS or LEAVES a bad state."""
+            from . import fleet as _fl
+            from . import notify as _nt
+            seen, seen_ts = {}, int(time.time())
+            while True:
+                await _aio.sleep(300)
+                try:
+                    # Scanners on the OTHER projects, using cybergod's own detector and its own
+                    # Telegram credentials. No Markdown: an attacker chooses the path text, and one
+                    # stray underscore makes Telegram reject the whole message.
+                    seen_ts = await _aio.get_event_loop().run_in_executor(
+                        None, _fl.watch, seen_ts, _nt.telegram)
+                    st = await _aio.get_event_loop().run_in_executor(None, _fl.status)
+                    changed = []
+                    for p in st["projects"]:
+                        was = seen.get(p["key"])
+                        seen[p["key"]] = p["state"]
+                        if was is not None and was != p["state"]:
+                            changed.append("%s: %s -> %s" % (p["name"], was, p["state"]))
+                    if changed:
+                        _nt.telegram("FLEET STATE CHANGED\n" + "\n".join(changed) +
+                                     "\n\ncybergod.ai/app/admin -> Fleet")
+                except Exception as exc:
+                    print('{"evt":"fleet_watch_error","err":"%s"}' % repr(exc)[:160], flush=True)
+
         _aio.create_task(_decisions_loop())
         _aio.create_task(_panel_loop())
         _aio.create_task(_digest_loop())
         _aio.create_task(_spend_loop())
+        _aio.create_task(_fleet_loop())
 except Exception as _e:  # telemetry must never stop the app from booting
     print('{"evt":"telemetry_init","result":"error","err":"%s"}' % repr(_e)[:120], flush=True)
 
@@ -656,6 +705,19 @@ def change_password(req: ChangePwReq, request: Request):
 
 # ---------------- administration ----------------
 # Every route below depends on _require_admin. The committed list is colt_auth.ADMIN_EMAILS.
+@app.get("/api/admin/fleet")
+def admin_fleet(request: Request):
+    """Is the security sidecar connected to every project, and is anything watching them?
+
+    Built because the operator asked why he receives nothing from jev.best, jobhuntwow or polara.
+    The answer was that perseus_client.py was copied into those projects and imported by nothing,
+    and that it is an enforcement client with no telemetry anyway -- so no message could ever have
+    reached him. This page makes that state visible instead of leaving it to be discovered."""
+    _require_admin(request)
+    from . import fleet
+    return fleet.status()
+
+
 @app.get("/api/admin/users")
 def admin_users(request: Request):
     """Everyone who can reach cybergod.ai, from all three sources that decide it.

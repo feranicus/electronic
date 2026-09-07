@@ -1267,3 +1267,29 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .wl-pct{font-size:12px;color:var(--mut);margin:5px 0 7px}
 .wl-log{max-height:190px;overflow:auto;margin:0;padding:9px 11px;border-radius:8px;
   background:var(--dark);color:var(--dark-ink);font-size:12px;line-height:1.55;white-space:pre-wrap}
+
+
+/* ---- Admin sub-menu + fleet status ------------------------------------------------
+   The three fleet states are colour-coded on purpose and SILENT is the loudest: a project
+   shipping no logs must not read as a quiet, healthy one. That is the same defect as a backup
+   reporting success while copying nothing. */
+.admin-tabs{display:flex;gap:8px;margin:14px 0 18px;border-bottom:1px solid var(--line)}
+.admin-tab{appearance:none;background:none;border:0;border-bottom:2px solid transparent;
+  padding:9px 14px;font:inherit;font-weight:700;color:var(--mut);cursor:pointer;border-radius:6px 6px 0 0}
+.admin-tab:hover{color:var(--ink);background:rgba(79,70,229,.06)}
+.admin-tab.on{color:var(--ink);border-bottom-color:var(--cta)}
+.fleet-sum{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 16px}
+.fleet-stat{flex:1 1 130px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.fleet-stat b{display:block;font-size:26px;line-height:1.1}
+.fleet-stat span{font-size:12px;color:var(--mut)}
+.fleet-stat.bad{border-color:var(--red)}
+.fleet-stat.bad b{color:var(--red)}
+.fleet-stat.warn{border-color:var(--gold)}
+.fleet-why{font-size:12px;color:var(--mut);margin-top:3px;max-width:52ch}
+.fleet .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;
+  border:1px solid var(--line)}
+.fleet .pill.ok{background:rgba(16,185,129,.12);border-color:#0f9d76;color:#0b6b51}
+.fleet .pill.warn{background:rgba(245,158,11,.14);border-color:#b4790a;color:#7a5207}
+.fleet .pill.bad{background:rgba(220,38,38,.12);border-color:#c62828;color:#a11b1b}
+.fleet td.bad{color:var(--red);font-weight:700}
+@media (max-width:720px){.fleet-stat{flex:1 1 45%}.fleet-why{max-width:none}}

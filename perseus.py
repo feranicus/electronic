@@ -29,6 +29,7 @@ that and changes nothing.
 import argparse
 import base64
 import io
+import re
 import os
 import shutil
 import subprocess
@@ -149,6 +150,51 @@ def install_script(blob):
     ]) + "\n"
 
 
+APP_FILES = ("main.py", "app.py", "server.py", "api.py")
+WIRE_MARK = "perseus_client.Middleware"
+
+
+def wire_middleware(pkg_dir):
+    """COPYING A FILE IS NOT INSTALLING A CONTROL.
+
+    perseus_client.py sat in jobhuntwow and jev.best for days, imported by NOTHING, while this
+    script printed "copied" and the operator waited for alerts that could never come. That is the
+    rule this repository already carries -- a control that is correct and unreachable is not a
+    control -- and the copy step made it look done.
+
+    So the wiring is automated too: find the module that builds the ASGI app and add the middleware.
+    Idempotent (the marker is checked first), reported by name, and it REFUSES rather than guesses
+    when it cannot find an `app = FastAPI(...)` to attach to -- a silent no-op here is the exact
+    failure being fixed."""
+    for fn in APP_FILES:
+        p = os.path.join(pkg_dir, fn)
+        if not os.path.exists(p):
+            continue
+        s = io.open(p, encoding="utf-8").read()
+        if WIRE_MARK in s:
+            return (fn, "already wired")
+        m = re.search(r"^(app\s*=\s*FastAPI\([^\n]*\)[^\n]*)$", s, re.M)
+        if not m:
+            m = re.search(r"^(app\s*=\s*Starlette\([^\n]*\)[^\n]*)$", s, re.M)
+        if not m:
+            continue
+        add = (m.group(1) + "\n\n"
+               "# PERSEUS SIDECAR — blocks what the hub published and reports every request to the\n"
+               "# shared event log, which is what makes this project visible in cybergod.ai ->\n"
+               "# Admin -> Fleet and what lets the ONE alerting brain page the operator about it.\n"
+               "# It holds no credentials and sends nothing itself. Wrapped because a defence that\n"
+               "# stops the site it protects is worse than no defence.\n"
+               "try:\n"
+               "    import perseus_client\n"
+               "    app.add_middleware(perseus_client.Middleware)\n"
+               "except Exception as _perseus_exc:  # never take the app down over telemetry\n"
+               "    print('perseus sidecar not wired: %r' % (_perseus_exc,), flush=True)\n")
+        s = s[:m.start(1)] + add + s[m.end(1):]
+        io.open(p, "w", encoding="utf-8").write(s)
+        return (fn, "WIRED")
+    return (None, "no ASGI app found - wire it by hand: app.add_middleware(perseus_client.Middleware)")
+
+
 def copy_clients():
     """Copy the thin client into each project. Reports what changed and what was already current;
     a copy that silently does nothing is how two projects drift apart."""
@@ -170,6 +216,22 @@ def copy_clients():
         say("  updated %s" % dst)
         n_new += 1
     say("  %d updated, %d already current" % (n_new, n_same))
+    # AND WIRE IT IN. A copied file that nothing imports is what left jobhuntwow and jev.best
+    # silent for days while this step printed "copied".
+    say("-- wiring the middleware into each project's ASGI app --")
+    wired = 0
+    for d, _name in CLIENT_TARGETS:
+        if not os.path.isdir(d):
+            continue
+        fn, how = wire_middleware(d)
+        if how == "WIRED":
+            wired += 1
+        say("  %-8s %s%s" % (how if how != "no ASGI app found - wire it by hand: "
+                             "app.add_middleware(perseus_client.Middleware)" else "MANUAL",
+                             d, ("  (%s)" % fn) if fn else ""))
+        if fn is None:
+            say("      %s" % how)
+    say("  %d newly wired" % wired)
     return n_new
 
 
