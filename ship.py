@@ -745,6 +745,34 @@ def do_tests():
         sys.exit('[X] deck quality gate failed - do not ship a deck that renders badly')
     print('  deck quality: text fits, no overlaps, no placeholder leakage')
 
+    # AUTHZ: every route of THIS app must refuse an anonymous caller. In-process, all methods, no
+    # network. This is the gate that would have caught jobhuntwow's public /api/chat and the whole
+    # /api/electronic tree (any user's CV by naming their email) on the day they were written --
+    # opt-in authorisation eventually ships a route where the author forgot. CISA/NSA
+    # Secure-by-Design; NIST SP 800-53 AC-3; OWASP API Top 10 API1/API5.
+    _az = subprocess.run([sys.executable, os.path.join(HERE, 'authz_audit.py'), '--local'],
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+    if _az.returncode == 1:
+        print((_az.stdout or '') + (_az.stderr or ''))
+        sys.exit('[X] a route served content to an anonymous caller - do not ship')
+    if _az.returncode not in (0, 1):
+        print('  [!] authz audit could not run (rc=%s) - NOT a pass, see above' % _az.returncode)
+        print((_az.stdout or '')[-800:])
+    else:
+        print('  authz: every non-public route refuses an anonymous caller')
+
+    # PERSEUS: the thin client is the ONLY duplicated file, so it must be identical everywhere.
+    # A stale copy in one project is exactly the "several homes, the newer one loses" defect that
+    # this repo has paid for with ENRICH_MODELS, the language set and the model allowlist.
+    _pc = subprocess.run([sys.executable, os.path.join(HERE, 'perseus.py'), '--clients'],
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+    print((_pc.stdout or '').rstrip())
+    if 'updated ' in (_pc.stdout or '') and '0 updated' not in (_pc.stdout or ''):
+        # REFRESHED, NOT FATAL. ship.py commits AFTER the tests, so the fresh copy is carried by
+        # this same run. Failing here would block every first run for no safety gain.
+        print('  [!] the perseus client was stale somewhere and has been refreshed; this run '
+              'commits the current copy')
+
     # ATTRIBUTION scorer — graded confidence must keep discriminating on the real angermann hosts.
     _at = subprocess.run([sys.executable, os.path.join(engine, 'attribution.py'), '--demo'],
                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,

@@ -618,6 +618,37 @@ def _is_ai(name):
 # chain, then the remaining 806k did not come from this codebase -- and neither runaway id has ever
 # appeared in a `evt=qwen` line, which is a positive statement about the past rather than a guess.
 # =================================================================================================
+# RAW LINES, SUBSTRING FILTERS, EVERY STREAM. Everything in LOKI_QUERIES assumes the line is JSON
+# with fields called evt/path/ip at the top level. If a stream stores the line wrapped (docker's
+# {"log": "...", "stream": "stdout"} shape, for instance) every metric row above it is zero and
+# reads as innocence. These ask the question the operator actually asked -- "we know the model
+# names and the dates" -- with `|=` substring filters that cannot be defeated by line shape, and
+# they return the LINES so the shape is read, not assumed. (title, LogQL, limit)
+LOKI_SAMPLES = [
+    ("lines naming deepseek-v4-pro, ANY container", '{container=~".+"} |= "deepseek-v4-pro"', 40),
+    ("lines naming glm-5.3, ANY container", '{container=~".+"} |= "glm-5.3"', 40),
+    ("lines naming deepseek-v4-pro, the file stream", '{job="coltbots"} |= "deepseek-v4-pro"', 20),
+    ("lines naming glm-5.3, the file stream", '{job="coltbots"} |= "glm-5.3"', 20),
+    ("jhw-web stdout lines mentioning the proxy path",
+     '{container=~".*jhw-web.*"} |= "/v1/chat/completions"', 40),
+    ("jhw-web stdout: what a line LOOKS like (shape check)", '{container=~".*jhw-web.*"}', 5),
+    # THE DOOR IT ACTUALLY CAME THROUGH (found 2026-09-06): /api/chat was PUBLIC, took any model
+    # id, and streamed it on our key. Every hit is an evt=http line with ip + user + status.
+    ("WHO called /api/chat (ip + user on every line)",
+     '{container=~".*jhw-web.*"} |= "/api/chat" |= "\\"evt\\": \\"http\\""', 60),
+]
+# Per-hour substring counts, for lining up against DO's Insights graph by the clock.
+LOKI_HOURLY = [
+    ("/api/chat calls in jhw-web stdout, per hour (the public chat door)",
+     'sum(count_over_time({container=~".*jhw-web.*"} |= "/api/chat" [1h]))'),
+    ("proxy path in jhw-web stdout, per hour (substring, no JSON)",
+     'sum(count_over_time({container=~".*jhw-web.*"} |= "/v1/chat/completions" [1h]))'),
+    ("deepseek-v4-pro named anywhere, per hour",
+     'sum by (container) (count_over_time({container=~".+"} |= "deepseek-v4-pro" [1h]))'),
+    ("glm-5.3 named anywhere, per hour",
+     'sum by (container) (count_over_time({container=~".+"} |= "glm-5.3" [1h]))'),
+]
+
 LOKI_QUERIES = [
     # (title, LogQL, what a number here MEANS)
     #
@@ -638,6 +669,22 @@ LOKI_QUERIES = [
     ("CAN WE SEE cybergod AT ALL (any line, any type)",
      'sum(count_over_time({job="coltbots"} | json | service!="jhw-web" [%(step)s]))',
      "same, for the other project"),
+    # THE THIRD STREAM, and the one that actually holds the evidence (2026-09-06, third run).
+    # jhw-web runs as UID 10001 (Dockerfile.web: USER jhw) while events.log on the shared volume is
+    # created by cybergod's containers as root, 0644. jhw's `open(EVENTS_LOG, "a")` therefore
+    # raises PermissionError on EVERY write and telemetry.emit swallows it (`except: pass`), so the
+    # file holds ZERO jhw lines and the two probes above are honestly blind. But emit() prints the
+    # SAME line to stdout first, and videodead-promtail scrapes every container's docker stdout
+    # into Loki with a `container` label -- the accident that once carried the assessment engine's
+    # events under container=~".*assess-bot.*". Loki keeps 30 days, so the Sep 1 and Sep 3 proxy
+    # hits survive there even though the container itself was recreated on Sep 6.
+    ("CAN WE SEE jobhuntwow-stdout AT ALL (docker stdout via videodead-promtail)",
+     'sum(count_over_time({container=~".*jhw-web.*"} [%(step)s]))',
+     "the stream that survives the permission bug; zero here means the docker scrape is off"),
+    ("WHO called the jobhuntwow LLM proxy (by source IP, from docker stdout)",
+     'sum by (ip) (count_over_time({container=~".*jhw-web.*"} | json | evt="http"'
+     ' | path=~"/v1/chat/completions.*" [%(step)s]))',
+     "same question as the row below, answered from the stream jhw could actually write to"),
     # FIRST SUBSTANTIVE ROW, because it is the one that names a SOURCE. jhw-web's telemetry logs
     # every request with its client IP and skips only static assets, so the OpenAI-compatible proxy
     # at /v1/chat/completions -- the endpoint that forwarded ANY model slug to DigitalOcean on our
@@ -678,7 +725,31 @@ def _loki_script(queries, start, end, step):
     """One ssh session that asks Loki every question. Built as a bash script rather than a series of
     `ssh` calls because the Windows OpenSSH client has no ControlMaster multiplexing and sshd
     penalises rapid repeat connections -- the rule this repository already paid for twice."""
-    body = ["L=$(docker ps --format '{{.Names}}' | grep -iE 'loki' | head -1)",
+    # GROUND TRUTH FIRST, AND IT DOES NOT NEED LOKI. The raw events.log sits on the persistent
+    # colt_events volume; every jhw-web request line (evt=http, with ip + path + ts) is appended
+    # there by the app itself. Loki is an INDEX over that file. When the index answers "0 lines"
+    # the file says which hop is broken: jhw-web not mounting the volume, not carrying EVENTS_LOG,
+    # not writing, or writing while Loki fails to parse/promote. And it answers the attribution
+    # question directly: grep the proxy path, read the source addresses. The 2026-09-06 run
+    # printed BLIND twice from the index alone while the file was one grep away.
+    body = ['echo "#### FILE"',
+            "E=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination \"/var/log/colt\"}}"
+            "{{.Source}}{{end}}{{end}}' jhw-web 2>/dev/null)",
+            'echo "jhw_mount=${E:-NONE}"',
+            "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' jhw-web 2>/dev/null "
+            "| grep -E '^(EVENTS_LOG|SERVICE)=' | sed 's/^/jhw_env=/'",
+            'F="${E:-/var/lib/docker/volumes/colt-stack_colt_events/_data}/events.log"',
+            'if [ -f "$F" ]; then',
+            '  echo "file=$F size=$(stat -c %s "$F")"',
+            '  echo "jhw_lines=$(grep -c -F \'"service": "jhw-web"\' "$F")"',
+            '  echo "jhw_first=$(grep -F \'"service": "jhw-web"\' "$F" | head -1 | cut -c1-240)"',
+            '  echo "jhw_last=$(grep -F \'"service": "jhw-web"\' "$F" | tail -1 | cut -c1-240)"',
+            '  grep -F "/v1/chat/completions" "$F" | grep -F \'"evt": "http"\' | tail -200 '
+            '| cut -c1-600 | sed "s/^/proxy=/"',
+            'else',
+            '  echo "file=MISSING $F"',
+            'fi',
+            "L=$(docker ps --format '{{.Names}}' | grep -iE 'loki' | head -1)",
             'echo "#### LOKI"; echo "${L:-NONE}"',
             '[ -z "$L" ] && exit 0',
             "q(){ docker exec \"$L\" wget -qO- --header='Content-Type: application/json' "
@@ -692,7 +763,68 @@ def _loki_script(queries, start, end, step):
                      ("=", "%3D"), ("+", "%2B"), ("&", "%26")):
             enc = enc.replace(a, b)
         body.append('echo; echo "#### Q%d"; q "%s"' % (i, enc))
+    # log-line samples: query_range with a LOG selector returns streams; limit + newest-first
+    body.append("s(){ docker exec \"$L\" wget -qO- \"http://127.0.0.1:3100/loki/api/v1/query_range"
+                "?query=$1&start=%s&end=%s&limit=$2&direction=backward\" 2>/dev/null; }" % (start, end))
+    for i, (_t, q, lim) in enumerate(LOKI_SAMPLES):
+        body.append('echo; echo "#### S%d"; s "%s" %d' % (i, _enc(q), lim))
+    body.append("h(){ docker exec \"$L\" wget -qO- \"http://127.0.0.1:3100/loki/api/v1/query_range"
+                "?query=$1&start=%s&end=%s&step=3600\" 2>/dev/null; }" % (start, end))
+    for i, (_t, q) in enumerate(LOKI_HOURLY):
+        body.append('echo; echo "#### H%d"; h "%s"' % (i, _enc(q)))
     return "\n".join(body) + "\n"
+
+
+def _enc(q):
+    for a, b in (("%", "%25"), ("\\", "%5C"), ("{", "%7B"), ("}", "%7D"), ('"', "%22"), (" ", "%20"),
+                 ("|", "%7C"), ("(", "%28"), (")", "%29"), ("[", "%5B"), ("]", "%5D"),
+                 ("=", "%3D"), ("+", "%2B"), ("&", "%26")):
+        q = q.replace(a, b)
+    return q
+
+
+def file_evidence(text, start_ts=0):
+    """Parse the '#### FILE' section: what the raw events.log on the droplet says about jhw-web.
+
+    Returns mount/env facts, how many jhw-web lines the FILE holds (independent of Loki), the
+    first and last of them (so 'no evidence for Sep 1' can be told apart from 'jhw joined the
+    shared file on Sep 5'), and every proxy hit with ip + status + day, aggregated per source.
+    """
+    fe = {"mount": "", "env": [], "file": "", "jhw_lines": 0, "jhw_first_ts": None,
+          "jhw_last_ts": None, "proxy": [], "per_ip": {}, "per_day": {}}
+    for ln in (text or "").splitlines():
+        ln = ln.rstrip()
+        if ln.startswith("jhw_mount="):
+            fe["mount"] = ln[len("jhw_mount="):].strip()
+        elif ln.startswith("jhw_env="):
+            fe["env"].append(ln[len("jhw_env="):].strip())
+        elif ln.startswith("file="):
+            fe["file"] = ln[len("file="):].strip()
+        elif ln.startswith("jhw_lines="):
+            try: fe["jhw_lines"] = int(ln.split("=", 1)[1])
+            except Exception: pass
+        elif ln.startswith("jhw_first=") or ln.startswith("jhw_last="):
+            key = "jhw_first_ts" if ln.startswith("jhw_first=") else "jhw_last_ts"
+            try:
+                fe[key] = float(json.loads(ln.split("=", 1)[1]).get("ts"))
+            except Exception:
+                pass
+        elif ln.startswith("proxy="):
+            try:
+                d = json.loads(ln[len("proxy="):])
+            except Exception:
+                continue
+            ts = float(d.get("ts") or 0)
+            if start_ts and ts and ts < start_ts:
+                continue
+            ip = str(d.get("ip") or "?")
+            day = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d") if ts else "?"
+            fe["proxy"].append({"ts": ts, "day": day, "ip": ip,
+                                "status": str(d.get("status") or "?"),
+                                "path": str(d.get("path") or "")[:60]})
+            fe["per_ip"][ip] = fe["per_ip"].get(ip, 0) + 1
+            fe["per_day"][day] = fe["per_day"].get(day, 0) + 1
+    return fe
 
 
 def loki_correlate(host, days=10, step_hours=6):
@@ -717,9 +849,36 @@ def loki_correlate(host, days=10, step_hours=6):
     if rc != 0 and not out:
         return {"error": "ssh failed (rc=%s): %s" % (rc, (err or "")[:200])}
     sec = sections(out or "")
+    fe = file_evidence(sec.get("FILE") or "", start)
     if (sec.get("LOKI") or "").strip() in ("", "NONE"):
-        return {"error": "no Loki container is running on %s" % host}
-    res = {"loki": (sec.get("LOKI") or "").strip(), "series": []}
+        return {"error": "no Loki container is running on %s" % host, "file": fe}
+    res = {"loki": (sec.get("LOKI") or "").strip(), "series": [], "file": fe,
+           "samples": [], "hourly": []}
+    for i, (title, _q, _lim) in enumerate(LOKI_SAMPLES):
+        raw = (sec.get("S%d" % i) or "").strip()
+        lines = []
+        try:
+            for st in json.loads(raw).get("data", {}).get("result", []):
+                lab = st.get("stream") or {}
+                who = lab.get("container") or lab.get("job") or "?"
+                for ts, line in st.get("values") or []:
+                    lines.append((int(ts) // 10**9, who, line))
+        except Exception:
+            res["samples"].append({"title": title, "error": raw[:160] or "no answer"}); continue
+        lines.sort()
+        res["samples"].append({"title": title, "lines": lines})
+    for i, (title, _q) in enumerate(LOKI_HOURLY):
+        raw = (sec.get("H%d" % i) or "").strip()
+        rows = []
+        try:
+            for r in json.loads(raw).get("data", {}).get("result", []):
+                who = (r.get("metric") or {}).get("container") or "(all)"
+                pts = [(int(float(t)), float(v)) for t, v in (r.get("values") or []) if float(v) > 0]
+                if pts:
+                    rows.append({"who": who, "points": pts})
+        except Exception:
+            res["hourly"].append({"title": title, "error": raw[:160] or "no answer"}); continue
+        res["hourly"].append({"title": title, "rows": rows})
     for i, (title, _q, why) in enumerate(LOKI_QUERIES):
         raw = (sec.get("Q%d" % i) or "").strip()
         try:
@@ -730,7 +889,8 @@ def loki_correlate(host, days=10, step_hours=6):
             continue
         got = []
         for r in rows:
-            name = (r.get("metric") or {}).get("model") or "(total)"
+            m = r.get("metric") or {}
+            name = m.get("model") or m.get("ip") or "(total)"
             vals = [(int(float(t)), float(v)) for t, v in (r.get("values") or [])
                     if str(v) not in ("NaN",)]
             got.append({"name": name, "total": round(sum(v for _, v in vals), 4), "points": vals})
@@ -815,9 +975,11 @@ def whodunit(host, days=10):
       * NO PROXY HITS and jhw NOT visible -> the query is BLIND. Decide nothing; fix the shipper.
     """
     c = loki_correlate(host, days=days)
-    out = {"loki": c.get("error") or c.get("loki"), "days": days,
-           "visible": {}, "proxy_hits": 0, "proxy_sources": [], "verdict": "", "action": ""}
-    if c.get("error"):
+    fe = c.get("file") or {}
+    out = {"loki": c.get("error") or c.get("loki"), "days": days, "file": fe,
+           "visible": {}, "proxy_hits": 0, "proxy_sources": [], "verdict": "", "action": "",
+           "note": ""}
+    if c.get("error") and not fe:
         out["verdict"] = "CANNOT DECIDE"
         out["action"] = ("the Loki query did not run (%s). That is not evidence about the window; "
                          "fix the query path and re-run." % c["error"])
@@ -829,15 +991,66 @@ def whodunit(host, days=10):
         if t.startswith("CAN WE SEE "):
             out["visible"][t.split("CAN WE SEE ", 1)[1].split(" AT ALL")[0]] = total
         elif t.startswith("WHO called"):
-            out["proxy_hits"] = total
-            out["proxy_sources"] = [{"ip": r["name"], "hits": r["total"]} for r in rows[:10]]
+            # TWO streams can answer this (the shared file via service=, and docker stdout via
+            # container=); the same hit is never in both, because jhw cannot write the file.
+            out["proxy_hits"] += total
+            merged = {x["ip"]: x["hits"] for x in out["proxy_sources"]}
+            for r in rows:
+                merged[r["name"]] = merged.get(r["name"], 0) + r["total"]
+            out["proxy_sources"] = [{"ip": ip, "hits": n} for ip, n in
+                                    sorted(merged.items(), key=lambda kv: -kv[1])[:10]]
 
-    jhw_seen = out["visible"].get("jobhuntwow", 0) > 0
+    # THE FILE OUTRANKS THE INDEX. Loki is a view over events.log; if the two disagree the file is
+    # the primary source and the disagreement is itself a finding (an indexing gap), not a reason
+    # to declare the project unobserved. The 2026-09-06 runs said BLIND from the index alone.
+    file_jhw = int(fe.get("jhw_lines") or 0)
+    file_hits = len(fe.get("proxy") or [])
+    if file_hits and file_hits > out["proxy_hits"]:
+        out["proxy_hits"] = file_hits
+        out["proxy_sources"] = [{"ip": ip, "hits": n} for ip, n in
+                                sorted(fe["per_ip"].items(), key=lambda kv: -kv[1])[:10]]
+        out["note"] = "proxy hits read from events.log directly (Loki indexed %d of them)" % \
+                      int(sum(r["total"] for s in c.get("series", []) if s.get("title", "")
+                              .startswith("WHO called") for r in (s.get("rows") or [])))
+    out["samples"] = c.get("samples") or []
+    out["hourly"] = c.get("hourly") or []
+    # SUBSTRING EVIDENCE OUTRANKS PARSED EVIDENCE. If jhw stdout holds lines mentioning the proxy
+    # path but the JSON-parsed WHO row found none, the lines are wrapped and the parsed row is
+    # blind by shape, not by absence.
+    raw_proxy = sum(len(x.get("lines") or []) for x in out["samples"]
+                    if "proxy path" in x.get("title", ""))
+    if raw_proxy and out["proxy_hits"] == 0:
+        out["proxy_hits"] = raw_proxy
+        out["note"] = (out["note"] + "; " if out["note"] else "") + \
+            "%d proxy-path lines found by SUBSTRING in jhw stdout that the JSON-parsed row missed " \
+            "(the line shape differs from the assumption); read the raw lines below" % raw_proxy
+    jhw_seen = (out["visible"].get("jobhuntwow", 0) > 0 or file_jhw > 0
+                or out["visible"].get("jobhuntwow-stdout", 0) > 0)
+    if file_jhw > 0 and out["visible"].get("jobhuntwow", 0) == 0:
+        out["note"] = (out["note"] + "; " if out["note"] else "") + \
+            "events.log holds %d jhw-web lines that Loki does not return - an INDEXING gap, " \
+            "not a silent project" % file_jhw
     if not jhw_seen:
         out["verdict"] = "BLIND - NOT INNOCENT"
-        out["action"] = ("jobhuntwow is not shipping to Loki, so 'no proxy hits' means the query "
-                         "cannot see its subject. Decide NOTHING from it. Fix the log shipper "
-                         "(promtail on /logs/jhw-web.log) and re-run this command.")
+        why = []
+        if not fe:
+            why.append("the FILE section did not come back from the droplet")
+        elif fe.get("mount", "NONE") in ("", "NONE"):
+            why.append("jhw-web does not mount the shared /var/log/colt volume")
+        elif not any(e.startswith("EVENTS_LOG=") for e in fe.get("env", [])):
+            why.append("jhw-web has no EVENTS_LOG in its environment")
+        elif fe.get("file", "").startswith("MISSING"):
+            why.append("events.log is absent on the volume (%s)" % fe["file"])
+        else:
+            why.append("jhw-web mounts the volume and carries EVENTS_LOG, yet has written 0 lines "
+                       "with service=jhw-web to %s (it runs as UID 10001 and the file is root "
+                       "0644, so every append is a swallowed PermissionError) AND the docker "
+                       "stdout stream is empty too" % fe.get("file"))
+        out["action"] = ("jobhuntwow has left NO evidence, in Loki OR in the raw events.log, so "
+                         "'no proxy hits' means nothing. Decide NOTHING from it. Cause: %s. Fix "
+                         "that (python ship.py in "
+                         "jobhuntwow-app redeploys it from docker-compose.web.yml, which sets both) "
+                         "and re-run this command." % "; ".join(why))
     elif out["proxy_hits"] > 0:
         out["verdict"] = "THE PROXY IS THE PATH"
         out["action"] = ("the addresses above spent on the shared key through jobhuntwow's proxy. "
@@ -925,12 +1138,57 @@ def render_whodunit(w):
     print("=" * 78)
     print("  window: last %s days" % w.get("days"))
     for proj, n in sorted((w.get("visible") or {}).items()):
-        print("  %-14s %s" % (proj, ("%d log lines - VISIBLE" % n) if n else
-                              "0 log lines - NOT SHIPPING (any conclusion about it is invalid)"))
+        print("  %-14s %s" % (proj, ("%d log lines in Loki" % n) if n else
+                              "0 log lines in Loki"))
+    fe = w.get("file") or {}
+    if fe:
+        def _d(ts):
+            return (datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
+                    .strftime("%Y-%m-%d %H:%M UTC")) if ts else "-"
+        print()
+        print("  RAW events.log ON THE DROPLET (the primary source; Loki is an index over it)")
+        print("    file          : %s" % (fe.get("file") or "?"))
+        print("    jhw-web mount : %s" % (fe.get("mount") or "NONE"))
+        print("    jhw-web env   : %s" % (", ".join(fe.get("env") or []) or "(no EVENTS_LOG / SERVICE)"))
+        print("    jhw-web lines : %d   first %s   last %s" % (
+            int(fe.get("jhw_lines") or 0), _d(fe.get("jhw_first_ts")), _d(fe.get("jhw_last_ts"))))
+        if fe.get("per_day"):
+            print("    proxy hits per day (evt=http on /v1/chat/completions):")
+            for day, n in sorted(fe["per_day"].items()):
+                print("      %s  %d" % (day, n))
+    if w.get("note"):
+        print("  note: %s" % w["note"])
+    def _dt(ts):
+        return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%m-%d %H:%M")
+    print()
+    print("  THE MODEL NAMES, SEARCHED AS SUBSTRINGS IN EVERY STREAM LOKI HOLDS")
+    for x in w.get("samples") or []:
+        if x.get("error"):
+            print("    %-52s query failed: %s" % (x["title"][:52], x["error"][:80])); continue
+        ls = x.get("lines") or []
+        print("    %-52s %d line(s)" % (x["title"][:52], len(ls)))
+        for ts, who, line in ls[-8:]:
+            print("      %s  %-22s %s" % (_dt(ts), who[:22], line.replace("\n", " ")[:150]))
+    print()
+    print("  PER HOUR (UTC) - line these up against DO Insights by the clock")
+    for x in w.get("hourly") or []:
+        if x.get("error"):
+            print("    %-52s query failed" % x["title"][:52]); continue
+        rows = x.get("rows") or []
+        print("    %s" % x["title"])
+        if not rows:
+            print("      (no hour with a hit)")
+        for r in rows:
+            pts = ["%s=%d" % (_dt(t), v) for t, v in r["points"]]
+            print("      %-22s %s" % (r["who"][:22], " ".join(pts)[:200]))
     print()
     print("  calls to the jobhuntwow LLM proxy: %d" % w.get("proxy_hits", 0))
     for s in w.get("proxy_sources") or []:
         print("      %-40s %d" % (s["ip"], s["hits"]))
+    if fe.get("proxy"):
+        print("    last proxy hits (UTC, ip, status, path):")
+        for p in fe["proxy"][-12:]:
+            print("      %s  %-18s %-4s %s" % (_d(p["ts"]), p["ip"], p["status"], p["path"]))
     print()
     print("  VERDICT: %s" % w.get("verdict"))
     print()

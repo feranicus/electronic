@@ -94,3 +94,4 @@ marketing/campaign/Connections.csv
 marketing/campaign/*.webm
 marketing/campaign/*.mp4
 marketing/campaign/*.png
+incident-*.md

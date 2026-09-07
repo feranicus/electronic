@@ -481,3 +481,120 @@ def test_a_refused_model_pages_immediately(mod):
         assert md not in seg.split("notify.telegram(")[1][:400], \
             "no Markdown: an attacker-controlled model id or IP with an underscore makes Telegram " \
             "reject the whole message, losing the one alert that matters most"
+
+
+# ------------------------------------------------------------------ the FILE outranks the index
+def _wd_file(monkeypatch, jhw_loki, file_txt, proxy_rows=()):
+    """whodunit with a stubbed droplet: Loki says one thing, the raw events.log says another."""
+    import cost_report as C
+    V = lambda p, n: {"title": "CAN WE SEE %s AT ALL (any line, any type)" % p, "why": "w",  # noqa: E731
+                      "rows": ([{"name": "(total)", "total": n, "points": []}] if n else [])}
+    series = [V("jobhuntwow", jhw_loki), V("cybergod", 5000),
+              {"title": "WHO called the jobhuntwow LLM proxy (by source IP)", "why": "w",
+               "rows": list(proxy_rows)}]
+    monkeypatch.setattr(C, "loki_correlate",
+                        lambda h, days=10: {"loki": "l", "series": series,
+                                            "file": C.file_evidence(file_txt, 0)})
+    return C.whodunit("h", 10)
+
+
+_FILE_OK = ("jhw_mount=/var/lib/docker/volumes/colt-stack_colt_events/_data\n"
+            "jhw_env=EVENTS_LOG=/var/log/colt/events.log\njhw_env=SERVICE=jhw-web\n"
+            "file=/var/lib/docker/volumes/colt-stack_colt_events/_data/events.log size=9\n"
+            "jhw_lines=1234\n"
+            'jhw_first={"evt": "http", "service": "jhw-web", "ts": 1756000000}\n'
+            'jhw_last={"evt": "http", "service": "jhw-web", "ts": 1757000000}\n')
+_HIT = ('proxy={"evt": "http", "service": "jhw-web", "ip": "203.0.113.9", '
+        '"path": "/v1/chat/completions", "status": 200, "ts": 1756800000}\n')
+
+
+def test_the_raw_file_outranks_a_blind_index(mod, monkeypatch):
+    """THE 2026-09-06 DEFECT. whodunit printed BLIND twice from the Loki index while the raw
+    events.log on the same droplet held every jhw-web line and the proxy hits with their source
+    addresses. Loki is a VIEW over that file; when they disagree the file decides and the
+    disagreement is reported as an indexing gap, not as a silent project."""
+    w = _wd_file(monkeypatch, 0, _FILE_OK + _HIT)
+    assert w["verdict"] == "THE PROXY IS THE PATH", w["verdict"]
+    assert w["proxy_sources"][0]["ip"] == "203.0.113.9"
+    assert "INDEXING gap" in w["note"]
+
+
+def test_a_writing_project_with_no_hits_in_the_file_reaches_rotate(mod, monkeypatch):
+    w = _wd_file(monkeypatch, 0, _FILE_OK)
+    assert w["verdict"] == "NOT THE PROXY - ROTATE THE KEY"
+
+
+def test_truly_blind_names_the_broken_hop(mod, monkeypatch):
+    """A project that has written nothing anywhere is still blind, and the message must say
+    WHICH hop is broken (mount / env / file), because 'fix the log shipper' sent the operator to
+    a promtail that was never the problem."""
+    w = _wd_file(monkeypatch, 0, "jhw_mount=NONE\nfile=/x/events.log size=1\njhw_lines=0\n")
+    assert w["verdict"] == "BLIND - NOT INNOCENT" and "does not mount" in w["action"]
+    w = _wd_file(monkeypatch, 0, "jhw_mount=/v\nfile=/x/events.log size=1\njhw_lines=0\n")
+    assert "no EVENTS_LOG" in w["action"]
+
+
+def test_the_droplet_script_reads_the_file_before_loki(mod):
+    """The FILE section must not sit behind the 'no Loki -> exit' line, or a box without Loki
+    loses the primary source too. And the whole thing must still be valid bash."""
+    import cost_report as C, subprocess, shutil
+    s = C._loki_script(C.LOKI_QUERIES, "1", "2", "3600")
+    assert s.index('#### FILE') < s.index('[ -z "$L" ] && exit 0')
+    assert "/v1/chat/completions" in s and '"service": "jhw-web"' in s
+    if shutil.which("bash"):
+        r = subprocess.run(["bash", "-n"], input=s.encode(), capture_output=True)
+        assert r.returncode == 0, r.stderr.decode()[:200]
+
+
+def test_docker_stdout_stream_answers_when_the_file_cannot(mod, monkeypatch):
+    """jhw-web runs as UID 10001 and the shared events.log is root 0644, so it has NEVER written a
+    line there; every append is a swallowed PermissionError. The same line goes to stdout first,
+    and videodead-promtail scrapes docker stdout into Loki under a `container` label. That stream
+    must count as visibility AND as a source of proxy hits, or the verdict stays BLIND forever."""
+    import cost_report as C
+    V = lambda p, n: {"title": "CAN WE SEE %s AT ALL (x)" % p, "why": "w",  # noqa: E731
+                      "rows": ([{"name": "(total)", "total": n, "points": []}] if n else [])}
+    series = [V("jobhuntwow", 0), V("cybergod", 5000), V("jobhuntwow-stdout", 40000),
+              {"title": "WHO called the jobhuntwow LLM proxy (by source IP)", "why": "w", "rows": []},
+              {"title": "WHO called the jobhuntwow LLM proxy (by source IP, from docker stdout)",
+               "why": "w", "rows": [{"name": "203.0.113.77", "total": 512.0, "points": []}]}]
+    monkeypatch.setattr(C, "loki_correlate",
+                        lambda h, days=10: {"loki": "l", "series": series,
+                                            "file": C.file_evidence(_FILE_OK.replace("1234", "0"), 0)})
+    w = C.whodunit("h", 10)
+    assert w["verdict"] == "THE PROXY IS THE PATH", (w["verdict"], w["action"])
+    assert w["proxy_sources"][0]["ip"] == "203.0.113.77" and w["proxy_hits"] == 512
+    titles = [q[0] for q in C.LOKI_QUERIES]
+    assert any("jobhuntwow-stdout" in t for t in titles)
+    assert any('container=~".*jhw-web.*"' in q[1] and "/v1/chat/completions" in q[1]
+               for q in C.LOKI_QUERIES)
+
+
+def test_substring_evidence_beats_a_json_shaped_zero(mod, monkeypatch):
+    """The question the operator actually asked: we know the MODEL NAMES and the DATES. Search
+    every stream by substring, return the LINES, and let that outrank a metric row that only
+    counts lines whose JSON happens to have the fields we assumed."""
+    import cost_report as C, recover, json as J
+    now = 1757000000
+    def fake(script, timeout=0):
+        out = ["#### FILE", _FILE_OK.replace("1234", "0"), "#### LOKI", "videodead-loki-1"]
+        for i, _ in enumerate(C.LOKI_QUERIES):
+            n = 99310 if "jobhuntwow-stdout" in C.LOKI_QUERIES[i][0] else (5000 if "cybergod AT ALL" in C.LOKI_QUERIES[i][0] else 0)
+            out += ["#### Q%d" % i, J.dumps({"data": {"result": ([{"metric": {}, "values": [[str(now), str(n)]]}] if n else [])}})]
+        for i, (t, _q, _l) in enumerate(C.LOKI_SAMPLES):
+            lines = []
+            if "proxy path" in t:
+                lines = [[str(now * 10**9), '{"log":"{\\"evt\\": \\"http\\", \\"ip\\": \\"203.0.113.5\\", \\"path\\": \\"/v1/chat/completions\\"}\\n","stream":"stdout"}']]
+            if "deepseek-v4-pro, ANY" in t:
+                lines = [[str(now * 10**9), '[proxy] deepseek-v4-pro-0813 forwarded']]
+            out += ["#### S%d" % i, J.dumps({"data": {"resultType": "streams", "result": ([{"stream": {"container": "jhw-web"}, "values": lines}] if lines else [])}})]
+        for i, _ in enumerate(C.LOKI_HOURLY):
+            out += ["#### H%d" % i, J.dumps({"data": {"result": [{"metric": {"container": "jhw-web"}, "values": [[str(now), "3"], [str(now + 3600), "0"]]}]}})]
+        return "\n".join(out), "", 0
+    monkeypatch.setattr(recover, "ssh_script", fake)
+    w = C.whodunit("h", 10)
+    assert w["proxy_hits"] == 1 and "SUBSTRING" in w["note"], (w["proxy_hits"], w["note"])
+    assert w["verdict"] != "NOT THE PROXY - ROTATE THE KEY", "a wrapped line shape must not read as innocence"
+    hit = [x for x in w["samples"] if "deepseek-v4-pro, ANY" in x["title"]][0]
+    assert hit["lines"] and hit["lines"][0][1] == "jhw-web"
+    assert w["hourly"][0]["rows"][0]["points"] == [(now, 3.0)]

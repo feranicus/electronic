@@ -6823,3 +6823,260 @@ OpenTelemetry GenAI semantic conventions standardise (`gen_ai.request.model`,
 `gen_ai.usage.input_tokens/output_tokens`, finish reason) -- opentelemetry.io/docs/specs/semconv/
 registry/attributes/gen-ai. The names differ; the discipline is the same: one record per model
 call, at the chokepoint, with model + both token directions + who asked.
+
+## THE INDEX SAID BLIND WHILE THE FILE HELD THE ANSWER (2026-09-06, third whodunit run)
+With the label fixed to `{job="coltbots"} | json | service="jhw-web"`, whodunit STILL printed
+`jobhuntwow 0 log lines - NOT SHIPPING` and refused a verdict. Correct refusal, wrong stopping
+point: Loki is an INDEX over `/var/lib/docker/volumes/colt-stack_colt_events/_data/events.log`,
+and that file was one `grep /v1/chat/completions` away in the same ssh session. Three runs in a
+row concluded from the index alone.
+- `_loki_script` now reads the FILE first (jhw-web mount source + EVENTS_LOG env via `docker
+  inspect`, count of `"service": "jhw-web"` lines, first/last of them, every proxy hit with ip +
+  status + day) and only then asks Loki. `file_evidence()` parses it; `whodunit()` lets the file
+  OUTRANK the index and names the disagreement as an INDEXING gap rather than a silent project.
+- A truly blind project now says WHICH hop is broken (mount / env / file). "Fix the log shipper
+  (promtail on /logs/jhw-web.log)" was pointing at a promtail that was never the problem.
+- `sum by (ip)` rows were rendered as "(total)": `name` read only the `model` label.
+Guarded by tests/test_llm_meter.py (file outranks index, blind names the hop, FILE precedes the
+Loki exit, script is valid bash). Negative-tested by zeroing the file count: 1 failure, restored.
+ALSO FOUND THIS SESSION, verified not assumed: the old shared key value appears in NO commit of
+either repo; it sits in `cassandra-bot/.env` (so colt-cassandra was STILL on it after
+`set_secret.py OPENAI_API_KEY`, which writes only assess-bot/.env) and `hermes-local/.env` holds a
+THIRD DO key (fp 780a2c5a) for a Telegram-driven Hermes agent whose model is set live with
+`/model` and lives in a docker volume - invisible to every repo grep and to `--trace`.
+
+## jobhuntwow NEVER WROTE ONE LINE TO THE SHARED FILE: UID 10001 vs a root 0644 file (2026-09-06)
+whodunit, now reading the raw file, said: mount present, EVENTS_LOG set, **0 lines with
+service=jhw-web in 192 MB of events.log**. Cause: `Dockerfile.web` ends `USER jhw` (uid 10001);
+cybergod's root containers create the file 0644; `telemetry.emit` and `llm_events.record` did
+`open(EVENTS_LOG, "a")` inside `except Exception: pass`. Every append for the life of the project
+raised PermissionError and was swallowed. The compose comment "already tailed by colt-promtail"
+described an intention that never once happened.
+WHERE THE EVIDENCE ACTUALLY IS: `emit()` prints the same line to stdout FIRST, and
+videodead-promtail scrapes every container's docker stdout into Loki with a `container` label (the
+accident that once carried the assessment engine's events). Loki keeps 30 days, so the Sep 1 / Sep 3
+proxy hits are queryable as `{container=~".*jhw-web.*"} | json | evt="http" | path=~"/v1/chat/..."`
+even though the container was recreated on Sep 6. whodunit now asks that stream too.
+FIXES in jobhuntwow-app: both writers print `evt=events_log_unwritable` ONCE on stdout instead of
+swallowing; deploy_direct `chmod a+w` the shared file (any container on the volume could already
+write it) and then PROVES it by appending a `deploy_probe` line as the jhw user, printing
+EVENTS_LOG_UNWRITABLE if it cannot. Guarded by tests/test_llm_events_write.py.
+RULE: an `except: pass` on an observability write is a self-inflicted blind spot. Print once.
+
+## FOUND: jobhuntwow's /api/chat WAS A PUBLIC, UNAUTHENTICATED LLM ENDPOINT (2026-09-06)
+The substring search answered in one run. Every line naming `deepseek-v4-pro-0813` or
+`glm-5.3-flash` in the whole of Loki came from ONE place: `jhw-web`, `caller="qwen.chat_stream"`,
+i.e. jobhuntwow's cabinet chat -- `tokens_in` 17,794 per call, the shape of a CV plus a job
+description re-sent on every turn. NOT the proxy, NOT a leaked key, NOT GitHub.
+THE DOOR, verified from the internet with no login: `GET https://jobhuntwow.com/api/models`
+returned DigitalOcean's ENTIRE catalogue (75 ids, both runaway models included), and
+`POST /api/chat` had no `Depends(require_user)` and passed `req.model` verbatim to
+`qwen.chat_stream`, which forwarded it to DO on our key. Anyone who found the endpoint -- and the
+scanners hit jhw's /api/* daily -- had free inference on every model DO sells, and the exact
+catalogue slugs to ask for. The proxy got an allowlist on the morning of 6 Sep; the cabinet chat,
+the same door in different clothes, had none.
+FIXED in jobhuntwow-app: both routes require the session; `/api/models` returns only the
+allowlist; `/api/chat` refuses anything outside `llm.allowed_models()` (ONE list, the proxy now
+delegates to it), records `caller="chat.REFUSED"` with user + ip, and pages Telegram; the metered
+line carries the USER. Guarded by tests/test_chat_open_wallet.py (drives the ASGI app with stdlib;
+negative-tested by dropping the dependency: 2 failures). jhw's ship.py runs it.
+WHY IT WAS INVISIBLE FOR A WEEK: jhw never wrote to the shared events.log (UID 10001 vs root
+0644, swallowed), so the file and the `service=` queries were honestly empty; docker stdout held
+everything, under `container=~".*jhw-web.*"`. whodunit now searches that stream by SUBSTRING for
+the model names and for `/api/chat` (ip + user on every line) and prints the raw lines.
+RULE: a route that forwards a caller-chosen model id to a paid API is a payment endpoint. It needs
+authentication AND an allowlist, and the list has ONE home.
+
+## THE WHOLE /api/electronic TREE WAS PUBLIC TOO, and `incident_report.py` (2026-09-06)
+Enumerating jobhuntwow's route table after the /api/chat finding: `/api/electronic/*` (upload
+profile, generate, revise, list jobs, download artifacts) required NO session and took the OWNER'S
+EMAIL AS A QUERY/BODY PARAMETER -- anyone could list any user's jobs and download their tailored
+CV and cover letter by naming the email, and run the four-model tailor on our key. `/api/connections`
+(POST sets the Telegram bot token), `/api/scout`, `/api/apply` were public as well.
+FIX: router-level `dependencies=[Depends(require_user)]` on electronic.py; every `email` query param
+became `Depends(require_user)`; generate/revise/applied overwrite `req.email` with the session
+identity. `tests/test_chat_open_wallet.py` now walks the LIVE route table and asserts every
+/api/* and /v1/* route answers 401 anonymously except a pinned public set (health, signup, login,
+verify, logout) -- a new route without a session dependency fails the day it is added.
+`python incident_report.py` (READ-ONLY, one ssh) is the forensics: every hit on the exposed routes
+from jhw-web's docker stdout in Loki (the only copy of Sep 1-5), per address / day / hour, users
+seen, metered model calls with tokens and cost, the users table, auth events with addresses, the
+personal-data question (anonymous hits on /api/electronic, GDPR Art. 33/34), RDAP abuse contacts
+and a ready complaint per address. Output `incident-*.md` is gitignored (addresses, emails).
+HONEST LIMITS, stated in the report: prompts were never logged; pre-06-Sep calls have no token
+counts (DO Insights is authoritative there); the routes had no access control, so StGB s.202a /
+CFAA are weak and the real channels are the hoster's abuse desk and OUR GDPR duty if a CV was
+served to a stranger.
+
+## THE FLAW CLASS IS OPT-IN AUTHORISATION -- audit every project, not just the one that leaked
+The operator, correctly: *"you were designing all the code and clearly you were told to use secure
+by design ... I need to verify we do not have those issues in any other project."* jobhuntwow's
+public /api/chat and /api/electronic tree were not a bypassed control; they were routes where the
+author (me) did not add one. In a framework where a route is PUBLIC UNLESS SOMEBODY REMEMBERS,
+that outcome is a matter of time, not of care. CISA/NSA Secure-by-Design ("secure by default"),
+NIST SP 800-53 AC-3, OWASP API Top 10 API1 (BOLA) / API5 (BFLA) all say the same: deny by default
+and PROVE it.
+`authz_audit.py` is the proof, and it measures the RESPONSE, never the source:
+  * `--local` drives cybergod's own ASGI app in-process, every route, every method, no cookie, and
+    fails the build if anything but a declared-public route returns content. Wired into ship.py.
+    NEGATIVE-TESTED: neutering `_require_ready` in /api/history makes it exit 1 and name the route.
+  * without `--local` it probes the LIVE sites over HTTPS, GET/HEAD only (a POST could spend), with
+    a BROWSER user agent (the bot gate answers an unrecognised agent 404 and a broken app would
+    then read as a locked one).
+CYBERGOD MEASURED CLEAN: assess, compliance, brand, history, admin, diag, deck download and the
+job endpoints all return 401 to an anonymous caller, verified with SCHEMA-VALID bodies -- the first
+run's 422s were my wrong field names, and the tool now reports 422 as `inconclusive-422` rather
+than as a verdict, because FastAPI validates the body BEFORE the handler's auth check runs.
+TWO OF MY OWN CHECKS WERE WRONG FIRST, both the recurring disease:
+  1. The initial audit was an AST scan and reported EVERY cybergod route as PUBLIC -- cybergod
+     enforces by calling `_require_ready(request)` as the handler's first statement, which no
+     signature scan can see. A static read cannot answer "is this route protected".
+  2. Every live probe from the sandbox returned `Tunnel connection failed` and the tool printed
+     `[OK] no route served content` -- a false pass built on a run that never reached its subject,
+     the identical defect as the whodunit reading BLIND as innocence. It now counts what it
+     actually reached, per host, and exits 2 with `BLIND, NOT CLEAN`. The cause was ordering inside
+     `classify()`: it asked "is this path declared public" BEFORE "did this probe reach anything",
+     so an unreachable `/` counted as a successful probe.
+STILL UNVERIFIED, STATED PLAINLY: jev.best, klimaanlage-preise.de, s4biz.io and godeyes.ai have no
+source in this workspace and are unreachable from the sandbox, so NOTHING here says they are safe.
+`python authz_audit.py` from the operator's PC is what answers that, and it is one command.
+
+## THE LIVE AUTHZ AUDIT: jobhuntwow's locks HOLD, and two sites publish their own map (2026-09-06)
+`python authz_audit.py` from the operator's PC (the sandbox cannot reach these hosts; it correctly
+printed BLIND, NOT CLEAN rather than a pass). Results:
+- **jobhuntwow.com is FIXED, verified from the internet**: /api/models, /api/me, /api/connections,
+  /api/electronic/jobs, `/api/electronic/jobs?email=victim@example.com` and /v1/models all answer
+  **401** to an anonymous caller. The IDOR-by-query-parameter is closed.
+- **cybergod.ai is clean on this class**: history, diag, brand (+logo, +preview), admin/users and
+  every assess job endpoint answer 401; /openapi.json, /docs and /redoc are 404. The public set is
+  exactly the declared one.
+- **TWO FINDINGS, both information disclosure**: `jobhuntwow.com/openapi.json` and
+  `klimaanlage-preise.de/openapi.json` (title "POLARA Klima Shop") served the COMPLETE route list,
+  parameter names and schemas to anyone. FastAPI enables /docs, /redoc and /openapi.json BY
+  DEFAULT. That is the map of `/api/chat`'s `model` field and `/api/electronic/*`'s `email`
+  parameter -- plausibly how whoever found the open doors found them. Fixed in jobhuntwow
+  (`docs_url=None, redoc_url=None, openapi_url=None` unless `JHW_API_DOCS=1`), guarded by a test.
+  POLARA/klimaanlage is a SEPARATE repo not in this workspace: the same one-line fix is needed
+  there and only the operator can apply it.
+**AND MY CLASSIFIER HAD A BLIND SPOT NEXT TO THE FINDING.** FastAPI's /docs returns an HTML page,
+and `classify()` filed ANY html 200 as "spa-shell", so a live Swagger UI on both sites was reported
+as a harmless SPA fallback while /openapi.json beside it was flagged. Doc paths are now decided on
+CONTENT (swagger/redoc/openapi markers), not on content type. Nth instance of the recurring
+disease: a check that cannot distinguish its subject from the background reports the background.
+NOTE ON PROPORTION: hiding the schema is NOT the control -- the locks are, and they are asserted by
+tests/test_chat_open_wallet.py against the live route table. Publishing the map is simply a gift to
+whoever is enumerating, and costs one argument to withhold.
+
+## PERSEUS HUB — one brain, thin clients, and a defence that changes itself (2026-09-07)
+The operator, after the jobhuntwow incident: *"we do not have the same 4 LLMs for security
+guardrails, not the same observability, not the same security stack for jev.best, jobhuntwow,
+polara, godeyes. If we keep our head in the sand we will have a similar or worse result."* Correct,
+and the audit proved it: four of six properties had no cost control on a public AI endpoint.
+
+**ARCHITECTURE, decided from measurement not preference.** Sidecars are out on arithmetic: the
+droplet is 4 GB with ~20 containers and ~2 GB free, so six more is not viable. Copy-paste is out
+for anything stateful, because this file records the "one value, four homes" defect three times and
+the newer home always loses. So: ONE `perseus-hub` container, THIN stateless clients.
+THE LOAD-BEARING FACT, checked before designing: all six projects write to THREE separate event
+volumes (colt_events, polara_events, s4biz_events) with FOUR promtails — but every promtail pushes
+to the SAME Loki (`videodead-loki-1`). **Loki is the shared substrate.** So observation costs zero
+code in jev/polara/s4biz/godeyes; the hub reads Loki. Only ENFORCEMENT needs a client, and that is
+a ~40-line stateless blocklist reader that cannot meaningfully drift.
+Also found: `jev-best/docker-compose.api.yml` documents, in Russian, the IDENTICAL UID-vs-root
+permission bug that made jobhuntwow's telemetry silent for its whole life. Same defect, discovered
+independently, twice, in two projects. That is the definition of a systemic flaw.
+
+**AUTONOMY: "full auto within bounds" (operator's choice).** A model-proposed pattern may become a
+BLOCKING rule with no human tap. That is only survivable because three things are deterministic:
+  * `vet.py` — five barriers, each failing closed: compiles · matches NOTHING in the known-good
+    corpus (every real route of all six projects) · not catastrophically broad · at least 3 literal
+    characters (the `struktur`-inside-`infrastruktur` lesson) · cheap on a hostile input.
+  * `ruleset.can_promote()` — MIN_DETECT_HOURS=24 watching real traffic first, quorum 3 of 4
+    reviewers across different vendors, at least one hostile match, and ZERO matches that looked
+    legitimate. The last clause is what would have saved the two real visitors (439 and 362 stale
+    404s) that a naive rule would have blocked on 2026-08-10.
+  * `ruleset.thresholds()` — CLAMP ON READ, not on write. A hand-edited, corrupt or hostile store
+    still cannot hand a consumer a value outside BOUNDS.
+**AND THE THING THE OPERATOR DID NOT ASK FOR: `review()` AUTO-DEMOTES.** Full autonomy without a
+way back is a one-way door. A blocking rule that refuses traffic which does not look hostile
+demotes itself to detection and records why; it is not deleted, so next week's cycle can see it was
+tried and why it failed instead of proposing it again. Same doctrine as the FP auditor that may
+flag but never gut a deck.
+
+**MY OWN BUG, AND IT IS A GOOD ONE.** Barrier 5 measured catastrophic backtracking by RUNNING the
+pattern against a hostile string. `/(a+)+!$` against 64 a's backtracks 2**64 times, so the vetter
+HUNG and took the whole test suite with it: I measured a denial of service by performing one.
+Fixed by detecting the nested-quantifier SHAPE statically and never executing it, with a bounded
+16-character probe for everything that survives. RULE: a check for an expensive operation must not
+perform the expensive operation.
+Guarded by tests/test_perseus_ruleset.py (20 checks, <1s). Negative-tested in four directions:
+removing the auto-revert, the clamp-on-read, the known-good corpus check, or the promotion
+clean-hit veto each fails by name, and all four restore green.
+
+## STANDING RULE — when the operator asks for something, BUILD IT, do not stop to ask (2026-09-07)
+Operator, verbatim: *"if I ask you something just do it do not stop and wait for bullshit"*.
+AskUserQuestion is for a genuine fork I cannot resolve from the code (the abuse-email policy was
+one: it reversed his own documented rule and risked the domain that carries the OTPs). It is NOT
+for "shall I continue", "want me to build the next part", or offering to pause for review. Those
+cost a turn, cost tokens, and the answer is always yes. Finish the work, then report what was
+built and what it measured.
+
+## PERSEUS HUB — the cycle, and the four things it is allowed to change (2026-09-07)
+`python perseus.py` installs the hub and a daily 04:40 UTC timer; it is a BUILDING BLOCK ship.py
+calls, never a second command. The cycle runs INSIDE colt-web, where OPENAI_API_KEY, the Telegram
+token and the Gmail credentials already live, so the hub introduces NO new credential home.
+
+**COLLECT THE WIDER WINDOW ONCE.** Mining wants what is recent; the abuse gate counts DISTINCT
+DAYS and cannot see two of them inside a two-day window. Two queries for one fact set would be two
+round trips, so the cycle takes `max(days, ABUSE_DAYS=7)` and slices the recent part locally. The
+line's own JSON carries no timestamp — `_ts` is stamped from LOKI's, because without a clock the
+distinct-day arithmetic is not merely wrong, it does not exist.
+
+**THE FOUR MUTABLE THINGS, in the order the cycle touches them:**
+1. **REVIEW BEFORE ACTING.** Yesterday's mistakes are undone before today's are made:
+   `RS.review()` demotes any blocking rule that has refused legitimate-looking traffic.
+2. **PATTERNS.** Models propose; `vet.py` and `ruleset.can_promote()` decide. 24h in detection,
+   3-of-4 quorum, at least one hostile match and ZERO clean hits before anything may refuse.
+3. **THRESHOLDS.** The half of "not static" that has nothing to do with patterns: a limit that
+   never moves is a limit tuned for last month's traffic. Four models vote on numbers derived from
+   OUR OWN arithmetic (nothing fenced, because nothing came from a request); `RS.tune()` applies
+   quorum on the DIRECTION, the median of the agreeing side, a 25% step cap and the clamp on read.
+   **A vote outside the committed range is DISCARDED, never clamped** — clamping would silently
+   turn a nonsense answer into a valid vote and let it count toward the quorum.
+4. **CONSEQUENCE.** Blocking an address protects us and costs the attacker nothing; the hosting
+   provider is the only party who can take the machine away, and until now nobody told them.
+
+**A SILENT PANEL CHANGES NO NUMBERS.** A provider-wide 429 must not be able to move a threshold in
+either direction, so tuning runs only when at least one model actually answered.
+
+**A CLASSIFIER IT CANNOT LOAD IS AN ERROR, NOT AN EMPTY LIST.** `actors()` RAISES when shield is
+unimportable and the cycle reports it. "No repeat offenders" and "I could not load the classifier"
+look identical from outside and only one is good news — the logship defect, third time.
+
+**DELIVERED IS NOT SENT.** `notify.telegram()` and `notify.email()` return truthy only on real
+delivery, so the report asks them; a failed delivery prints `evt=perseus_report
+result=undelivered` to stdout, which promtail scrapes, so a muted channel stays queryable. No
+Markdown: a path in the report is attacker-chosen text and one stray underscore makes Telegram
+reject the whole message — losing exactly the report about the day something happened.
+
+**THE SKIP REASONS ARE THE MOST USEFUL LINES IN THE DAILY REPORT.** Every held-back complaint says
+why: a burst is not a campaign (`MIN_DAYS=2` DISTINCT days, not volume), a research scanner is not
+abuse, one rented /24 is one actor and is reported once per 30 days, and `MAX_PER_DAY=5` because
+VOLUME is what damages the sending reputation of the domain that carries our one-time passwords.
+
+**FOUR DEFECTS OF MINE IN THIS CHANGE, and three were in the checks, not the code:**
+  * `sh.classify()` returns EVERY class a path belongs to — a LIST, not a name. Assuming a string
+    put a list into a set and raised. FOURTEENTH assumed signature in this workstream.
+  * `CLIENT_TARGETS` used `dirname(dirname(HERE))` and resolved to the drive root, so the Klima
+    copy silently wrote nothing. A copy that quietly does nothing is how two projects drift apart.
+  * MY FIXTURE REGISTERED A FAKE `app` MODULE, which SHADOWED the real package — `from app import
+    shield` then failed inside `actors()` and it returned an empty list that read as "no repeat
+    offenders". A fixture that blinds the function under test is a test of the fixture.
+  * `called.setdefault(k, True) or {}` returns True, not `{}`. A stub whose RETURN VALUE is wrong
+    makes the code fail for a reason unrelated to the property being asserted.
+And TWO of my six mutations proved nothing on the first run: `{} or ask_thresholds(...)` still
+calls it, and `[] or RuntimeError(...)` returns the exception rather than raising. **A mutation
+that does not violate the property is not a negative test** — the second one was only "not caught"
+because no test existed for that path at all, which is what it actually revealed.
+Guarded by `tests/test_perseus_hub.py` (14 tests; behaviour AND wiring, because shield.py was once
+fully tested while nothing asserted the middleware invoked it). Six mutations, all caught.
