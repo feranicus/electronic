@@ -7663,3 +7663,61 @@ Guarded by tests/test_fleet.py: the compose file may not name another project's 
 own-log project must read `elsewhere` and never `BLIND`, and jev.best -- which does write to the
 SHARED volume -- must still read `silent` when it is absent. Three mutations, all caught.
 
+
+## THE SHIELD LOCKED THE OPERATOR OUT OF HIS OWN ADMIN CONSOLE, SILENTLY (2026-09-07)
+He photographed `cybergod.ai/app/admin` serving OUR OWN branded 404 page while signed in as
+`feranicus@s4biz.io`, and it worked again minutes later. The same run's deploy log carried
+`could not read the live security headers: HTTPError 404` and `https://www.cybergod.ai/ HTTP 404`
+while `https://cybergod.ai/api/me` answered 401 — the shape of a time-boxed block, not a routing
+fault, because `/api/` is exempt and page routes are not.
+IDENTIFIED BY ELIMINATION, MEASURED NOT ASSUMED. Three runs of the real code:
+`_is_probe("app/admin")` is **False** (root `app` is in `_APP_ROUTES`), `visitors.classify()` on his
+Chrome returns **`bot: False`**, and the newly-wired perseus sidecar answers **429**, not 404. The
+committed Caddy fragment serves both hostnames and `check_bot_gate.BROWSER[1]` is the right UA, so
+neither was the cause. The only remaining producer of a 404 on a valid page route inside colt-web is
+`shield.decide()` -> `HTMLResponse(_v.NOT_FOUND_HTML, status_code=404)`, which is the page in the
+photograph. (I twice began building on an unverified cause before this; measure, then fix.)
+TWO EXEMPTIONS, both narrow, neither weakening enumeration defence:
+1. **AN AUTHENTICATED SESSION IS NEVER BLOCKED OR TARPITTED.** The cookie is signed, and only an
+   address on the committed access list can obtain one at all — it needs the shared password AND a
+   one-time code delivered to a mailbox that person controls. That outranks any timing heuristic
+   here. If a logged-in account really is scanning us, the right answer is a record naming WHO, not
+   an anonymous 404. The middleware resolves the session and passes `authed=` to `decide()`; a
+   request with no cookie costs a dict lookup, so a scanner flood never reaches the verify.
+2. **A ROUTE WE SERVE IS SLOWED, NEVER BLOCKED.** `is_our_route`'s own docstring has said
+   *"Never scored, never blocked"* since it was written and `decide()` never consulted it — the code
+   contradicted its documented contract. Refusing a real page is what locks a person out (a block on
+   `/login` is unrecoverable); the tarpit already answers the throughput half.
+**THE EVIDENCE IS UNCHANGED EITHER WAY.** `_decide_raw` still sets `_blocked[ip]`, so the address
+stays blocked for the probe paths that convicted it; only the response to a legitimate request is
+softened. An exemption that erased the finding would be a hiding place — the defect this file
+records more than any other. And the exemption is ANNOUNCED (`evt=shield_exempt` + one Telegram note
+per address per hour): silence is what turned a one-line fault into an hour of guessing, and a
+shield that would have blocked a logged-in user is a real signal either way — a wrong detector, or a
+bad account.
+
+## `is_blocked()` HAD ALWAYS RETURNED FALSE, FOR EVERY ADDRESS (found by the test above)
+`_prune(now, window)` takes two arguments; `is_blocked()` called `_prune()` with none, so every call
+raised TypeError straight into the blanket `except Exception: return False`. The consumer is the
+PUBLIC defence feed, and its docstring says exactly why it calls this instead of reading the status
+code: the bot gate also answers 404. So every genuine interception has been drawn as merely
+DETECTED — the mirror of the overclaim that feed was carefully built to avoid, silent because
+`False` is a perfectly plausible answer. Nth instance of a swallowed exception returning a default
+that looks like a measurement. Found only because a NEW test asserted the property from the other
+side; nothing had ever asked this function a question whose answer it knew.
+
+## A TEST FILE'S ANCHORS ARE INVALIDATED BY THE REFACTOR THEY ARE MEANT TO SURVIVE (same change)
+Splitting `decide()` into `_decide_raw()` (scoring) + `decide()` (enforcement) broke two guards, and
+one broke SILENTLY IN THE DANGEROUS DIRECTION:
+`body = src[src.index("def decide("):src.index("def tarpit_seconds(")]` — the new `decide` sits
+AFTER `tarpit_seconds`, so the slice ran BACKWARDS and produced `""`. The assertion then tested the
+empty string. Both guards now resolve the functions by **AST** and assert the body is non-empty,
+because a check that cannot find its subject must fail rather than pass. Fourth instance in this
+repo of anchoring on an assumed position instead of parsing.
+ALSO: six existing tests asserted `decide(ip, "/") == "BLOCK"`, using `/` as a stand-in for "any
+request". Under the corrected doctrine `/` is a route we serve, so they were rewritten to assert on
+`/.env` — the property they are named for is "this address is blocked", and after the change `/`
+measures the new exemption instead. A test that encodes a doctrine must be rewritten when the
+doctrine is corrected, not deleted: the reasoning is kept beside it.
+Eight mutations, each verified to fail by name and restore, against a baseline PROVEN GREEN FIRST —
+a red baseline scores every mutation "caught".

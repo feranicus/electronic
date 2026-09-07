@@ -139,7 +139,7 @@ def test_a_honeytoken_is_proof(sh):
     cls = {"browser": "Chrome", "os": "Linux", "device": "desktop"}
     for _ in range(3):
         sh.observe("203.0.113.11", "/wp-login.php", 404, cls)
-    assert sh.decide("203.0.113.11", "/")[0] in ("TARPIT", "BLOCK")
+    assert sh.decide("203.0.113.11", "/.env")[0] in ("TARPIT", "BLOCK")
 
 
 def test_the_incident_escalates_to_a_block(sh):
@@ -147,7 +147,7 @@ def test_the_incident_escalates_to_a_block(sh):
     for _ in range(3):
         for path, cls in INCIDENT:
             sh.observe(INCIDENT_IP, path, 404 if path != "/" else 200, cls)
-    assert sh.decide(INCIDENT_IP, "/")[0] == "BLOCK"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] == "BLOCK"
 
 
 def test_the_deploy_verifier_is_never_blocked(sh):
@@ -182,7 +182,7 @@ def test_api_can_never_be_blocked_even_for_a_proven_scanner(sh):
     for _ in range(5):
         for path, cls in INCIDENT:
             sh.observe(INCIDENT_IP, path, 404, cls)
-    assert sh.decide(INCIDENT_IP, "/")[0] == "BLOCK"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] == "BLOCK"
     assert sh.decide(INCIDENT_IP, "/api/me")[0] == "ALLOW"
     assert sh.decide(INCIDENT_IP, "/.well-known/acme-challenge/x")[0] == "ALLOW"
 
@@ -206,7 +206,7 @@ def test_the_blast_cap_refuses_a_mass_block(sh):
         ip = "198.51.100.%d" % i
         for _ in range(20):
             sh.observe(ip, "/.env", 404, cls)
-    verdicts = [sh.decide("198.51.100.%d" % i, "/")[0] for i in range(10)]
+    verdicts = [sh.decide("198.51.100.%d" % i, "/.env")[0] for i in range(10)]
     assert "TARPIT" in verdicts, "the cap must stop the shield blocking the whole internet"
     # The property is "it cannot block everybody", NOT "it blocks at most N%". A percentage of a
     # handful is not a rate — see shield.blast_ok(). A small absolute number is always allowed,
@@ -219,18 +219,18 @@ def test_blocks_expire_and_can_be_released_by_hand(sh):
     for _ in range(3):
         for path, cls in INCIDENT:
             sh.observe(INCIDENT_IP, path, 404, cls)
-    assert sh.decide(INCIDENT_IP, "/")[0] == "BLOCK"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] == "BLOCK"
     assert sh.unblock(INCIDENT_IP) is True
-    assert sh.decide(INCIDENT_IP, "/")[0] != "BLOCK"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] != "BLOCK"
     # An expired timer is not a block. Re-earn it first, then expire it, and prove the expiry
     # alone is enough for the address to be served again.
     for _ in range(3):
         for path, cls in INCIDENT:
             sh.observe(INCIDENT_IP, path, 404, cls)
-    assert sh.decide(INCIDENT_IP, "/")[0] == "BLOCK"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] == "BLOCK"
     sh._blocked[INCIDENT_IP] = time.time() - 1
     sh._hits.pop(INCIDENT_IP, None)                         # the window has rolled past as well
-    assert sh.decide(INCIDENT_IP, "/")[0] != "BLOCK", "nothing here may be permanent"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] != "BLOCK", "nothing here may be permanent"
 
 
 def test_it_fails_open(sh):
@@ -252,14 +252,14 @@ def test_the_kill_switch_and_the_allowlist(sh):
     importlib.reload(sh)
     sh._hits[INCIDENT_IP] = list(hostile)
     sh._seen_ips[INCIDENT_IP] = now
-    assert sh.decide(INCIDENT_IP, "/")[0] == "ALLOW", "an allowlisted address is never blocked"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] == "ALLOW", "an allowlisted address is never blocked"
     del os.environ["SHIELD_ALLOW_IPS"]
 
     os.environ["SHIELD"] = "off"
     importlib.reload(sh)
     sh._hits["1.2.3.4"] = list(hostile)
     sh._seen_ips["1.2.3.4"] = now
-    assert sh.decide("1.2.3.4", "/")[0] == "ALLOW", "the kill switch stops enforcement dead"
+    assert sh.decide("1.2.3.4", "/.env")[0] == "ALLOW", "the kill switch stops enforcement dead"
     del os.environ["SHIELD"]
     importlib.reload(sh)
 
@@ -436,8 +436,15 @@ def test_decisions_are_applied_and_are_operator_scoped(sh):
 
 def test_a_wider_or_stricter_response_is_operator_only(sh):
     """The shield may never widen to a /24 or go strict on its own — a /24 can be a whole office."""
+    import ast as _ast
     src = open(os.path.join(ROOT, "webapp", "backend", "app", "shield.py"), encoding="utf-8").read()
-    body = src[src.index("def decide("):src.index("def tarpit_seconds(")]
+    # The request path is decide() AND _decide_raw(): the scoring was split out so the enforcement
+    # exemptions could sit in one place. A slice between two function names assumes an order that
+    # a refactor is free to change, and this one silently became empty when it did.
+    _t = _ast.parse(src)
+    body = "\n".join(_ast.get_source_segment(src, f) for f in _t.body
+                      if isinstance(f, _ast.FunctionDef) and f.name in ("decide", "_decide_raw"))
+    assert body.strip(), "the request-path functions were not found; this check proves nothing"
     for name in ("BLOCK_NETS[", "STRICT_UNTIL[0] ="):
         assert name not in body, "decide() writes %s — that is operator-authorised state" % name
     assert "BLOCK_NETS.get" in body and "STRICT_UNTIL[0] >" in body, "but it must HONOUR them"
@@ -523,7 +530,7 @@ def test_api_is_not_a_hiding_place(sh):
     for _ in range(6):
         for p in ("/api/wp-login.php", "/api/.env", "/api/admin.php"):
             sh.observe("198.51.100.77", p, 404, cls)
-    assert sh.decide("198.51.100.77", "/")[0] == "BLOCK", (
+    assert sh.decide("198.51.100.77", "/.env")[0] == "BLOCK", (
         "a scanner hiding under /api/ must still be stopped everywhere else")
     assert sh.decide("198.51.100.77", "/api/me")[0] == "ALLOW", "but /api/ itself stays reachable"
 
@@ -552,7 +559,7 @@ def test_a_real_visitor_with_many_404s_is_not_an_attacker(sh):
 
     for i in range(12):                       # twelve DIFFERENT misses = enumeration
         sh.observe("198.51.100.99", "/scan-%d" % i, 404, cls)
-    assert sh.decide("198.51.100.99", "/")[0] in ("TARPIT", "BLOCK"), (
+    assert sh.decide("198.51.100.99", "/.env")[0] in ("TARPIT", "BLOCK"), (
         "many DISTINCT misses is enumeration and must still be caught")
 
 
@@ -660,7 +667,7 @@ def test_every_button_changes_something_the_request_path_reads(sh):
     t = _ast.parse(_src("webapp/backend/app/shield.py"))
     onpath = set()
     for f in [n for n in t.body if isinstance(n, _ast.FunctionDef)]:
-        if f.name in ("decide", "observe", "probe_shape", "tarpit_seconds"):
+        if f.name in ("decide", "_decide_raw", "observe", "probe_shape", "tarpit_seconds"):
             onpath |= {x.id for x in _ast.walk(f) if isinstance(x, _ast.Name)}
     for g in ("BLOCK_NETS", "STRICT_UNTIL", "EXTRA_PROBE_PATHS", "ALLOW_IPS", "_blocked"):
         assert g in onpath, "%s is written by a button but never read on the request path" % g
@@ -917,7 +924,7 @@ def test_a_low_and_slow_scan_is_caught(sh):
         "the fast window must be empty, or this test is measuring the wrong rule")
     own, _net = sh.slow_scan(ip)
     assert own >= sh.SLOW_DISTINCT
-    assert sh.decide(ip, "/")[0] == "BLOCK"
+    assert sh.decide(ip, "/.env")[0] == "BLOCK"
 
 
 def test_the_slow_window_never_touches_a_real_visitor(sh):
@@ -1061,7 +1068,7 @@ def test_a_fifteen_day_scan_across_one_network_is_caught(sh):
     assert own < sh.SLOW_DISTINCT, \
         "the point of this case is that NO single address reaches the 24h rule (own=%d)" % own
     assert net >= sh.SLOW_NET_DISTINCT, "the /24 must accumulate what the addresses cannot"
-    assert sh.decide(ip, "/")[0] == "BLOCK"
+    assert sh.decide(ip, "/.env")[0] == "BLOCK"
 
 
 def test_network_evidence_alone_may_not_convict_a_neighbour(sh):
@@ -1085,7 +1092,7 @@ def test_network_evidence_alone_may_not_convict_a_neighbour(sh):
     sh.observe(innocent, "/.env", 404, _CLS)
     _age_fast_window(sh, innocent)
     if sh.SLOW_MIN_OWN > 1:
-        assert sh.decide(innocent, "/")[0] != "BLOCK", \
+        assert sh.decide(innocent, "/.env")[0] != "BLOCK", \
             "one probe is below SLOW_MIN_OWN and must not be enough"
 
 
@@ -1122,13 +1129,13 @@ def test_releasing_an_address_forgets_its_slow_evidence(sh):
     for p in _NET_PROBES:
         sh.observe(ip, p, 404, _CLS)
     sh._ss.flush(sh._slow)
-    assert sh.decide(ip, "/")[0] == "BLOCK"
+    assert sh.decide(ip, "/.env")[0] == "BLOCK"
 
     sh.unblock(ip)
     assert sh.slow_scan(ip)[0] == 0, "release must forgive the slow evidence in memory"
     assert sh._ss.load().get(ip) in (None, {}), \
         "and on disk, or the next flush merges it straight back and re-convicts"
-    assert sh.decide(ip, "/")[0] != "BLOCK"
+    assert sh.decide(ip, "/.env")[0] != "BLOCK"
 
 
 def test_a_release_does_not_forgive_the_whole_neighbourhood(sh):
@@ -1314,3 +1321,89 @@ def test_referrer_spam_suppresses_the_alert_and_nothing_else(sh):
     j = body.index("_ref_is_spam(")
     assert "visit_suppressed" in body[j:j + 400], \
         "the sighting must still be LOGGED, or suppressing it makes it unqueryable in Grafana"
+
+
+# ---------------------------------------------------------------- the lockout class (2026-09-07)
+# The operator photographed cybergod.ai/app/admin serving our own branded 404 page while he was
+# logged in as the administrator, and working again minutes later. The shield had blocked him and
+# said nothing. These pin the two exemptions that make that impossible, in BOTH directions: a human
+# is never locked out, and a scanner is still stopped.
+
+def _convict(sh, ip):
+    """Drive the real detector until `ip` is genuinely blocked, using the real incident."""
+    for _ in range(5):
+        for path, cls in INCIDENT:
+            sh.observe(ip, path, 404, cls)
+    assert sh.decide(ip, "/.env")[0] == "BLOCK", "fixture failed to convict; it proves nothing"
+
+
+def test_a_logged_in_user_is_never_blocked(sh):
+    """A signed session is a known human. Only an address on the committed access list can get one,
+    and it needs the password AND an emailed one-time code, so it outranks any timing heuristic."""
+    _convict(sh, INCIDENT_IP)
+    assert sh.decide(INCIDENT_IP, "/app/admin", authed=True)[0] == "ALLOW"
+    assert sh.decide(INCIDENT_IP, "/app", authed=True)[0] == "ALLOW"
+
+
+def test_exempting_a_session_does_not_erase_the_evidence(sh):
+    """An exemption that unblocked the address would be a hiding place. The scanner stays stopped;
+    only the response to a legitimate request is softened."""
+    _convict(sh, INCIDENT_IP)
+    sh.decide(INCIDENT_IP, "/app/admin", authed=True)
+    assert sh.is_blocked(INCIDENT_IP), "the address must remain blocked for probe paths"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] == "BLOCK"
+
+
+def test_a_route_we_serve_is_slowed_never_blocked(sh):
+    """is_our_route's own docstring has said 'never blocked' since it was written and decide() did
+    not consult it. Refusing a real page is what locks a person out; the tarpit answers throughput."""
+    _convict(sh, INCIDENT_IP)
+    assert sh.decide(INCIDENT_IP, "/app/admin")[0] == "TARPIT"
+    assert sh.decide(INCIDENT_IP, "/login")[0] == "TARPIT", "a lockout from /login is unrecoverable"
+    assert sh.decide(INCIDENT_IP, "/.env")[0] == "BLOCK", "enumeration defence is untouched"
+
+
+def test_the_exemption_is_announced_and_not_silent(sh, monkeypatch):
+    """Silence is what turned a one-line fault into an hour of guessing. If the shield would have
+    blocked a logged-in user, that is a real signal either way: a wrong detector, or a bad account."""
+    sent, logged = [], []
+    fake = type("N", (), {"telegram": staticmethod(lambda t, **k: sent.append(t)),
+                          "_log": staticmethod(lambda **k: logged.append(k))})
+    monkeypatch.setattr(sh, "notify", fake)
+    sh._exempt_told.clear()
+    _convict(sh, INCIDENT_IP)
+    sh.decide(INCIDENT_IP, "/app/admin", authed=True)
+    assert any(k.get("evt") == "shield_exempt" for k in logged), "the near-miss must be queryable"
+    assert sent and "LOGGED-IN" in sent[0] and INCIDENT_IP in sent[0]
+    # ...but exactly once an hour. An alert per request is a flood, and a flood is how the message
+    # that matters gets read past.
+    before = len(sent)
+    for _ in range(20):
+        sh.decide(INCIDENT_IP, "/app/admin", authed=True)
+    assert len(sent) == before, "one note per address per hour, not one per request"
+
+
+def test_the_middleware_actually_tells_the_shield_who_is_logged_in(sh):
+    """Behaviour that nothing calls is not a control. shield.py was fully tested once while nothing
+    asserted the middleware invoked it; this is the same class one level up."""
+    src = _src("webapp/backend/app/telemetry.py")
+    src = re.sub(r"#.*", "", src)                    # our own comments must not satisfy the check
+    assert "session_email_fn(request)" in src, "the middleware never resolves the session"
+    assert re.search(r"_sh\.decide\(\s*_ip\s*,\s*request\.url\.path\s*,\s*authed\s*=", src), \
+        "decide() is called without telling it the request is authenticated"
+    assert re.search(r'_verdict\s*==\s*"TARPIT"\s+and\s+_authed', src), \
+        "a logged-in operator's own console must not be tarpitted either"
+
+
+def test_is_blocked_actually_answers_the_question(sh):
+    """It answered False for every address, forever: `_prune()` was called with no arguments while
+    `_prune(now, window)` requires two, so every call raised TypeError into the blanket `except`.
+
+    The consumer is the PUBLIC defence feed, whose whole reason for calling this instead of reading
+    the status code is that the bot gate also answers 404. So every genuine interception has been
+    drawn as merely DETECTED -- the mirror of the overclaim that feed was built to avoid, and silent
+    because `False` is a perfectly plausible answer.
+    """
+    _convict(sh, INCIDENT_IP)
+    assert sh.is_blocked(INCIDENT_IP) is True, "a convicted scanner must read as blocked"
+    assert sh.is_blocked("203.0.113.200") is False, "and an untouched address must not"

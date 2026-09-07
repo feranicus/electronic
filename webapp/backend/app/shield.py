@@ -674,8 +674,13 @@ def slow_scan(ip, now=None):
         return 0, 0
 
 
-def decide(ip, path):
-    """ALLOW | TARPIT | BLOCK for this request. Pure function of recorded state. Never raises."""
+def _decide_raw(ip, path):
+    """ALLOW | TARPIT | BLOCK for this request. Pure function of recorded state. Never raises.
+
+    THIS IS THE SCORING, NOT THE ENFORCEMENT. `decide()` wraps it and applies the two exemptions
+    that keep a human from being locked out of the product. Kept separate on purpose: the evidence
+    this function records must not change just because we declined to act on it.
+    """
     try:
         if not ENABLED or not ip or ip in ALLOW_IPS:
             return "ALLOW", ""
@@ -763,18 +768,100 @@ def leave_tarpit():
     _tarpits[0] = max(0, _tarpits[0] - 1)
 
 
+# One note per address per hour. An exemption that pages on every request is a flood, and a flood
+# is how the message that matters gets read past -- the roster warning and the 8/10 bot-gate line
+# both had to be silenced for exactly that reason.
+_EXEMPT_COOLDOWN_S = 3600
+_exempt_told = {}
+
+
+def decide(ip, path, authed=False):
+    """ALLOW | TARPIT | BLOCK, with the two exemptions that stop us locking a human out.
+
+    WHY THIS EXISTS (2026-09-07). The operator photographed cybergod.ai/app/admin returning our own
+    branded 404 page while he was logged in as the administrator, and it worked again minutes later.
+    Three measurements identified the source by elimination: `_is_probe('app/admin')` is False, the
+    bot gate classifies his Chrome as `bot: False`, and the perseus sidecar answers 429 rather than
+    404. The only remaining producer of a 404 on a valid page route is this module, and the block is
+    time-boxed, which is exactly why it healed on its own. The shield had locked the operator out of
+    his own admin console, silently, with a page that says the route does not exist.
+
+    TWO EXEMPTIONS, BOTH NARROW, NEITHER WEAKENING ENUMERATION DEFENCE:
+
+    1. AN AUTHENTICATED SESSION IS A KNOWN HUMAN. The cookie is signed, and only an address on the
+       committed access list can obtain one at all -- it needs the shared password AND a one-time
+       code delivered to a mailbox that person controls. That is far stronger corroboration than any
+       timing heuristic here can produce. If a logged-in account really is scanning us, the right
+       answer is a record naming WHO, which the exempt event below provides, not an anonymous 404.
+
+    2. A ROUTE WE ACTUALLY SERVE IS NEVER BLOCKED, only slowed. `is_our_route`'s own docstring has
+       said "Never scored, never blocked" since it was written, and `decide()` never consulted it --
+       the code contradicted its documented contract. The shield exists to stop people asking for
+       things we do not have; refusing a real page is what locks a person out of the product, and
+       the tarpit already answers the throughput half of that concern.
+
+    THE BLOCK IS STILL RECORDED EITHER WAY. `_decide_raw` sets `_blocked[ip]`, so the address stays
+    blocked for the probe paths that convicted it and the evidence is unchanged. Only the response
+    to a legitimate request is softened. An exemption that erased the finding would be a hiding
+    place, which is the defect this codebase has already paid for four times.
+    """
+    try:
+        verdict, why = _decide_raw(ip, path)
+        if verdict != "BLOCK":
+            return verdict, why
+
+        if authed:
+            _ev("shield_exempt", ip=ip, path=str(path or "")[:120],
+                reason="authenticated session", would_have=why)
+            # TELL THE OPERATOR. He was locked out with no message, and silence is what turned a
+            # one-line fault into an hour of guessing. This is also a real signal in its own right:
+            # either the detector is wrong about a real user, or an account is misbehaving.
+            try:
+                now = time.time()
+                if now - _exempt_told.get(ip, 0) > _EXEMPT_COOLDOWN_S:
+                    _exempt_told[ip] = now
+                    if notify is not None:
+                        notify.telegram(
+                            "SHIELD would have blocked a LOGGED-IN user and did not.\n"
+                            "address: %s\npath: %s\nevidence: %s\n"
+                            "The address stays blocked for probe paths; the session is not."
+                            % (ip, str(path or "")[:120], why))
+            except Exception:
+                pass                                   # an alert must never break the request
+            return "ALLOW", "authenticated session - never blocked (%s)" % why
+
+        if is_our_route(path):
+            _ev("shield_exempt", ip=ip, path=str(path or "")[:120],
+                reason="a route we serve", would_have=why)
+            return "TARPIT", "our own route - slowed, not blocked (%s)" % why
+
+        return verdict, why
+    except Exception:
+        return "ALLOW", ""                             # fail open, always
+
+
 def is_blocked(ip):
     """Is this address currently held? Public because the siege feed must report what the shield
     ACTUALLY did, not infer it from a status code - the bot gate also answers 404, so `status==404`
-    would have coloured ordinary crawler traffic as a block."""
+    would have coloured ordinary crawler traffic as a block.
+
+    IT ALWAYS RETURNED FALSE (found 2026-09-07 by a test written for something else). `_prune`
+    takes (now, window) and was called with neither, so every call raised TypeError straight into
+    the blanket `except` below and answered "not blocked" -- for every address, forever. The public
+    defence feed is the consumer, so every genuine interception has been drawn as merely DETECTED.
+    That is the mirror of the overclaim the feed was carefully built to avoid, and it was silent
+    because the fallback is a plausible answer. Nth instance of a swallowed exception returning a
+    default that looks like a measurement.
+    """
     try:
-        _prune()
+        now = time.time()
+        _prune(now, cfg("window_s"))
         if str(ip) in ALLOW_IPS:
             return False
-        if _blocked.get(str(ip), 0) > time.time():
+        if _blocked.get(str(ip), 0) > now:
             return True
         net = ".".join(str(ip).split(".")[:3])
-        return BLOCK_NETS.get(net, 0) > time.time()
+        return BLOCK_NETS.get(net, 0) > now
     except Exception:
         return False
 

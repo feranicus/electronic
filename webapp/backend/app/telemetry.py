@@ -143,7 +143,21 @@ def install(app, session_email_fn=None):
             if _sh is not None:
                 try:
                     _ip = client_ip(request)
-                    _verdict, _why = _sh.decide(_ip, request.url.path)
+                    # A SIGNED SESSION IS A KNOWN HUMAN, so the shield is told before it decides.
+                    # Without this the operator was served our own branded 404 on /app/admin while
+                    # logged in as the administrator, with no message anywhere -- see
+                    # shield.decide() for the elimination that identified it. A request carrying no
+                    # cookie costs a dict lookup, so a scanner flood never reaches the verify.
+                    _authed = False
+                    try:
+                        _authed = bool(session_email_fn(request))
+                    except Exception:
+                        _authed = False
+                    _verdict, _why = _sh.decide(_ip, request.url.path, authed=_authed)
+                    if _verdict == "TARPIT" and _authed:
+                        # Slowing a logged-in operator's own console to a crawl is the same lockout
+                        # in a politer form, and it would be just as silent.
+                        _verdict = "ALLOW"
                     if _verdict == "BLOCK":
                         from starlette.responses import HTMLResponse
                         _safe_emit(request, 404, t0, session_email_fn, cls=cls, blocked=True)
