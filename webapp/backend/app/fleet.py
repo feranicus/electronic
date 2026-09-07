@@ -29,6 +29,12 @@ import time
 
 BEAT_DIR = os.environ.get("PERSEUS_BEATS", "/var/log/colt/perseus_beats")
 EVENTS = os.environ.get("EVENTS_LOG", "/var/log/colt/events.log")
+# EVERY LOG THIS CONTAINER CAN SEE. klima and s4biz write to their OWN volumes, so reading only the
+# shared one reported them as unseeable -- a statement about where we looked, not about them.
+# docker-compose.web.yml mounts those volumes read-only at these paths; a path that is not mounted
+# is skipped, so the list is safe on a box where a project does not exist.
+EXTRA_EVENTS = [p for p in os.environ.get(
+    "EXTRA_EVENT_LOGS", "/var/log/polara/events.log:/var/log/s4biz/events.log").split(":") if p]
 BLOCKLIST = os.environ.get("PERSEUS_BLOCKLIST", "/var/log/colt/perseus_blocklist.json")
 
 # The fleet, and the log `service` each one stamps. Committed rather than discovered: a project
@@ -38,7 +44,7 @@ PROJECTS = [
     {"key": "colt-web", "name": "cybergod.ai", "service": "colt-web"},
     {"key": "jhw-web", "name": "jobhuntwow.com", "service": "jhw-web"},
     {"key": "polara-web", "name": "klimaanlage-preise.de", "service": "polara-web"},
-    {"key": "jev-api", "name": "jev.best", "service": "jev-api"},
+    {"key": "jev-web", "name": "jev.best", "service": "jev-web"},
     {"key": "s4biz-web", "name": "s4biz.io", "service": "s4biz-web"},
 ]
 
@@ -67,6 +73,13 @@ def _beats():
 
 
 def _tail_events(limit_bytes=4_000_000):
+    rows = []
+    for path in [EVENTS] + EXTRA_EVENTS:
+        rows.extend(_tail_one(path, limit_bytes))
+    return rows
+
+
+def _tail_one(EVENTS, limit_bytes=4_000_000):
     """Read the tail of the shared events log. Every project on this box writes there, so one read
     answers 'who is alive' for all of them without a Loki round trip -- and it still works when
     Loki is down, which is precisely when a status page is being looked at."""

@@ -11,6 +11,7 @@ matters most is the one asserting SILENT is never rendered as healthy.
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 
@@ -51,9 +52,9 @@ def test_a_project_with_no_logs_is_silent_not_quiet(monkeypatch, tmp_path):
            {})
     st = fleet.status()
     by = {p["service"]: p for p in st["projects"]}
-    assert by["jev-api"]["state"] == "silent"
-    assert "BLIND" in by["jev-api"]["why"]
-    assert by["jev-api"]["attacks_24h"] == 0 and by["jev-api"]["requests_24h"] == 0
+    assert by["jev-web"]["state"] == "silent"
+    assert "BLIND" in by["jev-web"]["why"]
+    assert by["jev-web"]["attacks_24h"] == 0 and by["jev-web"]["requests_24h"] == 0
     assert st["blind"] >= 1
     assert "never that it is safe" in st["caveat"]
 
@@ -101,7 +102,7 @@ def test_the_project_list_is_committed_so_an_absence_can_be_noticed(monkeypatch,
     _setup(monkeypatch, tmp_path, [], {})
     got = {p["service"] for p in fleet.status()["projects"]}
     assert got == {p["service"] for p in fleet.PROJECTS}
-    assert "jev-api" in got and "polara-web" in got
+    assert "jev-web" in got and "polara-web" in got
 
 
 def test_attack_counting_uses_the_one_shield_implementation(monkeypatch, tmp_path):
@@ -431,3 +432,71 @@ def test_a_swallowed_wiring_failure_is_printed_loudly():
     the control was not installed."""
     src = open(os.path.join(ROOT, "perseus.py"), encoding="utf-8").read()
     assert "PERSEUS SIDECAR NOT WIRED" in src
+
+
+def test_a_project_with_its_OWN_event_volume_is_still_seen(monkeypatch, tmp_path):
+    """THE BLIND SPOT WAS MINE, NOT THEIRS.
+
+    klima writes to `polara_events` and s4biz to `s4biz_events` -- their own volumes, each with its
+    own promtail. Reading only `colt_events` reported both as "no log line at all, we CANNOT SEE
+    this project", which was a true statement about where I was looking and a false one about them.
+    Same family as the Loki query that returned nothing because it was malformed.
+
+    colt-web now mounts those volumes read-only and fleet reads every one it can reach.
+    """
+    now = int(time.time())
+    shared = os.path.join(str(tmp_path), "colt.log")
+    polara = os.path.join(str(tmp_path), "polara.log")
+    for path, svc in ((shared, "colt-web"), (polara, "polara-web")):
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"ts": now - 30, "evt": "http", "service": svc,
+                                 "ip": "1.1.1.1", "path": "/"}) + "\n")
+    monkeypatch.setattr(fleet, "EVENTS", shared)
+    monkeypatch.setattr(fleet, "EXTRA_EVENTS", [polara])
+    monkeypatch.setattr(fleet, "BEAT_DIR", os.path.join(str(tmp_path), "beats"))
+    by = {p["service"]: p for p in fleet.status()["projects"]}
+    assert by["polara-web"]["state"] != "silent", \
+        "a project on its own volume must not read as unseeable once we mount it"
+    assert by["polara-web"]["requests_24h"] == 1
+    assert by["colt-web"]["requests_24h"] == 1, "the shared log must still be read"
+
+
+def test_an_unmounted_extra_log_is_skipped_not_fatal(monkeypatch, tmp_path):
+    """A box where a project is not deployed has no such volume. The page must still render."""
+    now = int(time.time())
+    shared = os.path.join(str(tmp_path), "colt.log")
+    with open(shared, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": now - 30, "evt": "http", "service": "colt-web",
+                             "ip": "1.1.1.1", "path": "/"}) + "\n")
+    monkeypatch.setattr(fleet, "EVENTS", shared)
+    monkeypatch.setattr(fleet, "EXTRA_EVENTS", ["/nope/never/events.log"])
+    monkeypatch.setattr(fleet, "BEAT_DIR", os.path.join(str(tmp_path), "beats"))
+    assert fleet.status()["projects"]
+
+
+def test_the_service_names_match_what_each_project_actually_stamps():
+    """jev-api is the CONTAINER; it stamps `service=jev-web`. Looking for the container name is why
+    a project with lines in the log read as unseeable. The list must hold the STAMPED value."""
+    svcs = {p["service"] for p in fleet.PROJECTS}
+    assert "jev-web" in svcs and "jev-api" not in svcs
+
+
+def test_colt_web_mounts_the_other_projects_event_volumes():
+    """WIRING. The reader above is worth nothing if the volumes are not attached, and they must be
+    read-only and EXTERNAL -- they belong to those projects; compose attaches, never owns."""
+    src = open(os.path.join(ROOT, "docker-compose.web.yml"), encoding="utf-8").read()
+    assert "polara_events:/var/log/polara:ro" in src
+    assert "s4biz_events:/var/log/s4biz:ro" in src
+    # PER VOLUME, not a total: the file also declares an external NETWORK, so counting every
+    # "external: true" passed even with a volume's marker removed. A count is not an assertion
+    # about the thing you meant.
+    for vol in ("polara_events", "s4biz_events"):
+        i = src.index("\n  %s:" % vol) + 1
+        # BOUND AT THE NEXT DECLARATION, not a fixed length. A 200-character window from
+        # polara_events reached into s4biz_events' block, so removing polara's marker still found
+        # one and the mutation went unnoticed -- the same fixed-slice defect this repo has paid for
+        # before. Two adjacent blocks must never be read as one.
+        nxt = re.search(r"\n  \w+:", src[i:])
+        block = src[i:i + nxt.start()] if nxt else src[i:]
+        assert "external: true" in block, \
+            "%s belongs to another project -- compose must ATTACH, never create it" % vol

@@ -31,11 +31,25 @@ def test_a_full_ip_is_never_stored_let_alone_served():
 
 
 def test_ipv6_is_truncated_too():
+    """ASSERT ON THE ADDRESS FIELD, NOT THE WHOLE SNAPSHOT.
+
+    The first version searched `repr(snapshot())` for the bare string "5678" -- and the snapshot
+    carries a millisecond TIMESTAMP, so it matched inside `1788805678576` and failed a correct
+    build at random. A four-digit needle in a haystack that contains a clock is a coin flip, and a
+    test that blocks a deploy on a coin flip is worse than no test: it teaches you to re-run.
+
+    The property is about the IP field, so read the IP field."""
     sg = _fresh()
     sg.record("2001:db8:1234:5678::1", "/.env", "env_secrets", False)
-    blob = repr(sg.snapshot(None))
-    assert "5678" not in blob and "::1" not in blob.replace("::/48", ""), "IPv6 leaked host bits"
-    assert "/48" in blob
+    snap = sg.snapshot(None)
+    ips = [e.get("net", "") for e in snap["events"]]
+    assert ips, "nothing was recorded, so this test proved nothing"
+    for ip in ips:
+        assert "5678" not in ip, "IPv6 host bits leaked into the served address: %r" % ip
+        assert ip.endswith("/48"), "the address must be truncated to a /48: %r" % ip
+        assert not ip.replace("::/48", "").endswith("::1")
+    # and not hiding in the buffer either: truncation happens on the way IN
+    assert "5678" not in repr([e.get("net") for e in sg._buf])
 
 
 def test_a_query_string_is_never_echoed():

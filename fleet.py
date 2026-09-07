@@ -38,8 +38,11 @@ sys.path.insert(0, HERE)
 
 # service -> the name a human uses. Committed, so a project that stops reporting can be NOTICED;
 # a list built from whatever appears in the log would simply stop mentioning it.
+# The `service` value each project STAMPS on its own events -- not the container name. jev-api is
+# the container; it stamps service=jev-web, and looking for "jev-api" is why this tool reported a
+# project as unseeable while its lines sat in the log under another name.
 PROJECTS = [("colt-web", "cybergod.ai"), ("jhw-web", "jobhuntwow.com"),
-            ("polara-web", "klimaanlage-preise.de"), ("jev-api", "jev.best"),
+            ("polara-web", "klimaanlage-preise.de"), ("jev-web", "jev.best"),
             ("s4biz-web", "s4biz.io")]
 STALE_BEAT_S = 15 * 60
 
@@ -56,7 +59,12 @@ def _script(hours):
         "  P=$(docker exec $c sh -c 'ls /app/perseus_client.py /opt/perseus_client.py "
         "/app/app/perseus_client.py 2>/dev/null | head -1' 2>/dev/null)",
         "  W=$(docker exec $c sh -c \"grep -rl 'perseus_client.Middleware' /app 2>/dev/null | head -1\" 2>/dev/null)",
-        "  echo \"$c\\t${P:-none}\\t${W:-none}\"",
+        # printf, NOT echo. `echo "$c\\t..."` does not expand \\t under bash, so every row came
+        # back as ONE field, the split produced fewer than 3 parts, and the whole table read
+        # "none" -- which the CLI then rendered as "wired in: NO" while the web page, reading the
+        # heartbeat, correctly showed the sidecar ACTIVE. Two implementations of one question
+        # disagreed and the CLI was the one lying.
+        "  printf '%s\\t%s\\t%s\\n' \"$c\" \"${P:-none}\" \"${W:-none}\"",
         "done",
         "echo '#### BEATS'",
         "ls -la /var/lib/docker/volumes/colt-stack_colt_events/_data/perseus_beats/ 2>/dev/null "
@@ -65,10 +73,27 @@ def _script(hours):
         "  [ -f \"$f\" ] && cat \"$f\" && echo",
         "done 2>/dev/null",
         "echo '#### EVENTS'",
-        # The shared log every project writes to. Tail is bounded: this file is ~200 MB.
-        "L=/var/lib/docker/volumes/colt-stack_colt_events/_data/events.log",
-        "if [ -f $L ]; then echo \"SIZE $(stat -c%s $L)\"; tail -c 30000000 $L; "
-        "else echo 'NOLOG'; fi",
+        # EVERY PROJECT'S OWN LOG, NOT JUST THE SHARED ONE. klima writes to polara_events and
+        # s4biz to s4biz_events -- their own volumes, each with its own promtail. Reading only
+        # colt_events reported both as "we cannot see this project", which was true of the TOOL and
+        # false about them: I was looking in the wrong place and calling it blindness.
+        # ASK THE CONTAINER where its log is (EVENTS_LOG + the mount that contains it), the same
+        # rule dbbackup already learned -- a volume name is a guess, docker inspect is an answer.
+        "for c in $(docker ps --format '{{.Names}}'); do",
+        "  E=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"$c\" 2>/dev/null "
+        "| sed -n 's/^EVENTS_LOG=//p' | head -1)",
+        "  [ -z \"$E\" ] && continue",
+        "  D=$(dirname \"$E\")",
+        "  H=$(docker inspect -f '{{range .Mounts}}{{.Destination}}|{{.Source}}"
+        "{{println}}{{end}}' \"$c\" 2>/dev/null | awk -F'|' -v d=\"$D\" '$1==d {print $2; exit}')",
+        "  [ -z \"$H\" ] && continue",
+        "  F=\"$H/$(basename \"$E\")\"",
+        "  [ -f \"$F\" ] || continue",
+        "  echo \"$F\"",
+        "done | sort -u | { FOUND=0;",
+        "  while read -r L; do FOUND=1; printf 'SIZE %s\\n' \"$(stat -c%s \"$L\")\"; "
+        "tail -c 12000000 \"$L\"; done;",
+        "  [ \"$FOUND\" = 0 ] && echo 'NOLOG'; }",
         "echo '#### END'",
     ]) + "\n"
 
@@ -127,7 +152,9 @@ def analyse(sec, hours):
         line = line.strip()
         if line.startswith("SIZE "):
             try:
-                size = int(line.split()[1])
+                # One SIZE line per project log now, so ACCUMULATE. Keeping the last would report
+                # the smallest estate as the whole fleet's volume.
+                size = (size or 0) + int(line.split()[1])
             except (ValueError, IndexError):
                 size = -1          # present but unreadable: NOT the same as absent
             continue

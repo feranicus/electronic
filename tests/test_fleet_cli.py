@@ -88,7 +88,7 @@ def test_an_unimportable_classifier_is_admitted_not_counted_as_zero():
 def test_the_project_list_is_committed():
     """A list derived from the log could never report a project as missing."""
     svcs = {s for s, _ in F.PROJECTS}
-    assert {"jhw-web", "jev-api", "polara-web", "colt-web"} <= svcs
+    assert {"jhw-web", "jev-web", "polara-web", "colt-web"} <= svcs
 
 
 def test_it_never_writes_to_the_droplet():
@@ -161,3 +161,42 @@ def test_an_explicit_NOLOG_still_reports_nothing():
     a = F.analyse({"CONTAINERS": "", "WIRED": "", "BEATS": "", "EVENTS": "NOLOG"}, 24)
     assert a["nolog"] is True
     assert "not found on the droplet" in F.render(a)
+
+
+def test_the_wired_row_really_emits_TABS():
+    """THE CLI CONTRADICTED THE WEB PAGE, AND THE CLI WAS WRONG.
+
+    The page showed cybergod LIVE with an active heartbeat; `fleet.py` showed `wired in: NO` for
+    every project. Cause: the remote script used `echo "$c\\t..."`, and bash's echo does NOT expand
+    \\t. Every row arrived as ONE field, `line.split("\\t")` produced fewer than 3 parts, the whole
+    table was skipped, and every project rendered "none". A table that is empty because it failed
+    to PARSE looks exactly like a table that is empty because nothing is installed.
+
+    Two implementations of one question disagreed; the heartbeat (which the app writes and the page
+    reads) is the authority, and the container probe is a convenience that was silently broken.
+    """
+    src = F._script(24)
+    assert "printf '%s\\t%s\\t%s\\n'" in src, "printf, not echo -- echo does not expand \\t"
+    assert 'echo "$c\\t' not in src
+
+    import shutil
+    import subprocess
+    if not shutil.which("bash"):
+        import pytest
+        pytest.skip("no bash here; the image build and CI run this")
+    script = ('c=colt-web; P=/app/app/perseus_client.py; W=/app/app/main.py\n'
+              + [l for l in src.splitlines() if l.strip().startswith("printf")][0].strip() + "\n")
+    r = subprocess.run(["bash"], input=script.encode("utf-8"), capture_output=True)
+    out = (r.stdout or b"").decode()
+    assert "\t" in out, "the row must contain REAL tabs, got %r" % out
+    assert len(out.strip().split("\t")) == 3, out
+    # and the parser must then actually populate the table
+    a = F.analyse({"CONTAINERS": "colt-web\tUp 1 hour", "WIRED": out.strip(),
+                   "BEATS": "", "EVENTS": "SIZE 10"}, 24)
+    assert a["wired"]["colt-web"]["wired"] == "/app/app/main.py"
+    # SCOPE THE ASSERTION TO THE ROW. Checking the whole report caught the OTHER four projects,
+    # which correctly say NO -- an assertion aimed wider than its subject fails for the right
+    # reason on the wrong evidence.
+    out = F.render(a, want="colt-web")
+    assert "wired in    : NO" not in out, out
+    assert "/app/app/main.py" in out

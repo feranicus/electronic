@@ -7578,3 +7578,63 @@ multi-line constructor is found and the insert lands AFTER the call, the rewritt
 parses, the LIVE main.py carries the relative form, and the failure path shouts. Five mutations,
 all caught.
 
+## THE PAGE AND THE CLI DISAGREED, AND THE CLI WAS THE LIAR (2026-09-07)
+The wiring fix worked: the web page showed `cybergod.ai · live · sidecar active · cycle 0 · last
+heartbeat 0s`. `python fleet.py` on the same droplet, at the same moment, showed
+`wired in: NO -- nothing calls add_middleware` for EVERY project.
+CAUSE: the remote script used `echo "$c\t${P}\t${W}"`, and **bash's echo does not expand `\t`**.
+Every row arrived as one field, `line.split("\t")` produced fewer than three parts, the whole WIRED
+table was skipped, and every project rendered "none". Proven in one command:
+```
+echo   "$c\t$P"   ->  colt-web\t/app/app/perseus_client.py     (literal backslash-t)
+printf '%s\t%s\n' ->  colt-web<TAB>/app/app/perseus_client.py
+```
+**A table that is empty because it failed to PARSE looks exactly like a table that is empty because
+nothing is installed.** That is the same family as a failed Loki query rendering as "0 requests"
+and a missing events.log rendering as "no attacks" -- absence produced by our own plumbing,
+presented as a finding about the subject.
+WHICH SOURCE IS AUTHORITATIVE, now stated: the HEARTBEAT is. The app writes it and the page reads
+it, so it can only exist if the middleware really ran. The container probe (`ls` + `grep` over
+/app) is a convenience for diagnosing a project that is NOT beating, and it was the half that broke.
+Guarded by test_fleet_cli.py, which runs the real printf fragment through bash and asserts REAL
+tabs, then feeds the output to the real parser and asserts the row populates. Negative-tested by
+restoring `echo`: caught.
+MY OWN ASSERTION WAS ALSO TOO WIDE -- it checked the whole report for "wired in: NO" and caught the
+other four projects, which correctly say NO. Scope an assertion to its subject; wider is not safer.
+
+## THREE PROJECTS WERE NEVER SILENT -- I WAS READING ONE LOG (2026-09-07)
+The operator gave me the paths and the answer was in the compose files, not the droplet. Each
+"silent" project had a DIFFERENT cause and none of them was "no telemetry":
+  * **klima** writes `EVENTS_LOG=/var/log/colt/events.log` on the **polara_events** volume, with
+    its own promtail. Its own volume, not the shared one.
+  * **s4biz** writes `/var/log/s4biz/events.log` on **s4biz_events**, likewise.
+  * **jev.best** writes to the SHARED volume and stamps **`service=jev-web`** -- while my PROJECTS
+    list said `jev-api`, which is the CONTAINER name. Its lines were in the log the whole time,
+    under a name I was not looking for.
+So `fleet` read one file, found nothing, and printed "we CANNOT SEE this project" three times. That
+sentence was true of the TOOL and false about them, which is the exact failure this file records
+against logship, the whodunit visibility probe and the malformed Loki query. **I built the guard
+against reporting my own blindness as a finding, and then did it.**
+FIXES: the CLI asks each container where its log is (`EVENTS_LOG` + the mount that contains it, via
+docker inspect -- "ask the container, never assume a name", the rule dbbackup already learned) and
+reads every one; colt-web mounts polara_events and s4biz_events READ-ONLY and `external: true`,
+because those volumes belong to those projects and compose must attach, never create; and the
+service list now holds the value each project STAMPS, not its container name.
+ALSO: s4biz.io was **missing from CLIENT_TARGETS entirely**, so it never received the client and
+could only ever read "not installed". A target absent from the list is a project that silently
+never gets the control.
+
+## A FOUR-DIGIT NEEDLE IN A HAYSTACK THAT CONTAINS A CLOCK (2026-09-07)
+`python ship.py` was blocked by `test_ipv6_is_truncated_too`:
+```
+assert "5678" not in blob   ->  matched inside 1788805678576   (a millisecond TIMESTAMP)
+```
+The IPv6 truncation was working perfectly. The assertion searched `repr(snapshot())` -- the WHOLE
+structure, clock included -- for a bare four-digit string. Measured: ~0.04% of runs fail on the
+timestamp alone, and it had just cost a deploy. **A test that blocks a release on a coin flip is
+worse than no test: it teaches the operator to re-run rather than to read.**
+The property is about the ADDRESS field, so read the address field. And the field is `net`, not
+`ip` -- assuming that key cost another cycle, the nth time in this workstream. Rewritten to assert
+per-event on `net`, still negative-tested by removing the truncation (caught), and it now also
+asserts something was recorded at all, because an empty list satisfies every `for` loop.
+

@@ -56,6 +56,12 @@ CLIENT_TARGETS = [
     (os.path.join(_PARENT, "Klima", "klima-shop", "backend", "app"), "perseus_client.py"),
     # jev.best lives in a different tree; PERSEUS_JEV overrides when it is not here.
     (os.environ.get("PERSEUS_JEV", r"C:\React SW\yantar\jev-best\webapp"), "perseus_client.py"),
+    # s4biz.io was MISSING from this list entirely, so it never received the client and never
+    # appeared as anything but "not installed". A target that is absent from the list is a project
+    # that silently never gets the control.
+    (os.environ.get("PERSEUS_S4BIZ",
+                    r"C:\Users\feran\Downloads\S4biz new website\webapp\backend\app"),
+     "perseus_client.py"),
 ]
 
 SSH = ["-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR",
