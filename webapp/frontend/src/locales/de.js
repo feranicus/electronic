@@ -26,6 +26,8 @@ export const keyed = {
   "fleet.s.live": "aktiv",
   "fleet.s.observed": "beobachtet",
   "fleet.s.silent": "stumm",
+  "fleet.s.elsewhere": "anderswo",
+  "fleet.elsewhereN": "eigenes Log",
   "fleet.sc.active": "aktiv",
   "fleet.sc.stale": "veraltet",
   "fleet.sc.not_installed": "nicht installiert",

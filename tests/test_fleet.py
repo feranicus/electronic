@@ -124,7 +124,10 @@ def test_an_unreadable_events_log_does_not_crash_the_page(monkeypatch, tmp_path)
     monkeypatch.setattr(fleet, "BEAT_DIR", os.path.join(str(tmp_path), "missing"))
     st = fleet.status()
     assert len(st["projects"]) == len(fleet.PROJECTS)
-    assert all(p["state"] == "silent" for p in st["projects"])
+    # Not all "silent" any more: the two projects that keep their OWN event volume are `elsewhere`,
+    # which is the honest label. What must hold is that NONE of them claims to be healthy.
+    assert all(p["state"] in ("silent", "elsewhere") for p in st["projects"])
+    assert not [p for p in st["projects"] if p["state"] in ("live", "observed")]
 
 
 def test_the_endpoint_is_admin_only():
@@ -481,22 +484,44 @@ def test_the_service_names_match_what_each_project_actually_stamps():
     assert "jev-web" in svcs and "jev-api" not in svcs
 
 
-def test_colt_web_mounts_the_other_projects_event_volumes():
-    """WIRING. The reader above is worth nothing if the volumes are not attached, and they must be
-    read-only and EXTERNAL -- they belong to those projects; compose attaches, never owns."""
+def test_cybergods_deploy_never_depends_on_a_sibling_project():
+    """THE STAGING GATE CAUGHT THIS AND PRODUCTION WAS NEVER TOUCHED.
+
+        external volume "klima-shop_polara_events" not found
+        [X] remote deploy failed ... STAGING GATE: NO-GO
+
+    I mounted klima's and s4biz's event volumes into colt-web with `external: true` so the Fleet
+    page could read them. Two defects in one change:
+      1. I GUESSED the compose project prefix. This repository already records that lesson from
+         dbbackup -- compose prefixes volume names with the project name, and the only honest way
+         to know one is to ASK docker. I quoted that rule in the commit that broke it.
+      2. Far worse: `external: true` makes colt-web UNDEPLOYABLE anywhere the volume is absent.
+         Staging does not run Klima, so cybergod's own deploy required a sibling to exist.
+
+    A STATUS PAGE IS NEVER WORTH COUPLING A DEPLOY. The page reports `elsewhere` instead, and
+    `python fleet.py` reads every project's own log over ssh, where no coupling is needed.
+    """
     src = open(os.path.join(ROOT, "docker-compose.web.yml"), encoding="utf-8").read()
-    assert "polara_events:/var/log/polara:ro" in src
-    assert "s4biz_events:/var/log/s4biz:ro" in src
-    # PER VOLUME, not a total: the file also declares an external NETWORK, so counting every
-    # "external: true" passed even with a volume's marker removed. A count is not an assertion
-    # about the thing you meant.
     for vol in ("polara_events", "s4biz_events"):
-        i = src.index("\n  %s:" % vol) + 1
-        # BOUND AT THE NEXT DECLARATION, not a fixed length. A 200-character window from
-        # polara_events reached into s4biz_events' block, so removing polara's marker still found
-        # one and the mutation went unnoticed -- the same fixed-slice defect this repo has paid for
-        # before. Two adjacent blocks must never be read as one.
-        nxt = re.search(r"\n  \w+:", src[i:])
-        block = src[i:i + nxt.start()] if nxt else src[i:]
-        assert "external: true" in block, \
-            "%s belongs to another project -- compose must ATTACH, never create it" % vol
+        assert vol not in src, \
+            "colt-web must not require %s: a missing sibling volume blocks its own deploy" % vol
+
+
+def test_a_project_that_keeps_its_own_log_is_ELSEWHERE_not_blind(monkeypatch, tmp_path):
+    """Collapsing this into SILENT would repeat the error the page exists to prevent: reporting
+    where WE looked as a fact about THEM. klima and s4biz write to their own event volumes."""
+    now = int(time.time())
+    _setup(monkeypatch, tmp_path,
+           [{"ts": now - 30, "evt": "http", "service": "colt-web", "ip": "1.1.1.1", "path": "/"}],
+           {})
+    monkeypatch.setattr(fleet, "EXTRA_EVENTS", [])
+    st = fleet.status()
+    by = {p["service"]: p for p in st["projects"]}
+    for svc in ("polara-web", "s4biz-web"):
+        assert by[svc]["state"] == "elsewhere", by[svc]
+        assert "own event volume" in by[svc]["why"]
+        assert "fleet.py" in by[svc]["why"], "it must say how to actually read them"
+        assert "BLIND" not in by[svc]["why"]
+    assert st["elsewhere"] == 2
+    # jev.best writes to the SHARED volume, so its absence really is blindness.
+    assert by["jev-web"]["state"] == "silent"

@@ -28,6 +28,8 @@ export const keyed = {
   "fleet.s.live": "live",
   "fleet.s.observed": "observed",
   "fleet.s.silent": "silent",
+  "fleet.s.elsewhere": "elsewhere",
+  "fleet.elsewhereN": "own log",
   "fleet.sc.active": "active",
   "fleet.sc.stale": "stale",
   "fleet.sc.not_installed": "not installed",

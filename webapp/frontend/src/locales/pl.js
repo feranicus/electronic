@@ -48,6 +48,8 @@ export const keyed = {
   "fleet.s.live": "aktywny",
   "fleet.s.observed": "obserwowany",
   "fleet.s.silent": "cichy",
+  "fleet.s.elsewhere": "gdzie indziej",
+  "fleet.elsewhereN": "wlasny dziennik",
   "fleet.sc.active": "aktywny",
   "fleet.sc.stale": "przestarzaly",
   "fleet.sc.not_installed": "nie zainstalowany",

@@ -67,13 +67,6 @@ services:
     volumes:
       - colt_webdata:/data
       - colt_events:/var/log/colt             # same volume the bots + promtail use
-      # READ-ONLY, so the Fleet page can SEE the projects that keep their own event volume.
-      # klima writes to polara_events and s4biz to s4biz_events; reading only colt_events reported
-      # both as "we cannot see this project", which was a statement about where colt-web was
-      # looking rather than about them. `external: true` because these volumes belong to those
-      # projects -- compose must attach to them, never create or own them.
-      - polara_events:/var/log/polara:ro
-      - s4biz_events:/var/log/s4biz:ro
     ports:
       - "127.0.0.1:8090:8000"     # local health only; public traffic comes via videodead-caddy
     networks: [videodead_appnet]
@@ -82,14 +75,6 @@ services:
 volumes:
   colt_webdata: {}
   colt_events: {}          # project-scoped -> reuses the existing colt-stack_colt_events
-  # Owned by the other projects. If a project is not deployed on this box the volume is absent and
-  # `docker compose up` would fail, so both are opt-out with EXTRA_EVENT_LOGS="" on such a host.
-  polara_events:
-    external: true
-    name: ${POLARA_EVENTS_VOLUME:-klima-shop_polara_events}
-  s4biz_events:
-    external: true
-    name: ${S4BIZ_EVENTS_VOLUME:-s4biz_s4biz_events}
 
 networks:
   videodead_appnet:

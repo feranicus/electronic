@@ -33,8 +33,11 @@ EVENTS = os.environ.get("EVENTS_LOG", "/var/log/colt/events.log")
 # shared one reported them as unseeable -- a statement about where we looked, not about them.
 # docker-compose.web.yml mounts those volumes read-only at these paths; a path that is not mounted
 # is skipped, so the list is safe on a box where a project does not exist.
-EXTRA_EVENTS = [p for p in os.environ.get(
-    "EXTRA_EVENT_LOGS", "/var/log/polara/events.log:/var/log/s4biz/events.log").split(":") if p]
+# EMPTY BY DEFAULT, AND THAT IS THE POINT. The first version mounted klima's and s4biz's event
+# volumes into colt-web with `external: true` -- which made cybergod UNDEPLOYABLE anywhere those
+# volumes are absent, and staging proved it by refusing the deploy. A status page is never worth
+# coupling a deploy to a sibling project. Set EXTRA_EVENT_LOGS on a host where they ARE mounted.
+EXTRA_EVENTS = [p for p in os.environ.get("EXTRA_EVENT_LOGS", "").split(":") if p]
 BLOCKLIST = os.environ.get("PERSEUS_BLOCKLIST", "/var/log/colt/perseus_blocklist.json")
 
 # The fleet, and the log `service` each one stamps. Committed rather than discovered: a project
@@ -43,9 +46,12 @@ BLOCKLIST = os.environ.get("PERSEUS_BLOCKLIST", "/var/log/colt/perseus_blocklist
 PROJECTS = [
     {"key": "colt-web", "name": "cybergod.ai", "service": "colt-web"},
     {"key": "jhw-web", "name": "jobhuntwow.com", "service": "jhw-web"},
-    {"key": "polara-web", "name": "klimaanlage-preise.de", "service": "polara-web"},
+    # own_log: this project writes to ITS OWN event volume, which colt-web does not mount. Absence
+    # of its lines here is a statement about where this container can look, NOT about the project.
+    {"key": "polara-web", "name": "klimaanlage-preise.de", "service": "polara-web",
+     "own_log": "polara_events"},
     {"key": "jev-web", "name": "jev.best", "service": "jev-web"},
-    {"key": "s4biz-web", "name": "s4biz.io", "service": "s4biz-web"},
+    {"key": "s4biz-web", "name": "s4biz.io", "service": "s4biz-web", "own_log": "s4biz_events"},
 ]
 
 STALE_BEAT_S = 15 * 60      # the client beats every 60s; 15 min of silence is a dead sidecar
@@ -212,7 +218,14 @@ def status():
         beat_age = int(now - (b.get("ts") or 0)) if b else None
         sidecar = ("active" if b and beat_age is not None and beat_age < STALE_BEAT_S
                    else "stale" if b else "not installed")
-        if not m:
+        if not m and proj.get("own_log"):
+            # A FOURTH STATE, because collapsing it into SILENT would be the very error this module
+            # exists to prevent: reporting where WE looked as a fact about THEM.
+            state = "elsewhere"
+            why = ("writes to its own event volume (%s), which this container does not mount. Not "
+                   "silent, not unseen -- run `python fleet.py` from the operator's machine, which "
+                   "reads every project's own log over ssh." % proj["own_log"])
+        elif not m:
             state = "silent"
             why = ("no log line in %dh. We are BLIND to this project, which is NOT the same as it "
                    "being quiet." % (WINDOW_S // 3600))
@@ -246,6 +259,7 @@ def status():
         "projects": out,
         "guarded": sum(1 for p in out if p["sidecar"] == "active"),
         "blind": sum(1 for p in out if p["state"] == "silent"),
+        "elsewhere": sum(1 for p in out if p["state"] == "elsewhere"),
         # STATE THE LIMIT ON THE PAGE ITSELF. A number that came from a log nobody is writing is
         # not a measurement, and the reader cannot tell from the number alone.
         "caveat": ("Counts come from the shared events log. A project that does not write to it "

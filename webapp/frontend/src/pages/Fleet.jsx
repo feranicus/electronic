@@ -28,7 +28,10 @@ function when(v) {
   try { return new Date(v * 1000).toISOString().slice(0, 16).replace("T", " "); } catch { return "—"; }
 }
 
-const TONE = { live: "ok", observed: "warn", silent: "bad" };
+// `elsewhere` is NEUTRAL, deliberately: the project keeps its own event volume and this container
+// does not mount it. Colouring it like SILENT would repeat the exact error this page exists to
+// prevent -- reporting where WE looked as a fact about THEM.
+const TONE = { live: "ok", observed: "warn", silent: "bad", elsewhere: "" };
 
 // THE VIEW IS SEPARATE FROM THE FETCH so it can be proven. SSR does not run useEffect, so a test
 // that renders the default export only ever sees the loading state -- it would pass while the table
@@ -83,6 +86,9 @@ function FleetBody({ d, t, blind, unguarded }) {
         </div>
         <div className={"fleet-stat" + (unguarded.length ? " warn" : "")}>
           <b>{unguarded.length}</b><span>{t("fleet.unguardedN")}</span>
+        </div>
+        <div className="fleet-stat">
+          <b>{d.elsewhere ?? 0}</b><span>{t("fleet.elsewhereN")}</span>
         </div>
         <div className="fleet-stat">
           <b>{d.published.cycle ?? "—"}</b><span>{t("fleet.cycle")}</span>

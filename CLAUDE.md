@@ -7638,3 +7638,28 @@ The property is about the ADDRESS field, so read the address field. And the fiel
 per-event on `net`, still negative-tested by removing the truncation (caught), and it now also
 asserts something was recorded at all, because an empty list satisfies every `for` loop.
 
+## A STATUS PAGE IS NEVER WORTH COUPLING A DEPLOY (2026-09-07, caught by the staging gate)
+To let the Fleet page read klima's and s4biz's traffic I mounted THEIR event volumes into colt-web
+with `external: true`. The staging gate refused the release and production was never touched:
+```
+external volume "klima-shop_polara_events" not found
+[X] remote deploy failed ... STAGING GATE: NO-GO
+```
+TWO DEFECTS IN ONE CHANGE, and the second is much worse than the first:
+1. **I GUESSED the compose project prefix.** dbbackup already taught this repository that compose
+   prefixes volume names with the project name and that the only honest way to know one is to ASK
+   docker -- and I quoted that rule in the same commit that broke it.
+2. **`external: true` made colt-web UNDEPLOYABLE wherever the volume is absent.** Staging does not
+   run Klima, so cybergod's own deploy now required a sibling project to exist. A dashboard row is
+   never worth that coupling, and a twin that differs from production is exactly what the twin is
+   for.
+THE FIX IS A FOURTH STATE, not a mount. `elsewhere` means "this project writes to its own event
+volume, which this container does not mount -- run `python fleet.py`, which reads every project's
+own log over ssh". Collapsing it into SILENT would repeat the error the page exists to prevent:
+reporting where WE looked as a fact about THEM. It is drawn NEUTRAL, because it is not a fault.
+`EXTRA_EVENT_LOGS` stays as an opt-in for a host where those volumes ARE mounted, and defaults to
+empty so nothing is coupled by accident.
+Guarded by tests/test_fleet.py: the compose file may not name another project's volume at all, an
+own-log project must read `elsewhere` and never `BLIND`, and jev.best -- which does write to the
+SHARED volume -- must still read `silent` when it is absent. Three mutations, all caught.
+
