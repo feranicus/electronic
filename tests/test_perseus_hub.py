@@ -366,3 +366,27 @@ def test_a_failed_install_reports_the_CAUSE_not_the_first_line_of_a_traceback():
     assert "[-12:]" in window or "[-20:]" in window, \
         "the failure must print the TAIL of the remote output, where the exception is"
     assert "err.strip()[:400]" not in body, "printing the HEAD of a traceback tells you nothing"
+
+
+def test_the_install_never_claims_an_armed_timer_without_evidence():
+    """`systemctl enable --now ... || true` swallowed the failure, and `list-timers` then printed a
+    HEADER WITH NO ROW -- which is exactly what an unarmed timer looks like -- while the script
+    still said "Installed.". The hub was on the droplet and nothing would have run it nightly.
+
+    A success message that cannot distinguish armed from unarmed is not a success message."""
+    src = open(os.path.join(ROOT, "perseus.py"), encoding="utf-8").read()
+    body = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    assert "systemctl enable --now perseus.timer >/dev/null 2>&1 || true" not in body, \
+        "the failure must not be swallowed"
+    # ASSERT THE COMMAND, NOT THE LABEL. The first version matched "is-enabled", which also
+    # appears in the echoed label one line below -- so replacing the actual query with a hardcoded
+    # `EN=enabled` still passed. Third time this session a check of mine was aimed at a message.
+    assert "$(systemctl is-enabled perseus.timer" in body, \
+        "the enabled state must be QUERIED from systemd, not assumed"
+    assert "$(systemctl is-active perseus.timer" in body, \
+        "the active state must be QUERIED from systemd, not assumed"
+    assert "TIMER_OK" in body, "there must be a positive marker the caller can require"
+    i = body.index("if a.install_only:")
+    branch = body[i:i + 700]
+    assert 'TIMER_OK' in branch, "the success message must be gated on the marker"
+    assert "return 1" in branch, "an unarmed timer must be reported as a failure, not a success"

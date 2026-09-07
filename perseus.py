@@ -128,9 +128,22 @@ def install_script(blob):
         "[Install]",
         "WantedBy=timers.target",
         "EOF",
-        "systemctl daemon-reload && systemctl enable --now perseus.timer >/dev/null 2>&1 || true",
+        # `|| true` USED TO SWALLOW THE FAILURE HERE, and `list-timers` printed a header with no
+        # row -- which is exactly what a timer that is NOT armed looks like, while the script still
+        # said "Installed.". Ask systemd what the state IS, and say so.
+        "systemctl daemon-reload",
+        "systemctl enable --now perseus.timer 2>&1 | sed 's/^/    enable: /' || true",
         "echo '#### TIMER'",
-        "systemctl list-timers perseus.timer --no-pager 2>/dev/null | head -3 || echo '(no timer)'",
+        "EN=$(systemctl is-enabled perseus.timer 2>&1); AC=$(systemctl is-active perseus.timer 2>&1)",
+        "echo \"    is-enabled=$EN  is-active=$AC\"",
+        "if [ \"$EN\" = enabled ] && [ \"$AC\" = active ]; then",
+        "  systemctl list-timers perseus.timer --no-pager 2>/dev/null | sed -n '2p' "
+        "|| echo '    (armed, but list-timers printed nothing)'",
+        "  echo '    TIMER_OK'",
+        "else",
+        "  echo '    TIMER_NOT_ARMED - the hub is installed but nothing will run it nightly'",
+        "  systemctl status perseus.timer --no-pager -l 2>&1 | tail -12 | sed 's/^/      /'",
+        "fi",
         "echo '#### STATE'",
         "ls -la /var/log/colt/perseus_*.json 2>/dev/null || echo '(no state yet - first run)'",
     ]) + "\n"
@@ -210,8 +223,14 @@ def main():
 
     if a.install_only:
         say("")
-        say("Installed. The timer runs the cycle daily at 04:40 UTC; `python perseus.py` runs one now.")
-        return 0
+        # DO NOT CLAIM THE TIMER IS ARMED WITHOUT EVIDENCE. `out` carries the state systemd
+        # reported; a "TIMER_OK" marker is the only thing that proves the nightly cycle will fire.
+        if "TIMER_OK" in out:
+            say("Installed and ARMED. Daily at 04:40 UTC; `python perseus.py` runs one now.")
+            return 0
+        say("[!] Installed, but the TIMER IS NOT ARMED - the hub will not run by itself.")
+        say("    The state systemd reported is above. Nothing else was changed.")
+        return 1
 
     say("")
     say("-- one cycle now --")
