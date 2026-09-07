@@ -754,6 +754,20 @@ def cmd_admin():
             notes.append("probed from %s -> %s:2019: no answer (isolated, measured not assumed)"
                          % (probe_from, ip[0]))
 
+    # HOST-SIDE PROBE (kimi-k2.6, 7 Sep 2026, and it is a real gap). The two checks above cover
+    # "what does the running config bind" and "does Docker publish the port", and the probe above
+    # covers the shared bridge. NONE of them covers a proxy on `network_mode: host`, where the
+    # container's localhost IS the host's localhost and no port needs publishing for the admin API
+    # to be reachable from every process on the box. That is one curl, so measure it rather than
+    # reason about it -- the same correction that produced the cross-container probe.
+    hp = sh(["sh", "-c",
+             "curl -s -m 3 http://127.0.0.1:2019/config/ 2>/dev/null | head -c 40"])
+    if (hp.stdout or "").strip():
+        bad.append("the admin API ANSWERED from the HOST (127.0.0.1:2019); every process on this "
+                   "droplet can replace the running config of EVERY domain")
+    else:
+        notes.append("probed from the HOST -> 127.0.0.1:2019: no answer (host namespace clear)")
+
     # THE VERDICT IS THE FIRST LINE. This check reported FAIL on a healthy box for one reason: it
     # printed a diagnostic line BEFORE its verdict, the caller matches `OK*` on the flattened
     # output, and so a correct result never matched and fell through to the wildcard -- which I
@@ -963,7 +977,8 @@ def cmd_selftest():
     # A check's detail should say what it OBSERVED. Restating the check's name in the detail adds
     # nothing a reader did not already have, and here it cost a deploy.
     print("OK   unbalanced config rejected, junk rejected, live config accepted "
-          "(%s, %d site block(s)); source file unchanged (%s)" % (src, live_blocks, h0))
+          "(%s = the proxy's OWN bind-mount source, i.e. the live file, read via docker inspect; "
+          "%d site block(s)); source file unchanged (%s)" % (src, live_blocks, h0))
     return 0
 
 

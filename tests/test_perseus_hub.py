@@ -270,3 +270,39 @@ def test_the_cycle_turns_that_into_a_reported_error_not_a_crash(hub, monkeypatch
     rep, _rs = hub.cycle(days=2, dry_run=True)
     assert any("shield unavailable" in e for e in rep["errors"])
     assert rep["actors"] == [] and rep["abuse"]["sent"] == []
+
+
+# ── the deploy wiring, which is how the hub sat undeployed after a green ship ─────────────
+def test_ship_py_installs_the_hub():
+    """THE DEFECT THIS ASSERTS AGAINST ACTUALLY HAPPENED. ship.py copied the thin client and never
+    installed the brain, so a fully green deploy left the estate with no daily review and nothing
+    said so. Telling the operator to "also run perseus.py" is a second command (operating
+    principle 7); the fix is the call, and this is the check that it is still there."""
+    src = open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read()
+    body = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    # Anchor on BOTH halves separately: the real call is
+    # `[sys.executable, os.path.join(HERE, "perseus.py"), "--install-only"]`, so a single literal
+    # with a comma between them never matches. This assertion was RED at baseline, which made the
+    # mutation harness score every mutation as "caught" for free -- a test that is already failing
+    # cannot tell you anything about a change.
+    assert '"perseus.py"' in body and '"--install-only"' in body, \
+        "ship.py must install the perseus hub, not merely refresh the thin client"
+    i_py, i_flag = body.rfind('"perseus.py"'), body.rfind('"--install-only"')
+    assert 0 < i_py < i_flag < i_py + 200, \
+        "the --install-only flag must be on the perseus.py invocation, not somewhere unrelated"
+
+
+def test_install_only_returns_before_the_cycle():
+    """INSTALL must not run a cycle. A cycle is four model calls and about two minutes, and the
+    04:40 timer is about to make that same decision; billing the account on every deploy for a
+    decision already scheduled is exactly the waste this subsystem exists to notice."""
+    import ast
+    src = open(os.path.join(ROOT, "perseus.py"), encoding="utf-8").read()
+    tree = ast.parse(src)
+    fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "main"][0]
+    body = ast.get_source_segment(src, fn)
+    i_guard, i_cycle = body.find("if a.install_only:"), body.find("-- one cycle now --")
+    assert i_guard != -1, "the --install-only guard is gone"
+    assert i_cycle != -1, "the cycle marker moved; re-anchor this check"
+    assert i_guard < i_cycle, "--install-only must return BEFORE the cycle"
+    assert "return 0" in body[i_guard:i_cycle], "the guard must actually return"

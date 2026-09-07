@@ -434,7 +434,7 @@ PYEOF
   if [ "$RESTORED" != "yes" ]; then
     chk guard_write_path_reloads no "the probe ran but the config was NOT restored byte-for-byte - $CF differs from the snapshot"
   elif [ "${SERVED_AFTER:-0}" -ge 1 ] && [ "${SERVED_GONE:-1}" -eq 0 ]; then
-    chk guard_write_path_reloads yes "a change written through the guard's OWN path (validate -> write -> mount-check -> EXPLICIT caddy reload, via agent.apply) reached the running config without restarting the container, and the live file was then restored and cmp-verified byte-for-byte. NOTE: a bare file edit does NOT propagate - Caddy reads its config at start or on reload, which is why the write goes through apply()"
+    chk guard_write_path_reloads yes "a change written through the guard's OWN path (validate -> write -> mount-check -> EXPLICIT caddy reload, via agent.apply) reached the running config without restarting the container, and the live file was then restored and cmp-verified byte-for-byte. CONTEXT, NOT A RESULT (this clause is not tested here, deliberately: writing a bare edit to the live shared config to watch it fail is an outage with a pass/fail label) - a bare file edit does NOT propagate, because Caddy reads its config at start or on reload, which is why every write goes through apply()"
   elif [ "${SERVED_AFTER:-0}" -lt 1 ]; then
     chk guard_write_path_reloads no "a new vhost was written and applied but NEVER reached the running config - that is the 2026-08-07 latent-outage mechanism, reproduced live. $(tail -2 /tmp/cg_prop.log | tr '\n' ' ')"
   else

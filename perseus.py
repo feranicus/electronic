@@ -166,6 +166,10 @@ def main():
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--clients", action="store_true")
     ap.add_argument("--no-install", action="store_true")
+    # INSTALL ONLY: refresh the code + timer and run NO cycle. This is what ship.py calls.
+    # A full cycle costs four model calls and ~2 minutes; putting that in every deploy would
+    # bill the account for a decision the 04:40 timer is about to make anyway.
+    ap.add_argument("--install-only", action="store_true")
     ap.add_argument("--days", type=int, default=2)
     a = ap.parse_args()
 
@@ -194,6 +198,11 @@ def main():
         if rc != 0:
             say("[X] install failed rc=%s: %s" % (rc, err.strip()[:400]))
             return 1
+
+    if a.install_only:
+        say("")
+        say("Installed. The timer runs the cycle daily at 04:40 UTC; `python perseus.py` runs one now.")
+        return 0
 
     say("")
     say("-- one cycle now --")

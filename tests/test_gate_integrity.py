@@ -467,7 +467,14 @@ def test_agent_admin_prints_its_verdict_first_when_RUN():
     def fake_sh(cmd, **kw):
         j = " ".join(cmd)
         out = ""
-        if "/config/" in j:
+        if "curl" in j and "127.0.0.1:2019" in j:
+            # THE HOST-SIDE PROBE. On a healthy box Caddy lives in its own network namespace, so
+            # nothing answers on the HOST's loopback. The fixture had no case for this at all, so
+            # the probe fell through to the "reading the running config" branch and a healthy box
+            # scored EXPOSED. A fixture that does not model the condition under test is a test of
+            # the fixture.
+            out = ""
+        elif "/config/" in j:
             out = "" if "wget" in j and ":2019" in j and "exec" in j and "127.0.0.1" not in j else \
                   '{"admin": {"listen": "localhost:2019"}}'
         elif ".NetworkSettings.Networks" in j:
@@ -491,6 +498,25 @@ def test_agent_admin_prints_its_verdict_first_when_RUN():
         "healthy box scores as a failure -- which is exactly what blocked two good releases."
         % lines[0][:80])
     assert rc == 0, "a healthy, loopback-only admin API must not return non-zero"
+
+    # ...and the case the host probe exists for: a proxy on `network_mode: host` needs no published
+    # port for the admin API to be reachable by every process on the droplet. Neither the
+    # published-port check nor the cross-container probe covers that, which is why this probe was
+    # added -- so it must actually FAIL when it fires.
+    def host_answers(cmd, **kw):
+        j = " ".join(cmd)
+        if "curl" in j and "127.0.0.1:2019" in j:
+            return types.SimpleNamespace(stdout='{"admin":{}}', stderr="", returncode=0)
+        return fake_sh(cmd, **kw)
+
+    ag.sh = host_answers
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        rc2 = ag.cmd_admin()
+    out2 = buf2.getvalue()
+    assert rc2 == 1, "an admin API answering on the HOST must fail the check"
+    assert out2.splitlines()[0].startswith("EXPOSED"), "the verdict is still the FIRST line"
+    assert "HOST" in out2, "the failure must name WHICH hop was reachable"
 
 
 def test_apply_refuses_to_empty_a_live_proxy():

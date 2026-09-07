@@ -7080,3 +7080,58 @@ that does not violate the property is not a negative test** — the second one w
 because no test existed for that path at all, which is what it actually revealed.
 Guarded by `tests/test_perseus_hub.py` (14 tests; behaviour AND wiring, because shield.py was once
 fully tested while nothing asserted the middleware invoked it). Six mutations, all caught.
+
+## THE HUB SHIPPED GREEN AND WAS NEVER INSTALLED (2026-09-07)
+`python ship.py` ran 42/42 staging checks, deployed, tagged a safe-point and reported DONE — and
+the Perseus hub was not on the droplet. ship.py called `perseus.py --clients` (copy the thin client
+into each project) and nothing else, so the brain that reviews and tunes the defence every night
+existed only in git. I then told the operator the deploy command was `python ship.py`, which was
+true and incomplete, and the gap was invisible because every check that ran passed.
+Same shape as the ruff gate that silently skipped and the model_watch that printed
+"catalog unavailable" on every deploy: **a component that is correct and unreachable is not a
+component.** It is also operating principle 7 — "also run perseus.py" is a second command.
+FIX: ship.py now runs `perseus.py --install-only` after caddyguard.
+  * **INSTALL ONLY, NO CYCLE.** A cycle is four model calls and ~2 minutes, and the 04:40 timer is
+    about to make that decision anyway. Billing the account on every deploy for a decision already
+    scheduled is precisely the waste this subsystem exists to notice.
+  * **NON-BLOCKING.** The inline defence is shield.py inside colt-web and it is already deployed;
+    the hub is the nightly REVIEW of it. A hub that cannot install is a degraded review, not a
+    broken release.
+Guarded by two tests: ship.py must carry the `--install-only` invocation, and `--install-only`
+must RETURN before the cycle (AST, not a grep, so a reordering is caught).
+
+**A TEST THAT IS ALREADY RED SCORES EVERY MUTATION AS "CAUGHT".** My first version of the ship.py
+assertion looked for the literal `"perseus.py", "--install-only"`, but the real call is
+`os.path.join(HERE, "perseus.py"), "--install-only"` — a `)` sits between them, so it never
+matched and the test failed at baseline. The mutation harness then reported all four mutations
+"caught", because a red suite stays red whatever you do to it. The harness now RUNS THE BASELINE
+FIRST and refuses to report anything if it is not green. This is the mirror of the rule already in
+this file ("a mutation that does not violate the property is not a negative test"): a negative test
+is only evidence when the positive case is proven first.
+
+## THE PANEL, 7 Sep 2026: 3 GO / 1 NO-GO, and two of kimi's three points were output defects
+Gate 42/42, promoted. kimi-k2.6 returned NO-GO. Reviewed against the code:
+- **RIGHT, and it is the recurring one.** *"refuses_bad_config tests /opt/staging-caddy/Caddyfile
+  while the live bind mount is /etc/caddy/Caddyfile — the output does not prove this is the live
+  path."* The check is correct (`cmd_selftest` reads `mount_source(c)`, i.e. the proxy's own mount
+  source), but the detail printed a bare path with no context, so a reader cannot tell the live
+  file from a staging copy. Third time an unexplained value in a PASS detail has cost a review
+  slot (the varying artifact size, the vhost_roster count). Now says what the path IS.
+- **RIGHT about the wording.** `guard_write_path_reloads` said "a bare file edit does NOT
+  propagate" inside a PASS detail, which reads as a tested result; only the guard's own write path
+  was exercised. Reworded to mark it CONTEXT, NOT A RESULT — and the warning itself is KEPT,
+  because a gate asserts its presence: that belief is the 2026-08-07 outage, and deleting the
+  sentence to satisfy a reviewer would delete the warning too. My first rewrite did exactly that
+  and the gate caught it.
+- **RIGHT, AND A REAL GAP.** *"admin_api_closed probes from colt-web but nothing checks the HOST
+  side; a proxy on `network_mode: host` needs no published port for :2019 to be reachable."*
+  Correct. The three existing checks cover what the running config binds, what Docker publishes,
+  and the shared bridge — none covers the host namespace. Added a host-side probe, because a check
+  that reproduces its subject beats one that reasons about it (the same correction that produced
+  the cross-container probe).
+- The other two risks (reload under load, www redirect semantics) are out of scope on a twin with
+  no public name, and the local probes already show the 301.
+**AND THE FIXTURE HAD NO CASE FOR THE NEW HOP.** The existing admin test stubbed `sh` so that
+anything containing `/config/` returned the running-config JSON, so the host probe "answered" and
+a healthy box scored EXPOSED. A fixture that does not model the condition under test is a test of
+the fixture — fixed, plus the exposed case it never had.

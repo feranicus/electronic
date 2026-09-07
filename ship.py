@@ -1993,6 +1993,32 @@ def main():
         except Exception as _e:
             print("  [!] caddyguard skipped (%s)" % type(_e).__name__)
 
+
+    # PERSEUS HUB — one brain for six properties. INSTALL ONLY here: refresh the code and the
+    # timer, run NO cycle. A cycle costs four model calls and two minutes, and the 04:40 timer is
+    # about to make that decision anyway; billing the account on every deploy for a decision that
+    # is already scheduled is the kind of waste this subsystem exists to notice.
+    # A BUILDING BLOCK, never a second command (operating principle 7) — telling the operator to
+    # "also run perseus.py" is exactly the defect that let the hub sit undeployed after a green ship.
+    try:
+        _ph = subprocess.run([sys.executable, os.path.join(HERE, "perseus.py"), "--install-only"],
+                             capture_output=True, text=True, encoding="utf-8",
+                             errors="replace", timeout=300)
+        _po = (_ph.stdout or "") + (_ph.stderr or "")
+        for _l in _po.splitlines():
+            if _l.strip().startswith(("modules import", "NEXT", "[X]", "[!]", "Installed.")):
+                print("  " + _l.strip())
+        if _ph.returncode != 0:
+            # NON-BLOCKING, deliberately. The estate's inline defence is shield.py inside colt-web
+            # and it is already deployed; the hub is the daily REVIEW of that defence. A hub that
+            # cannot install is a degraded review, not a broken release.
+            print("  [!] perseus hub NOT installed (rc=%s) - the shield still runs, but nothing "
+                  "will review or tune it tonight" % _ph.returncode)
+        else:
+            print("  perseus hub: installed, daily cycle armed")
+    except Exception as _e:
+        print("  [!] perseus hub install skipped: %r" % _e)
+
     # ---- THE BOOKS OF RECORD ------------------------------------------------------------------
     #      dbbackup.py is a BUILDING BLOCK, not a second command (operating principle 7).
     #      WHY IT EXISTS: colt.sqlite (who ran what) and cost_ledger.sqlite (the TRUE all-time
