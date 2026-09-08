@@ -734,3 +734,20 @@ def test_a_beat_that_cannot_be_written_says_so_instead_of_vanishing(tmp_path, mo
     pc._CACHE["beat"] = 0
     pc._beat(1)
     assert out.count("perseus_beat_unwritable") == 1, "once, not once per request"
+
+
+def test_the_rollout_installs_the_heartbeat_directory_before_it_deploys():
+    """The rollout ENDS by reading the beats directory; the installer is what creates it 1777 so a
+    container running as uid 10001 can write. Skipping the install made the rollout verify itself
+    against a directory that did not exist -- a check measuring the absence of its own precondition.
+    """
+    perseus = _perseus_script()
+    src = re.sub(r"#.*", "", inspect_source(perseus))
+    branch = src[src.index("if a.rollout:"):src.index("return cmd_rollout()")]
+    assert "install_script" in branch and "ssh_script" in branch, \
+        "the rollout must install the hub (and the beats dir) before deploying"
+
+
+def inspect_source(mod):
+    import inspect as _i
+    return _i.getsource(mod)

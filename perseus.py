@@ -420,6 +420,19 @@ def main():
         # purpose, because a copied file that nothing imports is the exact state being fixed.
         say("-- thin client + middleware into each project --")
         copy_clients()
+        # INSTALL FIRST, THEN DEPLOY. The rollout ENDS by reading the heartbeat directory, and the
+        # installer is what CREATES it 1777 so a container running as uid 10001 can write its own
+        # beat. Skipping the install meant the rollout verified itself against a directory that did
+        # not exist yet and reported every project as not beating -- a check measuring the absence
+        # of its own precondition. One ssh, idempotent, and it must run BEFORE the deploys so the
+        # containers find the directory when they start.
+        if not a.no_install and shutil.which("ssh"):
+            say("-- hub + heartbeat directory (must exist before the projects start) --")
+            out, err, rc = ssh_script(install_script(pack()))
+            say((out or "").strip()[-800:] or "(no output)")
+            if rc != 0:
+                say("[!] hub install rc=%s -- continuing; the deploys do not depend on it"
+                    % rc + ("\n    " + (err or "").strip().splitlines()[-1][:160] if err else ""))
         return cmd_rollout()
 
     if a.clients:
