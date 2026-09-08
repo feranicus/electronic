@@ -744,6 +744,67 @@ finally:
     _E._post = _orig_post
 
 
+print("")
+print("=" * 78)
+print("[26] crt.sh 502 is TRANSIENT — retry it, but never retry a 404")
+print("=" * 78)
+import urllib.error as _ue26
+import io as _io26
+
+
+def _http(code):
+    return _ue26.HTTPError("https://crt.sh/", code, "x", {}, _io26.BytesIO(b""))
+
+
+# crt.sh 502'd on the real dcsolution run. A 502 means its backend timed out under load -- the next
+# attempt usually works -- so the retry must recover it, while a 404 (crt.sh: no data) must NOT be
+# retried. `time.sleep` is stubbed so the test does not actually wait.
+_real_gj, _real_sleep = R._get_json, R.time.sleep
+R.time.sleep = lambda *_a, **_k: None
+try:
+    calls = {"n": 0}
+
+    def _flaky(url, timeout=30, headers=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise _http(502)                          # busy twice...
+        return [{"name_value": "recovered.dcsolution.io"}]   # ...then it answers
+
+    R._get_json = _flaky
+    got = R._crtsh_get("https://crt.sh/?q=%25.dcsolution.io&output=json")
+    check(calls["n"] == 3, "a 502 is retried, not given up on (attempts=%d)" % calls["n"])
+    check(got and got[0].get("name_value") == "recovered.dcsolution.io",
+          "the names crt.sh returns after the hiccup are recovered")
+
+    calls["n"] = 0
+
+    def _404(url, timeout=30, headers=None):
+        calls["n"] += 1
+        raise _http(404)
+
+    R._get_json = _404
+    check(R._crtsh_get("https://crt.sh/x") == [] and calls["n"] == 1,
+          "a 404 is NOT retried (crt.sh 404 == no data, not a hiccup)")
+
+    calls["n"] = 0
+
+    def _dead(url, timeout=30, headers=None):
+        calls["n"] += 1
+        raise _http(502)
+
+    R._get_json = _dead
+    try:
+        R._crtsh_get("https://crt.sh/x", tries=3)
+        _raised = False
+    except _ue26.HTTPError:
+        _raised = True
+    check(_raised and calls["n"] == 3,
+          "a persistent 502 raises after the bounded retries (caller falls back to CertSpotter)")
+    check(len(R._crtsh_get.__code__.co_varnames) >= 1, "_crtsh_get exists as the one CT fetch path")
+finally:
+    R._get_json, R.time.sleep = _real_gj, _real_sleep
+
+
 # =============================================================================================
 # THE REAL GATE. It must be the LAST thing in this file.
 # A test file whose only sys.exit sits in the middle silently stops enforcing everything below

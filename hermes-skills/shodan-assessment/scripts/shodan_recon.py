@@ -18,7 +18,7 @@ Usage:
     python3 shodan_recon.py --seed "keb.de" --outdir /root/work
     python3 shodan_recon.py --seed "KEB Automation" --asn AS3320 --net 212.184.104.224/27 --outdir /root/work
 """
-import os, re, sys, json, socket, argparse, datetime, urllib.request, urllib.parse
+import os, re, sys, json, socket, time, argparse, datetime, urllib.request, urllib.parse, urllib.error
 
 _SEV_ORDER = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 
@@ -688,6 +688,36 @@ def _unauthorised_issuances(domain, issuances, caa_records, caa_of=None):
     return out
 
 
+# crt.sh is chronically overloaded: a wildcard query over its CT index times out on its backend
+# and the frontend answers 502/503/504. That is TRANSIENT -- the next attempt a few seconds later
+# usually succeeds -- and distinct from a 404, which for crt.sh means "no such data". CertSpotter
+# already backstops a total crt.sh outage (the bibeltv.de fix), but crt.sh often returns MORE names
+# than CertSpotter (which pages and has its own caps), and both results are merged, so recovering a
+# momentary 502 is strictly more recall. Retry only the transient codes; never retry a 404.
+_CRTSH_TRANSIENT = (429, 502, 503, 504)
+
+
+def _crtsh_get(url, tries=3):
+    for attempt in range(1, tries + 1):
+        try:
+            return _get_json(url, timeout=30) or []
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return []                              # crt.sh: 404 == no data, not a hiccup
+            if e.code not in _CRTSH_TRANSIENT or attempt == tries:
+                raise
+            reason = "HTTP %s" % e.code
+        except (socket.timeout, TimeoutError, urllib.error.URLError) as e:
+            if attempt == tries:
+                raise
+            reason = repr(e)[:60]
+        wait = 2 * attempt                             # 2s, 4s -- crt.sh is busy, not gone
+        print("[auto] crt.sh %s (transient), retry %d/%d in %ds"
+              % (reason, attempt, tries - 1, wait), file=sys.stderr)
+        time.sleep(wait)
+    return []
+
+
 def _crtsh_domains(domain=None, org=None, cap=60):
     """CT-log harvest -> brand domains & subdomains on any cloud/CDN.
     Two independent sources (crt.sh + CertSpotter); either alone is a single point of failure."""
@@ -696,7 +726,7 @@ def _crtsh_domains(domain=None, org=None, cap=60):
     if org:    urls.append("https://crt.sh/?O=" + urllib.parse.quote(org) + "&output=json")
     for u in urls:
         try:
-            for row in (_get_json(u, timeout=30) or [])[:500]:
+            for row in (_crtsh_get(u) or [])[:500]:
                 for nm in (row.get("name_value", "") or "").split("\n"):
                     nm = nm.strip().lstrip("*.").lower()
                     if nm and "." in nm and " " not in nm and not nm.endswith(".arpa"):

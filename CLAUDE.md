@@ -7932,3 +7932,19 @@ NOTE, honest: he.net helps this exact case (all JSON APIs down) and helps the RB
 coverage); it does NOT loosen corroboration, so a target whose real AS holder does not carry the
 brand token is still not found by ANY source -- that is the deliberate zero-false-positive floor,
 and the clarify loop (operator pastes the AS) remains the answer for it.
+
+## crt.sh 502 is TRANSIENT — retry it, never retry a 404 (dcsolution.io, 2026-09-08)
+The operator asked why `crt.sh ... HTTP Error 502: Bad Gateway`. crt.sh is a free CT search on a big
+Postgres backend; a WILDCARD query (`%.domain`) over its index times out on the backend and the
+frontend answers 502/503/504. It is TRANSIENT -- the next attempt a few seconds later usually works
+-- and it is distinct from a 404, which for crt.sh means "no such data". CertSpotter already
+backstops a total crt.sh outage (the bibeltv.de fix), so the run did NOT lose CT coverage; but
+crt.sh often returns MORE names than CertSpotter (which pages and has its own caps) and both are
+merged, so recovering a momentary 502 is strictly more recall.
+FIX: `_crtsh_get()` retries only the transient codes (429/502/503/504) and timeouts, 2s then 4s,
+and NEVER retries a 404. A persistent 502 raises after the bounded retries, so the caller still
+falls back to CertSpotter -- the retry adds recall, it never removes the safety net. `time.sleep` is
+the only new dependency and the test stubs it, so the suite does not wait.
+Guarded by test_recall.py §26: a 502-then-success is recovered, a 404 is not retried, a persistent
+502 raises after N tries. Both mutations (404 retried; persistent 502 swallowed) caught against a
+green baseline.
