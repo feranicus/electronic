@@ -7844,3 +7844,24 @@ error line, then show context.
 VERIFIED LOCALLY FIRST, so the next run is not another guess: every relative import under
 `jev-best/src` resolves, so it is NOT a missing module. The cause is something the grep will now
 print.
+
+## AN HOUR HUNG AT ONE LINE — `subprocess.run` WITHOUT `timeout=` (jev.py, 2026-09-08)
+`python jev.py api` sat for an hour at `→ отправляю актуальный контекст на дроплет`. Not slow:
+HUNG. `ssh()` and `scp()` in jev.py called `subprocess.run(...)` with NO `timeout=`.
+`ConnectTimeout`/`ServerAliveInterval` only kill a DEAD transport; a live-but-hung remote command
+waits forever and `subprocess.run` waits with it. The rollout had just opened a dozen ssh sessions
+in quick succession (jobhuntwow's deploy, then jev's), which is exactly the shape OpenSSH's
+`PerSourcePenalties` and `MaxStartups` exist to damp -- so the next connection was refused and the
+client blocked on it indefinitely.
+**CLAUDE.md ALREADY CARRIES THIS FIX FOR deploy.py** ("every subprocess.run in deploy.py now has a
+hard `timeout=`; on TimeoutExpired it kills the process and fails legibly") and it was never
+carried into the sibling repo. Third time a fix recorded in one project has had to be re-made in
+another; a platform- or estate-shaped defect belongs in EVERY orchestrator, not the one that hit it.
+FIX: `SSH_T=120` for probes and small writes, `BUILD_T=900` for the two docker builds (a build
+legitimately takes minutes -- giving it the short ceiling would swap a hang for a false failure),
+`scp` 300s, ONE retry after 5s on a timeout because a transient sshd throttle costs seconds rather
+than the deploy, and a refusal that names the cause ("троттлинг sshd после серии быстрых
+подключений... ничего на дроплете не изменено") instead of a traceback.
+RULE, restated: every remote call needs a HARD timeout, and the ceiling must match what that call
+legitimately takes. A silent hang trains the operator to wonder whether the tool is broken, which
+is worse than a loud failure.
