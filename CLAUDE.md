@@ -7721,3 +7721,37 @@ measures the new exemption instead. A test that encodes a doctrine must be rewri
 doctrine is corrected, not deleted: the reasoning is kept beside it.
 Eight mutations, each verified to fail by name and restore, against a baseline PROVEN GREEN FIRST —
 a red baseline scores every mutation "caught".
+
+## `__init__.py` IS THE WRONG TEST FOR "IS THIS A PACKAGE" (2026-09-07)
+The Fleet page showed jobhuntwow OBSERVED / sidecar **not installed** with **5992 attacks in 24h**,
+and `perseus.py` reported "already wired" for all five projects. Both were true: the middleware was
+wired into the SOURCE, and the running container was built before the wiring. But deploying it would
+have changed nothing, because the wiring itself was wrong.
+`wire_middleware` chose the import form on `os.path.exists(pkg_dir + "/__init__.py")`.
+**jobhuntwow's `backend/app` has no `__init__.py` and is still a package**: Python 3 namespace
+packages make `from . import x` work, its main.py already uses 9 relative imports, and `serve.py`
+enters it as `app.main`. So it received a bare `import perseus_client`, which cannot resolve — the
+sidecar sits at `/app/app/perseus_client.py` while `sys.path` holds `/app` — the wrapper's `except`
+would have swallowed it, and the project taking ~6000 attacks a day would have stayed UNGUARDED
+while its deploy reported success. Exactly the shape that left cybergod bare a day earlier, one
+heuristic deeper.
+PROVEN BY REPRODUCTION BEFORE FIXING: a temp tree with that layout raises
+`ModuleNotFoundError: No module named 'perseus_client'`.
+FIX: the discriminator now reads EVIDENCE FROM THE FILE — `__init__.py` OR the module already
+importing its siblings relatively. A module that does `from . import store` is a package by
+construction, whatever the directory contains. Measured across all five real projects afterwards:
+cybergod/jobhuntwow/klima/s4biz PACKAGE, jev.best flat, every one wired in the form its own layout
+needs.
+RULE: filesystem shape is a guess about an import; the import statements already in the file are
+the evidence. And `__init__.py` has not been required for a package since Python 3.3.
+Guarded by tests/test_fleet.py, and the decisive test EXECUTES the emitted import in a reproduction
+of jobhuntwow's container layout rather than matching strings — including asserting that the OLD
+form genuinely fails there, or the positive case proves nothing. Three mutations, all caught.
+
+TWO TRAPS HIT WHILE WRITING THOSE TESTS, both the recurring kind:
+  * **`import perseus` gets the perseus/ PACKAGE, not the root perseus.py SCRIPT.** The repo has
+    both and the package wins, so every assertion silently measured the wrong module
+    (`AttributeError: module 'perseus' has no attribute 'wire_middleware'`). Load the script by
+    path with importlib when a name collision exists.
+  * **`CLIENT_TARGETS` is a list of `(dir, filename)` TUPLES**, not strings — the Nth assumed shape
+    in this workstream, and the fix is always the same: read the definition.

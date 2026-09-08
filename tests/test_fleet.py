@@ -525,3 +525,90 @@ def test_a_project_that_keeps_its_own_log_is_ELSEWHERE_not_blind(monkeypatch, tm
     assert st["elsewhere"] == 2
     # jev.best writes to the SHARED volume, so its absence really is blindness.
     assert by["jev-web"]["state"] == "silent"
+
+
+# ------------------------------------------------------- the namespace-package trap (2026-09-07)
+# `__init__.py` ALONE IS THE WRONG DISCRIMINATOR. jobhuntwow's backend/app has none and is still a
+# package: Python 3 namespace packages make `from . import x` work, and serve.py imports it as
+# `app.main`. The old heuristic emitted a bare import there, which cannot resolve from /app, so the
+# wrapper's except would have swallowed it and a project taking ~6000 attacks a day would have
+# stayed UNGUARDED while the deploy reported success -- the same shape that left cybergod bare.
+
+def _perseus_script():
+    """NOTE: `import perseus` gets the perseus/ PACKAGE, not the root perseus.py SCRIPT -- the repo
+    has both and the package wins. Load the script by path or every assertion below silently
+    measures the wrong module."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "perseus_script", os.path.join(ROOT, "perseus.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _wire(tmp_path, main_src, init=False):
+    perseus = _perseus_script()
+    d = tmp_path / "app"
+    d.mkdir()
+    if init:
+        (d / "__init__.py").write_text("", encoding="utf-8")
+    (d / "main.py").write_text(main_src, encoding="utf-8")
+    perseus.wire_middleware(str(d))
+    return (d / "main.py").read_text(encoding="utf-8")
+
+
+def test_a_namespace_package_gets_the_relative_import(tmp_path):
+    """No __init__.py, but it imports its siblings relatively -- that is a package by construction."""
+    out = _wire(tmp_path, "from . import store\napp = FastAPI(\n    title='x',\n)\n")
+    assert "from . import perseus_client" in out
+    assert "\n    import perseus_client\n" not in out
+
+
+def test_a_genuinely_flat_module_dir_keeps_the_bare_import(tmp_path):
+    """jev.best's webapp is a flat directory on sys.path; a relative import would fail there."""
+    out = _wire(tmp_path, "import os\napp = FastAPI()\n")
+    assert "\n    import perseus_client\n" in out
+    assert "from . import perseus_client" not in out
+
+
+def test_the_emitted_import_actually_resolves_in_the_real_layout(tmp_path):
+    """STRING MATCHING IS NOT PROOF. Reproduce jobhuntwow's container layout -- WORKDIR /app, the
+    package at /app/app, the sidecar at /app/app/perseus_client.py, entered via `app.main` -- and
+    RUN it. The bare form raises ModuleNotFoundError here; that is the whole defect."""
+    import subprocess
+    root = tmp_path / "root"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "perseus_client.py").write_text("Middleware = object\n", encoding="utf-8")
+    (root / "app" / "main.py").write_text(
+        "from . import perseus_client\napp = perseus_client.Middleware\n", encoding="utf-8")
+    (root / "serve.py").write_text("from app import main\nprint('IMPORTED OK')\n", encoding="utf-8")
+    r = subprocess.run([sys.executable, "serve.py"], cwd=str(root),
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert r.returncode == 0 and "IMPORTED OK" in (r.stdout or ""), \
+        "the relative form must resolve in the real layout: %s" % (r.stderr or "")[-300:]
+
+    # ...and prove the OLD form genuinely fails, or the test above proves nothing.
+    (root / "app" / "main.py").write_text(
+        "import perseus_client\napp = perseus_client.Middleware\n", encoding="utf-8")
+    r2 = subprocess.run([sys.executable, "serve.py"], cwd=str(root),
+                        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert r2.returncode != 0 and "ModuleNotFoundError" in (r2.stderr or ""), \
+        "the bare form must FAIL here, otherwise this fixture is not reproducing the defect"
+
+
+def test_every_project_carries_the_import_form_its_own_layout_needs():
+    """The five real projects, checked against the rule rather than against a remembered answer."""
+    perseus = _perseus_script()
+    for d, _name in perseus.CLIENT_TARGETS:   # (dir, filename) tuples, not strings
+        p = os.path.join(d, "main.py")
+        if not os.path.exists(p):
+            continue
+        s = open(p, encoding="utf-8").read()
+        if "perseus_client" not in s:
+            continue
+        pkg = (os.path.exists(os.path.join(d, "__init__.py"))
+               or re.search(r"^\s*from\s+\.\s*import\s|^\s*from\s+\.\w", s, re.M) is not None)
+        want = "from . import perseus_client" if pkg else "import perseus_client"
+        got = re.search(r"^\s*(from \. import perseus_client|import perseus_client)$", s, re.M)
+        assert got and got.group(1) == want, \
+            "%s is wired as %r but its layout needs %r" % (d, got and got.group(1), want)

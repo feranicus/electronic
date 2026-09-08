@@ -208,8 +208,14 @@ def wire_middleware(pkg_dir):
 
     Idempotent on a marker, and it REFUSES with a printed instruction rather than silently doing
     nothing when there is no app to attach to -- a silent no-op here is the failure being fixed."""
-    is_pkg = os.path.exists(os.path.join(pkg_dir, "__init__.py"))
-    imp = "from . import perseus_client" if is_pkg else "import perseus_client"
+    # `__init__.py` ALONE IS THE WRONG DISCRIMINATOR (2026-09-07). jobhuntwow's backend/app has NO
+    # __init__.py and is still a package: Python 3 namespace packages make `from . import x` work,
+    # and serve.py imports it as `app.main`. So this emitted a bare import there, which cannot
+    # resolve -- the sidecar file lives at /app/app/perseus_client.py while sys.path holds /app --
+    # and the wrapper's `except` would have swallowed it, leaving the project with 5992 attacks a
+    # day UNGUARDED while the deploy reported success. Reproduced in a temp tree before fixing.
+    # THE EVIDENCE IS IN THE FILE, NOT THE FILESYSTEM: a module that already imports its siblings
+    # relatively is a package by construction, whatever the directory contains.
     for fn in APP_FILES:
         p = os.path.join(pkg_dir, fn)
         if not os.path.exists(p):
@@ -217,6 +223,9 @@ def wire_middleware(pkg_dir):
         s = io.open(p, encoding="utf-8").read()
         if WIRE_MARK in s:
             return (fn, "already wired")
+        is_pkg = (os.path.exists(os.path.join(pkg_dir, "__init__.py"))
+                  or re.search(r"^\s*from\s+\.\s*import\s|^\s*from\s+\.\w", s, re.M) is not None)
+        imp = "from . import perseus_client" if is_pkg else "import perseus_client"
         m = re.search(r"^app\s*=\s*(?:FastAPI|Starlette)\s*\(", s, re.M)
         if not m:
             continue
