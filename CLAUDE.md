@@ -7865,3 +7865,23 @@ than the deploy, and a refusal that names the cause ("троттлинг sshd п
 RULE, restated: every remote call needs a HARD timeout, and the ceiling must match what that call
 legitimately takes. A silent hang trains the operator to wonder whether the tool is broken, which
 is worse than a loud failure.
+
+## A TIMEOUT IS AN UNKNOWN OUTCOME, NOT A FAILURE — my own retry broke the deploy (2026-09-08)
+The hard timeout added an hour earlier worked on its very first run, and the retry I bolted on with
+it was wrong. Verbatim:
+```
+  ssh> cd /opt/jevbest && tar xzf ctx.tar.gz && rm -f ctx.tar.gz
+  [!] ssh не ответил за 120s — одна повторная попытка через 5s
+tar (child): ctx.tar.gz: Cannot open: No such file or directory
+ssh упал (rc=2)
+```
+The FIRST attempt SUCCEEDED on the droplet — it extracted the archive and `rm -f` deleted it — the
+answer simply did not come back inside 120s. The retry then re-ran a non-idempotent command whose
+input no longer existed. **Re-running a command that may have completed turns a slow success into a
+hard failure.** deploy.py's rule in this repo says it in one word and I did not read my own note:
+*"sshout() retries a timed-out READ-ONLY probe"*.
+FIX: `retry` is OPT-IN and OFF by default; the refusal says the command is not idempotent, that it
+may already have run, and points at `python jev.py diagnose` rather than inviting a blind repeat.
+The unpack gets 300s (it is disk I/O on a box that may be running another build) and never retries.
+RULE: before retrying a remote command, ask whether running it twice is safe. Reads and probes,
+yes. Anything that creates, extracts, deletes or deploys, no — report the unknown state instead.
