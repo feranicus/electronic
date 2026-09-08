@@ -40,6 +40,19 @@ def _post(url, payload, timeout=25):
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
+# bgp.he.net serves HTML, not JSON, and gates a plain library UA. A browser UA is the whole point:
+# it is what makes the ONE source that indexes every RIR reachable when the JSON APIs are down.
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+
+def _get_html(url, timeout=20):
+    req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA,
+                                               "Accept": "text/html"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
 def _norm(name):
     """Loose company-name match: 'SGS SA' ~ 'SGS'. Avoids matching 'SGS' inside 'SGSFOO'."""
     return re.sub(r"[^a-z0-9]+", " ", (name or "").lower()).strip()
@@ -187,6 +200,47 @@ def bgpview(term, cap=12):
     return out
 
 
+def he_net(term, cap=40):
+    """bgp.he.net search — the ONE source that indexes every RIR AND resolves when the rest do not.
+
+    WHY IT MATTERS (dcsolution.io, 2026-09-08). Every JSON source returned '-' on that run --
+    ripestat, ripe-db, caida, peeringdb, bgpview ALL failed, so the engine reported asns=0 and the
+    whole BGP/NIS2 half went blind on what the CT names (colo., dns., fastedge., g-protect.) said
+    was a hosting/DDoS operator that very plausibly announces its own space. That is the RBC gap in
+    a harsher form: not one region missed, but every JSON API unreachable at once.
+    bgp.he.net is HTML, on a different host, behind a CDN, so it is reachable when stat.ripe.net and
+    api.bgpview.io are not; and it indexes ARIN/APNIC/LACNIC/AFRINIC/RIPE alike. bgpview.io is
+    literally the JSON face of the same data -- when bgpview's DNS dies, he.net is the fallback that
+    still answers.
+    Same precision rule as every other source: the AS HOLDER string must corroborate the seed
+    brand, or it is dropped. he.net's search also matches on prefixes and DNS, which is why the
+    holder gate is not optional -- a substring match on the whole internet is exactly the
+    false-positive shape this file exists to prevent.
+    """
+    out = []
+    # The search-result table renders one row per AS as:  <a href="/AS57724">AS57724</a></td>
+    # <td>DDOS-GUARD LTD</td>  -- capture the number and the very next cell (the holder).
+    row = re.compile(r'/AS(\d+)"[^>]*>\s*AS\d+\s*</a>\s*</td>\s*<td[^>]*>\s*([^<]*?)\s*</td>',
+                     re.I | re.S)
+    for t in _terms(term):
+        try:
+            html = _get_html("https://bgp.he.net/search?search%5Bsearch%5D=" +
+                             urllib.parse.quote(t) + "&commit=Search")
+            for m in row.finditer(html):
+                holder = re.sub(r"\s+", " ", m.group(2)).strip()
+                if not holder or not _relevant(term, holder):
+                    continue                       # a co-tenant / an unrelated AS name / a prefix row
+                try:
+                    n = int(m.group(1))
+                except Exception:
+                    continue
+                if n and n not in out:
+                    out.append(n)
+        except Exception as e:
+            ERRORS.append({"source": "he_net/%s" % t[:18], "error": repr(e)[:120]})
+    return out[:cap]
+
+
 def discover(term, cap=40):
     """Merge every source. Returns {asns, per_source, errors, ok}.
 
@@ -195,13 +249,19 @@ def discover(term, cap=40):
     truncates the estate of every bank, carrier and government we will ever assess. Precision is
     enforced by _relevant() on the holder string, not by an arbitrary ceiling."""
     del ERRORS[:]
+    # he_net is a peer of ripestat, not a fallback: both are global and index every RIR, and on the
+    # dcsolution run every JSON API was unreachable while an HTML source on a CDN would not be. Two
+    # independent global sources is the point -- one API host being down can no longer blind the run.
+    sources = (("ripestat", ripestat), ("he_net", he_net), ("ripe-db", ripe_db),
+               ("caida", caida), ("peeringdb", peeringdb), ("bgpview", bgpview))
     per = {}
-    for name, fn in (("ripestat", ripestat), ("ripe-db", ripe_db), ("caida", caida),
-                     ("peeringdb", peeringdb), ("bgpview", bgpview)):
+    failed = 0
+    for name, fn in sources:
         try:
             per[name] = fn(term, cap)
         except Exception as e:
             per[name] = []
+            failed += 1
             ERRORS.append({"source": name, "error": repr(e)[:120]})
         print("[asn] %-9s %-28s -> %s" % (name, term[:28], per[name] or "-"), file=sys.stderr)
     merged = []
@@ -209,8 +269,10 @@ def discover(term, cap=40):
         for a in lst:
             if a not in merged:
                 merged.append(a)
-    # ok = at least one source ANSWERED (empty answer from a live source is still an answer)
-    ok = len(ERRORS) < 5
+    # ok = at least one source ANSWERED (an empty answer from a live source is still an answer).
+    # Derived from the source count so adding a source can never silently shift the threshold --
+    # the RBC/dcsolution failure mode is "every source down", and only THAT must read as not-ok.
+    ok = failed < len(sources)
     return {"asns": merged[:cap], "per_source": per, "errors": list(ERRORS), "ok": ok}
 
 

@@ -81,6 +81,54 @@ check("ripestat" in src, "ripestat is wired into the source chain")
 check(src.index("ripestat") < src.index("ripe-db"),
       "the global source runs FIRST, so a RIPE-only failure cannot decide the answer")
 
+print("\n== bgp.he.net: the source that answers when every JSON API is down (dcsolution.io) ==")
+# The real failure: ripestat, ripe-db, caida, peeringdb AND bgpview all returned '-' on the
+# dcsolution.io run, so the whole BGP/NIS2 half went blind on a hosting operator that plausibly
+# announces its own space. bgp.he.net is HTML on a CDN and indexes every RIR, so it answers when
+# the JSON hosts do not. This is the search-result table shape it renders, one row per AS.
+# Seeded with the ONE brand token the engine actually derives ([auto] brand tokens: dcsolution),
+# not a hand-spelled 'DC Solution'. The corroboration is strict about token boundaries by design --
+# that is what keeps a co-tenant off the estate -- so the seed spelling is what the holders are
+# matched against. DDOS-GUARD is included because it is the REAL holder of dcsolution's edge IPs and
+# must NOT be adopted: the customer sits behind it, it does not own that AS.
+HE_HTML = """
+<table id="search"><tbody>
+<tr><td><a href="/AS204601">AS204601</a></td><td>DCSOLUTION LTD</td><td>1,024</td></tr>
+<tr><td><a href="/AS205123">AS205123</a></td><td>DCSOLUTION Networks</td><td>256</td></tr>
+<tr><td><a href="/AS204601">AS204601</a></td><td>DCSOLUTION LTD</td><td>dup row, must dedupe</td></tr>
+<tr><td><a href="/AS57724">AS57724</a></td><td>DDOS-GUARD LTD</td><td>the scrubber, not the target</td></tr>
+<tr><td><a href="/AS12345">AS12345</a></td><td>Datacenter Solutions Unrelated Inc</td><td>512</td></tr>
+<tr><td><a href="/AS49505">AS49505</a></td><td>Selectel / other tenant on the prefix</td></tr>
+</tbody></table>
+"""
+A._get_html = lambda url, **k: HE_HTML     # no network: replay the captured HTML
+del A.ERRORS[:]
+he_list = A.he_net("dcsolution")
+he = set(he_list)
+check(204601 in he, "AS204601 (DCSOLUTION LTD) is parsed out of the HTML table")
+check(205123 in he, "AS205123 (DCSOLUTION Networks) is parsed - a second AS on the same holder")
+check(he_list.count(204601) == 1, "a duplicate row does not produce a duplicate ASN")
+check(57724 not in he, "AS57724 (DDOS-GUARD) is NOT adopted - the customer sits behind it, does not own it")
+check(12345 not in he, "'Datacenter Solutions Unrelated Inc' is NOT adopted - holder does not corroborate")
+check(49505 not in he, "a co-tenant's AS on the same prefix is NOT adopted")
+check(A.he_net("nonexistent-brand-xyz") == [], "no holder match -> nothing, never a substring grab")
+
+print("\n== he_net is wired as a global peer, and total failure still reads as not-ok ==")
+srcd = inspect.getsource(A.discover)
+check("he_net" in srcd, "he_net is in the source chain")
+check(srcd.index("he_net") < srcd.index("bgpview"),
+      "he_net runs before the flaky bgpview it backstops")
+check("failed < len(sources)" in srcd,
+      "ok is derived from the source count, so adding a source cannot shift the threshold")
+# with EVERY source raising, ok must be False (the exact dcsolution failure mode)
+def _boom(*a, **k):
+    raise OSError("[Errno -5] No address associated with hostname")
+for nm in ("ripestat", "he_net", "ripe_db", "caida", "peeringdb", "bgpview"):
+    setattr(A, nm, _boom)
+res = A.discover("anything")
+check(res["ok"] is False, "every source down -> ok=False (absence of evidence, never 'no ASN')")
+check(res["asns"] == [], "...and no ASN is invented from a failed run")
+
 print("\n== a DACH target must not regress ==")
 t2 = A._terms("abakus TK Service GmbH")
 check("abakus TK Service GmbH" in t2, "the full name is queried for a German SMB too")

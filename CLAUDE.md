@@ -7905,3 +7905,30 @@ THE LESSON IS ABOUT THE DIAGNOSTIC, NOT THE HTML. The defect was one line of inv
 cost three deploy attempts, because `tail -25` showed the stack and cut off the message. Grep the
 log for the error vocabulary FIRST, then show context. A tool that reports an exit code without a
 cause is a tool that makes you guess -- and guessing is what this file exists to stop.
+
+## bgp.he.net — the ASN source that answers when every JSON API is down (dcsolution.io, 2026-09-08)
+dcsolution.io is a hosting/DDoS operator (CT names colo./dns./fastedge./g-protect.) fronted by
+DDoS-Guard, and the run reported `asns=0`, `[warn] ASN discovery: every source failed`. Every JSON
+source returned '-' at once -- ripestat, ripe-db, caida, peeringdb AND bgpview -- so the whole
+BGP/NIS2 half went blind on a target that very plausibly announces its own space. That is the RBC
+enterprise gap in a harsher form: not one region missed, but every JSON host unreachable in one run.
+FIX: `asn_sources.he_net()` scrapes bgp.he.net's search-result table. It is HTML on a CDN behind a
+browser-UA gate, so it is reachable when stat.ripe.net and api.bgpview.io are not, and it indexes
+EVERY RIR (ARIN/APNIC/LACNIC/AFRINIC/RIPE). bgpview.io is literally the JSON face of the same data;
+he.net is the fallback that still answers when bgpview's DNS dies. Wired as a global PEER of
+ripestat (second in the chain, before the flaky bgpview it backstops), NOT a last resort.
+SAME PRECISION RULE, no exception: the AS HOLDER string must corroborate the seed brand via
+`_relevant`, or the AS is dropped. he.net's search also matches prefixes and DNS, so an ungated
+substring would be a whole-internet false-positive -- exactly the shape this file exists to prevent.
+The regression proves BOTH directions on the real shapes: DCSOLUTION LTD/Networks parsed and
+deduped; DDOS-GUARD (the scrubber the customer sits BEHIND, does not own), an unrelated
+"Datacenter Solutions" and a co-tenant all refused.
+ALSO FIXED: `discover()`'s `ok` was `len(ERRORS) < 5`, a hardcoded threshold that would drift the
+moment a sixth source was added. It is now `failed < len(sources)` -- derived from the source count,
+so only the true failure mode (EVERY source down) reads as not-ok, and adding a source can never
+silently shift it. Guarded by test_asn_enterprise.py (already run by ship.py; asn_sources.py is in
+ENGINE_FILES so the hash-verify covers it).
+NOTE, honest: he.net helps this exact case (all JSON APIs down) and helps the RBC case (all-RIR
+coverage); it does NOT loosen corroboration, so a target whose real AS holder does not carry the
+brand token is still not found by ANY source -- that is the deliberate zero-false-positive floor,
+and the clarify loop (operator pastes the AS) remains the answer for it.
