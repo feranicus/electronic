@@ -7885,3 +7885,23 @@ may already have run, and points at `python jev.py diagnose` rather than invitin
 The unpack gets 300s (it is disk I/O on a box that may be running another build) and never retries.
 RULE: before retrying a remote command, ask whether running it twice is safe. Reads and probes,
 yes. Anything that creates, extracts, deletes or deploys, no — report the unknown state instead.
+
+## THE GREP FOUND IT IN ONE LINE — jev.best's build (2026-09-08)
+Two runs reported only `exit code: 1` and 25 lines of rollup stack frames. With the cause-grep in
+place the third run printed the whole answer immediately:
+```
+  --- cause ---
+  66:#12 6.853 error during build:
+  [vite-plugin-pwa:build] index.html: Unable to parse HTML;
+    parse5 error code disallowed-content-in-noscript-in-head   at /app/index.html:18:11
+  18 | <noscript><div><img src="https://mc.yandex.ru/watch/111009736" .../></div></noscript>
+```
+The Yandex.Metrika `<noscript>` sat in `<head>` and contained a `<div>`. Inside `<head>` the HTML
+spec permits a `<noscript>` to contain ONLY `<link>`, `<style>` and `<meta>` -- never flow content.
+`vite-plugin-pwa` parses index.html with parse5, which refuses it and fails the whole build.
+Yandex's own documented snippet puts that block in `<body>`; moved there, the tracking script left
+untouched in `<head>`. Verified with a real HTML parser, not by eye.
+THE LESSON IS ABOUT THE DIAGNOSTIC, NOT THE HTML. The defect was one line of invalid markup and it
+cost three deploy attempts, because `tail -25` showed the stack and cut off the message. Grep the
+log for the error vocabulary FIRST, then show context. A tool that reports an exit code without a
+cause is a tool that makes you guess -- and guessing is what this file exists to stop.
