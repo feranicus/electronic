@@ -7827,3 +7827,20 @@ the assertion passes anyway. That is both a check that cannot fail and a live in
 disclosure (`/openapi.json`, `/docs`, `/redoc` all 200), the same exposure already closed on
 jobhuntwow and s4biz. It needs one argument in klima's FastAPI constructor and a fixed assertion.
 Guarded by tests/test_fleet.py; three mutations, each verified to fail and restore.
+
+## A TAIL SHOWS STACK FRAMES; THE CAUSE IS THE LINE ABOVE THEM (jev.best, 2026-09-08)
+With the pipeline-rc fix in place, `jev.py deploy` correctly FAILED instead of shipping the old
+image (`ssh упал (rc=1)` -> `-> jev.best: FAILED rc=1`), and the rollout carried on to the other
+projects exactly as designed. But `tail -25` of a rollup failure is twenty-five lines of
+`node_modules/rollup/...` frames plus the npm upgrade notice -- everything EXCEPT
+`error during build: ...`, which sits just above the window. So the deploy named its exit code and
+not its cause, twice in a row.
+FIX: run the build with `check=False`, then `grep -nE 'error during build|Could not resolve|Cannot
+find|is not exported|ENOENT|SyntaxError|Unexpected|failed to solve'` the log FIRST, print a 60-line
+tail after it, and only then raise. A build error must name what broke, not just that something did.
+RULE, and this is the third form of it in this file: a diagnostic that does not name its subject
+sends the next investigation down the wrong road. `tail -N` is not a diagnosis -- grep for the
+error line, then show context.
+VERIFIED LOCALLY FIRST, so the next run is not another guess: every relative import under
+`jev-best/src` resolves, so it is NOT a missing module. The cause is something the grep will now
+print.
