@@ -612,3 +612,88 @@ def test_every_project_carries_the_import_form_its_own_layout_needs():
         got = re.search(r"^\s*(from \. import perseus_client|import perseus_client)$", s, re.M)
         assert got and got.group(1) == want, \
             "%s is wired as %r but its layout needs %r" % (d, got and got.group(1), want)
+
+
+# --------------------------------------------------------------- the fleet rollout (2026-09-07)
+# The sidecar was wired into five repos and running in one container. `--rollout` deploys the other
+# four through their OWN orchestrators, because reimplementing a project's deploy is the "two homes
+# for one job" defect, and their ship.py already owns their tests, staging gate and commit.
+
+def test_the_rollout_never_deploys_cybergod_into_itself():
+    """ship.py already deployed colt-web; including it here would recurse."""
+    perseus = _perseus_script()
+    roots = [r.lower() for _n, r, _a in perseus.ROLLOUT]
+    assert not any(r.rstrip("\\/").endswith("linkedin scraper") for r in roots), \
+        "cybergod's own repo must not be in the rollout list"
+    assert {n for n, _r, _a in perseus.ROLLOUT} == {
+        "jobhuntwow.com", "jev.best", "klimaanlage-preise.de", "s4biz.io"}
+
+
+def test_every_rollout_entry_calls_that_project_s_real_orchestrator():
+    """A verb this repo invented is a rollout that dies on its own launcher."""
+    perseus = _perseus_script()
+    for name, root, argv in perseus.ROLLOUT:
+        if not os.path.isdir(root):
+            continue                       # not checked out on this machine; --rollout says so
+        assert os.path.exists(os.path.join(root, argv[0])), \
+            "%s: %s does not exist" % (name, argv[0])
+
+
+def test_one_failing_project_does_not_abandon_the_rest(tmp_path, monkeypatch, capsys):
+    """These are independent products. A broken build in one must not leave the others unguarded."""
+    perseus = _perseus_script()
+    for n in ("a", "b", "c"):
+        (tmp_path / n).mkdir()
+        (tmp_path / n / "ship.py").write_text("", encoding="utf-8")
+    monkeypatch.setattr(perseus, "ROLLOUT", [
+        ("a", str(tmp_path / "a"), ["ship.py"]),
+        ("b", str(tmp_path / "b"), ["ship.py"]),          # this one fails
+        ("c", str(tmp_path / "c"), ["ship.py"]),
+    ])
+    seen = []
+
+    class _R:
+        def __init__(self, rc): self.returncode = rc
+
+    def fake_run(argv, cwd=None, **kw):
+        seen.append(os.path.basename(cwd))
+        return _R(1 if cwd.endswith("b") else 0)
+
+    monkeypatch.setattr(perseus.subprocess, "run", fake_run)
+    monkeypatch.setattr(perseus, "ssh_script", lambda *a, **k: ("END", "", 0))
+    rc = perseus.cmd_rollout()
+    assert seen == ["a", "b", "c"], "the loop stopped early: %r" % (seen,)
+    assert rc == 1, "a failed project must be reflected in the exit code"
+    out = capsys.readouterr().out
+    assert "FAILED   b" in out and "OK       a" in out and "OK       c" in out
+
+
+def test_a_project_that_is_not_on_this_machine_is_skipped_not_crashed(tmp_path, monkeypatch, capsys):
+    perseus = _perseus_script()
+    monkeypatch.setattr(perseus, "ROLLOUT", [("ghost", str(tmp_path / "nope"), ["ship.py"])])
+    monkeypatch.setattr(perseus, "ssh_script", lambda *a, **k: ("END", "", 0))
+    called = []
+    monkeypatch.setattr(perseus.subprocess, "run", lambda *a, **k: called.append(1))
+    assert perseus.cmd_rollout() == 0, "a missing checkout is not a failure"
+    assert not called, "nothing may be executed for a project that is not here"
+    assert "SKIPPED  ghost" in capsys.readouterr().out
+
+
+def test_the_rollout_proves_itself_from_the_heartbeat(tmp_path, monkeypatch, capsys):
+    """A deploy returning 0 says the build worked. Only a beat says the middleware is RUNNING."""
+    perseus = _perseus_script()
+    monkeypatch.setattr(perseus, "ROLLOUT", [])
+    asked = {}
+
+    def fake_ssh(script, **kw):
+        asked["script"] = script
+        return ("  jhw-web  09:12:00Z\n  jev-web  09:12:01Z\nEND", "", 0)
+
+    monkeypatch.setattr(perseus, "ssh_script", fake_ssh)
+    perseus.cmd_rollout()
+    out = capsys.readouterr().out
+    assert "perseus_beats" in asked["script"], "it must read the real heartbeat directory"
+    assert "jhw-web" in out and "jev-web" in out
+    # ...and it must not silently imply klima/s4biz are broken: they write elsewhere by design.
+    low = out.lower()
+    assert "own event volumes" in low and "fleet.py" in low

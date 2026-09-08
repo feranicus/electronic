@@ -291,8 +291,97 @@ def copy_clients():
     return n_new
 
 
+# EVERY OTHER PROJECT, AND THE COMMAND THAT PROJECT USES TO DEPLOY ITSELF.
+# cybergod is deliberately absent: `python ship.py` already deployed it, and calling it from here
+# would recurse. Each entry invokes that project's OWN orchestrator -- reimplementing a deploy is
+# the "two homes for one job" defect this estate has paid for repeatedly, and their ship.py already
+# owns their tests, their staging gate and their commit.
+ROLLOUT = [
+    ("jobhuntwow.com",         os.path.join(HERE, "jobhuntwow-app"),          ["ship.py"]),
+    ("jev.best",               os.environ.get("PERSEUS_JEV_ROOT",
+                                              r"C:\React SW\yantar\jev-best"), ["jev.py", "deploy"]),
+    ("klimaanlage-preise.de",  os.environ.get("PERSEUS_KLIMA_ROOT",
+                                              os.path.join(_PARENT, "Klima", "klima-shop")),
+     ["ship.py"]),
+    # s4biz has a have-you-looked gate on its frontend; this rollout changes no UI there, so it is
+    # skipped explicitly rather than left to block a headless run.
+    ("s4biz.io",               os.environ.get("PERSEUS_S4BIZ_ROOT",
+                                              r"C:\Users\feran\Downloads\S4biz new website"),
+     ["ship.py", "--no-preview"]),
+]
+
+
+def cmd_rollout():
+    """Deploy the sidecar to every OTHER project, in one command.
+
+    WHY THIS EXISTS. `--clients` copies the file and `wire_middleware` edits the source, but a
+    container keeps running the image it was built from. So the Fleet page correctly read
+    "not installed" for four projects while this script printed "already wired" for all five --
+    the code was in the repo and not in the running process. Nothing was broken; nothing was
+    deployed.
+
+    SEQUENTIAL, NOT PARALLEL, and that is measured rather than cautious: the droplet is 3.8 GB with
+    ~190 MB free and ~2.1 GB in cache, and every one of these builds a docker image on that same
+    box. Four at once would thrash and can OOM a live site -- taking production down to roll out a
+    defence is the worst possible trade.
+
+    ONE FAILURE DOES NOT STOP THE REST. These are independent products; a broken build in one must
+    not leave the other three unguarded. Each result is reported and the exit code reflects the set.
+    """
+    ok, failed, missing = [], [], []
+    for name, root, argv in ROLLOUT:
+        say("")
+        say("=" * 74)
+        say("  ROLLOUT  %s" % name)
+        say("  %s>  python %s" % (root, " ".join(argv)))
+        say("=" * 74)
+        if not os.path.isdir(root):
+            say("  [!] %s does not exist on this machine - skipped" % root)
+            missing.append(name)
+            continue
+        script = os.path.join(root, argv[0])
+        if not os.path.exists(script):
+            say("  [!] %s not found - this project's orchestrator has moved" % script)
+            missing.append(name)
+            continue
+        # STREAMED, NOT CAPTURED. Each of these runs for minutes; a silent subprocess is
+        # indistinguishable from a hung one, which is the spinner defect one level up.
+        rc = subprocess.run([sys.executable, script] + argv[1:], cwd=root).returncode
+        (ok if rc == 0 else failed).append(name)
+        say("  -> %s: %s" % (name, "OK" if rc == 0 else "FAILED rc=%d" % rc))
+
+    say("")
+    say("=" * 74)
+    say("  ROLLOUT RESULT   %d deployed · %d failed · %d not on this machine"
+        % (len(ok), len(failed), len(missing)))
+    for n in ok:
+        say("    OK       %s" % n)
+    for n in failed:
+        say("    FAILED   %s" % n)
+    for n in missing:
+        say("    SKIPPED  %s" % n)
+
+    # PROVE IT FROM THE HEARTBEAT, NOT FROM THE EXIT CODE. A deploy returning 0 says the build
+    # succeeded; only a beat says the middleware is actually running inside the container.
+    say("")
+    say("-- heartbeats on the SHARED volume (what the Fleet page reads) --")
+    out, err, rc = ssh_script(
+        "ls -1 /var/lib/docker/volumes/colt-stack_colt_events/_data/perseus_beats/*.json "
+        "2>/dev/null | while read f; do echo \"  $(basename $f .json)  $(date -u -r $f "
+        "+%H:%M:%SZ)\"; done; echo END")
+    say((out or "").replace("END", "").strip() or "  (no beats yet - allow ~60s for the first one)")
+    if rc != 0 and err.strip():
+        say("  [!] could not read the beats: %s" % err.strip()[-200:])
+    say("  NOTE klima and s4biz write to their OWN event volumes, so their beat never lands here.")
+    say("       That is not a failure - confirm those two with `python fleet.py`.")
+    return 1 if failed else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--rollout", action="store_true",
+                    help="deploy the sidecar to every OTHER project, via each project's own "
+                         "orchestrator, one after another")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--clients", action="store_true")
@@ -307,6 +396,14 @@ def main():
     say("=" * 74)
     say("  PERSEUS - one brain for six properties   target %s@%s" % (USER, HOST))
     say("=" * 74)
+
+    if a.rollout:
+        # Refresh the file and the wiring FIRST, so the deploys below carry the current sidecar.
+        # copy_clients() ALSO wires the middleware -- the copy and the wiring are one step on
+        # purpose, because a copied file that nothing imports is the exact state being fixed.
+        say("-- thin client + middleware into each project --")
+        copy_clients()
+        return cmd_rollout()
 
     if a.clients:
         say("-- thin client into each project --")

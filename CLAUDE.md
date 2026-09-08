@@ -7755,3 +7755,37 @@ TWO TRAPS HIT WHILE WRITING THOSE TESTS, both the recurring kind:
     path with importlib when a name collision exists.
   * **`CLIENT_TARGETS` is a list of `(dir, filename)` TUPLES**, not strings — the Nth assumed shape
     in this workstream, and the fix is always the same: read the definition.
+
+## `python perseus.py --rollout` — the fleet in ONE command (2026-09-07)
+The operator: *"please continue with the rest and not one by one but all at once please. Visually I
+dont see anything changed here."* Both halves were fair. `--clients` copies the sidecar and
+`wire_middleware` edits the source, but a container keeps running the image it was built from — so
+the Fleet page correctly read "not installed" for four projects while this script printed "already
+wired" for all five. The code was in the repo and not in the running process, which is the exact
+distinction the Fleet page exists to make visible.
+`--rollout` deploys the other four by invoking **each project's OWN orchestrator** —
+`jobhuntwow-app/ship.py`, `jev.py deploy`, `klima-shop/ship.py`, `S4biz/ship.py --no-preview`.
+Reimplementing a project's deploy would be the "two homes for one job" defect, and their own
+orchestrator already owns their tests, their staging gate and their commit. cybergod is
+deliberately ABSENT from the list: `ship.py` has already deployed it and including it would recurse.
+FOUR DECISIONS WORTH KEEPING:
+  * **SEQUENTIAL, and that is measured rather than cautious.** The droplet is 3.8 GB with ~190 MB
+    free and ~2.1 GB in cache, and every one of these builds a docker image on that same box. Four
+    at once would thrash and can OOM a live site — taking production down to roll out a defence is
+    the worst possible trade.
+  * **ONE FAILURE DOES NOT ABANDON THE REST.** These are independent products; a broken build in one
+    must not leave the other three unguarded. Every result is named and the exit code reflects the set.
+  * **STREAMED, NOT CAPTURED.** Each run takes minutes, and a silent subprocess is indistinguishable
+    from a hung one — the spinner defect one level up.
+  * **PROVEN FROM THE HEARTBEAT, NOT THE EXIT CODE.** A deploy returning 0 says the build worked;
+    only a beat says the middleware is actually running inside the container. It reads the real
+    beats directory afterwards and STATES that klima and s4biz write to their own event volumes, so
+    their beat never lands there — that is not a failure, and `python fleet.py` is what confirms
+    them. A rollout that implied two healthy projects were broken would be its own defect.
+NOT WIRED INTO ship.py, deliberately: that would make cybergod's own deploy depend on four sibling
+projects, which is the coupling staging refused a day earlier over an `external:` volume.
+Guarded by tests/test_fleet.py (no self-recursion · every entry calls a REAL orchestrator · the loop
+survives a failure · a missing checkout is skipped, not executed · the heartbeat proof is read).
+FIVE mutations, and the FIFTH is the lesson: "a missing checkout is executed anyway" SURVIVED,
+because `os.path.exists(script)` catches it downstream. A negative test that passes because of
+defence in depth is measuring the other guard — defeating BOTH is what proved the check.
