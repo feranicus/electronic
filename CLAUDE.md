@@ -7789,3 +7789,41 @@ survives a failure · a missing checkout is skipped, not executed · the heartbe
 FIVE mutations, and the FIFTH is the lesson: "a missing checkout is executed anyway" SURVIVED,
 because `os.path.exists(script)` catches it downstream. A negative test that passes because of
 defence in depth is measuring the other guard — defeating BOTH is what proved the check.
+
+## THE ROLLOUT DEPLOYED ALL FOUR AND NOTHING CHANGED — three defects behind one symptom (2026-09-07)
+`python perseus.py --rollout` reported `4 deployed · 0 failed` and the Fleet page still read
+"not installed" for every project. The operator: *"again I dont see any fucking change."* He was
+right, and the heartbeat check at the end of the rollout is what exposed it: only `colt-web` beat.
+
+**1. jobhuntwow DEPLOYED PERFECTLY AND PHYSICALLY COULD NOT BEAT.** `Dockerfile.web` ends
+`USER jhw` (uid 10001); `_beat()` calls `os.makedirs("/var/log/colt/perseus_beats")` inside a
+ROOT-OWNED 0755 directory on the shared volume. PermissionError, swallowed by `except: pass`, no
+heartbeat — and the Fleet page honestly reported what it could see. This is the SAME
+UID-10001-vs-root defect that made jobhuntwow's telemetry silent for its entire life, recorded in
+this file, hitting the heartbeat this time. FIXES: the installer (which runs as ROOT) creates the
+directory **1777** — /tmp's mode, so any container writes its own beat and the sticky bit stops one
+project deleting another's; and `_beat()` now PRINTS `evt=perseus_beat_unwritable` once instead of
+vanishing. A swallowed heartbeat failure is indistinguishable from "this project never deployed the
+sidecar", which is precisely the wrong conclusion it produced.
+
+**2. jev.best's IMAGE BUILD FAILED AND jev.py SHIPPED ANYWAY.** In the log:
+`#12 ERROR: process "/bin/sh -c npm run build" did not complete successfully: exit code: 1`,
+immediately followed by "поднимаю контейнер" and a green result. TWO independent causes, both in
+one line: `ssh(f"... {COMPOSE} build 2>&1 | tail -25")` discards the rc into `_`, AND **a pipeline
+returns the LAST command's status**, so it was reading *tail's* exit code. The container was then
+recreated from the OLD image. Now the build runs alone into a log file, its rc is kept, the tail is
+printed afterwards, and `ssh(check=True)` raises. RULE: never judge a command's success through a
+pipe — `cmd > log 2>&1; rc=$?; tail log; exit $rc`.
+
+**3. jev's MIDDLEWARE IS IN THE CONTAINER `jev.py deploy` DOES NOT BUILD.** The wired module is
+`webapp/main.py`, which **Dockerfile.api** builds into `jev-api`; `deploy` builds `jev-web`, the
+Caddy front. So the one container that does not carry the sidecar was the only one rebuilt. The
+rollout now runs `jev.py deploy` AND `jev.py api`. Read the compose file to find which image
+contains the file you changed; the container whose name matches the project is not automatically it.
+
+ALSO SEEN, NOT OURS TO FIX HERE: klima's own test prints
+`ok  /openapi.json does not serve the API schema (status 200)` — status 200 means it IS served, and
+the assertion passes anyway. That is both a check that cannot fail and a live information
+disclosure (`/openapi.json`, `/docs`, `/redoc` all 200), the same exposure already closed on
+jobhuntwow and s4biz. It needs one argument in klima's FastAPI constructor and a fixed assertion.
+Guarded by tests/test_fleet.py; three mutations, each verified to fail and restore.

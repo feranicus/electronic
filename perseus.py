@@ -105,6 +105,17 @@ def install_script(blob):
     return "\n".join([
         "set -e",
         "mkdir -p %s /var/log/colt" % REMOTE,
+        # THE HEARTBEAT DIRECTORY MUST BE WRITABLE BY A NON-ROOT CONTAINER.
+        # jobhuntwow (USER jhw, uid 10001) and s4biz (uid 10001) deployed the sidecar correctly and
+        # still showed "not installed", because `_beat()` calls os.makedirs() inside a ROOT-OWNED
+        # 0755 directory on the shared volume: PermissionError, swallowed, no heartbeat, and the
+        # Fleet page honestly reported what it could see. That is the same UID-10001-vs-root defect
+        # that made jobhuntwow's telemetry silent for its whole life, hitting the beat this time.
+        # Created here because THIS runs as root; 1777 is /tmp's mode -- any container may write its
+        # own beat, and the sticky bit stops one project deleting another's.
+        "install -d -m 1777 /var/lib/docker/volumes/colt-stack_colt_events/_data/perseus_beats "
+        "2>/dev/null || true",
+        "install -d -m 1777 /var/log/colt/perseus_beats 2>/dev/null || true",
         "cd %s" % REMOTE,
         "base64 -d > /tmp/perseus.tgz <<'B64EOF'",
         blob,
@@ -298,8 +309,14 @@ def copy_clients():
 # owns their tests, their staging gate and their commit.
 ROLLOUT = [
     ("jobhuntwow.com",         os.path.join(HERE, "jobhuntwow-app"),          ["ship.py"]),
+    # TWO STEPS FOR jev.best, and that is not padding. `jev.py deploy` builds jev-web (the Caddy
+    # front). The wired module is `webapp/main.py`, which Dockerfile.api builds into **jev-api** --
+    # so deploy alone rebuilds the one container that does NOT carry the middleware, and the Fleet
+    # page kept reading "not installed" after a green run. Read the compose file, not the name.
     ("jev.best",               os.environ.get("PERSEUS_JEV_ROOT",
                                               r"C:\React SW\yantar\jev-best"), ["jev.py", "deploy"]),
+    ("jev.best (api)",         os.environ.get("PERSEUS_JEV_ROOT",
+                                              r"C:\React SW\yantar\jev-best"), ["jev.py", "api"]),
     ("klimaanlage-preise.de",  os.environ.get("PERSEUS_KLIMA_ROOT",
                                               os.path.join(_PARENT, "Klima", "klima-shop")),
      ["ship.py"]),

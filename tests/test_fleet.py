@@ -626,7 +626,8 @@ def test_the_rollout_never_deploys_cybergod_into_itself():
     assert not any(r.rstrip("\\/").endswith("linkedin scraper") for r in roots), \
         "cybergod's own repo must not be in the rollout list"
     assert {n for n, _r, _a in perseus.ROLLOUT} == {
-        "jobhuntwow.com", "jev.best", "klimaanlage-preise.de", "s4biz.io"}
+        "jobhuntwow.com", "jev.best", "jev.best (api)",
+        "klimaanlage-preise.de", "s4biz.io"}
 
 
 def test_every_rollout_entry_calls_that_project_s_real_orchestrator():
@@ -697,3 +698,39 @@ def test_the_rollout_proves_itself_from_the_heartbeat(tmp_path, monkeypatch, cap
     # ...and it must not silently imply klima/s4biz are broken: they write elsewhere by design.
     low = out.lower()
     assert "own event volumes" in low and "fleet.py" in low
+
+
+def test_jev_rebuilds_the_container_that_actually_holds_the_middleware():
+    """`jev.py deploy` builds jev-web (the Caddy front). The wired module is webapp/main.py, which
+    Dockerfile.api builds into jev-api -- so deploy ALONE rebuilds the one container that does not
+    carry the sidecar, and the Fleet page kept reading 'not installed' after a green run."""
+    perseus = _perseus_script()
+    verbs = [tuple(a) for n, _r, a in perseus.ROLLOUT if n.startswith("jev.best")]
+    assert ("jev.py", "api") in verbs, "jev-api is never rebuilt, so the middleware never ships"
+    assert ("jev.py", "deploy") in verbs
+
+
+def test_the_heartbeat_directory_is_created_writable_for_non_root_containers():
+    """jobhuntwow and s4biz run as uid 10001; os.makedirs() in a root-owned 0755 directory on the
+    shared volume raises PermissionError. The installer runs as root, so it creates it 1777."""
+    perseus = _perseus_script()
+    script = perseus.install_script("Zm9v")
+    src = re.sub(r"#.*", "", script)          # our own comments must not satisfy this
+    assert "perseus_beats" in src and "1777" in src,         "the beats directory must be created world-writable by the root installer"
+
+
+def test_a_beat_that_cannot_be_written_says_so_instead_of_vanishing(tmp_path, monkeypatch, capsys):
+    """A swallowed heartbeat failure is indistinguishable from 'never deployed' -- which is exactly
+    what the Fleet page showed for jobhuntwow after a perfect deploy."""
+    import importlib
+    monkeypatch.setenv("PERSEUS_BEATS", str(tmp_path / "afile" / "beats"))
+    (tmp_path / "afile").write_text("not a directory", encoding="utf-8")
+    from perseus import client as pc
+    importlib.reload(pc)
+    pc._CACHE["beat"] = 0
+    pc._beat(1)
+    out = capsys.readouterr().out
+    assert "perseus_beat_unwritable" in out, "the failure must be announced once"
+    pc._CACHE["beat"] = 0
+    pc._beat(1)
+    assert out.count("perseus_beat_unwritable") == 1, "once, not once per request"
