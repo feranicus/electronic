@@ -302,11 +302,22 @@ def copy_clients():
     return n_new
 
 
-# EVERY OTHER PROJECT, AND THE COMMAND THAT PROJECT USES TO DEPLOY ITSELF.
-# cybergod is deliberately absent: `python ship.py` already deployed it, and calling it from here
-# would recurse. Each entry invokes that project's OWN orchestrator -- reimplementing a deploy is
-# the "two homes for one job" defect this estate has paid for repeatedly, and their ship.py already
-# owns their tests, their staging gate and their commit.
+# EVERY PROJECT, AND THE COMMAND THAT PROJECT USES TO DEPLOY ITSELF. Each entry invokes that
+# project's OWN orchestrator -- reimplementing a deploy is the "two homes for one job" defect this
+# estate has paid for repeatedly, and their ship.py already owns their tests, their staging gate
+# and their commit.
+#
+# CYBERGOD IS IN THIS LIST, AND IT IS LAST. It used to be excluded, with a comment claiming that
+# calling it from here "would recurse". THAT WAS SIMPLY FALSE: ship.py invokes `perseus.py
+# --clients` and `perseus.py --install-only`, never `--rollout`, and --install-only returns before
+# the cycle. Nothing recursed; a wrong comment kept a project out of a fleet command.
+#
+# The cost of that mistake was two full rounds of "I still see 2 missing". The Fleet page is SERVED
+# BY cybergod (colt-web), so a rollout that deploys the four siblings and not cybergod updates the
+# sidecars and NOT the page that reports on them -- it can never show its own work. Twice the
+# operator watched a green rollout leave two rows reading "not installed", because the badge those
+# rows needed was in the repo and not in the running container.
+# LAST, deliberately: the page should be rebuilt after the things it describes, not before.
 ROLLOUT = [
     ("jobhuntwow.com",         os.path.join(HERE, "jobhuntwow-app"),          ["ship.py"]),
     # TWO STEPS FOR jev.best, and that is not padding. `jev.py deploy` builds jev-web (the Caddy
@@ -327,6 +338,10 @@ ROLLOUT = [
     ("s4biz.io",               os.environ.get("PERSEUS_S4BIZ_ROOT",
                                               r"C:\Users\feran\Downloads\S4biz new website"),
      ["ship.py", "--no-preview"]),
+    # CYBERGOD LAST. No --no-preview here: this repo's own frontend is the one the have-you-looked
+    # gate exists for, and waiving it from a fleet command is how a UI change ships unseen. If the
+    # gate stops the run it prints the one line that clears it.
+    ("cybergod.ai (the Fleet page itself)", HERE, ["ship.py"]),
 ]
 
 
@@ -391,8 +406,14 @@ def cmd_rollout():
     say((out or "").replace("END", "").strip() or "  (no beats yet - allow ~60s for the first one)")
     if rc != 0 and err.strip():
         say("  [!] could not read the beats: %s" % err.strip()[-200:])
-    say("  NOTE klima and s4biz write to their OWN event volumes, so their beat never lands here.")
-    say("       That is not a failure - confirm those two with `python fleet.py`.")
+    say("  NOTE klima and s4biz write to their OWN event volumes, so their beat FILE never lands")
+    say("       here and never will: mounting a sibling's volume is the `external:` coupling the")
+    say("       staging gate refused, and a status page is not worth an undeployable deploy.")
+    say("       They are still PROVEN, by the second channel: the sidecar prints its heartbeat to")
+    say("       stdout, this box's promtail ships every container's stdout to the shared Loki, and")
+    say("       the Fleet page reads it there -- those rows say `elsewhere · active`. If Loki is")
+    say("       down they degrade to `unverifiable`, never to a claim. `python fleet.py` reads")
+    say("       every project's own log over ssh and is the ground truth that needs neither.")
     return 1 if failed else 0
 
 

@@ -806,15 +806,56 @@ def test_every_project_carries_the_import_form_its_own_layout_needs():
 # four through their OWN orchestrators, because reimplementing a project's deploy is the "two homes
 # for one job" defect, and their ship.py already owns their tests, staging gate and commit.
 
-def test_the_rollout_never_deploys_cybergod_into_itself():
-    """ship.py already deployed colt-web; including it here would recurse."""
+def test_the_rollout_deploys_cybergod_too_and_deploys_it_last():
+    """DOCTRINE CORRECTED 2026-09-10, and the old reasoning is kept because deleting it loses why.
+
+    This test used to read `test_the_rollout_never_deploys_cybergod_into_itself` and assert that
+    cybergod's repo was ABSENT, on the stated grounds that "including it here would recurse".
+    That was false. ship.py invokes `perseus.py --clients` and `perseus.py --install-only`, never
+    `--rollout`, and --install-only returns before the cycle. Nothing recursed.
+
+    What the exclusion actually cost: the Fleet page is SERVED BY cybergod, so a rollout that
+    deployed the four siblings and not cybergod could never show its own work. Two consecutive
+    green rollouts left klima and s4biz reading "not installed", because the badge that fixes it
+    was in the repo and not in the running container.
+
+    The real anti-recursion property is asserted below, against ship.py, where it belongs."""
     perseus = _perseus_script()
-    roots = [r.lower() for _n, r, _a in perseus.ROLLOUT]
-    assert not any(r.rstrip("\\/").endswith("linkedin scraper") for r in roots), \
-        "cybergod's own repo must not be in the rollout list"
-    assert {n for n, _r, _a in perseus.ROLLOUT} == {
-        "jobhuntwow.com", "jev.best", "jev.best (api)",
-        "klimaanlage-preise.de", "s4biz.io"}
+    names = [n for n, _r, _a in perseus.ROLLOUT]
+    assert any("cybergod" in n for n in names), \
+        "the fleet command must also deploy the project that RENDERS the fleet page"
+    assert "cybergod" in names[-1], \
+        "cybergod is LAST: the page should be rebuilt after the things it describes, got %r" % names
+
+    root = [r for n, r, _a in perseus.ROLLOUT if "cybergod" in n][0]
+    assert os.path.normcase(os.path.abspath(root)) == os.path.normcase(ROOT), \
+        "the cybergod entry must point at THIS repo, not a guess"
+
+
+def _code_only(path):
+    """The file's CODE, with every comment removed by the tokenizer rather than by a regex.
+
+    A check that matches its own explanatory comment has failed a correct file five separate times
+    in this repository. Tokenizing is exact: a `#` inside a string literal survives, a real comment
+    does not."""
+    import io
+    import tokenize
+    src = open(path, encoding="utf-8").read()
+    out = []
+    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+        if tok.type != tokenize.COMMENT:
+            out.append(tok.string)
+    return "\n".join(out)
+
+
+def test_ship_py_never_invokes_the_rollout_which_is_the_real_recursion_guard():
+    """--rollout runs ship.py. If ship.py ever ran --rollout, that is an infinite fleet deploy.
+    The guard belongs HERE, on the edge that would actually close the loop -- not on a list
+    membership that merely looked like it."""
+    src = _code_only(os.path.join(ROOT, "ship.py"))
+    assert "--rollout" not in src, \
+        "ship.py must not invoke perseus.py --rollout: --rollout already invokes ship.py"
+    assert "--install-only" in src, "ship.py still has to install the hub"
 
 
 def test_every_rollout_entry_calls_that_project_s_real_orchestrator():
