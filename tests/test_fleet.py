@@ -40,6 +40,193 @@ def _setup(monkeypatch, tmp_path, rows, beats):
     monkeypatch.setattr(fleet, "EVENTS", ev)
     monkeypatch.setattr(fleet, "BEAT_DIR", bd)
     monkeypatch.setattr(fleet, "BLOCKLIST", os.path.join(str(tmp_path), "nope.json"))
+    # The Loki beat cache is MODULE state and survives a test, so one case's stubbed heartbeat would
+    # silently satisfy the next case's assertion. That is the cross-test pollution this repo has
+    # already paid for once (the colt_auth reload in test_auth); clear it for every setup.
+    fleet._LOKI_CACHE["ts"] = 0.0
+    fleet._LOKI_CACHE["beats"] = {}
+    monkeypatch.delenv("LOKI_URL", raising=False)
+
+
+def _load_client(monkeypatch, **env):
+    """Import perseus/client.py FRESH under a given environment.
+
+    The paths it derives are read at import time, so a reload is the only honest way to test them.
+    """
+    import importlib.util
+    for k, v in env.items():
+        if v is None:
+            monkeypatch.delenv(k, raising=False)
+        else:
+            monkeypatch.setenv(k, v)
+    spec = importlib.util.spec_from_file_location(
+        "_perseus_client_probe", os.path.join(ROOT, "perseus", "client.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_the_beat_dir_follows_the_event_log_it_was_given(monkeypatch):
+    """THE jev.best DEFECT. BEAT_DIR was hardcoded to /var/log/colt/perseus_beats, but jev-api mounts
+    the shared colt_events volume at /coltevents. os.makedirs() then SUCCEEDED into the container's
+    own ephemeral overlay, so the beat was written where nothing reads it and no error was ever
+    raised -- the Fleet page reported UNGUARDED for a sidecar that was running correctly."""
+    c = _load_client(monkeypatch, EVENTS_LOG="/coltevents/events.log", PERSEUS_BEATS=None)
+    assert c.BEAT_DIR == os.path.join("/coltevents", "perseus_beats"), (
+        "the beat must land beside the event log on the SAME mounted volume; got %r" % c.BEAT_DIR)
+    assert "/var/log/colt" not in c.BEAT_DIR.replace("\\", "/"), (
+        "a hardcoded /var/log/colt beat path is exactly the jev.best defect")
+
+
+def test_the_shared_volume_projects_do_not_regress(monkeypatch):
+    """cybergod and jobhuntwow mount colt_events at /var/log/colt. The derivation must leave them
+    byte-identical, or fixing jev.best would have broken the two that already worked."""
+    c = _load_client(monkeypatch, EVENTS_LOG="/var/log/colt/events.log", PERSEUS_BEATS=None)
+    assert c.BEAT_DIR == os.path.join("/var/log/colt", "perseus_beats")
+
+
+def test_an_explicit_beats_override_still_wins(monkeypatch):
+    c = _load_client(monkeypatch, EVENTS_LOG="/coltevents/events.log",
+                     PERSEUS_BEATS="/somewhere/else")
+    assert c.BEAT_DIR == "/somewhere/else"
+
+
+def test_the_beat_is_printed_so_an_own_volume_project_is_still_observable(monkeypatch, capsys):
+    """klima beats onto polara_events and s4biz onto s4biz_events; colt-web mounts neither and must
+    not. Their beat can therefore never reach the Fleet page's directory read -- but stdout is
+    scraped by the docker log driver on this box, so it stays observable in Loki."""
+    c = _load_client(monkeypatch, EVENTS_LOG="/var/log/colt/events.log", SERVICE="klima-web",
+                     PERSEUS_BEATS=str(tmpdir_unwritable()))
+    c._CACHE["beat"] = 0
+    c._beat(7)
+    printed = [json.loads(ln) for ln in capsys.readouterr().out.splitlines()
+               if ln.strip().startswith("{") and '"perseus_beat"' in ln]
+    assert printed, "the heartbeat must reach stdout even when the directory write fails"
+    assert printed[0]["service"] == "klima-web" and printed[0]["cycle"] == 7
+
+
+def tmpdir_unwritable():
+    """A directory whose PARENT IS A FILE cannot be created on ANY operating system, so this
+    reproduces 'the beat directory is unreachable' identically on Windows and Linux."""
+    import tempfile
+    fd, p = tempfile.mkstemp()
+    os.close(fd)
+    return os.path.join(p, "beats")
+
+
+def test_an_own_log_project_is_never_called_not_installed(monkeypatch, tmp_path):
+    """ABSENCE OF EVIDENCE IS NEVER A FINDING, in the sidecar column too. klima and s4biz both carry
+    perseus_client AND call add_middleware (measured 2026-09-09), and both rendered as
+    'not installed' purely because their beat lands on a volume this container does not mount."""
+    _setup(monkeypatch, tmp_path, [], {})
+    own = [p for p in fleet.PROJECTS if p.get("own_log")]
+    assert own, "the fixture is meaningless if no project writes to its own volume"
+    rows = {r["service"]: r for r in fleet.status()["projects"]}
+    for proj in own:
+        r = rows[proj["service"]]
+        assert r["state"] == "elsewhere"
+        assert r["sidecar"] != "not installed", (
+            "%s: claiming 'not installed' for a beat we structurally cannot see reports OUR "
+            "blindness as a fact about THEM" % proj["service"])
+        assert r["sidecar"] == "unverifiable"
+
+
+class _Resp:
+    def __init__(self, body):
+        self._b = body.encode("utf-8")
+
+    def read(self):
+        return self._b
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _loki_body(service, ts, cycle=4):
+    line = json.dumps({"evt": "perseus_beat", "service": service, "ts": int(ts), "cycle": cycle})
+    return json.dumps({"data": {"result": [{"values": [["1", line]]}]}})
+
+
+def _arm_loki(monkeypatch, handler):
+    """Point fleet at a Loki and reset the per-minute cache, which would otherwise mask the call."""
+    import urllib.request
+    monkeypatch.setenv("LOKI_URL", "http://videodead-loki-1:3100/loki/api/v1/push")
+    fleet._LOKI_CACHE["ts"] = 0.0
+    fleet._LOKI_CACHE["beats"] = {}
+    monkeypatch.setattr(urllib.request, "urlopen", handler)
+
+
+def test_an_own_log_project_is_proven_by_its_stdout_beat(monkeypatch, tmp_path):
+    """klima's beat FILE lands on a volume this container does not mount, but perseus_client also
+    prints the beat and promtail ships stdout to the shared Loki. That is the only way this page can
+    ever say more than 'we cannot see it' without coupling cybergod's deploy to a sibling."""
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, lambda url, timeout=0: _Resp(_loki_body("polara-web", time.time())))
+    rows = {r["service"]: r for r in fleet.status()["projects"]}
+    r = rows["polara-web"]
+    assert r["sidecar"] == "active", "a heartbeat seen on stdout proves the sidecar is running"
+    assert r["state"] == "elsewhere", "traffic counts are still unreachable; only the beat is proven"
+    assert "stdout" in r["why"]
+
+
+def test_a_dead_loki_degrades_to_unverifiable_and_never_raises(monkeypatch, tmp_path):
+    """A status page must not break, or get WORSE, because an optional lookup failed. Absence of
+    evidence is not evidence, so the honest badge is the one we had before Loki was consulted."""
+    def boom(url, timeout=0):
+        raise OSError("connection refused")
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, boom)
+    rows = {r["service"]: r for r in fleet.status()["projects"]}
+    assert rows["polara-web"]["sidecar"] == "unverifiable"
+    assert rows["s4biz-web"]["sidecar"] == "unverifiable"
+
+
+def test_the_beat_file_outranks_loki_and_loki_is_not_consulted_for_it(monkeypatch, tmp_path):
+    """colt-web writes its own beat file and reads it back, so the file cannot lie about itself.
+    Loki answers only the question the file physically cannot."""
+    called = []
+
+    def watch(url, timeout=0):
+        called.append(url)
+        return _Resp(_loki_body("colt-web", 0, cycle=99))     # a stale, wrong answer
+
+    _setup(monkeypatch, tmp_path, [], {"colt-web": {"service": "colt-web", "ts": int(time.time()),
+                                                    "cycle": 7}})
+    _arm_loki(monkeypatch, watch)
+    rows = {r["service"]: r for r in fleet.status()["projects"]}
+    # Loki MUST actually have been asked, or the precedence assertion below is vacuous: a file beat
+    # trivially "wins" a race nobody else entered. (The query is fleet-wide, so it is asked on
+    # behalf of klima and s4biz and happens to carry a colt-web line too.)
+    assert called, "Loki was never consulted, so this test proves nothing about precedence"
+    assert rows["colt-web"]["sidecar_cycle"] == 7, "the file's own beat must win over Loki's line"
+    assert rows["colt-web"]["sidecar"] == "active"
+
+
+def test_the_query_url_is_derived_from_the_push_endpoint(monkeypatch):
+    monkeypatch.setenv("LOKI_URL", "http://videodead-loki-1:3100/loki/api/v1/push")
+    assert fleet._loki_query_url() == "http://videodead-loki-1:3100/loki/api/v1/query_range"
+    monkeypatch.delenv("LOKI_URL", raising=False)
+    assert fleet._loki_query_url() == "", "no LOKI_URL must mean no lookup, not a guessed host"
+
+
+def test_a_dead_loki_is_not_re_probed_on_every_request(monkeypatch, tmp_path):
+    """The cache is stamped BEFORE the request. Otherwise every admin page load would pay the full
+    timeout against a Loki that is down -- a status page that hangs is its own outage."""
+    n = [0]
+
+    def boom(url, timeout=0):
+        n[0] += 1
+        raise OSError("down")
+
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, boom)
+    fleet.status()
+    first = n[0]
+    fleet.status()
+    assert n[0] == first, "a failed lookup must be cached like a successful one"
 
 
 def test_a_project_with_no_logs_is_silent_not_quiet(monkeypatch, tmp_path):

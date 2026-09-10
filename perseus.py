@@ -320,8 +320,10 @@ ROLLOUT = [
     ("klimaanlage-preise.de",  os.environ.get("PERSEUS_KLIMA_ROOT",
                                               os.path.join(_PARENT, "Klima", "klima-shop")),
      ["ship.py"]),
-    # s4biz has a have-you-looked gate on its frontend; this rollout changes no UI there, so it is
-    # skipped explicitly rather than left to block a headless run.
+    # s4biz has a have-you-looked gate on its frontend. This rollout changes no UI there, so the gate
+    # is waived with --no-preview rather than allowed to block a headless run. (This comment used to
+    # say s4biz was "skipped explicitly" while the entry below deployed it -- a comment that
+    # contradicts the line under it is worse than no comment, because it is read instead of the code.)
     ("s4biz.io",               os.environ.get("PERSEUS_S4BIZ_ROOT",
                                               r"C:\Users\feran\Downloads\S4biz new website"),
      ["ship.py", "--no-preview"]),

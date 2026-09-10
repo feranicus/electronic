@@ -78,6 +78,85 @@ def _beats():
     return out
 
 
+def _loki_query_url():
+    """LOKI_URL in colt-web's .env is the PUSH endpoint the deploy writes
+    (http://videodead-loki-1:3100/loki/api/v1/push). The query API is the same host, other path."""
+    u = os.environ.get("LOKI_URL", "")
+    return (u.split("/loki/api/v1/")[0] + "/loki/api/v1/query_range") if "/loki/api/v1/" in u else ""
+
+
+LOKI_TIMEOUT_S = float(os.environ.get("PERSEUS_LOKI_TIMEOUT", "3"))
+_LOKI_CACHE = {"ts": 0.0, "beats": {}}
+# Tried in order; the FIRST that returns anything wins. See _loki_beats for why this is a list.
+LOKI_BEAT_SELECTORS = [s for s in os.environ.get(
+    "PERSEUS_LOKI_SELECTORS", '{container=~".+"}:{job=~".+"}:{service_name=~".+"}').split(":") if s]
+
+
+def _loki_beats():
+    """The heartbeat of a project whose beat FILE this container cannot reach.
+
+    klima and s4biz write their heartbeat beside their OWN event log, on a volume colt-web does not
+    mount and must not -- that `external:` coupling is exactly what the staging gate refused, and a
+    status page is never worth making cybergod's deploy depend on a sibling project. But
+    `perseus_client._beat()` also PRINTS the beat to stdout, and this box's promtail ships every
+    container's stdout to the SAME Loki. So the beat is OBSERVABLE even where the file is not, which
+    is the same accident that made the jobhuntwow abuse reconstructable, used deliberately.
+
+    THE UNPROVEN PART, STATED RATHER THAN HIDDEN: the label scheme of that promtail is not verified
+    from here, and this repository has already paid a week for querying a label that was never
+    deployed. So several candidate selectors are tried and the first that returns anything wins; the
+    line filter does the real work because "perseus_beat" is a rare string. If NONE answers, this
+    returns {} and the caller degrades to exactly the previous behaviour -- it can make the page
+    more accurate, never less.
+    """
+    now = time.time()
+    if now - _LOKI_CACHE["ts"] < 60:
+        return _LOKI_CACHE["beats"]
+    _LOKI_CACHE["ts"] = now                       # stamp first: a dead Loki must not be retried per request
+    base = _loki_query_url()
+    if not base:
+        return _LOKI_CACHE["beats"]
+    import urllib.parse
+    import urllib.request
+    found = {}
+    for sel in LOKI_BEAT_SELECTORS:
+        try:
+            q = '%s |= "perseus_beat"' % sel
+            url = "%s?%s" % (base, urllib.parse.urlencode({
+                "query": q, "start": "%d000000000" % int(now - STALE_BEAT_S),
+                "end": "%d000000000" % int(now), "limit": 200, "direction": "backward"}))
+            with urllib.request.urlopen(url, timeout=LOKI_TIMEOUT_S) as r:
+                doc = json.loads(r.read().decode("utf-8", "replace"))
+            for stream in (doc.get("data") or {}).get("result") or []:
+                for _ts, line in stream.get("values") or []:
+                    try:
+                        d = json.loads(line[line.index("{"):])
+                    except Exception:
+                        continue
+                    if isinstance(d, dict) and d.get("evt") == "perseus_beat" and d.get("service"):
+                        prev = found.get(d["service"]) or {}
+                        if int(d.get("ts") or 0) >= int(prev.get("ts") or 0):
+                            found[d["service"]] = d
+            if found:
+                break                              # this selector works; stop probing the others
+        except Exception:
+            continue                               # a dead Loki is not evidence about any project
+    _LOKI_CACHE["beats"] = found
+    return found
+
+
+def _all_beats():
+    """File beats, plus Loki-observed beats ONLY for projects whose beat file we cannot reach.
+
+    The file is authoritative where it exists: colt-web writes it and reads it, so it cannot lie
+    about itself. Loki is consulted only to answer the question the file physically cannot."""
+    out = _beats()
+    if any(p.get("own_log") and p["service"] not in out for p in PROJECTS):
+        for svc, d in _loki_beats().items():
+            out.setdefault(svc, d)
+    return out
+
+
 def _tail_events(limit_bytes=4_000_000):
     rows = []
     for path in [EVENTS] + EXTRA_EVENTS:
@@ -181,7 +260,7 @@ def watch(seen_ts, alert):
 
 
 def status():
-    beats, rows, now = _beats(), _tail_events(), time.time()
+    beats, rows, now = _all_beats(), _tail_events(), time.time()
     pub = _cycle()
 
     per = {}
@@ -222,9 +301,28 @@ def status():
             # A FOURTH STATE, because collapsing it into SILENT would be the very error this module
             # exists to prevent: reporting where WE looked as a fact about THEM.
             state = "elsewhere"
-            why = ("writes to its own event volume (%s), which this container does not mount. Not "
-                   "silent, not unseen -- run `python fleet.py` from the operator's machine, which "
-                   "reads every project's own log over ssh." % proj["own_log"])
+            # ...AND THE SIDECAR BADGE HAD TO SAY THE SAME THING. It kept reading "not installed",
+            # which is that identical error one column over: the beat for an own-log project is
+            # written BESIDE ITS OWN EVENT LOG, on a volume this container does not mount, so the
+            # directory read above can never see it no matter how healthy the sidecar is. Measured
+            # 2026-09-09: klima and s4biz both carry perseus_client AND call add_middleware, and both
+            # rendered as unguarded purely because of this line.
+            if sidecar == "not installed":
+                sidecar = "unverifiable"
+            if sidecar == "active":
+                # The beat came from the project's stdout via Loki, because its beat FILE lands on a
+                # volume this container does not mount. The sidecar is proven running; only the
+                # TRAFFIC counts remain unreachable, which is what keeps the state `elsewhere`.
+                why = ("sidecar heartbeat confirmed via stdout (cycle %s). Its traffic counts write "
+                       "to its own event volume (%s), which this container does not mount, so the "
+                       "numbers below stay blank -- run `python fleet.py` for those."
+                       % ((b or {}).get("cycle"), proj["own_log"]))
+            else:
+                why = ("writes to its own event volume (%s), which this container does not mount -- "
+                       "so neither its traffic NOR its sidecar heartbeat can reach this page. This "
+                       "is our blind spot, not a missing control. Run `python fleet.py` from the "
+                       "operator's machine, which reads every project's own log over ssh."
+                       % proj["own_log"])
         elif not m:
             state = "silent"
             why = ("no log line in %dh. We are BLIND to this project, which is NOT the same as it "
