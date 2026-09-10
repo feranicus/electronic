@@ -799,6 +799,108 @@ def test_the_deploy_never_replaces_the_shared_caddyfile_inode():
         "a failed substitution must never blank the file that serves six domains"
 
 
+# --------------------------------------------------------- AI SOC: one word, and it means DECIDING
+# Operator: "below each project there needs to be one word: AI Soc, Telegram Reporting ... AI SOC
+# active meaning it needs to make its own full decisions based on every attack, based on daily
+# results, based on weekly results."
+
+def _soc(monkeypatch, tmp_path, *, local, enforcing, daily, weekly, watch, svc="colt-web",
+         rows=None):
+    """One row, with every input to the AI SOC word under the test's control.
+
+    `svc` matters: fleet.py sets alerting="self" for colt-web unconditionally, because colt-web owns
+    notify.py. To exercise the BLIND branch the subject must be an own-log project. I asserted on
+    that before reading it and the test was wrong; the parameter exists so the next person does not
+    have to make the same mistake to find out."""
+    now = int(time.time())
+    beat = {"service": svc, "ts": now, "cycle": 3, "local": local, "enforcing": enforcing}
+    if rows is None:
+        rows = [{"ts": now - 5, "evt": "http", "service": svc, "ip": "1.1.1.1", "path": "/"}]
+    _setup(monkeypatch, tmp_path, rows, {svc: beat})
+    monkeypatch.setattr(fleet, "_cycle", lambda: {
+        "cycle": 4 if daily else 0, "patterns": 2, "age_s": 60, "readable": True,
+        "enforcing": bool(daily), "generated": now, "path": "x", "err": None})
+    monkeypatch.setattr(fleet, "_fresh", lambda p, m: (
+        (weekly, 10) if "weekly" in p else (watch, 10)))
+    return {r["service"]: r for r in fleet.status()["projects"]}[svc]
+
+
+def test_ai_soc_is_ACTIVE_only_when_all_three_loops_decide(monkeypatch, tmp_path):
+    """The positive control first, so the assertions below cannot pass by never being reachable."""
+    r = _soc(monkeypatch, tmp_path, local=True, enforcing=True,
+             daily=True, weekly=True, watch=True)
+    assert r["soc"] == "active", r["soc_why"]
+    assert r["telegram"] == "active"
+
+
+def test_ai_soc_is_never_ACTIVE_when_a_loop_is_stale(monkeypatch, tmp_path):
+    """Each loop is defeated ON ITS OWN, with the other two healthy, so a pass cannot come from
+    some other guard. `active` is a conjunction or it is a decoration."""
+    for name, kw in (("per-incident", dict(watch=False)),
+                     ("daily", dict(daily=False)),
+                     ("weekly", dict(weekly=False))):
+        base = dict(local=True, enforcing=True, daily=True, weekly=True, watch=True)
+        base.update(kw)
+        r = _soc(monkeypatch, tmp_path, **base)
+        assert r["soc"] == "partial", "%s loop stale but SOC said %r" % (name, r["soc"])
+        assert r["soc_why"], "a one-word verdict with no reason is unreadable on a bad day"
+
+
+def test_a_sidecar_that_is_up_but_not_armed_is_OFF_not_active(monkeypatch, tmp_path):
+    """THE WHOLE POINT. `enforcing cycle 0` looked like health for weeks. A process being up is what
+    the sidecar column says; this column may only ever mean decisions are being taken."""
+    r = _soc(monkeypatch, tmp_path, local=True, enforcing=False,
+             daily=True, weekly=True, watch=True)
+    assert r["soc"] == "off"
+
+
+def test_a_project_the_brain_cannot_read_is_PARTIAL_and_its_telegram_is_OFF(monkeypatch, tmp_path):
+    """No traffic reaching the brain means no incident here is ever judged and no message is ever
+    sent. Reporting that as `active` because the sidecar is alive is the confident-zero defect."""
+    # polara-web keeps its own event volume, so with the traffic lookup off (the shipped default)
+    # and no rows, fleet.py reports alerting="blind" - a measured gap, not our blindness.
+    r = _soc(monkeypatch, tmp_path, local=True, enforcing=True,
+             daily=True, weekly=True, watch=True, svc="polara-web", rows=[])
+    assert r["alerting"] == "blind", "the fixture did not reach the blind branch (%s)" % r["alerting"]
+    assert r["soc"] == "partial", r["soc_why"]
+    assert r["telegram"] == "off"
+
+
+def test_an_old_sidecar_that_cannot_report_is_UNKNOWN_never_off(monkeypatch, tmp_path):
+    """A heartbeat from before the local shield existed carries no `local` key. Absence of evidence
+    is not evidence: it is not proof the project is unguarded, and must not be drawn as such."""
+    r = _soc(monkeypatch, tmp_path, local=None, enforcing=None,
+             daily=True, weekly=True, watch=True)
+    assert r["soc"] == "unknown", r["soc_why"]
+
+
+def test_every_soc_word_exists_in_all_six_locales():
+    """The catalogue gate fails the BUILD on a missing key, and this says which one before the ship
+    spends four minutes finding out."""
+    import re as _re
+    loc = os.path.join(ROOT, "webapp", "frontend", "src", "locales")
+    need = ["fleet.colSoc", "fleet.colTg"] + \
+           ["fleet.soc." + w for w in ("active", "partial", "off", "unknown")]
+    for lang in ("en", "de", "it", "fr", "es", "pl"):
+        src = open(os.path.join(loc, "%s.js" % lang), encoding="utf-8").read()
+        missing = [k for k in need if '"%s"' % k not in src]
+        assert not missing, "%s.js is missing %s" % (lang, missing)
+        for k in need:
+            v = _re.search(r'"%s":\s*"([^"]*)"' % _re.escape(k), src)
+            assert v and v.group(1).strip(), "%s: %s is empty" % (lang, k)
+
+
+def test_the_row_carries_no_paragraph_any_more():
+    """The operator: "the too much text is terrible". Every row rendered its full explanation as
+    body text and the numbers fell off the screen. The words are kept, on `title`."""
+    src = open(os.path.join(ROOT, "webapp", "frontend", "src", "pages", "Fleet.jsx"),
+               encoding="utf-8").read()
+    assert '<div className="fleet-why">{p.why}</div>' not in src, \
+        "the per-row explanation is back as body text; it belongs on title="
+    assert "title={p.why}" in src, "the explanation must still be REACHABLE, just not shouted"
+    assert "title={p.soc_why}" in src, "a one-word verdict must carry its reason somewhere"
+
+
 def test_the_endpoint_is_admin_only():
     """Hiding a tab is presentation. The route must depend on _require_admin, or anyone can issue
     the request the tab would have issued."""

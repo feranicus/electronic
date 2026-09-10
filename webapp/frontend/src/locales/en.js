@@ -58,6 +58,15 @@ export const keyed = {
   "fleet.pubNone": "Loki answered, and holds no publish line at all in the window: the brain has not published once.",
   "fleet.pubRuns": "publish runs recorded in the window",
   "fleet.pubFailed": "of them failed",
+  "fleet.colSoc": "AI SOC",
+  "fleet.colTg": "Telegram",
+  // ONE WORD, and `active` is a conjunction the backend measures: armed locally, readable by the
+  // brain, and all three autonomous loops current (per incident, daily, weekly). It can never mean
+  // "the process is up" - that is what the sidecar column already says.
+  "fleet.soc.active": "active",
+  "fleet.soc.partial": "partial",
+  "fleet.soc.off": "off",
+  "fleet.soc.unknown": "unknown",
   "fleet.colEnforce": "Enforcing",
   "fleet.colRules": "Rules",
   "fleet.colAlerting": "Alerting",

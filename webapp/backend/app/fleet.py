@@ -654,6 +654,13 @@ def status():
                    for e in ("unknown", "none", "armed", "empty", "active")},
           alerting={a: sum(1 for p in out["projects"] if p.get("alerting") == a)
                     for a in ("self", "covered", "unknown", "blind")},
+          # The two words the operator reads off the page, and the loops behind the first one, so a
+          # move from 0 to 5 is observable in Loki instead of discovered by opening the tab.
+          soc={s: sum(1 for p in out["projects"] if p.get("soc") == s)
+               for s in ("unknown", "off", "partial", "active")},
+          telegram_on=out.get("telegram_on"),
+          brain_loops=(out.get("brain") or {}).get("loops_ok"),
+          brain_known=(out.get("brain") or {}).get("loops_known"),
           published_cycle=(out.get("published") or {}).get("cycle"),
           published_patterns=(out.get("published") or {}).get("patterns"),
           published_readable=(out.get("published") or {}).get("readable"),
@@ -672,6 +679,51 @@ def status():
     return out
 
 
+WEEKLY_STATE = os.environ.get("PERSEUS_WEEKLY_STATE", "/var/log/colt/perseus_weekly.json")
+WATCH_STATE = os.environ.get("PERSEUS_WATCH_STATE", "/var/log/colt/perseus_watch.json")
+
+
+def _fresh(path, max_age_s):
+    """(ran_at_least_once, age_s) for one of the brain's state files, or (None, None) when it
+    cannot be read. None is NOT False: a file we cannot open says nothing about whether the job
+    ran, and this page does not turn our own blindness into a verdict about the system."""
+    try:
+        d = json.load(open(path, encoding="utf-8"))
+        age = int(time.time() - os.path.getmtime(path))
+        ran = int((d or {}).get("runs") or 0) >= 1 or bool((d or {}).get("generated"))
+        return (bool(ran) and age <= max_age_s), age
+    except Exception:
+        return None, None
+
+
+def _brain():
+    """ARE THE THREE AUTONOMOUS LOOPS ALIVE? One reader, three files, all on the shared volume.
+
+    "AI SOC active" is a claim about DECISION MAKING, not about a process being up, so it is only
+    ever true when all three of the loops that make decisions have actually produced their artifact
+    recently:
+
+        per incident   perseus-watch   every 10 min   four vendors on ONE live burst
+        daily          perseus         04:40 UTC      mine, vet, promote, publish
+        weekly         perseus-weekly  Sun 05:20 UTC  re-vet live rules, retire the dormant
+
+    Any of them missing and the honest word is `partial`, never `active`. This is the same rule the
+    installer now enforces at deploy time; the page must not be more generous than the gate.
+    """
+    pub = _cycle()
+    daily = None
+    if pub.get("readable") is True:
+        daily = bool((pub.get("cycle") or 0) >= 1 and (pub.get("age_s") or 0) <= 48 * 3600)
+    elif pub.get("readable") is False:
+        daily = False
+    weekly, w_age = _fresh(WEEKLY_STATE, 8 * 86400)
+    watch, i_age = _fresh(WATCH_STATE, 3600)
+    known = [x for x in (daily, weekly, watch) if x is not None]
+    return {"daily": daily, "weekly": weekly, "watch": watch,
+            "weekly_age_s": w_age, "watch_age_s": i_age,
+            "loops_ok": sum(1 for x in known if x), "loops_known": len(known)}
+
+
 def _status():
     # ONE read of the traffic cache, taken FIRST and then handed to _tail_events, so the counts and
     # the badge that explains them describe the same snapshot. This read never blocks: the request
@@ -680,6 +732,14 @@ def _status():
     _lrows, _lok, _lpartial = _loki_events()
     beats, rows, now = _all_beats(), _tail_events(loki_rows=_lrows), time.time()
     pub = _cycle()
+    # Read ONCE for the whole response, like the traffic cache above: the three loop files are the
+    # same answer for every row, and re-reading them per project would let a mid-render write make
+    # two rows disagree about the same fleet.
+    try:
+        brain = _brain()
+    except Exception as exc:
+        brain = {"daily": None, "weekly": None, "watch": None, "weekly_age_s": None,
+                 "watch_age_s": None, "loops_ok": 0, "loops_known": 0, "err": repr(exc)[:160]}
     # AN OPTIONAL LOOKUP MAY NEVER 500 THE PAGE. This one is three dict operations and a daemon
     # thread, so it "cannot" raise -- which is exactly what was said about the last two things that
     # took this page down. It degrades to "no query has completed", which is precisely true when the
@@ -848,9 +908,52 @@ def _status():
             state = "observed"
             why = ("logging, but no sidecar heartbeat: this project is visible and UNGUARDED. "
                    "perseus_client is not wired into its request path.")
+        # ---- AI SOC: ONE WORD, and it means DECISIONS ARE BEING MADE FOR THIS PROJECT ----------
+        # The operator asked for one word per project with the same vocabulary as the sidecar badge,
+        # and for `active` to mean the thing acts on its own behalf: per attack, per day, per week.
+        # So it is a conjunction, and it is measured, never asserted:
+        #   local   this project's own heartbeat says the shield is loaded AND armed here
+        #   read    the brain can see this project's traffic, or it would have no incident to judge
+        #   loops   all three autonomous loops have produced an artifact recently (see _brain)
+        # Anything short of all three is `partial`. Anything we cannot see is `unknown`, never `off`.
+        loc = (b or {}).get("local")
+        enf = (b or {}).get("enforcing")
+        if sidecar in ("not installed", "unverifiable") or b is None:
+            soc, soc_why = "unknown", ("no heartbeat reaches this page, so whether anything decides "
+                                       "for this project cannot be measured from here")
+        elif loc is None:
+            soc, soc_why = "unknown", ("this sidecar predates the local shield and does not report "
+                                       "whether it can act - redeploy the project to find out")
+        elif not loc or not enf:
+            soc, soc_why = "off", "the sidecar reports it is present but not armed to act locally"
+        elif alerting == "blind":
+            soc, soc_why = "partial", ("armed locally, but the brain cannot read this project's "
+                                       "traffic, so no incident here is ever judged by the panel")
+        elif brain["loops_known"] < 3:
+            soc, soc_why = "partial", ("armed locally; %d of 3 brain loops could not be read"
+                                       % (3 - brain["loops_known"]))
+        elif brain["loops_ok"] < 3:
+            soc, soc_why = "partial", (
+                "armed locally, but only %d of 3 autonomous loops are current (per-incident %s, "
+                "daily %s, weekly %s)" % (brain["loops_ok"],
+                                          "ok" if brain["watch"] else "stale",
+                                          "ok" if brain["daily"] else "stale",
+                                          "ok" if brain["weekly"] else "stale"))
+        else:
+            soc, soc_why = "active", ("deciding on its own: per incident every 10 min, daily at "
+                                      "04:40, weekly on Sunday")
+
+        # ---- TELEGRAM: ONE WORD. Does an attack HERE reach the operator? ----------------------
+        # colt-web owns notify.py and the bot token; nothing else may. So a project reaches Telegram
+        # exactly when the brain can read its lines. `self` and `covered` are both yes.
+        tg = {"self": "active", "covered": "active",
+              "blind": "off", "unknown": "unknown"}.get(alerting, "unknown")
+
         out.append({
             "key": proj["key"], "name": proj["name"], "service": svc,
             "state": state, "why": why,
+            "soc": soc, "soc_why": soc_why,
+            "telegram": tg,
             "sidecar": sidecar, "sidecar_age_s": beat_age,
             "sidecar_cycle": (b or {}).get("cycle"),
             "checks": (b or {}).get("checks"),
@@ -879,6 +982,11 @@ def _status():
         "generated": int(now),
         "window_h": WINDOW_S // 3600,
         "published": pub,
+        # The three autonomous loops, as the page's own summary. `soc_active` is the number the
+        # operator actually asked for: how many of five decide for themselves.
+        "brain": brain,
+        "soc_active": sum(1 for p in out if p["soc"] == "active"),
+        "telegram_on": sum(1 for p in out if p["telegram"] == "active"),
         "events_log": EVENTS,
         "beats_dir": BEAT_DIR,
         "projects": out,

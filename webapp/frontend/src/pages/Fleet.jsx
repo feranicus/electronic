@@ -51,6 +51,10 @@ function agoOr(s, t) {
 // enforcing nothing is the state this panel exists to make impossible to misread as health.
 const ETONE = { active: "ok", armed: "warn", empty: "bad", none: "bad", unknown: "" };
 const ATONE = { self: "ok", covered: "ok", unknown: "", blind: "bad" };
+// ONE VOCABULARY for the two SOC columns and the sidecar badge. `off` is BAD rather than neutral:
+// a project that decides nothing for itself is the state the operator asked to be able to see at a
+// glance, and drawing it grey is how it stayed invisible.
+const SOCTONE = { active: "ok", partial: "warn", off: "bad", unknown: "" };
 
 // `elsewhere` is NEUTRAL, deliberately: the project keeps its own event volume and this container
 // does not mount it. Colouring it like SILENT would repeat the exact error this page exists to
@@ -149,6 +153,8 @@ function FleetBody({ d, t, blind, unguarded }) {
               <th>{t("fleet.project")}</th>
               <th>{t("fleet.state")}</th>
               <th>{t("fleet.sidecar")}</th>
+              <th>{t("fleet.colSoc")}</th>
+              <th>{t("fleet.colTg")}</th>
               <th>{t("fleet.req")}</th>
               <th>{t("fleet.att")}</th>
               <th>{t("fleet.vis")}</th>
@@ -159,18 +165,32 @@ function FleetBody({ d, t, blind, unguarded }) {
           <tbody>
             {d.projects.map((p) => (
               <tr key={p.key}>
-                <td>
-                  <b>{p.name}</b>
-                  <div className="fleet-why">{p.why}</div>
-                </td>
+                {/* THE REASON IS A TOOLTIP, NOT A PARAGRAPH. Every row carried its full
+                    explanation as body text, which pushed the numbers off the screen and made five
+                    rows unreadable at a glance. The words still exist and are still honest - they
+                    are on `title`, where they answer a question instead of asking one. */}
+                <td title={p.why}><b>{p.name}</b></td>
                 <td><span className={"pill " + (TONE[p.state] || "")}>{t("fleet.s." + p.state)}</span></td>
-                <td>
+                <td title={t("fleet.beat") + " " + ago(p.sidecar_age_s)}>
                   <span className={"pill " + (p.sidecar === "active" ? "ok" : "warn")}>
                     {t("fleet.sc." + p.sidecar.replace(" ", "_"))}
                   </span>
-                  {p.sidecar !== "not installed" ? (
-                    <div className="fleet-why">{t("fleet.beat")} {ago(p.sidecar_age_s)}</div>
-                  ) : null}
+                </td>
+                {/* AI SOC and TELEGRAM: one word each, in the SAME vocabulary as the sidecar badge,
+                    because the operator reads this row left to right and a second dialect in the
+                    middle of it is a second thing to learn. `active` here is a conjunction the
+                    backend measures - armed locally, readable by the brain, and all three loops
+                    current - so it can never mean "the process is up". */}
+                <td title={p.soc_why}>
+                  <span className={"pill " + (SOCTONE[p.soc] || "")}>
+                    {t("fleet.soc." + (p.soc || "unknown"))}
+                  </span>
+                </td>
+                <td title={t("fleet.a." + (p.alerting || "unknown")) + ": "
+                           + t("fleet.a." + (p.alerting || "unknown") + "Why")}>
+                  <span className={"pill " + (SOCTONE[p.telegram] || "")}>
+                    {t("fleet.soc." + (p.telegram || "unknown"))}
+                  </span>
                 </td>
                 <td>{p.requests_24h}</td>
                 <td className={p.attacks_24h ? "bad" : ""}>{p.attacks_24h}</td>
