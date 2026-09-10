@@ -492,7 +492,12 @@ def status():
           loki_events_on=LOKI_EVENTS_ON, loki_ok=out.get("loki_ok"),
           loki_partial=out.get("loki_partial"),
           loki_rows=len(_LOKI_EVENTS.get("rows") or []),
-          loki_cache_age_s=int(time.time() - (_LOKI_EVENTS.get("ts") or 0)),
+          # None, not a number, when the cache has NEVER been filled. `now - 0.0` printed
+          # 1,789,033,753 -- seconds since 1970 dressed up as a cache age. Nobody would act on
+          # that, which is the charitable reading; the uncharitable one is that a plausible-looking
+          # figure in the next investigation is worse than an honest blank. Same rule the page
+          # itself enforces on the projects: never render a number for something not measured.
+          loki_cache_age_s=(int(time.time() - _LOKI_EVENTS["ts"]) if _LOKI_EVENTS.get("ts") else None),
           beats_dir=BEAT_DIR, events_log=EVENTS)
     return out
 
@@ -568,12 +573,23 @@ def _status():
                 # traffic is normally read from Loki too (see _loki_events) -- reaching this line
                 # means that lookup returned nothing, which is a statement about LOKI, never about
                 # the project. Say which, because "quiet" and "unreadable" are different facts.
+                # THREE DIFFERENT FACTS, AND THE PAGE MUST NOT CONFLATE THEM. "We did not ask",
+                # "we asked and Loki did not answer" and "Loki answered with nothing" are not the
+                # same statement, and the first is now the normal case: the traffic lookup defaults
+                # off until it has been seen working. Saying "did not answer" when we never asked
+                # would be this page inventing evidence about a system it did not query.
+                if not LOKI_EVENTS_ON:
+                    lk = ("the traffic lookup is TURNED OFF on this box (PERSEUS_LOKI_EVENTS), so "
+                          "we did not ask")
+                elif _lok:
+                    lk = "Loki was asked and returned no lines for it"
+                else:
+                    lk = "Loki was asked and did not answer"
                 why = ("sidecar heartbeat confirmed via stdout (cycle %s), but its TRAFFIC could "
-                       "not be read: its event volume (%s) is not mounted here and Loki %s. The "
+                       "not be read: its event volume (%s) is not mounted here and %s. The "
                        "zeros below are our blind spot, NOT a quiet project -- run "
                        "`python fleet.py`, which reads its own log over ssh."
-                       % ((b or {}).get("cycle"), proj["own_log"],
-                          "returned no lines for it" if _lok else "did not answer"))
+                       % ((b or {}).get("cycle"), proj["own_log"], lk))
             else:
                 why = ("writes to its own event volume (%s), which this container does not mount -- "
                        "so neither its traffic NOR its sidecar heartbeat can reach this page. This "

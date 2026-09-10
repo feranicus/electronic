@@ -161,6 +161,17 @@ def _arm_loki(monkeypatch, handler):
     monkeypatch.setattr(urllib.request, "urlopen", handler)
 
 
+def _enable_traffic(monkeypatch):
+    """Opt IN to the Loki traffic lookup for the tests that are about it.
+
+    It ships OFF (see test_the_loki_traffic_lookup_is_OFF_until_it_has_been_seen_working): it broke
+    the Admin page twice and has never been observed working. The code and these tests stay, so the
+    feature can be turned on per box and verified from its own telemetry rather than rewritten from
+    scratch later. Enabling it explicitly here also keeps the default honest -- a test that quietly
+    flipped it would leave nothing asserting the shipped value."""
+    monkeypatch.setattr(fleet, "LOKI_EVENTS_ON", True)
+
+
 def _rows_after_refresh():
     """status() READS the traffic cache and never fills it -- that is what stopped the Admin page
     hanging, and it is asserted separately in test_the_page_never_waits_on_loki.
@@ -254,6 +265,7 @@ def _loki_router(traffic):
 
 def test_an_own_log_project_gets_REAL_counts_from_loki_not_zeros(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path, [], {})
+    _enable_traffic(monkeypatch)
     _arm_loki(monkeypatch, _loki_router({"polara-web": [
         _http_line("polara-web", "203.0.113.5", "/"),
         _http_line("polara-web", "203.0.113.6", "/produkte"),
@@ -278,6 +290,7 @@ def test_one_request_logged_twice_is_counted_once(monkeypatch, tmp_path):
     side = json.dumps({"evt": "http", "service": "polara-web", "ip": "203.0.113.5", "method": "GET",
                        "path": "/", "ts": ts, "ms": 3})
     _setup(monkeypatch, tmp_path, [], {})
+    _enable_traffic(monkeypatch)
     _arm_loki(monkeypatch, _loki_router({"polara-web": [app, side]}))
     r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 1, "the same request was counted twice (%d)" % r["requests_24h"]
@@ -291,6 +304,7 @@ def test_a_dead_loki_never_renders_an_own_log_project_as_a_confident_zero(monkey
         raise OSError("connection refused")
     _setup(monkeypatch, tmp_path, [], {"polara-web": {"service": "polara-web",
                                                       "ts": int(time.time()), "cycle": 3}})
+    _enable_traffic(monkeypatch)
     _arm_loki(monkeypatch, boom)
     r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 0
@@ -306,6 +320,7 @@ def test_the_alerting_loop_pages_on_an_own_log_project_scanner(monkeypatch, tmp_
     s4biz were scanned in silence -- the jobhuntwow shape exactly."""
     ip = "185.177.72.56"
     _setup(monkeypatch, tmp_path, [], {})
+    _enable_traffic(monkeypatch)
     _arm_loki(monkeypatch, _loki_router({"polara-web": [
         _http_line("polara-web", ip, p)
         for p in ("/.env", "/wp-login.php", "/.git/config", "/phpinfo", "/admin/config.php")
@@ -321,6 +336,7 @@ def test_a_heartbeat_line_is_never_counted_as_traffic(monkeypatch, tmp_path):
     traffic query. Counting ~1440 beats a day as requests would inflate every own-log row and eat
     the line budget that real requests need."""
     _setup(monkeypatch, tmp_path, [], {})
+    _enable_traffic(monkeypatch)
     _arm_loki(monkeypatch, lambda url, timeout=0: _Resp(_loki_body("polara-web", time.time())))
     r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 0 and r["attacks_24h"] == 0
@@ -337,6 +353,7 @@ def test_a_dead_loki_is_not_re_probed_on_every_request(monkeypatch, tmp_path):
         raise OSError("down")
 
     _setup(monkeypatch, tmp_path, [], {})
+    _enable_traffic(monkeypatch)
     _arm_loki(monkeypatch, boom)
     _rows_after_refresh()
     first = n[0]
@@ -368,6 +385,7 @@ def test_the_page_never_waits_on_loki(monkeypatch, tmp_path):
         raise OSError("down")
 
     _setup(monkeypatch, tmp_path, [], {})
+    _enable_traffic(monkeypatch)
     _arm_loki(monkeypatch, watch)
     st = fleet.status()
     assert st["projects"], "the page must still render on a COLD cache, with no numbers yet"
@@ -565,6 +583,121 @@ def test_the_deploy_proves_the_fleet_endpoint_computes_in_the_container():
     assert "docker exec colt-web python3" in code and "fleet.status()" in code, \
         "the deploy must actually call fleet.status() inside the container"
     assert "sys.exit(1" in code, "the check must be able to FAIL, or it is not a check"
+
+
+# ------------------------------------------------- the observer was the one unobserved thing (09-10)
+# Operator: "we don't have visibility that that is what causing the issue now". Every request on
+# this box is observed except the page whose entire job is observing, so when it broke there was
+# nothing to read. Defect class 1, aimed at the observer itself.
+
+def test_every_call_to_the_page_reports_what_it_did(monkeypatch, tmp_path):
+    """One telemetry line per call, through the SAME writer as access logging, carrying the things
+    this page can be wrong about: how long it took, how many projects, the state histogram, and
+    whether the Loki lookup was on, answered, and how stale its cache is."""
+    seen = []
+    monkeypatch.setattr(fleet, "_emit", lambda **k: seen.append(k))
+    _setup(monkeypatch, tmp_path, [], {})
+    fleet.status()
+    assert len(seen) == 1, "exactly one line per call, not zero and not one per project"
+    e = seen[0]
+    assert e["evt"] == "fleet_status" and e["outcome"] == "ok"
+    assert e["projects"] == len(fleet.PROJECTS)
+    assert sum(e["states"].values()) == len(fleet.PROJECTS), "the histogram must cover every row"
+    for k in ("ms", "loki_events_on", "loki_rows", "loki_cache_age_s", "beats_dir", "events_log"):
+        assert k in e, "the line must carry %s or it cannot explain a slow or blind page" % k
+    # A cache that has NEVER been filled has no age. The first shipped line reported
+    # loki_cache_age_s=1789033753 -- seconds since 1970 wearing a cache-age label, because
+    # `now - 0.0` is not an age. This page refuses to print unmeasured numbers for the projects;
+    # its own telemetry does not get an exemption.
+    assert e["loki_cache_age_s"] is None, \
+        "an unfilled cache has no age, and %r is an epoch, not one" % e["loki_cache_age_s"]
+    fleet._LOKI_EVENTS.update(ts=time.time() - 42)
+    seen.clear()
+    fleet.status()
+    assert 40 <= seen[0]["loki_cache_age_s"] <= 45, \
+        "...but a cache that HAS been filled must report a real age (%r)" % seen[0]["loki_cache_age_s"]
+
+
+def test_a_failure_is_reported_before_it_is_raised(monkeypatch, tmp_path):
+    """The route renders the cause for the operator; this line is what makes it SEARCHABLE later,
+    under the same evt name as the success path so one query shows both."""
+    seen = []
+    monkeypatch.setattr(fleet, "_emit", lambda **k: seen.append(k))
+    monkeypatch.setattr(fleet, "_status", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    try:
+        fleet.status()
+    except RuntimeError:
+        pass
+    else:
+        assert False, "status() must still RAISE - the route is what decides how to render it"
+    assert seen and seen[0]["outcome"] == "error" and "boom" in seen[0]["err"]
+    assert seen[0]["evt"] == "fleet_status", "same key as the success path, or one query misses half"
+
+
+def test_telemetry_can_never_break_the_page_it_observes(monkeypatch, tmp_path):
+    """A page that dies because its logging died is worse than a page with no logging."""
+    def boom(**k):
+        raise RuntimeError("the log volume is full")
+    _setup(monkeypatch, tmp_path, [], {})
+    import app.telemetry as _t
+    monkeypatch.setattr(_t, "emit", boom)
+    st = fleet.status()
+    assert len(st["projects"]) == len(fleet.PROJECTS)
+
+
+def test_the_page_does_not_count_its_own_telemetry_as_traffic(monkeypatch, tmp_path):
+    """_emit writes to the shared events log, which status() reads. The browser polls every 30s, so
+    without this the page would invent ~2,880 lines a day for colt-web and be measuring itself."""
+    now = int(time.time())
+    _setup(monkeypatch, tmp_path, [
+        {"ts": now - 5, "evt": "fleet_status", "service": "colt-web", "outcome": "ok"},
+        {"ts": now - 4, "evt": "perseus_beat", "service": "colt-web", "cycle": 3},
+        {"ts": now - 3, "evt": "http", "service": "colt-web", "ip": "1.1.1.1", "path": "/app"},
+    ], {})
+    by = {p["service"]: p for p in fleet.status()["projects"]}
+    assert by["colt-web"]["lines_24h"] == 1, "only the real request counts (%d)" % by["colt-web"]["lines_24h"]
+    assert by["colt-web"]["requests_24h"] == 1
+
+
+def test_the_loki_traffic_lookup_is_OFF_until_it_has_been_seen_working(monkeypatch, tmp_path):
+    """IT HAS NEVER BEEN OBSERVED WORKING. It is the only thing the last two ships put on the
+    request path and the Admin page was dead for both. Default OFF returns status() to the path the
+    operator last saw working; the env var turns it on per box once the telemetry above shows what
+    the endpoint is really doing. A test, not a comment, because a default is exactly the kind of
+    thing that gets flipped back by accident."""
+    assert fleet.LOKI_EVENTS_ON is False, "the traffic lookup must default OFF"
+    calls = []
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, lambda url, timeout=0: calls.append(url) or _Resp(_loki_lines([])))
+    rows, ok, partial = fleet._loki_events(block=True)
+    assert (rows, ok, partial) == ([], False, False)
+    assert not [u for u in calls if "perseus_beat" not in u], \
+        "with the lookup off, no TRAFFIC query may be issued at all: %r" % calls
+
+
+def test_the_beat_lookup_survives_the_retreat(monkeypatch, tmp_path):
+    """Turning the traffic lookup off must NOT take the heartbeat with it. The stdout beat via Loki
+    was already working in production - it is what proves klima's and s4biz's sidecars are alive -
+    and removing it would make the page worse than the version being retreated to."""
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, lambda url, timeout=0: _Resp(_loki_body("polara-web", time.time())))
+    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    assert r["sidecar"] == "active", "the heartbeat must still be read from stdout via Loki"
+    assert r["state"] == "elsewhere"
+
+
+def test_a_broken_fleet_page_pages_the_operator_once(monkeypatch):
+    """It was dead for three ships while the loop printed one line into a log nobody read. An alert
+    nobody gets is not an alert. Edge-triggered, so a page broken all day does not page every 5
+    minutes, and the recovery is announced."""
+    src = open(os.path.join(ROOT, "webapp", "backend", "app", "main.py"), encoding="utf-8").read()
+    i = src.index("async def _fleet_loop()")
+    body = src[i:src.index("_aio.create_task(_decisions_loop())")]
+    code = "\n".join(l for l in body.splitlines() if not l.strip().startswith("#"))
+    assert "FLEET PAGE IS BROKEN" in code, "the failure path must page, not just print"
+    assert "FLEET PAGE RECOVERED" in code, "a recovery the operator is never told about is a bug"
+    assert "page_ok" in code and "page_ok is not False" in code, \
+        "the alert must be edge-triggered, or it trains the operator to read past it"
 
 
 def test_the_endpoint_is_admin_only():

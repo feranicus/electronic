@@ -431,7 +431,13 @@ writing a check, a fixture or a diagnostic.
     and it did, three times. Run it where it runs, with the real env, and let `set -e` fail the ship.
 52. **A handler must be able to describe its own failure.** A 500 with an empty body costs rounds
     of guessing: catch, print the traceback, and RENDER the cause with no invented rows.
-53. **One response is built from ONE snapshot.** Reading the same cache twice inside one handler
+53. **THE OBSERVER MUST BE OBSERVED, and a feature nobody has seen working is OFF.** The fleet page
+    was the one request on the box with no telemetry of its own, so when it broke there was nothing
+    to read and I guessed for three ships. Every call now emits `evt=fleet_status` through the same
+    writer as access logging (and must not count its own lines as traffic), and the watch loop pages
+    on the transition. A lookup that has never been observed succeeding defaults off, behind an env
+    var, not behind a redeploy.
+54. **One response is built from ONE snapshot.** Reading the same cache twice inside one handler
     lets a refresh land in between and the two halves then describe different moments — `live`
     beside zero traffic. Read once, pass it down.
 
