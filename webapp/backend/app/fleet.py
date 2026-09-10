@@ -89,9 +89,15 @@ LOKI_TIMEOUT_S = float(os.environ.get("PERSEUS_LOKI_TIMEOUT", "3"))
 # Raw lines pulled per own-log project per window. Bounded because a status page must not be a
 # lever for making our own server work; if a project genuinely exceeds it the counts are reported
 # as a FLOOR rather than silently understated (see _loki_events).
-LOKI_EVENT_LIMIT = int(os.environ.get("PERSEUS_LOKI_LIMIT", "5000"))
+LOKI_EVENT_LIMIT = int(os.environ.get("PERSEUS_LOKI_LIMIT", "2000"))
+# Traffic counts do not need per-minute freshness, and every refresh is a real query against a
+# shared Loki. Five minutes, refreshed off the request path.
+LOKI_EVENT_TTL_S = int(os.environ.get("PERSEUS_LOKI_TTL", "300"))
+# A KILL SWITCH, because the first version of this lookup took the Admin page down and the only
+# way back was a redeploy. `set_secret.py PERSEUS_LOKI_EVENTS` + restart now disables it instead.
+LOKI_EVENTS_ON = os.environ.get("PERSEUS_LOKI_EVENTS", "1") != "0"
 _LOKI_CACHE = {"ts": 0.0, "beats": {}}
-_LOKI_EVENTS = {"ts": 0.0, "rows": [], "ok": False, "partial": False}
+_LOKI_EVENTS = {"ts": 0.0, "rows": [], "ok": False, "partial": False, "busy": False}
 # Tried in order; the FIRST that returns anything wins. See _loki_beats for why this is a list.
 LOKI_BEAT_SELECTORS = [s for s in os.environ.get(
     "PERSEUS_LOKI_SELECTORS", '{container=~".+"}:{job=~".+"}:{service_name=~".+"}').split(":") if s]
@@ -147,6 +153,11 @@ def _loki_fetch(line_filter, start_ts, limit):
     now = time.time()
     answered = False
     for sel in LOKI_BEAT_SELECTORS:
+        # Bound BEFORE the try, because `if rows:` below is read outside it. It happens to be
+        # unreachable on the failing path today (every except continues), but a name whose binding
+        # depends on which branch of a try ran is one edit away from a NameError -- and a NameError
+        # here is another 500 on the page this function is not allowed to break.
+        rows = []
         try:
             url = "%s?%s" % (base, urllib.parse.urlencode({
                 "query": "%s %s" % (sel, line_filter),
@@ -155,25 +166,28 @@ def _loki_fetch(line_filter, start_ts, limit):
                 "limit": limit, "direction": "backward"}))
             with urllib.request.urlopen(url, timeout=LOKI_TIMEOUT_S) as r:
                 doc = json.loads(r.read().decode("utf-8", "replace"))
+            answered = True
+            # THE PARSING STAYS INSIDE THE try. It used to sit after it, so an unexpected envelope
+            # (`doc` not a dict) raised AttributeError straight out of this function, past every
+            # caller, into a 500 -- and the whole Fleet page rendered "Could not read the fleet
+            # status". An optional lookup must not be able to take the page down.
+            for stream in (doc.get("data") or {}).get("result") or []:
+                for _ts, line in stream.get("values") or []:
+                    # The container's stdout line may carry a prefix; the JSON starts at the brace.
+                    try:
+                        d = json.loads(line[line.index("{"):])
+                    except Exception:
+                        continue
+                    if isinstance(d, dict):
+                        rows.append(d)
         except Exception:
             continue                      # this selector (or this Loki) did not answer; try the next
-        answered = True
-        rows = []
-        for stream in (doc.get("data") or {}).get("result") or []:
-            for _ts, line in stream.get("values") or []:
-                # The container's stdout line may carry a prefix; the JSON starts at the brace.
-                try:
-                    d = json.loads(line[line.index("{"):])
-                except Exception:
-                    continue
-                if isinstance(d, dict):
-                    rows.append(d)
         if rows:
             return rows, True             # this selector works; stop probing the others
     return [], answered
 
 
-def _loki_events():
+def _loki_events(block=False):
     """The TRAFFIC of a project whose event volume this container does not mount.
 
     THE ZERO THAT PROMPTED THIS. klima and s4biz showed `0 requests · 0 attack-shaped · 0 visitors
@@ -189,42 +203,80 @@ def _loki_events():
     Returns (rows, ok, partial). PARTIAL matters: the fetch is bounded, so a project that really
     exceeds the limit would otherwise be reported with a confident, wrong, too-small number -- the
     caller says "at least N" instead.
+
+    THE PAGE MUST NEVER WAIT FOR THIS, and the first version made it wait. Two projects x three
+    candidate selectors x a 3s timeout is up to 18 SECONDS of blocking on a cold cache, on a query
+    far heavier than the heartbeat's (24 hours instead of 15 minutes, 5000 lines instead of 200).
+    The admin page stopped loading at all. The comment on the beat cache four functions up already
+    said it -- "a status page that hangs is its own outage" -- and this ignored it.
+
+    So the request path only ever READS the cache; a daemon thread refreshes it. A cold cache
+    renders `elsewhere` for one page load and the numbers appear on the next. The alerting loop
+    passes block=True, because it runs in the background and has the time the page does not.
     """
     own = [p["service"] for p in PROJECTS if p.get("own_log")]
     now = time.time()
-    if not own:
+    if not own or not LOKI_EVENTS_ON:
         return [], False, False
-    if now - _LOKI_EVENTS["ts"] < 60:
+    if now - _LOKI_EVENTS["ts"] < LOKI_EVENT_TTL_S:
         return _LOKI_EVENTS["rows"], _LOKI_EVENTS["ok"], _LOKI_EVENTS["partial"]
+    if not block:
+        _loki_events_async(own)
+        return _LOKI_EVENTS["rows"], _LOKI_EVENTS["ok"], _LOKI_EVENTS["partial"]
+    _loki_events_now(own)
+    return _LOKI_EVENTS["rows"], _LOKI_EVENTS["ok"], _LOKI_EVENTS["partial"]
+
+
+def _loki_events_async(own):
+    """Refresh in the background, at most one refresh in flight."""
+    if _LOKI_EVENTS.get("busy"):
+        return
+    _LOKI_EVENTS["busy"] = True
+    try:
+        import threading
+        threading.Thread(target=_loki_events_now, args=(own,), daemon=True).start()
+    except Exception:
+        _LOKI_EVENTS["busy"] = False      # could not spawn: the page still renders, just without it
+
+
+def _loki_events_now(own):
+    """The actual fetch. Wrapped whole: nothing in here may reach a caller as an exception."""
+    now = time.time()
     _LOKI_EVENTS["ts"] = now              # stamp first, as above
     rows, ok, partial, seen_keys = [], False, False, set()
-    for svc in own:
-        # Filter on the bare service NAME, never on `"service": "x"`: json.dumps separator spacing
-        # is not something to guess at inside a substring filter, and guessing wrong fails silently
-        # and looks exactly like innocence. The line is parsed and the field checked properly below.
-        got, answered = _loki_fetch('|= "%s"' % svc, now - WINDOW_S, LOKI_EVENT_LIMIT)
-        ok = ok or answered
-        if len(got) >= LOKI_EVENT_LIMIT:
-            partial = True
-        # The heartbeat is on stdout too and carries the same service name, so it comes back with
-        # this query. Drop it: _loki_beats already owns that question, it is not traffic, and ~1440
-        # beats a day would eat the line budget that real requests need.
-        # DEDUPE, because one request can produce TWO stdout lines: the project's own telemetry
-        # AND the perseus sidecar's observe(). Counting both would double every number on the page
-        # -- a confident wrong figure, which is worse than the zero it replaces. The key is the
-        # request itself; `ts` is whole seconds, so two identical requests from one address in the
-        # same second collapse into one. That is a known, bounded UNDERCOUNT in the noisiest
-        # direction only, and it is stated here rather than discovered later.
-        for d in got:
-            if d.get("service") != svc or d.get("evt") == "perseus_beat":
-                continue
-            k = (d.get("evt"), d.get("ts"), d.get("ip"), d.get("method"), d.get("path"))
-            if k in seen_keys:
-                continue
-            seen_keys.add(k)
-            rows.append(d)
-    _LOKI_EVENTS["rows"], _LOKI_EVENTS["ok"], _LOKI_EVENTS["partial"] = rows, ok, partial
-    return rows, ok, partial
+    try:
+        for svc in own:
+            # Filter on the bare service NAME, never on `"service": "x"`: json.dumps separator
+            # spacing is not something to guess at inside a substring filter, and guessing wrong
+            # fails silently and looks exactly like innocence. The line is parsed and the field
+            # checked properly below.
+            got, answered = _loki_fetch('|= "%s"' % svc, now - WINDOW_S, LOKI_EVENT_LIMIT)
+            ok = ok or answered
+            if len(got) >= LOKI_EVENT_LIMIT:
+                partial = True
+            # The heartbeat is on stdout too and carries the same service name, so it comes back
+            # with this query. Drop it: _loki_beats already owns that question, it is not traffic,
+            # and ~1440 beats a day would eat the line budget real requests need.
+            # DEDUPE, because one request can produce TWO stdout lines: the project's own telemetry
+            # AND the perseus sidecar's observe(). Counting both would double every number on the
+            # page -- a confident wrong figure, worse than the zero it replaces. The key is the
+            # request itself; `ts` is whole seconds, so two identical requests from one address in
+            # the same second collapse into one. A known, bounded UNDERCOUNT in the noisiest
+            # direction only, stated here rather than discovered later.
+            for d in got:
+                if d.get("service") != svc or d.get("evt") == "perseus_beat":
+                    continue
+                k = (d.get("evt"), d.get("ts"), d.get("ip"), d.get("method"), d.get("path"))
+                if k in seen_keys:
+                    continue
+                seen_keys.add(k)
+                rows.append(d)
+        _LOKI_EVENTS["rows"], _LOKI_EVENTS["ok"], _LOKI_EVENTS["partial"] = rows, ok, partial
+    except Exception:
+        pass                              # a refresh that fails leaves the previous answer standing
+    finally:
+        _LOKI_EVENTS["busy"] = False
+    return _LOKI_EVENTS["rows"], _LOKI_EVENTS["ok"], _LOKI_EVENTS["partial"]
 
 
 def _all_beats():
@@ -239,21 +291,30 @@ def _all_beats():
     return out
 
 
-def _tail_events(limit_bytes=4_000_000):
+def _tail_events(limit_bytes=4_000_000, block=False, loki_rows=None):
     """Every event this container can reach: the mounted logs FIRST, then Loki for the projects
     whose log is not among them.
 
     The Loki rows are merged HERE, in the one function both `status()` (the counts) and `since()`
     -> `watch()` (the alerting) already call, so the page and the pager cannot end up looking at
     different traffic. A file that IS mounted always wins: it needs no network and it is still
-    readable when Loki is the thing that is down, which is exactly when this page gets opened."""
+    readable when Loki is the thing that is down, which is exactly when this page gets opened.
+
+    `block` is passed straight through: the HTTP request path must never wait on Loki, the
+    background alerting loop must, because an alert computed from an empty cache is not a quiet
+    project -- it is a scanner nobody was told about.
+
+    `loki_rows` lets a caller that has ALREADY read the cache hand its snapshot in, so one response
+    is built from ONE snapshot. status() needs that: it reads the cache for the counts and again for
+    the badges, and a background refresh landing between the two reads would let a service be listed
+    as readable while its numbers came from the older, emptier snapshot -- `live` with zeros, the
+    exact confident-wrong-number this page exists to prevent."""
     rows = []
     for path in [EVENTS] + EXTRA_EVENTS:
         rows.extend(_tail_one(path, limit_bytes))
     seen = {r.get("service") for r in rows}
     if any(p.get("own_log") and p["service"] not in seen for p in PROJECTS):
-        extra, _ok, _partial = _loki_events()
-        rows.extend(extra)
+        rows.extend(loki_rows if loki_rows is not None else _loki_events(block=block)[0])
     return rows
 
 
@@ -291,11 +352,11 @@ def _cycle():
         return {"cycle": None, "patterns": 0, "age_s": None}
 
 
-def since(ts, service=None):
+def since(ts, service=None, block=False):
     """Every event newer than `ts`, optionally for one service. The alerting loop calls this so the
     SAME rules colt-web applies to itself run over the other projects' lines."""
     out = []
-    for r in _tail_events():
+    for r in _tail_events(block=block):
         if (r.get("ts") or 0) <= ts:
             continue
         if service and r.get("service") != service:
@@ -313,8 +374,12 @@ def watch(seen_ts, alert):
     'one value, several homes' defect this estate keeps paying for. They emit `evt=http`; this
     reads it and pages.
 
-    Returns the newest timestamp it consumed, so the caller cannot re-alert on the same lines."""
-    rows = [r for r in since(seen_ts) if r.get("evt") == "http"]
+    Returns the newest timestamp it consumed, so the caller cannot re-alert on the same lines.
+
+    block=True: this is a background loop, not a page. It waits for Loki. If it read the same cache
+    the page reads, a cold or expired cache would make klima and s4biz look silent, and "no rows"
+    would be indistinguishable from "no attack" -- the one inference this codebase forbids."""
+    rows = [r for r in since(seen_ts, block=True) if r.get("evt") == "http"]
     if not rows:
         return seen_ts
     newest = max(r.get("ts") or 0 for r in rows)
@@ -353,11 +418,13 @@ def watch(seen_ts, alert):
 
 
 def status():
-    beats, rows, now = _all_beats(), _tail_events(), time.time()
-    pub = _cycle()
-    # Which own-log projects Loki actually answered for, so a row can say where its numbers came
-    # from. Cached, so this costs nothing on top of the read _tail_events just did.
+    # ONE read of the traffic cache, taken FIRST and then handed to _tail_events, so the counts and
+    # the badge that explains them describe the same snapshot. This read never blocks: the request
+    # path gets whatever the background refresh last put there, and a cold cache renders `elsewhere`
+    # for one page load rather than hanging the page for eighteen seconds.
     _lrows, _lok, _lpartial = _loki_events()
+    beats, rows, now = _all_beats(), _tail_events(loki_rows=_lrows), time.time()
+    pub = _cycle()
     loki_svcs = {r.get("service") for r in _lrows}
     floor = ""
     if _lpartial:

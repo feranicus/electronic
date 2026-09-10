@@ -9,7 +9,7 @@ that is what produced *"This conversation is too long to continue."*
 Nothing was deleted. The full narrative history — every incident, every root cause, every measured
 number, verbatim — is at:
 
-    docs/decisions/HISTORY-2026-07-to-2026-09-09.md
+    docs/decisions/HISTORY-2026-07-to-2026-09-10.md
 
 **This file now carries only what must be true on EVERY turn**: the operating principles, the
 settled facts, and the defect classes as one-line rules. The history is the EVIDENCE for those
@@ -422,6 +422,13 @@ writing a check, a fixture or a diagnostic.
 49. **READ THE DELIVERED ARTIFACT.** Rich finding text is not a good deck. Two slides of one deck
     disagreed; a raw enum reached a customer slide; 46 text boxes were truncated; a partner's deck
     kept our teal. Every one was invisible in the logs and obvious in the file.
+50. **An OPTIONAL lookup may make a page more accurate, never less — and never slower than that
+    page's own budget.** It parses inside its own `try`, it cannot raise past its caller, and it
+    never runs on a request path: a background refresh fills a cache, the request reads it. A status
+    page that hangs is its own outage, and a 500 from a nice-to-have is worse than the gap it filled.
+51. **One response is built from ONE snapshot.** Reading the same cache twice inside one handler
+    lets a refresh land in between and the two halves then describe different moments — `live`
+    beside zero traffic. Read once, pass it down.
 
 ---
 

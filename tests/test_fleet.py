@@ -45,7 +45,7 @@ def _setup(monkeypatch, tmp_path, rows, beats):
     # already paid for once (the colt_auth reload in test_auth); clear it for every setup.
     fleet._LOKI_CACHE["ts"] = 0.0
     fleet._LOKI_CACHE["beats"] = {}
-    fleet._LOKI_EVENTS.update(ts=0.0, rows=[], ok=False, partial=False)
+    fleet._LOKI_EVENTS.update(ts=0.0, rows=[], ok=False, partial=False, busy=False)
     monkeypatch.delenv("LOKI_URL", raising=False)
 
 
@@ -157,8 +157,19 @@ def _arm_loki(monkeypatch, handler):
     monkeypatch.setenv("LOKI_URL", "http://videodead-loki-1:3100/loki/api/v1/push")
     fleet._LOKI_CACHE["ts"] = 0.0
     fleet._LOKI_CACHE["beats"] = {}
-    fleet._LOKI_EVENTS.update(ts=0.0, rows=[], ok=False, partial=False)
+    fleet._LOKI_EVENTS.update(ts=0.0, rows=[], ok=False, partial=False, busy=False)
     monkeypatch.setattr(urllib.request, "urlopen", handler)
+
+
+def _rows_after_refresh():
+    """status() READS the traffic cache and never fills it -- that is what stopped the Admin page
+    hanging, and it is asserted separately in test_the_page_never_waits_on_loki.
+
+    So a test about the NUMBERS must prime the cache the way the background refresh does, and prime
+    it SYNCHRONOUSLY. Waiting on the daemon thread instead would make every count assertion a race,
+    which is the failure mode that teaches an operator to re-run a suite rather than read it."""
+    fleet._loki_events(block=True)
+    return {x["service"]: x for x in fleet.status()["projects"]}
 
 
 def test_an_own_log_project_is_proven_by_its_stdout_beat(monkeypatch, tmp_path):
@@ -167,7 +178,7 @@ def test_an_own_log_project_is_proven_by_its_stdout_beat(monkeypatch, tmp_path):
     ever say more than 'we cannot see it' without coupling cybergod's deploy to a sibling."""
     _setup(monkeypatch, tmp_path, [], {})
     _arm_loki(monkeypatch, lambda url, timeout=0: _Resp(_loki_body("polara-web", time.time())))
-    rows = {r["service"]: r for r in fleet.status()["projects"]}
+    rows = _rows_after_refresh()
     r = rows["polara-web"]
     assert r["sidecar"] == "active", "a heartbeat seen on stdout proves the sidecar is running"
     assert r["state"] == "elsewhere", "traffic counts are still unreachable; only the beat is proven"
@@ -181,7 +192,7 @@ def test_a_dead_loki_degrades_to_unverifiable_and_never_raises(monkeypatch, tmp_
         raise OSError("connection refused")
     _setup(monkeypatch, tmp_path, [], {})
     _arm_loki(monkeypatch, boom)
-    rows = {r["service"]: r for r in fleet.status()["projects"]}
+    rows = _rows_after_refresh()
     assert rows["polara-web"]["sidecar"] == "unverifiable"
     assert rows["s4biz-web"]["sidecar"] == "unverifiable"
 
@@ -198,7 +209,7 @@ def test_the_beat_file_outranks_loki_and_loki_is_not_consulted_for_it(monkeypatc
     _setup(monkeypatch, tmp_path, [], {"colt-web": {"service": "colt-web", "ts": int(time.time()),
                                                     "cycle": 7}})
     _arm_loki(monkeypatch, watch)
-    rows = {r["service"]: r for r in fleet.status()["projects"]}
+    rows = _rows_after_refresh()
     # Loki MUST actually have been asked, or the precedence assertion below is vacuous: a file beat
     # trivially "wins" a race nobody else entered. (The query is fleet-wide, so it is asked on
     # behalf of klima and s4biz and happens to carry a colt-web line too.)
@@ -248,7 +259,7 @@ def test_an_own_log_project_gets_REAL_counts_from_loki_not_zeros(monkeypatch, tm
         _http_line("polara-web", "203.0.113.6", "/produkte"),
         _http_line("polara-web", "45.148.10.5", "/.env"),
     ]}))
-    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 3, "a project we CAN read must not render as zero"
     assert r["attacks_24h"] == 1, "the same probe_shape classifier must run over its paths"
     assert r["visitors_24h"] == 3
@@ -268,7 +279,7 @@ def test_one_request_logged_twice_is_counted_once(monkeypatch, tmp_path):
                        "path": "/", "ts": ts, "ms": 3})
     _setup(monkeypatch, tmp_path, [], {})
     _arm_loki(monkeypatch, _loki_router({"polara-web": [app, side]}))
-    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 1, "the same request was counted twice (%d)" % r["requests_24h"]
     assert r["visitors_24h"] == 1
 
@@ -281,7 +292,7 @@ def test_a_dead_loki_never_renders_an_own_log_project_as_a_confident_zero(monkey
     _setup(monkeypatch, tmp_path, [], {"polara-web": {"service": "polara-web",
                                                       "ts": int(time.time()), "cycle": 3}})
     _arm_loki(monkeypatch, boom)
-    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 0
     assert r["state"] == "elsewhere", "a project we cannot read is never reported as live"
     low = r["why"].lower()
@@ -311,7 +322,7 @@ def test_a_heartbeat_line_is_never_counted_as_traffic(monkeypatch, tmp_path):
     the line budget that real requests need."""
     _setup(monkeypatch, tmp_path, [], {})
     _arm_loki(monkeypatch, lambda url, timeout=0: _Resp(_loki_body("polara-web", time.time())))
-    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 0 and r["attacks_24h"] == 0
     assert r["sidecar"] == "active", "...but it is still proof the sidecar is running"
 
@@ -327,10 +338,71 @@ def test_a_dead_loki_is_not_re_probed_on_every_request(monkeypatch, tmp_path):
 
     _setup(monkeypatch, tmp_path, [], {})
     _arm_loki(monkeypatch, boom)
-    fleet.status()
+    _rows_after_refresh()
     first = n[0]
-    fleet.status()
+    assert first, "the stub Loki was never called, so this proves nothing about caching"
+    _rows_after_refresh()
     assert n[0] == first, "a failed lookup must be cached like a successful one"
+
+
+def test_the_page_never_waits_on_loki(monkeypatch, tmp_path):
+    """THE OUTAGE THIS CAUSED, 2026-09-10: `Could not read the fleet status.`
+
+    The first version of the traffic read ran INSIDE the request: two own-log projects x three
+    candidate selectors x a 3s timeout, on 24-hour/thousand-line queries instead of the heartbeat's
+    15-minute/200-line one. The Admin page stopped loading. The comment on the beat cache had
+    already written the rule -- a status page that hangs is its own outage -- and the change ignored
+    it, which is defect class 33 against my own file.
+
+    So the property is asserted, not commented: any events query issued on the REQUEST thread fails
+    this test. The heartbeat query is exempt by name because it is the small, bounded one that was
+    always inline and never hung; exempting it by URL rather than by silence keeps the exemption
+    visible."""
+    import threading
+    import urllib.request
+    here, inline = threading.current_thread(), []
+
+    def watch(url, timeout=0):
+        if threading.current_thread() is here and "perseus_beat" not in url:
+            inline.append(url)
+        raise OSError("down")
+
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, watch)
+    st = fleet.status()
+    assert st["projects"], "the page must still render on a COLD cache, with no numbers yet"
+    assert not inline, (
+        "status() queried Loki for traffic on the request thread; that is the hang that took the "
+        "Admin page down: %r" % inline)
+
+
+def test_the_counts_and_the_badge_come_from_ONE_snapshot(monkeypatch, tmp_path):
+    """status() needs the traffic rows twice: once for the numbers, once to say which projects Loki
+    actually answered for. Reading the cache twice lets the background refresh land in between, so a
+    project can be badged `live` -- readable -- while its numbers came from the older, emptier
+    snapshot. `live` beside 0 requests is a confident wrong number, which is worse than the honest
+    `elsewhere` it replaced.
+
+    Asserted deterministically rather than by racing a thread: the cache read is stubbed to hand
+    back a DIFFERENT answer every time it is called, which is the strongest form of that
+    interleaving, and the count of reads is the property itself."""
+    _setup(monkeypatch, tmp_path, [], {"polara-web": {"service": "polara-web",
+                                                      "ts": int(time.time()), "cycle": 3}})
+    answers = [([], False, False),
+               ([{"evt": "http", "service": "polara-web", "ip": "203.0.113.9", "path": "/",
+                  "ts": int(time.time())}], True, False)]
+    calls = [0]
+
+    def flip(block=False):
+        calls[0] += 1
+        return answers[min(calls[0] - 1, len(answers) - 1)]
+
+    monkeypatch.setattr(fleet, "_loki_events", flip)
+    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    assert calls[0] == 1, \
+        "status() read the traffic cache %d times; one response must be built from one snapshot" % calls[0]
+    assert not (r["state"] == "live" and r["requests_24h"] == 0), \
+        "badged as readable while showing no traffic - the two reads disagreed"
 
 
 def test_a_project_with_no_logs_is_silent_not_quiet(monkeypatch, tmp_path):
