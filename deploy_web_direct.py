@@ -34,6 +34,12 @@ if KEY and os.path.exists(KEY):
 # never carried it. Anything a Dockerfile COPYs from the repo root must appear here; asserted by
 # tests/test_admin_users.py so the next one cannot be missed.
 INCLUDE = ["webapp", "hermes-skills/shodan-assessment", "colt_auth.py", "user_store.py",
+           # The security brain. webapp/Dockerfile COPYs it into the image because the systemd unit
+           # runs `docker exec colt-web ... /opt/perseus/perseus/hub.py`, and that path only existed
+           # on the HOST -- so the daily cycle failed every night and no blocklist was ever
+           # published. A COPY whose source is not in the pack list fails the BUILD, which is the
+           # loud version of the same mistake; both wiring points are needed and this is the fourth.
+           "perseus",
            "docker-compose.web.yml", "deploy", ".dockerignore"]
 EXCLUDE = {"node_modules", "__pycache__", "dist", ".git", ".pytest_cache", "shodan-out"}
 
@@ -219,9 +225,29 @@ def remote(proxy=True):
     #
     # RULE: never delete a RANGE from a shared file using a word that can appear in prose. The
     # markers exist precisely so the boundaries are unambiguous.
-    "sed -i '/# colt:cybergod BEGIN/,/# colt:cybergod END/d' \"$CF\"",
-    "cat deploy/caddy/cybergod.caddy >> \"$CF\"",
-    "sed -i 's#^cybergod.ai,.*{$#cybergod.ai, www.cybergod.ai {#' \"$CF\"",
+    # ---- IN-PLACE, BECAUSE THE MOUNT IS PINNED TO AN INODE ------------------------------------
+    # `sed -i` does NOT edit in place. It writes a temp file and renames it, so the file gets a NEW
+    # INODE -- and /etc/caddy/Caddyfile is a single-FILE bind mount, which follows the OLD one. The
+    # container then reads a file nobody can see. caddyguard/agent.py says this in its own module
+    # docstring ("`mv` onto the target swaps the inode and the container silently keeps reading the
+    # OLD file forever") and writes through write_inplace for exactly that reason. This deploy was
+    # the one writer that ignored it.
+    #
+    # MEASURED, 2026-09-10 ship: caddyguard's 10-minute timer landed between this edit and the
+    # assemble and reported `stale mount repaired by restart (now cdcf8eaf3c37)` -- it restarted
+    # videodead-caddy-1, which owns :443 for all six domains. `Up 20 seconds` in the same log,
+    # against `Up 51 minutes` on the previous ship. Whether a given deploy briefly drops every site
+    # therefore depended on where the timer fell: a coin-flip outage, which is worse than a
+    # reliable one because it teaches you the logs are noise.
+    #
+    # `sed` WITHOUT -i is a filter and touches nothing. The final `>` truncates the EXISTING inode.
+    "new=\"$(sed '/# colt:cybergod BEGIN/,/# colt:cybergod END/d' \"$CF\"; cat deploy/caddy/cybergod.caddy)\"",
+    "new=\"$(printf '%s\\n' \"$new\" | sed 's#^cybergod.ai,.*{$#cybergod.ai, www.cybergod.ai {#')\"",
+    # NEVER write an empty or implausible result over the config that serves six domains. A command
+    # substitution that failed returns the empty string, and `> \"$CF\"` would then blank the file
+    # before anything had a chance to validate it.
+    "[ \"$(printf '%s' \"$new\" | wc -c)\" -gt 500 ] || { echo 'REFUSING: assembled Caddyfile is implausibly small - NOT written'; exit 1; }",
+    "printf '%s\\n' \"$new\" > \"$CF\"",
     "docker exec \"$CADDY_CT\" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile",
     "echo '== FORCE a full config load via the admin API (a plain reload can keep a stale config) =='",
     "docker exec \"$CADDY_CT\" sh -c 'caddy adapt --config /etc/caddy/Caddyfile > /tmp/cfg.json && curl -sS -X POST -H \"Content-Type: application/json\" -H \"Cache-Control: must-revalidate\" --data @/tmp/cfg.json http://localhost:2019/load && echo ADMIN_LOAD_OK' || echo 'admin load failed (no admin API?)'",

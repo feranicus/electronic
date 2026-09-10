@@ -700,6 +700,105 @@ def test_a_broken_fleet_page_pages_the_operator_once(monkeypatch):
         "the alert must be edge-triggered, or it trains the operator to read past it"
 
 
+# ---------------------------------------------------- the brain never ran, for weeks (2026-09-10)
+# Operator: "I explicitly said many times that I need shield.py present in every project and it to
+# act automatically ... 4 LLM consensus per incident ... daily and weekly ... automated SOC."
+# He is right that none of it was operating, and the reason is one line, not a design argument:
+# perseus.service runs `docker exec colt-web python3 /opt/perseus/perseus/hub.py --cycle`, the
+# package was installed to /opt/perseus ON THE HOST, and colt-web mounts only colt_webdata:/data
+# and colt_events:/var/log/colt. Every nightly run died on ENOENT. hub.cycle() increments
+# rs["cycle"] to 1 on its first success, so `enforcing cycle 0` on all five rows means no cycle has
+# EVER completed -> publish() never wrote a blocklist -> check() iterates an empty pattern list ->
+# nothing is blocked on any of the five sites. The consensus, the promotion gate and the abuse
+# reporting were all built, and none of them has executed once in production.
+
+def test_the_hub_is_in_the_image_that_runs_it():
+    """The unit execs the hub INSIDE colt-web, so colt-web's image must carry it. Asserted across
+    all three wiring points, because a COPY whose source is not packed fails the build and a unit
+    whose path is not in the image fails silently at 04:40 every morning."""
+    unit = open(os.path.join(ROOT, "perseus.py"), encoding="utf-8").read()
+    assert "docker exec colt-web python3 /opt/perseus/perseus/hub.py" in unit, \
+        "the ExecStart form changed - re-check which filesystem it resolves against"
+
+    dockerfile = open(os.path.join(ROOT, "webapp", "Dockerfile"), encoding="utf-8").read()
+    assert "COPY perseus /opt/perseus/perseus" in dockerfile, (
+        "colt-web's image does not carry the hub, so `docker exec colt-web ... /opt/perseus/...` "
+        "cannot resolve and the nightly cycle dies on ENOENT")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_dwd_for_test", os.path.join(ROOT, "deploy_web_direct.py"))
+    dwd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dwd)
+    assert "perseus" in dwd.INCLUDE, \
+        "perseus/ is not packed, so the Dockerfile COPY has no source and the build fails"
+
+
+def test_the_installer_can_report_that_the_brain_is_dead():
+    """`TIMER_OK` only says systemd will CALL something. The old state line then listed
+    /var/log/colt on the HOST -- not the volume -- and printed "(no state yet - first run)" on every
+    single ship. A message printed on every run means the thing has never once executed."""
+    src = open(os.path.join(ROOT, "perseus.py"), encoding="utf-8").read()
+    code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
+    assert "no state yet - first run" not in code, \
+        "that line printed forever and was read as normal; it hid an empty blocklist for weeks"
+    assert "BRAIN_DEAD" in code and "exit 1" in code, \
+        "the installer must FAIL when no blocklist with cycle>=1 exists - or it is not a check"
+    assert "docker exec colt-web test -f" in code, \
+        "the blocklist must be checked where the CLIENTS read it, inside the container"
+
+
+def test_publish_says_what_it_did():
+    """`except: pass` around the ONE consequence the whole cycle exists to produce. A silent success
+    and a silent failure were indistinguishable, which is how cycle 0 stayed invisible.
+
+    NEVER A POSITION. The first version sliced `src[i:i+1400]` and went red the moment publish()
+    grew a route corpus - the prints were still there, 1400 bytes was not. Defect class 4 says
+    "never a position" and I wrote the rule hours before breaking it. Parse the function."""
+    import ast
+    src = open(os.path.join(ROOT, "perseus", "hub.py"), encoding="utf-8").read()
+    fn = next((n for n in ast.walk(ast.parse(src))
+               if isinstance(n, ast.FunctionDef) and n.name == "publish"), None)
+    assert fn is not None, "perseus.hub.publish() is gone - the clients read what it writes"
+    body = ast.get_source_segment(src, fn) or ""
+    assert body.count("perseus_publish") >= 2, \
+        "publish() must print its outcome on BOTH the success and the failure path"
+
+
+def test_the_deploy_never_replaces_the_shared_caddyfile_inode():
+    """/etc/caddy/Caddyfile is a single-FILE bind mount, so the container follows an INODE. `sed -i`
+    writes a temp file and renames it, which gives the file a new one and leaves videodead-caddy-1
+    -- the process holding :443 for all six domains -- reading a file nobody can see.
+
+    MEASURED on the 2026-09-10 ship: caddyguard's timer landed in the window and reported `stale
+    mount repaired by restart`, restarting the shared proxy (`Up 20 seconds`, against `Up 51
+    minutes` the ship before). Whether any given deploy briefly drops every site depended on where
+    a 10-minute timer fell, which is a coin-flip outage.
+
+    Asserted on the write, not on a comment: caddyguard/agent.py has documented this rule in its own
+    docstring the whole time, and the deploy ignored it.
+
+    ASSERT THE SCRIPT THAT RUNS, NOT THE SOURCE THAT BUILDS IT. The first version of this test
+    grepped deploy_web_direct.py's TEXT for `> "$CF"`, which is never there: the source contains an
+    escaped form because it is a Python string literal. It failed on a CORRECT fix. Defect class 4,
+    inside the test written to enforce defect class 54 - render the bash and search that."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_dwd_inode", os.path.join(ROOT, "deploy_web_direct.py"))
+    dwd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dwd)
+    script = dwd.remote(True)          # the exact bash the droplet executes
+    body = "\n".join(l for l in script.splitlines() if not l.strip().startswith("#"))
+
+    for bad in ("sed -i", 'mv "$CF"', "mv $CF"):
+        assert bad not in body, (
+            "%r rewrites the shared Caddyfile through a NEW inode; the single-file bind mount "
+            "keeps the old one. Filter to a variable and truncate with `> \"$CF\"`." % bad)
+    assert '> "$CF"' in body, "the config must be written by truncating the existing inode"
+    assert "wc -c" in body and "REFUSING" in body, \
+        "a failed substitution must never blank the file that serves six domains"
+
+
 def test_the_endpoint_is_admin_only():
     """Hiding a tab is presentation. The route must depend on _require_admin, or anyone can issue
     the request the tab would have issued."""

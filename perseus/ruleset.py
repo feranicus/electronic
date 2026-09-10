@@ -51,6 +51,14 @@ STEP_CAP = 0.25          # no threshold may move more than 25% in one cycle
 MIN_DETECT_HOURS = 24    # a new pattern watches for a day before it may refuse anything
 QUORUM = 3               # of 4 reviewers, and they must be different vendors
 
+# A RULE THAT HAS NEVER MATCHED ANYTHING IN A MONTH IS COST WITHOUT COVER. It is compiled on every
+# client reload and evaluated on every request of six properties, and it is evidence of nothing.
+# THIRTY DAYS, AND THE NUMBER IS WHY THIS IS A WEEKLY JOB: a rule cannot be called dormant from a
+# two-day window, so the daily cycle is structurally unable to make this judgement. Retiring is
+# also the only tier transition that is safe to make from silence, because retiring REMOVES a
+# refusal and can therefore never deny a real visitor.
+DORMANT_DAYS = int(os.environ.get("PERSEUS_DORMANT_DAYS", "30"))
+
 TIER_DETECT, TIER_BLOCK, TIER_RETIRED = "detect", "block", "retired"
 
 STORE = os.environ.get("PERSEUS_RULESET", "/var/log/colt/perseus_ruleset.json")
@@ -257,6 +265,45 @@ def review(rs, now=None):
                       % r["clean_hits"]):
                 out.append(r)
     return out
+
+
+def retire(rs, rule, why):
+    """Take a rule out of service permanently. NARROWING ONLY, and that is what makes it safe.
+
+    Retiring can only ever REMOVE a refusal, so unlike promotion it cannot deny a real visitor, and
+    unlike demotion it does not need evidence of harm -- absence of any match at all is enough.
+    The rule is kept, not deleted, with its evidence and its reason: six weeks from now the only
+    useful question about a pattern is "why is this here", and next month's mining would otherwise
+    propose the same dead pattern again and nobody would remember it had been tried.
+    """
+    if rule.get("tier") == TIER_RETIRED:
+        return False
+    rule["tier"] = TIER_RETIRED
+    rule["retired"] = _now()
+    rs.setdefault("history", []).append(
+        {"ts": _now(), "action": "retired", "id": rule.get("id"), "pattern": rule.get("pattern"),
+         "why": str(why)[:200]})
+    return True
+
+
+def dormant(rule, now=None, days=None):
+    """(bool, why). A rule old enough to have been tested by traffic that has matched NOTHING.
+
+    THE AGE FLOOR IS LOAD-BEARING. Without it every pattern proposed yesterday is 'dormant' and the
+    weekly pass would retire the entire detection queue before it ever reached its promotion test --
+    a check whose subject has not existed long enough to be measured is not a check.
+    """
+    now = now or _now()
+    days = DORMANT_DAYS if days is None else days
+    if rule.get("tier") == TIER_RETIRED:
+        return False, "already retired"
+    age_d = (now - float(rule.get("created") or now)) / 86400.0
+    if age_d < days:
+        return False, "only %.1f day(s) old, needs %d" % (age_d, days)
+    if rule.get("hits") or rule.get("clean_hits"):
+        return False, "has matched %d hostile / %d legitimate request(s)" % (
+            int(rule.get("hits") or 0), int(rule.get("clean_hits") or 0))
+    return True, "%.0f days in the ruleset without matching a single request" % age_d
 
 
 def tune(rs, key, proposed, votes):

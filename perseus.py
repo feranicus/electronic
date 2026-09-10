@@ -10,18 +10,32 @@ ONE COMMAND, per operating principle 7. This is a BUILDING BLOCK that ship.py ma
 never a second command the operator has to remember.
 
 WHAT IT INSTALLS ON THE DROPLET
-  /opt/perseus/                 the hub package (ruleset, vet, hub, abuse, client)
-  perseus.timer                 daily at 04:40 UTC + 3 min after boot, Persistent=true so a
+  /opt/perseus/                 the hub package (ruleset, vet, hub, abuse, incident, client)
+  perseus.timer                 DAILY at 04:40 UTC + 3 min after boot, Persistent=true so a
                                 droplet that was off still runs the missed cycle
-  /var/log/colt/perseus_*.json  ruleset, blocklist, abuse ledger, on the shared colt_events
-                                volume every project already mounts
+  perseus-weekly.timer          WEEKLY, Sunday 05:20 UTC, Persistent=true. Re-vets every live rule
+                                against the routes as they are TODAY and retires anything a month
+                                of traffic never matched -- neither judgement is sound on the
+                                daily cycle's two-day window.
+  perseus-watch.timer           EVERY 10 MINUTES. The per-incident panel: four vendors are asked
+                                about ONE live burst, while it is happening. It spends nothing
+                                unless an incident clears every gate in perseus/incident.py, which
+                                cap it at 12 incidents / $0.30 a day.
+  /var/log/colt/perseus_*.json  ruleset, blocklist, abuse ledger, weekly record, watch record and
+                                incident ledger, on the shared colt_events volume every project
+                                already mounts
 
-WHY A TIMER AND NOT A LOOP IN A CONTAINER: the same reason patchwatch and caddyguard are timers.
+WHY TIMERS AND NOT A LOOP IN A CONTAINER: the same reason patchwatch and caddyguard are timers.
 A crashed loop is silent; a timer that did not fire is visible in `systemctl list-timers`, and the
 next boot picks it up.
 
 WHY 04:40: after patchwatch's 03:xx window and after the 03:17 database backup, so a cycle never
-competes with a kernel upgrade or a restore on a 4 GB box.
+competes with a kernel upgrade or a restore on a 4 GB box. WHY THE WEEKLY IS 40 MINUTES LATER: the
+daily cycle can run for minutes and the two must never overlap on that same 4 GB box.
+
+EVERY UNIT IS PROVEN, NOT ASSUMED. "armed" says systemd will CALL something; the install also asks
+the CONTAINER whether each job has actually produced its artifact recently, and fails otherwise.
+That gap is why the nightly cycle died on ENOENT for weeks behind a green `list-timers`.
 
 SAFE TO RE-RUN. Installing is idempotent; a cycle that cannot reach Loki or the models reports
 that and changes nothing.
@@ -90,7 +104,8 @@ def pack():
     """The perseus package, as a base64 tarball carried inside the remote script."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-        for name in ("ruleset.py", "vet.py", "hub.py", "abuse.py", "client.py", "__init__.py"):
+        for name in ("ruleset.py", "vet.py", "hub.py", "abuse.py", "client.py", "incident.py",
+                     "__init__.py"):
             p = os.path.join(HERE, "perseus", name)
             if os.path.exists(p):
                 tf.add(p, arcname="perseus/" + name)
@@ -122,8 +137,8 @@ def install_script(blob):
         "B64EOF",
         "tar -xzf /tmp/perseus.tgz -C %s && rm -f /tmp/perseus.tgz" % REMOTE,
         "echo '#### INSTALLED'",
-        "python3 -c \"import sys; sys.path.insert(0,'%s'); from perseus import ruleset, vet, hub, abuse; "
-        "print('modules import cleanly')\"" % REMOTE,
+        "python3 -c \"import sys; sys.path.insert(0,'%s'); from perseus import ruleset, vet, hub, "
+        "abuse, incident; print('modules import cleanly')\"" % REMOTE,
         # The service runs the cycle INSIDE colt-web, where OPENAI_API_KEY, the Telegram token and
         # the Gmail credentials already live. The hub itself needs no secrets of its own, so there
         # is no new credential home -- the defect this repo has paid for repeatedly.
@@ -146,6 +161,58 @@ def install_script(blob):
         "[Install]",
         "WantedBy=timers.target",
         "EOF",
+        # ── THE WEEKLY UNIT ──────────────────────────────────────────────────────────────────
+        # A DISTINCT UNIT ON A DISTINCT SCHEDULE, not a flag on the daily one, because the work is
+        # different: re-vetting every live rule against TODAY's routes, and retiring anything a
+        # month of traffic never matched. Neither judgement is sound on a two-day window.
+        #
+        # SUNDAY 05:20 UTC. Forty minutes AFTER the daily 04:40 so the two never overlap on a 4 GB
+        # box (the daily can run for minutes), and after patchwatch's 03:xx window and the 03:17
+        # database backup for the same reason 04:40 was chosen. Persistent=true, so a droplet that
+        # was off on Sunday runs the missed pass when it comes back rather than skipping a week.
+        "cat > /etc/systemd/system/perseus-weekly.service <<'EOF'",
+        "[Unit]",
+        "Description=Perseus - weekly re-vetting and retirement pass",
+        "After=docker.service",
+        "[Service]",
+        "Type=oneshot",
+        "ExecStart=/usr/bin/docker exec colt-web python3 /opt/perseus/perseus/hub.py --weekly",
+        "TimeoutStartSec=1800",
+        "EOF",
+        "cat > /etc/systemd/system/perseus-weekly.timer <<'EOF'",
+        "[Unit]",
+        "Description=Perseus weekly cycle",
+        "[Timer]",
+        "OnCalendar=Sun *-*-* 05:20:00 UTC",
+        "Persistent=true",
+        "[Install]",
+        "WantedBy=timers.target",
+        "EOF",
+        # ── THE WATCH UNIT ───────────────────────────────────────────────────────────────────
+        # EVERY TEN MINUTES. This is the per-incident panel: it reads the SHARED events log inside
+        # the container (no ssh, no Loki round trip), and asks the four vendors about a burst while
+        # it is still happening. It spends nothing unless an incident clears every gate in
+        # incident.py, and those gates cap it at 12 incidents / $0.30 a day -- the arithmetic is
+        # written out above MAX_PER_DAY in perseus/incident.py.
+        "cat > /etc/systemd/system/perseus-watch.service <<'EOF'",
+        "[Unit]",
+        "Description=Perseus - live incident watch, four-vendor consensus per incident",
+        "After=docker.service",
+        "[Service]",
+        "Type=oneshot",
+        "ExecStart=/usr/bin/docker exec colt-web python3 /opt/perseus/perseus/hub.py --watch",
+        "TimeoutStartSec=600",
+        "EOF",
+        "cat > /etc/systemd/system/perseus-watch.timer <<'EOF'",
+        "[Unit]",
+        "Description=Perseus live incident watch",
+        "[Timer]",
+        "OnCalendar=*-*-* *:00/10:00 UTC",
+        "OnBootSec=5min",
+        "Persistent=false",
+        "[Install]",
+        "WantedBy=timers.target",
+        "EOF",
         # `|| true` USED TO SWALLOW THE FAILURE HERE, and `list-timers` printed a header with no
         # row -- which is exactly what a timer that is NOT armed looks like, while the script still
         # said "Installed.". Ask systemd what the state IS, and say so.
@@ -162,8 +229,123 @@ def install_script(blob):
         "  echo '    TIMER_NOT_ARMED - the hub is installed but nothing will run it nightly'",
         "  systemctl status perseus.timer --no-pager -l 2>&1 | tail -12 | sed 's/^/      /'",
         "fi",
-        "echo '#### STATE'",
-        "ls -la /var/log/colt/perseus_*.json 2>/dev/null || echo '(no state yet - first run)'",
+        # THE SAME QUESTION, ASKED SEPARATELY OF EACH UNIT. Written out three times rather than
+        # looped, deliberately: each block NAMES the unit it measured, so a marker in the output can
+        # never be read as evidence about a different timer. A diagnostic that does not name its
+        # subject sends the next investigation down the wrong road.
+        "systemctl enable --now perseus-weekly.timer 2>&1 | sed 's/^/    enable: /' || true",
+        "echo '#### WEEKLY_TIMER'",
+        "WEN=$(systemctl is-enabled perseus-weekly.timer 2>&1); "
+        "WAC=$(systemctl is-active perseus-weekly.timer 2>&1)",
+        "echo \"    is-enabled=$WEN  is-active=$WAC\"",
+        "if [ \"$WEN\" = enabled ] && [ \"$WAC\" = active ]; then",
+        "  systemctl list-timers perseus-weekly.timer --no-pager 2>/dev/null | sed -n '2p' "
+        "|| echo '    (armed, but list-timers printed nothing)'",
+        "  echo '    WEEKLY_TIMER_OK'",
+        "else",
+        "  echo '    WEEKLY_TIMER_NOT_ARMED - nothing will re-vet the rules or retire dead ones'",
+        "  systemctl status perseus-weekly.timer --no-pager -l 2>&1 | tail -12 | sed 's/^/      /'",
+        "fi",
+        "systemctl enable --now perseus-watch.timer 2>&1 | sed 's/^/    enable: /' || true",
+        "echo '#### WATCH_TIMER'",
+        "SEN=$(systemctl is-enabled perseus-watch.timer 2>&1); "
+        "SAC=$(systemctl is-active perseus-watch.timer 2>&1)",
+        "echo \"    is-enabled=$SEN  is-active=$SAC\"",
+        "if [ \"$SEN\" = enabled ] && [ \"$SAC\" = active ]; then",
+        "  systemctl list-timers perseus-watch.timer --no-pager 2>/dev/null | sed -n '2p' "
+        "|| echo '    (armed, but list-timers printed nothing)'",
+        "  echo '    WATCH_TIMER_OK'",
+        "else",
+        "  echo '    WATCH_TIMER_NOT_ARMED - no incident will be reviewed while it is happening'",
+        "  systemctl status perseus-watch.timer --no-pager -l 2>&1 | tail -12 | sed 's/^/      /'",
+        "fi",
+        # ---- DID THE BRAIN EVER ACTUALLY RUN? ------------------------------------------------
+        # "TIMER_OK" says systemd will CALL something. It says nothing about whether that something
+        # works, and it did not: ExecStart runs `docker exec colt-web ... /opt/perseus/...`, the
+        # package was installed to /opt/perseus ON THE HOST, and colt-web mounts only /data and
+        # /var/log/colt -- so every nightly run died on "No such file or directory" and printed
+        # "daily cycle armed" on every ship. Every project has been reporting `enforcing cycle 0`
+        # ever since, which means an EMPTY blocklist, which means the sidecars block NOTHING.
+        #
+        # The old line here made it worse: it listed /var/log/colt/perseus_*.json on the HOST. That
+        # directory is not the volume (the volume is under /var/lib/docker/volumes/...), so it said
+        # "(no state yet - first run)" every single time. A message printed on every run means the
+        # thing has never once executed - this repository's own defect class 2, in its own installer.
+        #
+        # So: ASK THE CONTAINER, at the exact path the five thin clients read, and FAIL under set -e.
+        "echo '#### BRAIN'",
+        "BL=/var/log/colt/perseus_blocklist.json",
+        "if ! docker exec colt-web test -f \"$BL\"; then",
+        "  echo '    no blocklist yet - running ONE cycle now to bootstrap (this can take minutes)'",
+        "  docker exec colt-web python3 /opt/perseus/perseus/hub.py --cycle 2>&1 "
+        "| tail -25 | sed 's/^/      /' || true",
+        "fi",
+        # The property, read where the CLIENTS read it: a published blocklist whose cycle is >= 1.
+        # hub.cycle() does rs["cycle"] = old + 1, so cycle 0 can only mean "never published".
+        "docker exec colt-web python3 -c \"import json,time,os;"
+        "p='/var/log/colt/perseus_blocklist.json';"
+        "d=json.load(open(p));c=int(d.get('cycle') or 0);n=len(d.get('patterns') or []);"
+        "age=int(time.time()-os.path.getmtime(p));"
+        "print('    BLOCKLIST cycle=%d patterns=%d age=%dh' % (c,n,age//3600));"
+        "raise SystemExit(0 if c>=1 and age < 48*3600 else 1)\" || {",
+        "  echo '    BRAIN_DEAD: no blocklist with cycle>=1 newer than 48h at that path.';",
+        "  echo '    The five sidecars are therefore enforcing an EMPTY pattern list.';",
+        "  echo '    Last run:'; systemctl status perseus.service --no-pager -l 2>&1 "
+        "| tail -15 | sed 's/^/      /';",
+        "  exit 1;",
+        "}",
+        # ---- AND THE SAME QUESTION OF THE TWO NEW UNITS -------------------------------------
+        # "armed" says systemd will CALL something; it says nothing about whether that something
+        # works. That gap is the entire reason the nightly cycle died on ENOENT for weeks while
+        # every ship printed "daily cycle armed". So each new unit gets the same treatment: ask
+        # THE CONTAINER, at the path the job writes, and fail the install under set -e.
+        #
+        # THE BOOTSTRAP IS DELIBERATELY FREE. Both are run with --no-panel, which does the whole
+        # deterministic half and asks no model, so proving the units costs nothing on every ship.
+        # A proof that bills the account is a proof somebody will eventually switch off.
+        "echo '#### WEEKLY'",
+        "WS=/var/log/colt/perseus_weekly.json",
+        "if ! docker exec colt-web test -f \"$WS\"; then",
+        "  echo '    no weekly record yet - running the deterministic half now (no model is asked)'",
+        "  docker exec colt-web python3 /opt/perseus/perseus/hub.py --weekly --no-panel 2>&1 "
+        "| tail -20 | sed 's/^/      /' || true",
+        "fi",
+        "docker exec colt-web python3 -c \"import json,time,os;"
+        "p='/var/log/colt/perseus_weekly.json';"
+        "d=json.load(open(p));r=int(d.get('runs') or 0);"
+        "age=int(time.time()-float(d.get('ts') or 0));"
+        "print('    WEEKLY runs=%d age=%dh verdict=%s' % (r,age//3600,d.get('verdict')));"
+        "raise SystemExit(0 if r>=1 and age < 8*86400 else 1)\" || {",
+        "  echo '    WEEKLY_DEAD: no weekly pass has completed in the last 8 days.';",
+        "  echo '    Nothing is re-vetting live rules against the routes as they are TODAY.';",
+        "  echo '    Last run:'; systemctl status perseus-weekly.service --no-pager -l 2>&1 "
+        "| tail -15 | sed 's/^/      /';",
+        "  exit 1;",
+        "}",
+        "echo '#### WATCH'",
+        "WT=/var/log/colt/perseus_watch.json",
+        "if ! docker exec colt-web test -f \"$WT\"; then",
+        "  echo '    no watch record yet - running one pass now (no model is asked)'",
+        "  docker exec colt-web python3 /opt/perseus/perseus/hub.py --watch --no-panel 2>&1 "
+        "| tail -20 | sed 's/^/      /' || true",
+        "fi",
+        # ONE HOUR, not one day: this unit fires every ten minutes, so an hour of silence is six
+        # missed passes and is already a fault. A staleness window far wider than the schedule is a
+        # check that cannot fail.
+        "docker exec colt-web python3 -c \"import json,time,os;"
+        "p='/var/log/colt/perseus_watch.json';"
+        "d=json.load(open(p));r=int(d.get('runs') or 0);"
+        "age=int(time.time()-float(d.get('ts') or 0));"
+        "print('    WATCH runs=%d age=%dmin detected=%s asked=%s blind=%r'"
+        " % (r,age//60,d.get('detected'),d.get('asked'),d.get('blind')));"
+        "raise SystemExit(0 if r>=1 and age < 3600 else 1)\" || {",
+        "  echo '    WATCH_DEAD: no incident pass has completed in the last hour, and it runs "
+        "every 10 minutes.';",
+        "  echo '    No live incident is being reviewed while it is happening.';",
+        "  echo '    Last run:'; systemctl status perseus-watch.service --no-pager -l 2>&1 "
+        "| tail -15 | sed 's/^/      /';",
+        "  exit 1;",
+        "}",
     ]) + "\n"
 
 
@@ -491,14 +673,24 @@ def main():
 
     if a.install_only:
         say("")
-        # DO NOT CLAIM THE TIMER IS ARMED WITHOUT EVIDENCE. `out` carries the state systemd
-        # reported; a "TIMER_OK" marker is the only thing that proves the nightly cycle will fire.
-        if "TIMER_OK" in out:
-            say("Installed and ARMED. Daily at 04:40 UTC; `python perseus.py` runs one now.")
-            return 0
-        say("[!] Installed, but the TIMER IS NOT ARMED - the hub will not run by itself.")
-        say("    The state systemd reported is above. Nothing else was changed.")
-        return 1
+        # DO NOT CLAIM A TIMER IS ARMED WITHOUT EVIDENCE. `out` carries the state systemd
+        # reported; each marker is the only thing that proves its own unit will fire.
+        #
+        # ALL THREE, NAMED SEPARATELY. Reporting "armed" because ONE of them answered is how a
+        # partially-installed SOC reads as a healthy one -- and the missing unit is always the one
+        # nobody was watching. `WEEKLY_TIMER_OK` deliberately contains `TIMER_OK` as a substring,
+        # so the DAILY test is anchored on its own line marker below rather than on `in out`.
+        missing = [n for n, mark in (("daily 04:40 UTC", "\n    TIMER_OK"),
+                                     ("weekly Sun 05:20 UTC", "WEEKLY_TIMER_OK"),
+                                     ("watch every 10 min", "WATCH_TIMER_OK"))
+                   if mark not in out]
+        if missing:
+            say("[!] Installed, but NOT ARMED: %s" % ", ".join(missing))
+            say("    The state systemd reported is above. Nothing else was changed.")
+            return 1
+        say("Installed and ARMED: daily 04:40 UTC, weekly Sun 05:20 UTC, watch every 10 min.")
+        say("`python perseus.py` runs one daily cycle now.")
+        return 0
 
     say("")
     say("-- one cycle now --")

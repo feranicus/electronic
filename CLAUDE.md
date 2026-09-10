@@ -437,7 +437,16 @@ writing a check, a fixture or a diagnostic.
     writer as access logging (and must not count its own lines as traffic), and the watch loop pages
     on the transition. A lookup that has never been observed succeeding defaults off, behind an env
     var, not behind a redeploy.
-54. **One response is built from ONE snapshot.** Reading the same cache twice inside one handler
+54. **A single-FILE bind mount follows an INODE, so `sed -i` is not an in-place edit.** It writes a
+    temp file and renames it; the container then reads a file nobody can see, and the only repair is
+    restarting the shared proxy that owns :443 for every domain. Filter to a variable and truncate
+    the existing inode with `>`, after a size floor so a failed substitution cannot blank it.
+55. **`docker exec <ct> <path>` resolves inside the CONTAINER, so the container's image must carry
+    that path.** perseus.service ran the hub from `/opt/perseus`, which existed only on the HOST;
+    it died on ENOENT every night for weeks while the installer printed "daily cycle armed", and the
+    five sidecars enforced an empty blocklist the whole time. Ask the container, at the path the
+    clients read, and fail the ship on `cycle 0`.
+56. **One response is built from ONE snapshot.** Reading the same cache twice inside one handler
     lets a refresh land in between and the two halves then describe different moments — `live`
     beside zero traffic. Read once, pass it down.
 
@@ -463,7 +472,10 @@ writing a check, a fixture or a diagnostic.
   `partners-locales/` (six UI languages, 100% enforced), `components/`, `pages/`, `styles.css`.
   Gates in `tools/`: i18n_catalogue, i18n_audit, header_layout, contrast_gate, canvas_smoke,
   api_contract, shipped_shell, partners_gate, render_gate.
-- `perseus/` — the hub (`hub.py`, `ruleset.py`, `vet.py`, `abuse.py`, `client.py`).
+- `perseus/` — the hub (`hub.py`, `ruleset.py`, `vet.py`, `abuse.py`, `incident.py`, `client.py`).
+  Three timers, three verbs: `--cycle` daily 04:40 · `--weekly` Sun 05:20 (re-vet live rules against
+  today's routes, retire what a month never matched) · `--watch` every 10 min (four-vendor consensus
+  on ONE live incident; proposes DETECTION only, capped at 12 incidents / $0.30 a day).
 - `deploy/` — `caddy/*.caddy` (committed blocks), `caddyguard/agent.py`, `dbbackup/agent.py`,
   `logship/agent.py`, `hostpath.py` (the ONE volume/mount resolver).
 - Root verbs: `ship.py` (the orchestrator) and the diagnostics listed above.

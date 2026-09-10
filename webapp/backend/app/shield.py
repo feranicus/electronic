@@ -41,6 +41,97 @@ try:
 except Exception:                                        # pragma: no cover - import guard
     notify = None
 
+# ------------------------------------------------------------------ THE SHARED DETECTION TABLE
+# THE PROBE REGEX, THE CLASS VOCABULARY AND THE ROUTE/ASSET SHAPES USED TO LIVE IN THIS FILE.
+# They moved to perseus/client.py on 2026-09-10, unchanged, and this file imports them.
+#
+# WHY: this file is not copied anywhere. perseus/client.py is copied into all five projects, so as
+# long as the table lived here, jobhuntwow, jev.best, klimaanlage-preise.de and s4biz.io could not
+# see a single one of these rules -- they ran a pattern-list lookup against a list the hub had
+# never published, and blocked nothing for their entire lives. Moving the table to the file that
+# IS copied is what makes one implementation reachable from five request paths. There is no second
+# copy to drift, because there is no second SOURCE: whichever of the three locations below is
+# resolved, its bytes came from perseus/client.py, and tests/test_perseus_shield.py asserts the
+# pattern this module ended up with is the pattern that file defines -- comparing the compiled
+# objects, not two comments claiming to agree.
+#
+# WHAT STAYED HERE is everything that is cybergod's alone and cannot be copied: OUR_TOP / OUR_APP /
+# OUR_EXACT (this application's route list), EXTRA_PROBE_PATHS (its operator console), the
+# disk-backed slow_store, the Telegram escalation, and the /24 rule that needs both.
+#
+# THE IMPORT ADDS NO NEW FAILURE DOMAIN: main.py already does `from . import perseus_client` to
+# install the middleware, so colt-web has depended on that file being present since the sidecar was
+# wired. And if every candidate below fails we run with detection OFF and SAY SO -- DETECTION,
+# a printed line, and state()["detection"] -- rather than raise at import and take the site down.
+# A control that is off must never look like a control that found nothing.
+#
+# THE TABLE IS RESOLVED, NOT ASSUMED, AND THE RESOLUTION NAMES ITSELF IN state()["detection"].
+#
+# There is ONE source file, perseus/client.py, and three places it can legitimately be found from
+# here, because that one file is distributed to three of them:
+#   1. `app/perseus_client.py`      - the copy `perseus.py --clients` writes into this package and
+#                                     the Dockerfile ships as part of `COPY webapp/backend/app`.
+#                                     This is what colt-web's own middleware imports, so it is the
+#                                     copy that must win: shield and the sidecar then score with
+#                                     the SAME object and cannot disagree.
+#   2. `/opt/perseus/perseus/client.py` - the package the Dockerfile ships at line 60.
+#   3. `<repo>/perseus/client.py`   - the source, for the test suite and for anyone running this
+#                                     module out of a checkout before --clients has been run.
+#
+# A CANDIDATE THAT CANNOT ANSWER FOR THE WHOLE TABLE IS NOT A CANDIDATE. A copy predating the
+# shared table is importable and incomplete, and `_pc.PROBE_RE` on it would raise AttributeError at
+# import time and take the entire application module down. So each candidate is CHECKED against the
+# full name list and skipped if it falls short -- which is also what makes a first run out of a
+# fresh checkout work: candidate 1 is stale, candidate 3 is the source, and nothing crashes.
+_NEEDED = ("PROBE_RE", "CLASSES", "classify", "lane_of", "ESCAPE_RE", "ASSET_RE", "HONEYTOKENS",
+           "is_our_route", "probe_shape", "is_honeytoken")
+
+
+def _resolve_table():
+    """(module, where) for the shared detection table, or (None, "unavailable"). Never raises."""
+    import importlib
+    import importlib.util
+
+    def complete(m):
+        return m is not None and all(hasattr(m, n) for n in _NEEDED)
+
+    for name, pkg in ((".perseus_client", __package__ or None), ("perseus_client", None)):
+        try:
+            m = importlib.import_module(name, pkg) if pkg else importlib.import_module(name)
+            if complete(m):
+                return m, "app.perseus_client"
+        except Exception:
+            pass
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in ("/opt/perseus/perseus/client.py",
+                 # app -> backend -> webapp -> repo root
+                 os.path.join(here, "..", "..", "..", "perseus", "client.py")):
+        try:
+            p = os.path.abspath(cand)
+            if not os.path.exists(p):
+                continue
+            # Loaded under its own name so it can never be mistaken for, or collide with, the
+            # sidecar's module. It is the same FILE; a second module object of it holds separate
+            # request state, which is why candidate 1 is preferred and this is the fallback.
+            spec = importlib.util.spec_from_file_location("perseus_shared_table", p)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            if complete(m):
+                return m, p
+        except Exception:
+            pass
+    return None, "unavailable"
+
+
+_pc, DETECTION = _resolve_table()
+if _pc is None:                                          # pragma: no cover - asserted by test
+    try:
+        print('{"evt":"shield_detection_unavailable","err":"the shared detection table could not'
+              ' be resolved from any of the three known locations; probe detection is OFF on this'
+              ' worker"}', flush=True)
+    except Exception:
+        pass
+
 
 def _i(name, d):
     try:
@@ -137,195 +228,17 @@ ALLOW_IPS = {x.strip() for x in os.environ.get("SHIELD_ALLOW_IPS", "").split(","
 NEVER_BLOCK_PREFIXES = ("/.well-known/", "/api/")
 
 # ------------------------------------------------------------------ detection
-# A HONEYTOKEN IS THE ONLY ZERO-FALSE-POSITIVE SIGNAL WE HAVE. These paths are listed in robots.txt
-# as Disallow and are linked from nowhere, so a request for one is either a deliberate scan or a
-# robots-ignoring crawler. Either way it is not a visitor. (Thinkst canarytoken doctrine.)
-HONEYTOKENS = ("/admin.php", "/wp-login.php", "/.env.bak", "/backup.zip", "/config.json.old")
-
-_PROBE_RE = re.compile(
-    # /.git /.env /.aws /.ssh — dot-directories.
-    # THE NEGATIVE LOOKAHEAD IS LOAD-BEARING. `/.well-known/` is an IANA-registered namespace we
-    # serve on purpose: ACME renewal and RFC 9116 security.txt live there. Without the exclusion
-    # every Let's Encrypt validation and every security.txt fetch scored `probe_path` at weight 3.
-    # It could not be BLOCKED (the prefix is exempt) but it was counted, so our own certificate
-    # renewals were inflating the attack figures in the daily digest.
-    # An impostor is still caught: `/.well-knownX/` fails the lookahead because it requires the
-    # slash, and `/.well-known/x.php` or a traversal underneath it is caught by the rules below.
-    r"(?:^|/)\.(?!well-known/)[^/]"
-    r"|//"                                 # //slug — a doubled slash is a template artefact
-    r"|/\["                                # /[workspace]/ — an UNRENDERED PLACEHOLDER. A human
-                                           #   cannot type this; it is a scanner replaying docs.
-    r"|\.(?:php|asp|aspx|jsp|cgi|sql|bak|old|db|sqlite|pem|key|log|ini|yml|yaml|env)(?:$|[?/])"
-    r"|/(?:wp-|wordpress|phpmyadmin|xmlrpc|cgi-bin|adminer|actuator|struts|vendor/|solr|jenkins)"
-    # THE NINETEEN CLASSES MEASURED AGAINST THE REAL MASS-SCANNING CORPUS (OWASP OAT-014, CISA
-    # advisories, public honeypot feeds). Written from evidence of what scanners actually send,
-    # not from imagination — `analyse_attacks.py` re-runs that comparison against OUR OWN log so
-    # the next gap is found the same way.
-    r"|/(?:admin|manager/html|cpanel|webadmin|adminpanel)(?:$|[/?])"      # admin consoles
-    r"|/(?:swagger|api-docs|graphql|graphiql)|/v\d/api-docs"              # API introspection
-    r"|/(?:boaform|goform|HNAP1|hudson|setup\.cgi|shell\?)"              # router / IoT / CI
-    r"|/(?:web\.config|server-status|server-info|\.DS_Store|\.npmrc|\.dockercfg)"
-    r"|XDEBUG_SESSION|/_ignition|/telescope/|/login\.action"             # debug + RCE chains
-    r"|%2e%2e|\.\./|/%2e[a-z]"    # traversal, AND the single-encoded dot: 185.177.72.x
-                                  # asked for /%2eenv five times each. One %2e IS ".", so that is
-                                  # /.env wearing a costume, and the double-encoded rule missed it.
-    r"|/autodiscover/autodiscover\.xml"                                  # Exchange probe (we run none)
-    r"|(?:^|/)(?:id_rsa|credentials|dump|backup|shell|cmd|eval)(?:$|[./])"
-    r"|(?:^|/)[A-Z_]{3,}\.md$"             # /DOCS.md /IAM.md /README.md at the root: repository
-                                           #   documentation we do not serve, a leaked-docs scan.
-    r"|/null$"
-
-    # ------------------------------------------------------------------------------------------
-    # THE NINE PATHS OUR OWN 14-DAY DIGEST WAS SEEING AND THIS REGEX COULD NOT SCORE (2026-08-22).
-    # analyse_attacks.py named them in its "NEW OR UNRECOGNISED" section for days and nobody
-    # joined the two up. Measured before the fix: 9 of 17 real attack paths from that digest were
-    # invisible to the blocker, which is the whole reason `blocked` kept reading low. The corpus
-    # knowing a class is worthless if probe_shape() cannot score it.
-    #
-    # EVERY PATTERN BELOW IS ANCHORED so it cannot reach a real route. The live route set is
-    # main.py::_APP_ROUTES = {"", login, app, privacy, impressum, contact, demo, experience,
-    # partners} plus /assets/** (StaticFiles) and /api/** (exempt anyway). test_shield.py asserts
-    # all of them against this regex, because a shield that blocks a visitor is worse than none.
-
-    # 1. PHP VERSION SUFFIXES. `.php$` missed /1.php7, /about.php525, /alfa-rex.php7, and the
-    #    digest counted 24,069 php probes while these specific ones scored nothing.
-    r"|\.php\d{1,4}(?:$|[?/])"
-
-    # 2. VITE DEV-SERVER ARBITRARY FILE READ (CVE-2025-30208 family). /@fs/ is a Vite internal
-    #    prefix; /@fs/etc/passwd and /@fs/proc/self/environ were the single most-repeated
-    #    unrecognised probe in the digest, from three separate sources. We BUILD with Vite and
-    #    serve static files in production, so this cannot succeed here, but a request for it is
-    #    unambiguously a scanner: no browser and no human ever emits it.
-    r"|(?:^|/)@(?:fs|vite|id)(?:$|/)"
-
-    # 3. CLOUD AND SERVICE CREDENTIALS, by exact filename rather than by extension. Matching
-    #    "*.json" would hit the SBOM and any future public document; matching these names cannot.
-    r"|(?:^|/)(?:service[-_]?account(?:[-_]?key)?|serviceaccountkey|firebase[-_]?adminsdk"
-    r"|firebase|credentials|secrets?|gcp[-_]?key|client[-_]secret"
-    r"|application_default_credentials)\.json(?:$|[?/])"
-    r"|\.(?:tfstate|tfvars|pfx|p12|jks|keystore|axd)(?:$|[?/])"
-    # kubeconfig has NO extension, so it needs a filename rule and not an extension rule. The
-    # committed test caught this: it was listed in the extension alternation, where it could never
-    # match, which is a rule that looks present and does nothing.
-    r"|(?:^|/)(?:kubeconfig|\.git-credentials|id_ed25519|authorized_keys)(?:$|[?/])"
-
-    # 4. BUILD AND DEPLOY ARTEFACTS. Present in a repository, never on a web root.
-    r"|(?:^|/)(?:Dockerfile|docker-compose|Procfile|Makefile|Jenkinsfile|Vagrantfile)(?:$|[.?/])"
-
-    # 5. FRAMEWORK DEBUG CONSOLES. Information disclosure by design, which is why scanners want
-    #    them. /telescope/ and /_ignition are already above; these are the rest of the family.
-    r"|/(?:_?debugbar|_profiler|_debug|elmah\.axd|trace\.axd)(?:$|[/?])"
-
-    # 7. FRAMEWORK AND CLOUD CONFIG FILES, from the 2026-08-26 digest. `/amplifyconfiguration.json`
-    #    (AWS Amplify), `/application.properties` and `/appsettings.json` (Spring Boot and .NET)
-    #    all carry credentials and none of them was scored. Named files, not an extension rule:
-    #    the panel also proposed a bare `\.json$`, which would match `/.well-known/sbom.cdx.json`
-    #    that we now serve deliberately. That proposal was REFUSED for exactly that reason.
-    r"|(?:^|/)(?:amplifyconfiguration|awsconfiguration|appsettings(?:\.[a-z]+)?"
-    r"|application|application-[a-z]+)\.(?:json|properties|ya?ml|config)(?:$|[?/])"
-
-    # 8. WORDPRESS REST API ENUMERATION: /blog/wp/v2/users, /wp-json/wp/v2/users. The `/wp-` rule
-    #    above misses the `/blog/wp/v2/` form, which is what the digest actually saw.
-    r"|/wp/v2/(?:users|posts|media|categories|tags|pages)"
-    r"|/wp-json(?:$|/)"
-
-    # 6. ROOT-LEVEL HEX DIRECTORIES: /1b7e06/ /2ff83958/ /3fa375/. Cache and WAF probing.
-    #    DELIBERATELY ROOT-ONLY. The obvious `(?:^|/)[0-9a-f]{5,12}/?$` would also match the LAST
-    #    SEGMENT of a legitimate path, and job identifiers are hex, so /app/<jobid> would have
-    #    been read as an attack on the operator's own cabinet. Anchor at ^ and the risk is gone.
-    r"|^/[0-9a-f]{5,12}/?$"
-
-    # ------------------------------------------------------------------------------------------
-    # 9. THE EIGHT PATHS FROM THE 2026-08-29 DIGEST (added 2026-08-29).
-    #
-    # WHY THEY WERE MISSED IS MORE IMPORTANT THAN THE PATHS. Every rule above matches a dot, an
-    # extension or a well-known product name. These eight carry NONE of those: `/env` is `.env`
-    # with the dot removed, `/phpinfo` is the classic PHP disclosure page without its extension,
-    # and `/Gaia/` and `/WebInterface/` are appliance consoles whose names look like ordinary
-    # English words. A rule set built around punctuation cannot see a bare word.
-    #
-    # ALL EIGHT ARE ROOT-ANCHORED AND EXACT. That is the whole safety argument, and it matters
-    # more here than anywhere else in this regex: `/info` and `/environment` ARE plausible routes
-    # on somebody's site. They are not routes on OURS (main.py::_APP_ROUTES), and an anchored
-    # exact match cannot reach `/api/info`, `/app/environment` or any asset path. Both directions
-    # are asserted in test_shield.py against the real route list.
-    #
-    # `/crusader-404-probe` is DELIBERATELY LEFT OUT even though it appeared alongside these. It
-    # arrived from three separate Google Cloud addresses, which is the shape of a commercial
-    # scanning service rather than an attacker, and "we do not recognise it" is the honest state
-    # until somebody establishes what it is. Absence of evidence is not a detection rule.
-    # TWO RULES, NOT ONE, AND THE SPLIT IS THE POINT. `Gaia`, `WebInterface` and `geoserver` are
-    # PRODUCT NAMES: unambiguous wherever they appear, so a subpath is allowed and must be, because
-    # the real request in the digest was `/geoserver/web/` and an exact rule scored it False.
-    # `env`, `environment`, `info`, `phpinfo` and `flight` are ORDINARY WORDS and stay exact at the
-    # root: `^/info/?$` cannot reach `/api/info` or `/information`, and a prefix rule would.
-    r"|^/(?:Gaia|WebInterface|geoserver)(?:$|[/?])"
-    r"|^/(?:env|environment|phpinfo|info|flight)/?$"
-
-    # 10. CLOUD INSTANCE METADATA, the SSRF payoff path. 169.254.169.254 is only reachable from
-    #     inside the instance, so a request arriving over the internet for one of these is an
-    #     attacker testing whether our front end will proxy it. We run no such proxy, which is
-    #     exactly why a request for it is unambiguous: nothing legitimate ever asks.
-    r"|(?:^|/)latest/(?:meta-data|user-data|dynamic)(?:$|/)"
-    r"|(?:^|/)computeMetadata/(?:v\d|$)"
-    r"|(?:^|/)metadata/(?:instance|identity|v1)(?:$|/)",
-    re.I)
-
-
-# ---------------------------------------------------------------------------------------------
-# THE CLASS VOCABULARY. One table, used by three things: the public siege feed, analyse_attacks.py
-# and the Grafana labels. It lived only in analyse_attacks.py, which is a repo-root ops script and
-# is NOT copied into the colt-web image - so the feed could not have named a lane without a second
-# copy, and a second copy is how ENRICH_MODELS ended up with four homes.
-# NOTE this does NOT make the gap analysis circular: that compares this CORPUS against
-# probe_shape(), which is a separate regex. The corpus is "what exists"; probe_shape is "what we
-# detect". Sharing the vocabulary is what lets the two be compared at all.
-CLASSES = [
-    ("wordpress",   re.compile(r"(?i)/(wp-|wordpress|xmlrpc)")),
-    ("php_probe",   re.compile(r"(?i)\.php(?:$|[?/])")),
-    ("env_secrets", re.compile(r"(?i)(?:^|/)\.(env|git|aws|ssh|svn)")),
-    ("admin_panel", re.compile(r"(?i)/(admin|manager|phpmyadmin|adminer|cpanel|webadmin)")),
-    ("api_docs",    re.compile(r"(?i)/(swagger|openapi|graphql|actuator|\.well-known/openid)")),
-    ("shell_rce",   re.compile(r"(?i)(cgi-bin|/shell|/cmd|eval\(|\bbash\b|\bwget\b|\bcurl\b)")),
-    ("traversal",   re.compile(r"(\.\./|%2e%2e|\.\.%2f)")),
-    ("sqli",        re.compile(r"(?i)(union\s+select|'\s+or\s+1=1|sleep\(|benchmark\()")),
-    ("xss",         re.compile(r"(?i)(<script|javascript:|onerror=)")),
-    ("backup_file", re.compile(r"(?i)\.(bak|old|sql|zip|tar|gz|db|sqlite|log|ini|ya?ml)(?:$|[?/])")),
-    ("docs_leak",   re.compile(r"(?:^|/)[A-Z_]{3,}\.md$")),
-    ("template",    re.compile(r"(//|/\[)")),
-    ("iot_router",  re.compile(r"(?i)/(boaform|goform|HNAP1|setup\.cgi|hudson|jenkins|solr)")),
-    # Added 2026-08-22 alongside the probe_shape patterns. THE TWO MUST MOVE TOGETHER: the corpus
-    # is "what exists" and probe_shape is "what we detect", and the gap analysis is only
-    # meaningful while both are current. A class here with no scoring rule there is a name for
-    # something we still cannot block.
-    ("dev_server",  re.compile(r"(?i)(?:^|/)@(fs|vite|id)(?:$|/)")),
-    ("cloud_creds", re.compile(r"(?i)(?:^|/)(service[-_]?account|firebase|credentials|secrets?)"
-                               r"\.json|\.(tfstate|tfvars|kubeconfig|pfx|p12|jks)(?:$|[?/])")),
-    ("build_files", re.compile(r"(?i)(?:^|/)(Dockerfile|docker-compose|Procfile|Makefile"
-                               r"|Jenkinsfile|Vagrantfile)(?:$|[.?/])")),
-    ("debug_panel", re.compile(r"(?i)/(_?debugbar|_profiler|_debug|elmah\.axd|trace\.axd"
-                               r"|_ignition|telescope)(?:$|[/?])")),
-    ("hex_spray",   re.compile(r"(?i)^/[0-9a-f]{5,12}/?$")),
-    # Added 2026-08-29 with section 9 and 10 of _PROBE_RE. THE TWO MUST MOVE TOGETHER, per the
-    # note above: a class here with no scoring rule there is a name for something we still cannot
-    # block, and a scoring rule with no class here is a block the digest cannot explain.
-    # Root-anchored and exact, for the same reason the regex is: these are ordinary words.
-    ("bare_secret", re.compile(r"(?i)^/(env|environment|phpinfo|info)/?$")),
-    ("appliance_ui", re.compile(r"(?i)^/(Gaia|WebInterface|geoserver)(?:$|[/?])|^/flight/?$")),
-    ("cloud_metadata", re.compile(r"(?i)(?:^|/)(latest/(meta-data|user-data|dynamic)"
-                                  r"|computeMetadata/v\d|metadata/(instance|identity|v1))(?:$|/)")),
-]
-
-
-def classify(path):
-    """Every class a path belongs to, most specific first. [] means it is not attack-shaped."""
-    return [name for name, rx in CLASSES if rx.search(path or "")]
-
-
-def lane_of(path):
-    """The single lane the public feed should draw this in, or None."""
-    hits = classify(path)
-    return hits[0] if hits else None
+# EVERY NAME IN THIS SECTION IS THE OBJECT perseus/client.py DEFINES -- not a copy of it. Read that
+# file for the rules and the incident behind each one; see the note at the top of this file for why
+# they live there. `re.compile(r"(?!)")` is a regex that can never match: if the shared table is
+# unreachable this shield detects NOTHING, loudly (DETECTION above), rather than pretending to.
+HONEYTOKENS = _pc.HONEYTOKENS if _pc is not None else ()
+_PROBE_RE = _pc.PROBE_RE if _pc is not None else re.compile(r"(?!)")
+CLASSES = _pc.CLASSES if _pc is not None else []
+classify = _pc.classify if _pc is not None else (lambda path: [])
+lane_of = _pc.lane_of if _pc is not None else (lambda path: None)
+_ESCAPE_RE = _pc.ESCAPE_RE if _pc is not None else re.compile(r"\.\.|%2e|%2f|%5c|\\", re.I)
+_ASSET_RE = _pc.ASSET_RE if _pc is not None else re.compile(r"(?!)")
 
 
 # THE PAGES WE ACTUALLY SERVE. Kept here rather than imported from main.py because shield.py is
@@ -340,43 +253,23 @@ OUR_TOP = ("", "login", "app", "privacy", "impressum", "contact", "demo", "exper
 # exempted everything an attacker could append to it. Fifth instance of the same defect in this
 # file, introduced by me while fixing a different one. An exemption must name what it exempts.
 OUR_APP = ("admin", "assistant", "brand", "compliance", "history", "password")
-# Static assets are matched by SHAPE, not by prefix: a real build asset is a filename with a known
-# extension, so `/assets/index-a1b2c3.js` is ours and `/assets/.env` is not.
-_ASSET_RE = re.compile(r"^/(?:assets|media|icons|static)/[\w][\w.\-]*"
-                       r"\.(?:js|mjs|css|map|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot"
-                       r"|mp4|webm|json|txt)$", re.I)
 OUR_EXACT = ("/robots.txt", "/sitemap.xml", "/favicon.ico", "/manifest.webmanifest", "/sw.js",
              "/defense.html", "/defense.js", "/healthz", "/health")
-
-
-_ESCAPE_RE = re.compile(r"\.\.|%2e|%2f|%5c|\\", re.I)
 
 
 def is_our_route(path):
     """True for a page or asset this application serves. Never scored, never blocked.
 
-    A PREFIX EXEMPTION IS A HIDING PLACE UNLESS IT REFUSES TRAVERSAL. The first version returned
-    True for anything under `/assets/`, so `/assets/../../.env` was waved through before the
-    traversal rule could fire, and the negative test caught it immediately. That is the identical
-    defect the `/api/` prefix already caused once, reintroduced by me in the fix for a different
-    one. No legitimate route contains `..` or an encoded slash or dot, so refuse first and match
-    afterwards.
+    THE ROUTE LISTS ARE CYBERGOD'S AND STAY HERE; the matching (traversal refusal first, then the
+    exact list, then the asset SHAPE, then one segment, then one level under the cabinet) is the
+    shared implementation in perseus/client.py. A PREFIX EXEMPTION IS A HIDING PLACE UNLESS IT
+    REFUSES TRAVERSAL: the first version returned True for anything under `/assets/`, so
+    `/assets/../../.env` was waved through before the traversal rule could fire.
     """
-    raw = str(path or "/")
-    if _ESCAPE_RE.search(raw):
-        return False
-    p = (raw.split("?")[0] or "/").rstrip("/") or "/"
-    if p in OUR_EXACT or path in OUR_EXACT:
-        return True
-    if _ASSET_RE.match(p):                       # a real build asset, matched by SHAPE
-        return True
-    seg = [s for s in p.strip("/").split("/") if s]
-    if not seg:
-        return True                              # "/"
-    if len(seg) == 1:
-        return seg[0] in OUR_TOP
-    # Exactly one level under /app/, and only a route the cabinet actually registers.
-    return len(seg) == 2 and seg[0] == "app" and seg[1] in OUR_APP
+    if _pc is None:                                      # pragma: no cover - asserted by test
+        return False           # detection is off; claim nothing rather than exempt everything
+    return _pc.is_our_route(path, top=OUR_TOP, app_routes=OUR_APP, exact=OUR_EXACT,
+                            app_prefix="app")
 
 
 def probe_shape(path):
@@ -387,29 +280,14 @@ def probe_shape(path):
     for anything beneath it -- so /api/wp-login.php, /api/.env and /api/../../etc/passwd scored
     NOTHING AT ALL. An attacker who prefixed every probe with /api/ was invisible to the shield.
     Now the SHAPE is always scored; the EXEMPTION only decides whether we may ACT on that request.
+
+    EXTRA_PROBE_PATHS is read at CALL time, not bound at definition time: shield_console mutates
+    that set when the operator bans a path from Telegram, and a value captured at import would
+    make the ban silently do nothing.
     """
-    raw = str(path or "/")
-    if raw.lower() in EXTRA_PROBE_PATHS:
-        return True
-    # THE QUERY STRING IS ALWAYS SCANNED, EVEN ON OUR OWN PAGES.
-    # `/?XDEBUG_SESSION_START=phpstorm` has `/` as its path. The first version of the route
-    # exemption stripped the query, saw the homepage, and returned False, so a payload delivered
-    # in the query on any legitimate URL became invisible. That is the `/api/` hiding place for
-    # the THIRD time in one change: exemption from ACTION kept turning into exemption from
-    # OBSERVATION. The path may be ours; the query never is.
-    p, _sep, q = raw.partition("?")
-    if q and _PROBE_RE.search(q):
-        return True
-    # OUR OWN ROUTES ARE NEVER AN ATTACK SHAPE, and this is checked FIRST.
-    # `/app/admin` matched the `/(admin|manager|cpanel|...)` console rule and came back ACTIONABLE,
-    # so the administrator moving around their own administration page accumulated probe_path at
-    # weight 3 per request and could have tarpitted, then blocked, themselves out of the one page
-    # only they can reach. The rule predates this change; the route was added later and nothing
-    # compared the two. Same family as the 439-404 real visitor: a detector tuned on attacker
-    # behaviour has to be checked against OUR behaviour before it can be trusted.
-    if is_our_route(p):
-        return False
-    return bool(_PROBE_RE.search(raw))
+    if _pc is None:                                      # pragma: no cover - asserted by test
+        return False                                     # off, and DETECTION says so
+    return _pc.probe_shape(path, is_ours=is_our_route, extra=EXTRA_PROBE_PATHS)
 
 
 def is_probe_path(path):
@@ -421,7 +299,9 @@ def is_probe_path(path):
 
 
 def is_honeytoken(path):
-    return str(path or "").split("?")[0].lower() in HONEYTOKENS
+    if _pc is None:                                      # pragma: no cover - asserted by test
+        return False
+    return _pc.is_honeytoken(path)
 
 
 # ------------------------------------------------------------------ state (in-memory, per worker)
@@ -897,6 +777,10 @@ def state():
     now = time.time()
     return {
         "enabled": ENABLED, "enforcing": ENFORCE,
+        # WHERE THE DETECTION TABLE CAME FROM. "unavailable" means the shared table could not be
+        # imported and this shield is scoring NOTHING -- a state that must be readable, because a
+        # control that is off and a control that found nothing look identical from the outside.
+        "detection": DETECTION,
         "config": {k: cfg(k) for k in BOUNDS},
         "bounds": {k: list(v) for k, v in BOUNDS.items()},
         "blocked": {ip: int(exp - now) for ip, exp in _blocked.items() if exp > now},

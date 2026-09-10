@@ -134,6 +134,46 @@ _LOKI_EVENTS = {"ts": 0.0, "rows": [], "ok": False, "partial": False, "busy": Fa
 LOKI_BEAT_SELECTORS = [s for s in os.environ.get(
     "PERSEUS_LOKI_SELECTORS", '{container=~".+"}:{job=~".+"}:{service_name=~".+"}').split(":") if s]
 
+# --------------------------------------------------------------------------------- THE SOC HALF
+# EVERYTHING ABOVE ANSWERS "CAN WE SEE THIS PROJECT". NONE OF IT ANSWERS "IS ANYTHING STOPPED".
+# The operator was told, correctly, that this page is observation and almost nothing on it is
+# enforcement. The evidence was on the page the whole time and nobody read it as a finding: every
+# row said `enforcing cycle 0`. hub.cycle() sets rs["cycle"] to 1 on its FIRST success, so cycle 0
+# on all five rows means no cycle has ever completed -> publish() never wrote a blocklist ->
+# perseus_client.check() iterates an EMPTY pattern list on all five sites. `live` was true and
+# irrelevant. So the same three facts get asked of the security posture:
+#
+#   IS ANYTHING ENFORCED   the sidecar's own beat carries the ruleset cycle it LOADED; the
+#                          published file carries how many rules that cycle contains.
+#   HAS THE BRAIN RUN      `evt=perseus_publish`, printed by perseus/hub.py.
+#   WOULD AN ATTACK REACH  can colt-web read this project's lines at all -- watch() and this page
+#   THE OPERATOR           read the SAME rows, so the question is already answered, in the wrong
+#                          vocabulary. Said in words here.
+#
+# `evt=perseus_publish` is printed to STDOUT and nowhere else -- the hub does not write the shared
+# events log -- so Loki is the only place it can be read from, and THE LINE CARRIES NO TIMESTAMP OF
+# ITS OWN. This lookup therefore reports a COUNT over a window and never "the latest line":
+# _loki_fetch merges several streams and only the first is guaranteed newest-first, so reading
+# rows[0] as "the most recent publish" would be an ordering assumption dressed up as a measurement.
+# WHEN the last successful publish happened is answered by the blocklist file's own mtime, which
+# _cycle() already reads -- one reader of that file, not two.
+#
+# DEFAULT OFF, inheriting the traffic lookup's setting, for the reason written on LOKI_EVENTS_ON
+# above: a Loki query on this request path has taken the page down twice, and a feature nobody has
+# watched working is off. It gets its OWN name so it can be turned on alone, per box, no redeploy:
+#     python set_secret.py PERSEUS_LOKI_PUBLISH   (value: 1)
+LOKI_PUBLISH_ON = os.environ.get(
+    "PERSEUS_LOKI_PUBLISH", os.environ.get("PERSEUS_LOKI_EVENTS", "0")) == "1"
+PUBLISH_LOOKBACK_S = _num("PERSEUS_PUBLISH_LOOKBACK", 7 * 24 * 3600, int)
+PUBLISH_TTL_S = _num("PERSEUS_PUBLISH_TTL", 600, int)
+# `lookup` is an ENUM KEY and is never translated -- the label is chosen at render time, because
+# translating a key makes rows silently vanish. The counts are None until a query has actually
+# COMPLETED: "we have not asked yet", "we asked and Loki did not answer" and "Loki answered, there
+# were none" are three different facts and this module exists to keep them apart.
+_PUBLISH = {"ts": 0.0, "busy": False,
+            "val": {"lookup": "pending", "runs": None, "ok": None, "failed": None,
+                    "cycle": None, "err": None}}
+
 
 def _loki_beats():
     """The heartbeat of a project whose beat FILE this container cannot reach.
@@ -375,13 +415,130 @@ def _tail_one(EVENTS, limit_bytes=4_000_000):
 
 
 def _cycle():
+    """THE ONE READER OF THE PUBLISHED BLOCKLIST. Every enforcement claim on this page comes from
+    here; a second reader would be a second answer to "how many rules are armed".
+
+    `patterns: 0` ON THE FAILURE PATH WAS THE DEFECT. An unreadable file returned a confident zero,
+    which renders as "no rules published" -- indistinguishable from "the file is not mounted in this
+    container" and from "the JSON is corrupt". Those are three different states and only one of them
+    is about perseus. Unreadable now returns None everywhere and NAMES the error, which is the same
+    rule the project rows already obey.
+
+    `enforcing` is the question the operator actually asked, answered here rather than re-derived by
+    each caller: a blocklist is only enforcing if a cycle has completed AND that cycle armed at
+    least one pattern. cycle 0, or cycle 4 with an empty pattern list, both block nothing.
+    """
+    out = {"cycle": None, "patterns": None, "age_s": None, "generated": None,
+           "readable": False, "enforcing": False, "path": BLOCKLIST, "err": None}
     try:
         with open(BLOCKLIST, encoding="utf-8") as fh:
             d = json.load(fh)
-        return {"cycle": d.get("cycle"), "patterns": len(d.get("patterns") or []),
-                "age_s": int(time.time() - os.path.getmtime(BLOCKLIST))}
+        if not isinstance(d, dict):
+            raise ValueError("the blocklist is not a JSON object")
+        pats = d.get("patterns")
+        out["cycle"] = d.get("cycle")
+        # A `patterns` key that is not a LIST is not a count. len() on a dict would return a
+        # plausible number for a document we did not understand, which is worse than saying so.
+        out["patterns"] = len(pats) if isinstance(pats, list) else None
+        out["generated"] = d.get("generated")
+        out["readable"] = True
+        try:
+            out["age_s"] = int(time.time() - os.path.getmtime(BLOCKLIST))
+        except Exception:
+            out["age_s"] = None       # we read the content but not the mtime; do not invent one
+        out["enforcing"] = bool((out["cycle"] or 0) >= 1 and (out["patterns"] or 0) > 0)
+    except Exception as exc:
+        out["err"] = repr(exc)[:160]
+    return out
+
+
+def _publish(block=False):
+    """Has the BRAIN run? Counted from `evt=perseus_publish` over PUBLISH_LOOKBACK_S.
+
+    THE PAGE MUST NEVER WAIT FOR THIS. Same discipline as _loki_events, for the same reason: the
+    only two things this repository has ever put on this request path were Loki queries, and the
+    Admin page was dead for both ships. The request path READS the cache; a daemon thread fills it.
+    `block=True` exists for a caller that is not a page.
+
+    A zero here is only ever reported once a query has ANSWERED. `lookup` says which of the four
+    states we are in, so nothing downstream has to guess whether `runs: 0` means "the brain has not
+    published" or "we never asked".
+    """
+    now = time.time()
+    if not LOKI_PUBLISH_ON:
+        return {"lookup": "off", "runs": None, "ok": None, "failed": None, "cycle": None,
+                "err": None, "lookback_h": PUBLISH_LOOKBACK_S // 3600}
+    if now - _PUBLISH["ts"] >= PUBLISH_TTL_S:
+        if block:
+            _publish_now()
+        else:
+            _publish_async()
+    out = dict(_PUBLISH["val"])
+    out["lookback_h"] = PUBLISH_LOOKBACK_S // 3600
+    return out
+
+
+def _publish_async():
+    """Refresh in the background, at most one refresh in flight."""
+    if _PUBLISH.get("busy"):
+        return
+    _PUBLISH["busy"] = True
+    try:
+        import threading
+        threading.Thread(target=_publish_now, daemon=True).start()
     except Exception:
-        return {"cycle": None, "patterns": 0, "age_s": None}
+        _PUBLISH["busy"] = False      # could not spawn: the page still renders, just without it
+
+
+def _publish_now():
+    """The actual fetch. Wrapped whole: nothing in here may reach a caller as an exception."""
+    now = time.time()
+    _PUBLISH["ts"] = now              # stamp first: a dead Loki must not be retried per request
+    try:
+        rows, answered = _loki_fetch('|= "perseus_publish"', now - PUBLISH_LOOKBACK_S, 500)
+        if not answered:
+            # ASKED AND UNANSWERED IS NOT ZERO. Leave the counts unmeasured and say which happened.
+            _PUBLISH["val"] = {"lookup": "no_answer", "runs": None, "ok": None, "failed": None,
+                               "cycle": None, "err": None}
+            return _PUBLISH["val"]
+        runs = ok = failed = 0
+        cycle, err = None, None
+        for d in rows:
+            if d.get("evt") != "perseus_publish":
+                continue
+            runs += 1
+            if d.get("ok"):
+                ok += 1
+                c = d.get("cycle")
+                if isinstance(c, int) and (cycle is None or c > cycle):
+                    cycle = c
+            else:
+                failed += 1
+                err = err or (str(d.get("err") or "")[:160] or None)
+        _PUBLISH["val"] = {"lookup": "ok", "runs": runs, "ok": ok, "failed": failed,
+                           "cycle": cycle, "err": err}
+    except Exception:
+        pass                          # a refresh that fails leaves the previous answer standing
+    finally:
+        _PUBLISH["busy"] = False
+    return _PUBLISH["val"]
+
+
+def _enforce_phrase(enforce, cycle, patterns):
+    """The one sentence that says what a project is ACTUALLY enforcing. ONE HOME: every row's `why`
+    composes this, so `live` can never again be printed beside `cycle 0` as if they agreed."""
+    if enforce == "unknown":
+        return "what it enforces is UNKNOWN: no heartbeat from it reaches this page"
+    if enforce == "none":
+        return ("the sidecar is running but has loaded NO ruleset (cycle 0), so it blocks NOTHING "
+                "-- perseus has never published a blocklist it could read")
+    if enforce == "armed":
+        return ("the sidecar reports ruleset cycle %s, but how many rules that cycle contains is "
+                "not readable from here" % cycle)
+    if enforce == "empty":
+        return ("the sidecar has ruleset cycle %s loaded and that cycle armed NO blocking rules, "
+                "so it blocks nothing" % cycle)
+    return "the sidecar is enforcing ruleset cycle %s (%s blocking rules)" % (cycle, patterns)
 
 
 def since(ts, service=None, block=False):
@@ -489,6 +646,19 @@ def status():
           # them is visible as a change, not discovered by someone opening the page.
           states={s: sum(1 for p in out["projects"] if p["state"] == s)
                   for s in ("live", "observed", "silent", "elsewhere")},
+          # THE OBSERVER MUST BE OBSERVED, and that now includes the SOC half. `enforcing` going
+          # from 0 to 5 is the single most important state change on this estate; discovering it by
+          # opening a page is how it stayed at 0 for weeks. Edge-triggered alerting can only watch
+          # a number that is written down on every call.
+          enforce={e: sum(1 for p in out["projects"] if p.get("enforce") == e)
+                   for e in ("unknown", "none", "armed", "empty", "active")},
+          alerting={a: sum(1 for p in out["projects"] if p.get("alerting") == a)
+                    for a in ("self", "covered", "unknown", "blind")},
+          published_cycle=(out.get("published") or {}).get("cycle"),
+          published_patterns=(out.get("published") or {}).get("patterns"),
+          published_readable=(out.get("published") or {}).get("readable"),
+          publish_lookup=(out.get("publish_evt") or {}).get("lookup"),
+          publish_runs=(out.get("publish_evt") or {}).get("runs"),
           loki_events_on=LOKI_EVENTS_ON, loki_ok=out.get("loki_ok"),
           loki_partial=out.get("loki_partial"),
           loki_rows=len(_LOKI_EVENTS.get("rows") or []),
@@ -510,6 +680,15 @@ def _status():
     _lrows, _lok, _lpartial = _loki_events()
     beats, rows, now = _all_beats(), _tail_events(loki_rows=_lrows), time.time()
     pub = _cycle()
+    # AN OPTIONAL LOOKUP MAY NEVER 500 THE PAGE. This one is three dict operations and a daemon
+    # thread, so it "cannot" raise -- which is exactly what was said about the last two things that
+    # took this page down. It degrades to "no query has completed", which is precisely true when the
+    # lookup itself is broken, and the cause travels in `err` instead of into a traceback.
+    try:
+        pubevt = _publish()
+    except Exception as exc:
+        pubevt = {"lookup": "pending", "runs": None, "ok": None, "failed": None, "cycle": None,
+                  "err": repr(exc)[:160], "lookback_h": PUBLISH_LOOKBACK_S // 3600}
     loki_svcs = {r.get("service") for r in _lrows}
     floor = ""
     if _lpartial:
@@ -528,7 +707,7 @@ def _status():
         if r.get("evt") in ("fleet_status", "perseus_beat"):
             continue
         p = per.setdefault(s, {"lines": 0, "http": 0, "attacks": 0, "alerts": 0,
-                               "visitors": set(), "last_ts": 0})
+                               "visitors": set(), "last_ts": 0, "r429": 0, "rblock": 0})
         p["lines"] += 1
         p["last_ts"] = max(p["last_ts"], r.get("ts") or 0)
         evt = r.get("evt")
@@ -536,6 +715,13 @@ def _status():
             p["http"] += 1
             if r.get("ip"):
                 p["visitors"].add(r["ip"])
+            # ENFORCEMENT THAT ACTUALLY HAPPENED, as opposed to enforcement that is configured.
+            # 429 is the ONLY response perseus_client.Middleware produces when it denies, so a 429
+            # in a project's own lines is the sidecar's work made visible. Counted separately from
+            # shield_block below rather than summed here, because they are two different mechanisms
+            # and only cybergod runs the second one.
+            if r.get("status") == 429:
+                p["r429"] += 1
             # A probe path is the honest per-project attack count and needs no classifier here:
             # shield.probe_shape is the one implementation, imported lazily so a fleet page can
             # never be taken down by an import error in the detector.
@@ -547,6 +733,8 @@ def _status():
                 pass
         elif evt in ("security_alert", "shield_block"):
             p["alerts"] += 1
+            if evt == "shield_block":
+                p["rblock"] += 1
 
     out = []
     for proj in PROJECTS:
@@ -556,6 +744,47 @@ def _status():
         beat_age = int(now - (b.get("ts") or 0)) if b else None
         sidecar = ("active" if b and beat_age is not None and beat_age < STALE_BEAT_S
                    else "stale" if b else "not installed")
+
+        # ---- IS ANYTHING ACTUALLY ENFORCED HERE? -------------------------------------------------
+        # `enforce` is an ENUM KEY. It is never translated; the label is chosen at render time.
+        # The BEAT is authoritative about what this project LOADED (the client stamps the cycle it
+        # is running); the published FILE is authoritative about how many rules that cycle armed.
+        # They are only combined when they are talking about the SAME cycle -- a pattern count from
+        # a different document is a number about something else, and a number about something else
+        # is the defect this page exists to prevent.
+        bcycle = (b or {}).get("cycle")
+        if not b:
+            enforce, epat = "unknown", None
+        elif not bcycle:
+            # cycle 0 or absent. The client's cache initialises to 0 and only moves when it has read
+            # a published blocklist, so this is the sidecar telling us it has never loaded a ruleset.
+            # It is running, it is beating, and it blocks nothing. THIS IS THE CURRENT FLEET STATE.
+            enforce, epat = "none", None
+        elif not pub.get("readable") or pub.get("cycle") != bcycle or pub.get("patterns") is None:
+            enforce, epat = "armed", None
+        elif pub["patterns"] > 0:
+            enforce, epat = "active", pub["patterns"]
+        else:
+            enforce, epat = "empty", 0          # a MEASURED zero: same cycle, no patterns in it
+        phrase = _enforce_phrase(enforce, bcycle, epat)
+
+        # ---- WOULD AN ATTACK ON THIS PROJECT REACH THE OPERATOR? ---------------------------------
+        # watch() pages from exactly the rows this page counts, so alerting coverage is not a new
+        # measurement -- it is the live/silent/elsewhere distinction said in the vocabulary the
+        # operator asked the question in. The one place it is NOT simply readable is an own-log
+        # project when the traffic lookup is ON: this page reads a non-blocking cache and watch()
+        # waits for the same query, so an empty cache here proves nothing about the alerting loop.
+        # Reporting that as "blind" would be this page describing where WE looked. "unknown" is the
+        # only honest answer, and the enum keeps it distinguishable from a real gap.
+        if svc == "colt-web":
+            alerting = "self"
+        elif m:
+            alerting = "covered"
+        elif proj.get("own_log") and LOKI_EVENTS_ON:
+            alerting = "unknown"
+        else:
+            alerting = "blind"
+
         if not m and proj.get("own_log"):
             # A FOURTH STATE, because collapsing it into SILENT would be the very error this module
             # exists to prevent: reporting where WE looked as a fact about THEM.
@@ -585,11 +814,11 @@ def _status():
                     lk = "Loki was asked and returned no lines for it"
                 else:
                     lk = "Loki was asked and did not answer"
-                why = ("sidecar heartbeat confirmed via stdout (cycle %s), but its TRAFFIC could "
+                why = ("sidecar heartbeat confirmed via stdout, and %s. But its TRAFFIC could "
                        "not be read: its event volume (%s) is not mounted here and %s. The "
                        "zeros below are our blind spot, NOT a quiet project -- run "
                        "`python fleet.py`, which reads its own log over ssh."
-                       % ((b or {}).get("cycle"), proj["own_log"], lk))
+                       % (phrase, proj["own_log"], lk))
             else:
                 why = ("writes to its own event volume (%s), which this container does not mount -- "
                        "so neither its traffic NOR its sidecar heartbeat can reach this page. This "
@@ -605,13 +834,16 @@ def _status():
             # be; its lines are read from the shared Loki that its own promtail already pushes to.
             # The same rows feed watch(), so this project can page the operator like any other.
             state = "live"
-            why = ("logging and enforcing cycle %s. Its traffic is read from the shared Loki, not "
+            # "logging AND enforcing cycle %s" is what this said, and it printed "enforcing cycle 0"
+            # for weeks while the sidecars blocked nothing. The word `enforcing` was doing work the
+            # measurement did not support. It now composes _enforce_phrase, which is allowed to say
+            # the sidecar enforces NOTHING.
+            why = ("logging, and %s. Its traffic is read from the shared Loki, not "
                    "from a volume mount -- mounting a sibling's volume is the `external:` coupling "
-                   "that made this deploy fail on staging.%s"
-                   % ((b or {}).get("cycle"), floor))
+                   "that made this deploy fail on staging.%s" % (phrase, floor))
         elif sidecar == "active":
             state = "live"
-            why = "logging, and the sidecar is enforcing cycle %s" % (b or {}).get("cycle")
+            why = "logging, and %s" % phrase
         else:
             state = "observed"
             why = ("logging, but no sidecar heartbeat: this project is visible and UNGUARDED. "
@@ -628,6 +860,19 @@ def _status():
             "alerts_24h": (m or {}).get("alerts", 0),
             "visitors_24h": len((m or {}).get("visitors") or ()),
             "last_seen": (m or {}).get("last_ts") or None,
+            # ---- the SOC half -------------------------------------------------------------------
+            "enforce": enforce,                 # enum: unknown | none | armed | empty | active
+            "enforce_cycle": bcycle,            # what THIS project reports having loaded
+            "enforce_patterns": epat,           # None unless the beat and the file name one cycle
+            "enforce_why": phrase,
+            "alerting": alerting,               # enum: self | covered | unknown | blind
+            # REFUSALS THAT ACTUALLY HAPPENED. None -- never 0 -- for a project whose lines we could
+            # not read, because "we counted its requests and none were refused" and "we could not
+            # read a single line" are the two facts this whole module exists to keep apart, and a 0
+            # in an enforcement column reads as "the defence is working and nothing tried".
+            "refused_24h": (None if not m else m["r429"] + m["rblock"]),
+            "refused_429_24h": (None if not m else m["r429"]),
+            "refused_shield_24h": (None if not m else m["rblock"]),
         })
 
     return {
@@ -640,6 +885,20 @@ def _status():
         "guarded": sum(1 for p in out if p["sidecar"] == "active"),
         "blind": sum(1 for p in out if p["state"] == "silent"),
         "elsewhere": sum(1 for p in out if p["state"] == "elsewhere"),
+        # ---- the SOC half, for the fleet ----------------------------------------------------------
+        # GUARDED AND ENFORCING ARE DIFFERENT NUMBERS, and printing only the first is what let
+        # "5 guarded" sit above five rows that blocked nothing. `enforcing` counts the projects whose
+        # own heartbeat names a cycle that the published blocklist says armed at least one rule.
+        "enforcing": sum(1 for p in out if p["enforce"] == "active"),
+        "enforce_unknown": sum(1 for p in out if p["enforce"] == "unknown"),
+        "alerting_blind": sum(1 for p in out if p["alerting"] == "blind"),
+        "publish_evt": pubevt,
+        # A FACT ABOUT THE DATA SOURCE, NOT A COUNT. shield.decide() returns "TARPIT" and
+        # telemetry.py sleeps on it, and NEITHER writes a line -- there is no `evt` for a tarpit
+        # anywhere in this codebase. So how often a request was slowed down is NOT DETERMINABLE from
+        # any log this page can read. The page says that in words rather than showing a 0; the flag
+        # lives here so that when a tarpit event is added, one edit removes the disclaimer.
+        "tarpit_recorded": False,
         # STATE THE LIMIT ON THE PAGE ITSELF. A number that came from a log nobody is writing is
         # not a measurement, and the reader cannot tell from the number alone.
         "loki_ok": _lok,

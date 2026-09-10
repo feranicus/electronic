@@ -45,6 +45,19 @@ COPY webapp/backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir shodan mmh3 google-auth requests
 COPY hermes-skills/shodan-assessment /opt/shodan-skill
+# THE BRAIN HAS TO BE IN THE CONTAINER THAT RUNS IT.
+# perseus.py installs the package to /opt/perseus ON THE HOST, and then writes a systemd unit whose
+# ExecStart is `docker exec colt-web python3 /opt/perseus/perseus/hub.py --cycle`. colt-web mounts
+# only colt_webdata:/data and colt_events:/var/log/colt, so that path does not exist inside it and
+# the daily cycle has failed with "No such file or directory" EVERY NIGHT since it was installed.
+# That is why every project reports `enforcing cycle 0`: hub.cycle() increments to 1 on its first
+# successful run, so cycle 0 means no cycle has ever completed, so publish() has never written a
+# blocklist, so check() iterates an empty pattern list and allows everything on all five sites.
+# The 4-model consensus, the promotion gate and the abuse reporting were all built and none of them
+# has ever executed in production.
+# Shipped in the IMAGE, like the engine above, so the artifact carries its own code and there is no
+# host path to drift.
+COPY perseus /opt/perseus/perseus
 COPY colt_auth.py /opt/colt_auth.py
 COPY user_store.py /opt/user_store.py
 COPY webapp/backend/app ./app
