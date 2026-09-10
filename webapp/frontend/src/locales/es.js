@@ -69,6 +69,7 @@ export const keyed = {
   "fleet.soc.partial": "parcial",
   "fleet.soc.off": "inactivo",
   "fleet.soc.unknown": "desconocido",
+  "fleet.socNext": "Siguiente paso:",
   "fleet.colEnforce": "Aplicación",
   "fleet.colRules": "Reglas",
   "fleet.colAlerting": "Avisos",

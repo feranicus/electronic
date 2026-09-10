@@ -1478,7 +1478,13 @@ def test_one_failing_project_does_not_abandon_the_rest(tmp_path, monkeypatch, ca
     assert seen == ["a", "b", "c"], "the loop stopped early: %r" % (seen,)
     assert rc == 1, "a failed project must be reflected in the exit code"
     out = capsys.readouterr().out
-    assert "FAILED   b" in out and "OK       a" in out and "OK       c" in out
+    # THE OUTCOME, NOT THE PADDING. The first version matched "FAILED   b" with the exact three
+    # spaces the summary happened to use, so widening the column to fit a fourth outcome
+    # ("NEEDS A LOOK") turned a correct change red. Defect class 4: assert the property.
+    import re as _re
+    for want, proj in (("FAILED", "b"), ("OK", "a"), ("OK", "c")):
+        assert _re.search(r"^\s*%s\s+%s\s*$" % (want, proj), out, _re.M), \
+            "the summary does not report %s as %s:\n%s" % (proj, want, out)
 
 
 def test_a_project_that_is_not_on_this_machine_is_skipped_not_crashed(tmp_path, monkeypatch, capsys):
@@ -1489,7 +1495,9 @@ def test_a_project_that_is_not_on_this_machine_is_skipped_not_crashed(tmp_path, 
     monkeypatch.setattr(perseus.subprocess, "run", lambda *a, **k: called.append(1))
     assert perseus.cmd_rollout() == 0, "a missing checkout is not a failure"
     assert not called, "nothing may be executed for a project that is not here"
-    assert "SKIPPED  ghost" in capsys.readouterr().out
+    import re as _re
+    assert _re.search(r"^\s*SKIPPED\s+ghost\s*$", capsys.readouterr().out, _re.M), \
+        "a project that is not on this machine must be reported as SKIPPED, by name"
 
 
 def test_the_rollout_proves_itself_from_the_heartbeat(tmp_path, monkeypatch, capsys):

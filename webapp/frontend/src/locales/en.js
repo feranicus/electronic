@@ -67,6 +67,10 @@ export const keyed = {
   "fleet.soc.partial": "partial",
   "fleet.soc.off": "off",
   "fleet.soc.unknown": "unknown",
+  // The LABEL only. The action itself is composed by the backend from the same measurement that
+  // produced the verdict, so it is not a keyed string: a translated remedy that named a different
+  // env var from the one the row measured would be worse than an untranslated one.
+  "fleet.socNext": "Next step:",
   "fleet.colEnforce": "Enforcing",
   "fleet.colRules": "Rules",
   "fleet.colAlerting": "Alerting",

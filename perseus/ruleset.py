@@ -61,6 +61,12 @@ DORMANT_DAYS = int(os.environ.get("PERSEUS_DORMANT_DAYS", "30"))
 
 TIER_DETECT, TIER_BLOCK, TIER_RETIRED = "detect", "block", "retired"
 
+# WHERE A RULE CAME FROM. `propose()` stamps every rule with one of these and the ledger keeps it
+# for the life of the rule, because six weeks from now the only useful question about a pattern is
+# "why is this here".
+SOURCE_MINED = "daily-mining"
+SOURCE_SEED = "seed"
+
 STORE = os.environ.get("PERSEUS_RULESET", "/var/log/colt/perseus_ruleset.json")
 
 
@@ -171,7 +177,65 @@ def active_patterns(rs, tier=None):
     return out
 
 
-def propose(rs, pattern, why, evidence, reviewers, source="daily-mining"):
+def _class_table():
+    """perseus.client's committed class table, or None. NEVER a second copy of it.
+
+    TWO import spellings because this package is run two ways: as `perseus.hub`, with the repository
+    root on sys.path, and as a SCRIPT from inside perseus/ -- which is how the systemd unit starts it,
+    and there only the flat name resolves. hub.py already puts both directories on the path for
+    exactly this reason, and getting it wrong is how `import abuse` once took the timer down under
+    `set -e` while production was fine. Returning None
+    rather than a hard-coded fallback list is the whole point: if the shared table cannot be read,
+    the seed is EMPTY and the caller says so. A retyped copy would be a second home for the one
+    vocabulary five sidecars already score with, and it would drift the day somebody edits one.
+    """
+    for mod in ("perseus.client", "client"):
+        try:
+            m = __import__(mod, fromlist=["CLASSES"])
+        except Exception:
+            continue
+        table = getattr(m, "CLASSES", None)
+        if table:
+            return list(table), "%s.CLASSES" % mod
+    return None, ""
+
+
+def seed_candidates():
+    """(candidates, provenance). The committed probe corpus, offered to the promotion gate.
+
+    WHY THIS EXISTS. `hub.mine()` proposes only what the corpus CANNOT already name -- by
+    construction, a technique we detect perfectly is never a candidate. So on an estate whose
+    detection is good, the mining loop proposes nothing, `can_promote()` is handed nothing, and the
+    published blocklist stays at zero patterns while every schedule reports success. Measured on
+    2026-09-10: cycle 1, 0 patterns, five sidecars enforcing an empty list.
+
+    DERIVED, NOT RETYPED. Every candidate is `perseus.client.CLASSES[i]` read at CALL TIME -- the
+    same compiled table `shield.py` imports, `classify()` answers from and the public siege feed
+    draws its lanes with. `rx.pattern` is taken off the compiled object, so there is no second
+    string anywhere that an edit could leave stale.
+
+    THIS FUNCTION PROPOSES. It vets nothing and installs nothing: the caller puts every candidate
+    through `vet.vet()` against the routes we are OBSERVED serving, exactly as it does a model's
+    proposal, and several of these are refused there every time (`admin_panel` matches
+    /api/admin/users, which we serve). That refusal is the barrier working, not a defect in the
+    seed, and the caller reports it.
+    """
+    table, where = _class_table()
+    if not table:
+        return [], ("the shared class table could not be imported, so there is no seed: a retyped "
+                    "copy would be a second home for the one vocabulary every sidecar scores with")
+    out = []
+    for name, rx in table:
+        pattern = getattr(rx, "pattern", None)
+        if not pattern:
+            continue
+        out.append({"name": name, "pattern": pattern, "source": SOURCE_SEED,
+                    "why": "detection class %s, derived from %s - the committed probe corpus every "
+                           "sidecar already scores with" % (name, where)})
+    return out, "%d class(es) read from %s" % (len(out), where)
+
+
+def propose(rs, pattern, why, evidence, reviewers, source=SOURCE_MINED):
     """Add a pattern in DETECTION. It cannot refuse anything yet, whatever the reviewers said.
 
     Every rule carries its provenance: who proposed it, on what evidence, and when. Six weeks from
@@ -190,23 +254,67 @@ def propose(rs, pattern, why, evidence, reviewers, source="daily-mining"):
     return rule
 
 
-def can_promote(rule, now=None):
-    """Deterministic promotion test. Every clause is a fact about observed behaviour or about the
-    reviewers, and none of them is a model's opinion about whether the rule is a good idea."""
+def shortfall(rule, now=None):
+    """EVERY promotion clause this rule has not met, and BY HOW MUCH. `[]` means it may promote.
+
+    THE ONE HOME FOR THE GATE. can_promote() is this function plus a verdict, and the daily report
+    renders the same list, so there is no second statement of the rule to drift from the first --
+    the ENRICH_MODELS defect, applied to the one decision that can refuse a paying customer.
+
+    IT ANSWERS "BY HOW MUCH", not just "no". On 2026-09-10 the estate had one published cycle, zero
+    published patterns and a promotion gate that had never been handed a candidate, and the report
+    said only that nothing had been promoted. "Nothing happened" with no arithmetic behind it is
+    indistinguishable from "nothing works", and this repository has paid for that distinction more
+    than once.
+    """
     now = now or _now()
-    if rule.get("tier") != TIER_DETECT:
-        return False, "not in detection"
-    age_h = (now - rule.get("created", now)) / 3600.0
+    out = []
+    tier = rule.get("tier")
+    if tier != TIER_DETECT:
+        # Not a shortfall that time can fix: a blocking rule has already been promoted and a retired
+        # one has failed a barrier. Stated as a clause anyway so the caller never has to special-case.
+        return [{"clause": "tier", "have": tier, "need": TIER_DETECT, "short": "not in detection",
+                 "why": "not in detection"}]
+
+    age_h = (now - float(rule.get("created") or now)) / 3600.0
     if age_h < MIN_DETECT_HOURS:
-        return False, "only %.1fh in detection, needs %d" % (age_h, MIN_DETECT_HOURS)
-    if len(rule.get("reviewers") or []) < QUORUM:
-        return False, "%d reviewer(s), needs %d" % (len(rule.get("reviewers") or []), QUORUM)
+        out.append({"clause": "soak", "have": round(age_h, 1), "need": MIN_DETECT_HOURS,
+                    "short": "%.1fh more in detection" % (MIN_DETECT_HOURS - age_h),
+                    "why": "only %.1fh in detection, needs %d" % (age_h, MIN_DETECT_HOURS)})
+
+    n = len(rule.get("reviewers") or [])
+    if n < QUORUM:
+        out.append({"clause": "quorum", "have": n, "need": QUORUM,
+                    "short": "%d more vendor(s) must agree" % (QUORUM - n),
+                    "why": "%d reviewer(s), needs %d" % (n, QUORUM)})
+
     if not rule.get("hits"):
-        return False, "never matched anything, so nothing justifies blocking on it"
+        out.append({"clause": "evidence", "have": 0, "need": 1,
+                    "short": "1 hostile match in real traffic",
+                    "why": "never matched anything, so nothing justifies blocking on it"})
+
     if rule.get("clean_hits"):
         # It matched traffic that did not otherwise look hostile. That is the whole reason for the
-        # detection period, and it is a refusal, not a delay.
-        return False, "matched %d request(s) that looked legitimate" % rule["clean_hits"]
+        # detection period, and it is a refusal, not a delay. NO SHORTFALL IS QUOTED because there
+        # is no number of good days that earns this one back.
+        out.append({"clause": "clean", "have": int(rule["clean_hits"]), "need": 0,
+                    "short": "REFUSED OUTRIGHT - it matched traffic we served",
+                    "why": "matched %d request(s) that looked legitimate" % rule["clean_hits"]})
+    return out
+
+
+def can_promote(rule, now=None):
+    """Deterministic promotion test. Every clause is a fact about observed behaviour or about the
+    reviewers, and none of them is a model's opinion about whether the rule is a good idea.
+
+    The clauses live in shortfall(); this is the verdict on them. A seed pattern is not exempt from
+    a single one of them -- being committed code buys a rule a place in the detection queue and
+    nothing else."""
+    now = now or _now()
+    miss = shortfall(rule, now)
+    if miss:
+        return False, "; ".join(m["why"] for m in miss)
+    age_h = (now - float(rule.get("created") or now)) / 3600.0
     return True, "%.0fh in detection, %d hostile match(es), 0 legitimate" % (age_h, rule["hits"])
 
 
@@ -248,6 +356,84 @@ def record_hit(rs, rule_id, looked_legitimate=False):
                 r["hits"] = r.get("hits", 0) + 1
             return r
     return None
+
+
+def score_detection(rs, events, served=None, now=None):
+    """Run every live rule against REAL OBSERVED TRAFFIC and record what it matched. No model.
+
+    THIS IS THE MISSING HALF OF THE GATE. `can_promote()` has always demanded "at least one hostile
+    match and zero legitimate ones", and `review()` has always demoted a blocking rule that refused
+    somebody real -- but `record_hit()` was called by NOTHING outside the test suite. Both clauses
+    were therefore unsatisfiable and unfireable: no rule could ever promote, and no wrong rule could
+    ever revert itself. A gate that cannot pass is not a gate, and an auto-revert that cannot fire
+    is not a safety net. (Defect class 9: behaviour AND wiring.)
+
+    WHAT COUNTS AS WHAT, and the asymmetry is deliberate:
+      * the request was SERVED (2xx/3xx), or its path is one this estate was observed serving
+        successfully inside this window -> CLEAN. We would have refused a real page.
+      * anything else -> HOSTILE.
+    A 404 on a stale route OF OURS is a clean hit and not evidence, which is the 2026-08-10 lesson
+    (two genuine visitors, 439 and 362 stale-link 404s each) applied to patterns instead of
+    addresses. `served` is the corpus publish() writes; without it every 404 counts as hostile, so
+    the caller passes it and this function does not guess.
+
+    THE WATERMARK IS PER RULE AND IT MOVES ONLY FORWARD. The daily cycle collects the WIDER of the
+    mining and abuse windows -- seven days -- every single night, so without it one hostile request
+    would be counted seven times and a rule would "earn" its evidence clause from a single packet.
+    A rule is also never scored on traffic older than itself: it was not in detection then, and
+    "it spent a day watching real traffic" would otherwise be satisfied retroactively.
+    """
+    now = now or _now()
+    out = []
+    pats = active_patterns(rs)
+    if not pats or not events:
+        return out
+    served = {str(p) for p in (served or [])}
+    horizon = 0.0
+    rows = []
+    for e in events or []:
+        try:
+            ts = float(e.get("_ts") or 0)
+        except Exception:
+            ts = 0.0
+        path = e.get("path") or ""
+        if not path:
+            continue
+        try:
+            status = int(e.get("status") or 0)
+        except Exception:
+            status = 0
+        horizon = max(horizon, ts)
+        rows.append((ts, path, status))
+    if not rows:
+        return out
+
+    for rule, rx in pats:
+        since = float(rule.get("scored_until") or rule.get("created") or 0)
+        hostile = clean = 0
+        for ts, path, status in rows:
+            if ts <= since:
+                continue
+            if not rx.search(path):
+                continue
+            # THE CORPUS IS STORED TRUNCATED (publish() caps a path at 120 chars), so compare both
+            # forms. Comparing only the raw path would score a long served route as hostile,
+            # which is the failure this clause exists to prevent, wearing a length limit.
+            if (200 <= status < 400) or path in served or path[:120] in served:
+                clean += 1
+            else:
+                hostile += 1
+        rule["scored_until"] = max(since, horizon)
+        if not (hostile or clean):
+            continue
+        if hostile:
+            rule["hits"] = int(rule.get("hits") or 0) + hostile
+        if clean:
+            rule["clean_hits"] = int(rule.get("clean_hits") or 0) + clean
+        rule["last_hit"] = now
+        out.append({"id": rule.get("id"), "pattern": rule.get("pattern"),
+                    "tier": rule.get("tier"), "hostile": hostile, "clean": clean})
+    return out
 
 
 def review(rs, now=None):
@@ -341,4 +527,41 @@ def summary(rs):
             "blocking": sum(1 for r in rules if r.get("tier") == TIER_BLOCK),
             "detecting": sum(1 for r in rules if r.get("tier") == TIER_DETECT),
             "retired": sum(1 for r in rules if r.get("tier") == TIER_RETIRED),
+            "seeded": sum(1 for r in rules if r.get("source") == SOURCE_SEED),
             "thresholds": thresholds(rs)}
+
+
+def gate_status(rs, now=None):
+    """What the promotion gate can see right now: how many rules block, how many watch, and for
+    every rule still watching, WHICH clause it is short of and by how much.
+
+    COMPUTED BY THE CALLER AFTER THE LAST THING THAT CAN CHANGE IT. A count taken before promotion
+    describes a state the report never had, which is the same rule as a headline number taken
+    mid-pipeline.
+    """
+    now = now or _now()
+    rules = rs.get("rules") or []
+    pending = []
+    for r in rules:
+        if r.get("tier") != TIER_DETECT:
+            continue
+        miss = shortfall(r, now)
+        pending.append({
+            "id": r.get("id"), "pattern": r.get("pattern"), "source": r.get("source") or "?",
+            "age_h": round((now - float(r.get("created") or now)) / 3600.0, 1),
+            "reviewers": len(r.get("reviewers") or []),
+            "hits": int(r.get("hits") or 0), "clean_hits": int(r.get("clean_hits") or 0),
+            # SCORED IS NOT THE SAME CLAIM AS SEEN. A rule whose watermark never moved has not been
+            # measured against anything, and reporting it as "0 matches" would be our own blindness
+            # dressed up as a fact about the traffic.
+            "scored": bool(r.get("scored_until")),
+            "short": miss, "ready": not miss})
+    # Closest to promotion first: fewest clauses outstanding, then longest in detection.
+    pending.sort(key=lambda p: (len(p["short"]), -p["age_h"]))
+    return {"blocking": sum(1 for r in rules if r.get("tier") == TIER_BLOCK),
+            "detecting": len(pending),
+            "retired": sum(1 for r in rules if r.get("tier") == TIER_RETIRED),
+            "seeded": sum(1 for r in rules if r.get("source") == SOURCE_SEED),
+            "ready": sum(1 for p in pending if p["ready"]),
+            "unscored": sum(1 for p in pending if not p["scored"]),
+            "pending": pending}

@@ -246,6 +246,10 @@ function SocPanel({ d, t }) {
   // "The blocklist says cycle 0" and "we could not read the blocklist" are different findings, and
   // only the first one is about perseus. Never claim the first without `readable`.
   const neverPublished = readable && !(Number(pub.cycle) > 0);
+  // A row with a next action is a row that is not `active`. Filtered on the FIELD, not on the
+  // verdict word: the backend composes the two together, and re-deriving "which rows need one" from
+  // `soc` here would be a second answer to a question that already has one.
+  const next = (d.projects || []).filter((p) => p.soc_next);
 
   return (
     <div className="soc">
@@ -334,6 +338,18 @@ function SocPanel({ d, t }) {
           </tbody>
         </table>
       </div>
+
+      {/* THE ONE NEXT ACTION PER ROW, ON ONE LINE. The operator: "the too much text is terrible",
+          so this is not a column and not a paragraph -- it is the rows that are NOT `active`, each
+          with the single thing that would make them active, and it disappears entirely when every
+          row is active. The backend sends "" for a row with nothing to do, so an empty string here
+          means measured-and-nothing, never "we could not work it out". */}
+      {next.length ? (
+        <p className="hint">
+          <b>{t("fleet.socNext")}</b>{" "}
+          {next.map((p) => `${p.name}: ${p.soc_next}`).join(" · ")}
+        </p>
+      ) : null}
 
       {/* NOT DETERMINABLE, SAID OUT LOUD. shield.decide() returns TARPIT and telemetry.py sleeps on
           it; neither writes an event, so no log this page can read holds a tarpit. The flag comes

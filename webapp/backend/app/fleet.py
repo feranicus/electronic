@@ -658,6 +658,14 @@ def status():
           # move from 0 to 5 is observable in Loki instead of discovered by opening the tab.
           soc={s: sum(1 for p in out["projects"] if p.get("soc") == s)
                for s in ("unknown", "off", "partial", "active")},
+          # THE OBSERVER MUST BE OBSERVED, and that now includes the thing the SOC word is built
+          # from. `off` on cybergod went unread for a day because nothing wrote down WHY the local
+          # term was false; these three fields make the next such inversion a change in Loki rather
+          # than a discovery on a page.
+          shield_measured=(out.get("local_shield") or {}).get("measured"),
+          shield_armed=(out.get("local_shield") or {}).get("armed"),
+          shield_detection=(out.get("local_shield") or {}).get("detection"),
+          soc_next_open=sum(1 for p in out.get("projects") or [] if p.get("soc_next")),
           telegram_on=out.get("telegram_on"),
           brain_loops=(out.get("brain") or {}).get("loops_ok"),
           brain_known=(out.get("brain") or {}).get("loops_known"),
@@ -724,6 +732,88 @@ def _brain():
             "loops_ok": sum(1 for x in known if x), "loops_known": len(known)}
 
 
+def _loops(brain):
+    """(unreadable, stale) loop descriptions, derived from the SAME dict the verdict came from.
+
+    ONE HOME for "which loop, proven by which file". The word on the row (`partial`) and the action
+    that would clear it are computed from one reading, so they can never end up describing different
+    loops -- the two-halves-of-one-screen defect, one column over.
+
+    The paths are read from the module globals at CALL time, not captured at import, because the
+    test suite points this module at a temporary estate and a constant frozen at import would name a
+    file that is not the one that was actually read.
+    """
+    spec = (("daily", "perseus.service 04:40 UTC", BLOCKLIST),
+            ("weekly", "perseus-weekly Sun 05:20 UTC", WEEKLY_STATE),
+            ("watch", "perseus-watch every 10 min", WATCH_STATE))
+    return ([f for k, _t, f in spec if brain.get(k) is None],
+            [t for k, t, _f in spec if brain.get(k) is False])
+
+
+def _self_service():
+    """WHICH PROJECT THIS CONTAINER IS -- read from the one home that already answers it.
+
+    `telemetry.SERVICE` is stamped on every line this process writes and perseus_client reads the
+    same `SERVICE` variable, so the name used here is the name the rows and the heartbeat carry. A
+    second reading of the environment would be a second home for "who am I", and the newer one
+    always loses. Empty when it cannot be established, which matches no project and therefore
+    claims nothing.
+    """
+    try:
+        from . import telemetry
+        return str(telemetry.SERVICE or "")
+    except Exception:
+        return str(os.environ.get("SERVICE") or "")
+
+
+def _shield_facts():
+    """WHAT THE FULL SHIELD IS DOING, MEASURED IN THIS PROCESS -- never inferred from a name.
+
+    THE DEFECT THIS FIXES (2026-09-10). perseus_client sets `LOCAL=False` when
+    webapp/backend/app/shield.py is its sibling on disk -- which is true on colt-web and nowhere
+    else -- and it is deliberate: two independent blockers on one request path return two verdicts
+    about one address, and the client's has no operator console to release anybody from. So on
+    cybergod the sidecar stands down BECAUSE the stronger shield is already there. The heartbeat
+    carries `local: false`, this page read that as "present but not armed to act locally", and the
+    best-defended site in the estate rendered `off`. Exactly backwards.
+
+    `local: false` is a fact about the CLIENT'S COPY of the shield. It is not a fact about local
+    enforcement. So when the beat says it, ASK THE SHIELD ITSELF rather than the service name:
+    `shield.state()` reports whether it is enabled, whether it enforces, and -- the one that
+    matters -- WHICH detection table it resolved. `detection == "unavailable"` means the shared
+    table could not be imported from any of its three locations and this shield is scoring NOTHING,
+    which is a control that is OFF wearing the badge of a control that found nothing. All three
+    must hold before `armed` is true, so this check can FAIL, and a deploy that ships shield.py
+    without app/perseus_client.py beside it still reports `off`.
+
+    IT ANSWERS FOR THIS CONTAINER ONLY. shield.py is in-process; its state says nothing whatever
+    about jobhuntwow or klima, and lending our own posture to a sibling project would be the
+    hoster-identity defect on a dashboard. `measured` is False when the import fails or the return
+    shape is not what this function assumes, and a caller that cannot measure falls back to the
+    heartbeat instead of inventing a verdict.
+    """
+    out = {"svc": _self_service(), "measured": False, "armed": False,
+           "enabled": None, "enforcing": None, "detection": None, "err": None}
+    try:
+        from . import shield
+        st = shield.state()
+        if not isinstance(st, dict):
+            raise TypeError("shield.state() returned %s, not a mapping" % type(st).__name__)
+        out["enabled"] = bool(st.get("enabled"))
+        out["enforcing"] = bool(st.get("enforcing"))
+        det = st.get("detection")
+        out["detection"] = det
+        out["armed"] = bool(out["enabled"] and out["enforcing"] and det and det != "unavailable")
+        # LAST, so a read that fell over half way through is never reported as a measurement. A
+        # partial answer wearing the `measured` flag is the same defect as a count taken mid-pipeline.
+        out["measured"] = True
+    except Exception as exc:
+        # NAMED, NOT SWALLOWED. A shield we could not ask and a shield that is off look identical
+        # from the row, and only one of them is a statement about the defence.
+        out["err"] = repr(exc)[:160]
+    return out
+
+
 def _status():
     # ONE read of the traffic cache, taken FIRST and then handed to _tail_events, so the counts and
     # the badge that explains them describe the same snapshot. This read never blocks: the request
@@ -740,6 +830,12 @@ def _status():
     except Exception as exc:
         brain = {"daily": None, "weekly": None, "watch": None, "weekly_age_s": None,
                  "watch_age_s": None, "loops_ok": 0, "loops_known": 0, "err": repr(exc)[:160]}
+    # ONE reading of the loops, and ONE measurement of the local shield, for the whole response --
+    # same rule as the traffic cache above. Two reads inside one handler let a refresh land between
+    # them and the two halves then describe different moments.
+    unread_loops, stale_loops = _loops(brain)
+    shieldf = _shield_facts()
+    me = shieldf["svc"] or "this box"
     # AN OPTIONAL LOOKUP MAY NEVER 500 THE PAGE. This one is three dict operations and a daemon
     # thread, so it "cannot" raise -- which is exactly what was said about the last two things that
     # took this page down. It degrades to "no query has completed", which is precisely true when the
@@ -916,32 +1012,101 @@ def _status():
         #   read    the brain can see this project's traffic, or it would have no incident to judge
         #   loops   all three autonomous loops have produced an artifact recently (see _brain)
         # Anything short of all three is `partial`. Anything we cannot see is `unknown`, never `off`.
+        #
+        # AND THE `local` TERM IS MEASURED, NOT READ OFF A FLAG WHOSE MEANING IS INVERTED HERE.
+        # perseus_client sets LOCAL=False when shield.py is its sibling on disk, which happens on
+        # colt-web ALONE and happens because the full shield is the stronger of the two. Reading
+        # that beat field as "not armed to act locally" printed `off` for the site with the MOST
+        # local defence. So when -- and only when -- the beat reports local FALSE, ask the shield in
+        # this process what it actually is (_shield_facts), and only for the service this container
+        # is. `local` ABSENT is still `unknown`: a beat that predates the local shield says nothing
+        # either way, and an unmeasurable fact is never promoted to a verdict.
         loc = (b or {}).get("local")
         enf = (b or {}).get("enforcing")
+        sf = shieldf if (shieldf["measured"] and svc and svc == shieldf["svc"]) else None
+        by_shield = sf is not None and loc is not None and not loc
+        local_armed = sf["armed"] if by_shield else bool(loc and enf)
+        local_word = ("armed locally by shield.py (detection table: %s)" % sf["detection"]
+                      if by_shield else "armed locally")
+        # `soc_next` IS THE SINGLE NEXT ACTION THAT WOULD MOVE THIS ROW TO `active`, empty when it
+        # already is. It is composed in the SAME branch as the verdict and out of the SAME
+        # measurement, so a row can never name a remedy for a state it is not in. Nothing is
+        # invented for a fact we could not measure: where the state is `unknown`, the action named
+        # is the one that would make it MEASURABLE, which is the only honest next step there is.
         if sidecar in ("not installed", "unverifiable") or b is None:
-            soc, soc_why = "unknown", ("no heartbeat reaches this page, so whether anything decides "
-                                       "for this project cannot be measured from here")
+            soc = "unknown"
+            soc_why = ("no heartbeat reaches this page, so whether anything decides "
+                       "for this project cannot be measured from here")
+            soc_next = ("run `python fleet.py`: it reads %s's own beat over ssh" % svc
+                        if sidecar == "unverifiable"
+                        else "wire perseus_client.Middleware into %s and redeploy" % svc)
         elif loc is None:
-            soc, soc_why = "unknown", ("this sidecar predates the local shield and does not report "
-                                       "whether it can act - redeploy the project to find out")
-        elif not loc or not enf:
-            soc, soc_why = "off", "the sidecar reports it is present but not armed to act locally"
+            soc = "unknown"
+            soc_why = ("this sidecar predates the local shield and does not report "
+                       "whether it can act - redeploy the project to find out")
+            soc_next = "redeploy %s so its heartbeat reports the local shield" % svc
+        elif not local_armed:
+            soc = "off"
+            if by_shield:
+                # THE MEASURED FACT, ON THE ROW. shield.py is what enforces here, so the row says
+                # what shield.py reports about itself rather than what the sidecar reports about
+                # the copy it deliberately stood down.
+                soc_why = ("shield.py is what enforces here and it is NOT armed: enabled=%s "
+                           "enforcing=%s detection=%s"
+                           % (sf["enabled"], sf["enforcing"], sf["detection"]))
+                # ONE thing, named, in the order a reader would fix them. Written out rather than
+                # nested as a ternary chain: this is the line the operator acts on at 03:00.
+                if not sf["enabled"]:
+                    soc_next = "set SHIELD=on in %s's .env and redeploy" % svc
+                elif not sf["enforcing"]:
+                    soc_next = "set SHIELD_ENFORCE=on in %s's .env and redeploy" % svc
+                else:
+                    soc_next = ("redeploy %s: shield.py resolved no detection table (%s)"
+                                % (svc, sf["detection"]))
+            else:
+                soc_why = "the sidecar reports it is present but not armed to act locally"
+                soc_next = ("set %s=1 in %s's .env and redeploy"
+                            % ("PERSEUS_LOCAL" if not loc else "PERSEUS_ENFORCE", svc))
         elif alerting == "blind":
-            soc, soc_why = "partial", ("armed locally, but the brain cannot read this project's "
-                                       "traffic, so no incident here is ever judged by the panel")
+            soc = "partial"
+            # PER BLIND PROJECT, THE EXACT THING THAT WOULD CLEAR IT. There are two different gaps
+            # behind one word and only one of them is closed by an env var: an own-log project is
+            # blind because the traffic lookup is OFF pending verification, and any other project is
+            # blind because it ships no line this container can read. Naming the env var for the
+            # second would be a remedy for a state it is not in.
+            if proj.get("own_log") and not LOKI_EVENTS_ON:
+                soc_why = ("%s, but PERSEUS_LOKI_EVENTS is OFF on %s pending verification, so the "
+                           "brain reads no line from this project and nothing here is judged or "
+                           "reported" % (local_word, me))
+                soc_next = "set PERSEUS_LOKI_EVENTS=1 on %s (off pending verification)" % me
+            else:
+                soc_why = ("%s, but no line from this project reaches the brain, so no incident "
+                           "here is ever judged and no Telegram is ever sent" % local_word)
+                soc_next = ("get %s shipping evt=http to a log %s reads (nothing in %dh)"
+                            % (svc, me, WINDOW_S // 3600))
         elif brain["loops_known"] < 3:
-            soc, soc_why = "partial", ("armed locally; %d of 3 brain loops could not be read"
-                                       % (3 - brain["loops_known"]))
+            soc = "partial"
+            soc_why = ("%s; %d of 3 brain loops could not be read"
+                       % (local_word, 3 - brain["loops_known"]))
+            # The FILE is the subject, so it is named -- but by basename: the directory is the same
+            # shared mount for all three and repeating it three times is the paragraph the operator
+            # asked to be rid of. The full path is one `ls` away and the row has to fit on a line.
+            soc_next = ("make the unread loop state file(s) readable here: %s"
+                        % ", ".join(os.path.basename(f) or f for f in unread_loops))
         elif brain["loops_ok"] < 3:
-            soc, soc_why = "partial", (
-                "armed locally, but only %d of 3 autonomous loops are current (per-incident %s, "
-                "daily %s, weekly %s)" % (brain["loops_ok"],
+            soc = "partial"
+            soc_why = (
+                "%s, but only %d of 3 autonomous loops are current (per-incident %s, "
+                "daily %s, weekly %s)" % (local_word, brain["loops_ok"],
                                           "ok" if brain["watch"] else "stale",
                                           "ok" if brain["daily"] else "stale",
                                           "ok" if brain["weekly"] else "stale"))
+            soc_next = "start the stale perseus loop(s): %s" % ", ".join(stale_loops)
         else:
-            soc, soc_why = "active", ("deciding on its own: per incident every 10 min, daily at "
-                                      "04:40, weekly on Sunday")
+            soc = "active"
+            soc_why = ("deciding on its own: per incident every 10 min, daily at "
+                       "04:40, weekly on Sunday")
+            soc_next = ""                      # nothing to do: the row is already `active`
 
         # ---- TELEGRAM: ONE WORD. Does an attack HERE reach the operator? ----------------------
         # colt-web owns notify.py and the bot token; nothing else may. So a project reaches Telegram
@@ -953,6 +1118,14 @@ def _status():
             "key": proj["key"], "name": proj["name"], "service": svc,
             "state": state, "why": why,
             "soc": soc, "soc_why": soc_why,
+            # THE ONE NEXT ACTION, or "" when the row is already `active`. Never None: the empty
+            # string is a MEASURED "nothing to do", and a null here would read as "we could not
+            # work it out", which is a different fact and the one this module exists to keep apart.
+            "soc_next": soc_next,
+            # WHERE THE `local` TERM CAME FROM, so a reader can tell a measured verdict from an
+            # inherited one without reading this file. `shield` means shield.py was asked in this
+            # process; `beat` means the sidecar's own heartbeat answered.
+            "soc_local_by": "shield" if by_shield else "beat",
             "telegram": tg,
             "sidecar": sidecar, "sidecar_age_s": beat_age,
             "sidecar_cycle": (b or {}).get("cycle"),
@@ -985,6 +1158,12 @@ def _status():
         # The three autonomous loops, as the page's own summary. `soc_active` is the number the
         # operator actually asked for: how many of five decide for themselves.
         "brain": brain,
+        # THE MEASUREMENT ITSELF, NOT ONLY ITS CONCLUSION. A row that says `active` because
+        # shield.py was asked and a row that says `active` because a beat claimed it are two
+        # different degrees of evidence, and the difference has to be readable without opening this
+        # file. `measured: false` with `err` set is the honest state when the shield could not be
+        # asked at all -- which is not the same as a shield that answered "off".
+        "local_shield": shieldf,
         "soc_active": sum(1 for p in out if p["soc"] == "active"),
         "telegram_on": sum(1 for p in out if p["telegram"] == "active"),
         "events_log": EVENTS,

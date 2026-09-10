@@ -544,7 +544,7 @@ def cmd_rollout():
     ONE FAILURE DOES NOT STOP THE REST. These are independent products; a broken build in one must
     not leave the other three unguarded. Each result is reported and the exit code reflects the set.
     """
-    ok, failed, missing = [], [], []
+    ok, failed, missing, needlook = [], [], [], []
     for name, root, argv in ROLLOUT:
         say("")
         say("=" * 74)
@@ -563,19 +563,38 @@ def cmd_rollout():
         # STREAMED, NOT CAPTURED. Each of these runs for minutes; a silent subprocess is
         # indistinguishable from a hung one, which is the spinner defect one level up.
         rc = subprocess.run([sys.executable, script] + argv[1:], cwd=root).returncode
-        (ok if rc == 0 else failed).append(name)
-        say("  -> %s: %s" % (name, "OK" if rc == 0 else "FAILED rc=%d" % rc))
+        # EXIT 2 IS NOT A FAILURE, IT IS A QUESTION. ship.py returns 2 when the frontend changed
+        # and nobody has looked at it - the operator's own standing rule, deliberately not waived
+        # from a fleet command. Reporting that as "FAILED rc=2" alongside four real deploys is a
+        # lie about what happened and buries the ONE line that clears it. Measured 2026-09-10:
+        # the rollout deployed five projects and then reported a self-imposed gate as a failure,
+        # so the Fleet page kept rendering the OLD UI while the summary said 5 deployed 1 failed.
+        if rc == 2:
+            needlook.append(name)
+            say("  -> %s: NEEDS A LOOK (the frontend changed and has not been previewed)" % name)
+        else:
+            (ok if rc == 0 else failed).append(name)
+            say("  -> %s: %s" % (name, "OK" if rc == 0 else "FAILED rc=%d" % rc))
 
     say("")
     say("=" * 74)
-    say("  ROLLOUT RESULT   %d deployed · %d failed · %d not on this machine"
-        % (len(ok), len(failed), len(missing)))
+    say("  ROLLOUT RESULT   %d deployed · %d failed · %d awaiting a look · %d not on this machine"
+        % (len(ok), len(failed), len(needlook), len(missing)))
     for n in ok:
-        say("    OK       %s" % n)
+        say("    OK        %s" % n)
     for n in failed:
-        say("    FAILED   %s" % n)
+        say("    FAILED    %s" % n)
+    for n in needlook:
+        say("    NEEDS A LOOK  %s" % n)
     for n in missing:
-        say("    SKIPPED  %s" % n)
+        say("    SKIPPED   %s" % n)
+    if needlook:
+        # THE ONE LINE THAT CLEARS IT, at the bottom where the operator is already looking.
+        say("")
+        say("  Its UI changed and nobody has seen it. Look, then ship:")
+        say('      cd "%s"' % HERE)
+        say("      python preview.py          # then: python ship.py")
+        say("  Or skip the look deliberately:  python ship.py --no-preview")
 
     # PROVE IT FROM THE HEARTBEAT, NOT FROM THE EXIT CODE. A deploy returning 0 says the build
     # succeeded; only a beat says the middleware is actually running inside the container.
@@ -596,7 +615,9 @@ def cmd_rollout():
     say("       the Fleet page reads it there -- those rows say `elsewhere · active`. If Loki is")
     say("       down they degrade to `unverifiable`, never to a claim. `python fleet.py` reads")
     say("       every project's own log over ssh and is the ground truth that needs neither.")
-    return 1 if failed else 0
+    # 2 for "a project is waiting on the operator's eyes", the same code ship.py uses, so a script
+    # wrapping this can tell an UNFINISHED rollout from a BROKEN one. A real failure still wins.
+    return 1 if failed else (2 if needlook else 0)
 
 
 def main():
