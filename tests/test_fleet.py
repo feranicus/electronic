@@ -45,6 +45,7 @@ def _setup(monkeypatch, tmp_path, rows, beats):
     # already paid for once (the colt_auth reload in test_auth); clear it for every setup.
     fleet._LOKI_CACHE["ts"] = 0.0
     fleet._LOKI_CACHE["beats"] = {}
+    fleet._LOKI_EVENTS.update(ts=0.0, rows=[], ok=False, partial=False)
     monkeypatch.delenv("LOKI_URL", raising=False)
 
 
@@ -156,6 +157,7 @@ def _arm_loki(monkeypatch, handler):
     monkeypatch.setenv("LOKI_URL", "http://videodead-loki-1:3100/loki/api/v1/push")
     fleet._LOKI_CACHE["ts"] = 0.0
     fleet._LOKI_CACHE["beats"] = {}
+    fleet._LOKI_EVENTS.update(ts=0.0, rows=[], ok=False, partial=False)
     monkeypatch.setattr(urllib.request, "urlopen", handler)
 
 
@@ -210,6 +212,108 @@ def test_the_query_url_is_derived_from_the_push_endpoint(monkeypatch):
     assert fleet._loki_query_url() == "http://videodead-loki-1:3100/loki/api/v1/query_range"
     monkeypatch.delenv("LOKI_URL", raising=False)
     assert fleet._loki_query_url() == "", "no LOKI_URL must mean no lookup, not a guessed host"
+
+
+# ------------------------------------------------- the ZEROS, and the alerting behind them (09-10)
+# klima and s4biz rendered `0 requests · 0 attack-shaped · 0 visitors · 0 alerts` while plainly
+# serving traffic, because every count came from a FILE this container does not mount. The same
+# read feeds watch(), so neither project could page the operator about a scanner. Their promtails
+# already push to the SAME Loki, so the lines were there the whole time.
+
+def _http_line(service, ip, path, ts=None):
+    return json.dumps({"evt": "http", "service": service, "ip": ip, "path": path,
+                       "ts": int(ts or time.time())})
+
+
+def _loki_lines(lines):
+    return json.dumps({"data": {"result": [{"values": [["1", ln] for ln in lines]}]}})
+
+
+def _loki_router(traffic):
+    """One stub Loki: the heartbeat query gets a beat, a service query gets that service's lines."""
+    def h(url, timeout=0):
+        if "perseus_beat" in url:
+            return _Resp(_loki_body("polara-web", time.time()))
+        for svc, lines in traffic.items():
+            if svc in url:
+                return _Resp(_loki_lines(lines))
+        return _Resp(_loki_lines([]))
+    return h
+
+
+def test_an_own_log_project_gets_REAL_counts_from_loki_not_zeros(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, _loki_router({"polara-web": [
+        _http_line("polara-web", "203.0.113.5", "/"),
+        _http_line("polara-web", "203.0.113.6", "/produkte"),
+        _http_line("polara-web", "45.148.10.5", "/.env"),
+    ]}))
+    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    assert r["requests_24h"] == 3, "a project we CAN read must not render as zero"
+    assert r["attacks_24h"] == 1, "the same probe_shape classifier must run over its paths"
+    assert r["visitors_24h"] == 3
+    assert r["state"] == "live", "we can see its traffic and its beat; that is not 'elsewhere'"
+    assert "Loki" in r["why"] and "volume mount" in r["why"], \
+        "the row must say where its numbers came from"
+
+
+def test_one_request_logged_twice_is_counted_once(monkeypatch, tmp_path):
+    """The project's OWN telemetry and the perseus sidecar BOTH print evt=http to stdout, so Loki
+    holds two lines for one request. Doubling every number is a confident wrong figure, which is
+    worse than the zero it replaces."""
+    ts = int(time.time())
+    app = json.dumps({"evt": "http", "service": "polara-web", "ip": "203.0.113.5", "method": "GET",
+                      "path": "/", "ts": ts, "browser": "Chrome", "bot": False, "country": "DE"})
+    side = json.dumps({"evt": "http", "service": "polara-web", "ip": "203.0.113.5", "method": "GET",
+                       "path": "/", "ts": ts, "ms": 3})
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, _loki_router({"polara-web": [app, side]}))
+    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    assert r["requests_24h"] == 1, "the same request was counted twice (%d)" % r["requests_24h"]
+    assert r["visitors_24h"] == 1
+
+
+def test_a_dead_loki_never_renders_an_own_log_project_as_a_confident_zero(monkeypatch, tmp_path):
+    """The zero is the whole defect. If we cannot read a project, the page says so in words; it
+    does not print a number that reads as 'no attacks'."""
+    def boom(url, timeout=0):
+        raise OSError("connection refused")
+    _setup(monkeypatch, tmp_path, [], {"polara-web": {"service": "polara-web",
+                                                      "ts": int(time.time()), "cycle": 3}})
+    _arm_loki(monkeypatch, boom)
+    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    assert r["requests_24h"] == 0
+    assert r["state"] == "elsewhere", "a project we cannot read is never reported as live"
+    low = r["why"].lower()
+    assert "blind spot" in low and "not a quiet project" in low, \
+        "zeros must be labelled as OUR blindness, not as the project's silence: %r" % r["why"]
+
+
+def test_the_alerting_loop_pages_on_an_own_log_project_scanner(monkeypatch, tmp_path):
+    """THE SECURITY HALF, and the reason this matters more than the cosmetics. watch() applies
+    cybergod's OWN detection to every other project. Reading only the mounted file meant klima and
+    s4biz were scanned in silence -- the jobhuntwow shape exactly."""
+    ip = "185.177.72.56"
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, _loki_router({"polara-web": [
+        _http_line("polara-web", ip, p)
+        for p in ("/.env", "/wp-login.php", "/.git/config", "/phpinfo", "/admin/config.php")
+    ]}))
+    pages = []
+    fleet.watch(0, pages.append)
+    assert pages, "a five-path scanner on klima produced no alert at all"
+    assert "klimaanlage-preise.de" in pages[0] and ip in pages[0], pages[0]
+
+
+def test_a_heartbeat_line_is_never_counted_as_traffic(monkeypatch, tmp_path):
+    """The beat is on stdout too and carries the same service name, so it comes back with the
+    traffic query. Counting ~1440 beats a day as requests would inflate every own-log row and eat
+    the line budget that real requests need."""
+    _setup(monkeypatch, tmp_path, [], {})
+    _arm_loki(monkeypatch, lambda url, timeout=0: _Resp(_loki_body("polara-web", time.time())))
+    r = {x["service"]: x for x in fleet.status()["projects"]}["polara-web"]
+    assert r["requests_24h"] == 0 and r["attacks_24h"] == 0
+    assert r["sidecar"] == "active", "...but it is still proof the sidecar is running"
 
 
 def test_a_dead_loki_is_not_re_probed_on_every_request(monkeypatch, tmp_path):

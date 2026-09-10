@@ -86,7 +86,12 @@ def _loki_query_url():
 
 
 LOKI_TIMEOUT_S = float(os.environ.get("PERSEUS_LOKI_TIMEOUT", "3"))
+# Raw lines pulled per own-log project per window. Bounded because a status page must not be a
+# lever for making our own server work; if a project genuinely exceeds it the counts are reported
+# as a FLOOR rather than silently understated (see _loki_events).
+LOKI_EVENT_LIMIT = int(os.environ.get("PERSEUS_LOKI_LIMIT", "5000"))
 _LOKI_CACHE = {"ts": 0.0, "beats": {}}
+_LOKI_EVENTS = {"ts": 0.0, "rows": [], "ok": False, "partial": False}
 # Tried in order; the FIRST that returns anything wins. See _loki_beats for why this is a list.
 LOKI_BEAT_SELECTORS = [s for s in os.environ.get(
     "PERSEUS_LOKI_SELECTORS", '{container=~".+"}:{job=~".+"}:{service_name=~".+"}').split(":") if s]
@@ -113,36 +118,113 @@ def _loki_beats():
     if now - _LOKI_CACHE["ts"] < 60:
         return _LOKI_CACHE["beats"]
     _LOKI_CACHE["ts"] = now                       # stamp first: a dead Loki must not be retried per request
-    base = _loki_query_url()
-    if not base:
-        return _LOKI_CACHE["beats"]
-    import urllib.parse
-    import urllib.request
+    rows, _answered = _loki_fetch('|= "perseus_beat"', now - STALE_BEAT_S, 200)
     found = {}
-    for sel in LOKI_BEAT_SELECTORS:
-        try:
-            q = '%s |= "perseus_beat"' % sel
-            url = "%s?%s" % (base, urllib.parse.urlencode({
-                "query": q, "start": "%d000000000" % int(now - STALE_BEAT_S),
-                "end": "%d000000000" % int(now), "limit": 200, "direction": "backward"}))
-            with urllib.request.urlopen(url, timeout=LOKI_TIMEOUT_S) as r:
-                doc = json.loads(r.read().decode("utf-8", "replace"))
-            for stream in (doc.get("data") or {}).get("result") or []:
-                for _ts, line in stream.get("values") or []:
-                    try:
-                        d = json.loads(line[line.index("{"):])
-                    except Exception:
-                        continue
-                    if isinstance(d, dict) and d.get("evt") == "perseus_beat" and d.get("service"):
-                        prev = found.get(d["service"]) or {}
-                        if int(d.get("ts") or 0) >= int(prev.get("ts") or 0):
-                            found[d["service"]] = d
-            if found:
-                break                              # this selector works; stop probing the others
-        except Exception:
-            continue                               # a dead Loki is not evidence about any project
+    for d in rows:
+        if d.get("evt") == "perseus_beat" and d.get("service"):
+            prev = found.get(d["service"]) or {}
+            if int(d.get("ts") or 0) >= int(prev.get("ts") or 0):
+                found[d["service"]] = d
     _LOKI_CACHE["beats"] = found
     return found
+
+
+def _loki_fetch(line_filter, start_ts, limit):
+    """Parsed JSON lines from the shared Loki, newest first.
+
+    Returns (rows, ANSWERED). **`answered` is not `len(rows)`.** "Loki says this project sent
+    nothing" and "Loki never answered" are different facts, and rendering the second as a zero is
+    the exact defect this module exists to prevent -- it is the logship failure, on a dashboard.
+
+    ONE query implementation, used by the heartbeat lookup AND the traffic lookup, so the badge and
+    the numbers beside it can never disagree about which Loki they asked or how.
+    """
+    base = _loki_query_url()
+    if not base:
+        return [], False
+    import urllib.parse
+    import urllib.request
+    now = time.time()
+    answered = False
+    for sel in LOKI_BEAT_SELECTORS:
+        try:
+            url = "%s?%s" % (base, urllib.parse.urlencode({
+                "query": "%s %s" % (sel, line_filter),
+                "start": "%d000000000" % int(start_ts),
+                "end": "%d000000000" % int(now),
+                "limit": limit, "direction": "backward"}))
+            with urllib.request.urlopen(url, timeout=LOKI_TIMEOUT_S) as r:
+                doc = json.loads(r.read().decode("utf-8", "replace"))
+        except Exception:
+            continue                      # this selector (or this Loki) did not answer; try the next
+        answered = True
+        rows = []
+        for stream in (doc.get("data") or {}).get("result") or []:
+            for _ts, line in stream.get("values") or []:
+                # The container's stdout line may carry a prefix; the JSON starts at the brace.
+                try:
+                    d = json.loads(line[line.index("{"):])
+                except Exception:
+                    continue
+                if isinstance(d, dict):
+                    rows.append(d)
+        if rows:
+            return rows, True             # this selector works; stop probing the others
+    return [], answered
+
+
+def _loki_events():
+    """The TRAFFIC of a project whose event volume this container does not mount.
+
+    THE ZERO THAT PROMPTED THIS. klima and s4biz showed `0 requests · 0 attack-shaped · 0 visitors
+    · 0 alerts` while both were plainly serving traffic, because every count on this page came from
+    a FILE on the shared volume and their lines are on their own. Worse than the cosmetics: the
+    SAME read feeds `watch()`, so those two projects could not page the operator about a scanner.
+    That is not a smaller version of cybergod's security; it is none of it.
+
+    Both promtails already push to the SAME Loki as everything else on this box, so their `evt=http`
+    lines have been there the whole time. Reading them costs no volume mount, and therefore none of
+    the `external:` deploy coupling that staging refused.
+
+    Returns (rows, ok, partial). PARTIAL matters: the fetch is bounded, so a project that really
+    exceeds the limit would otherwise be reported with a confident, wrong, too-small number -- the
+    caller says "at least N" instead.
+    """
+    own = [p["service"] for p in PROJECTS if p.get("own_log")]
+    now = time.time()
+    if not own:
+        return [], False, False
+    if now - _LOKI_EVENTS["ts"] < 60:
+        return _LOKI_EVENTS["rows"], _LOKI_EVENTS["ok"], _LOKI_EVENTS["partial"]
+    _LOKI_EVENTS["ts"] = now              # stamp first, as above
+    rows, ok, partial, seen_keys = [], False, False, set()
+    for svc in own:
+        # Filter on the bare service NAME, never on `"service": "x"`: json.dumps separator spacing
+        # is not something to guess at inside a substring filter, and guessing wrong fails silently
+        # and looks exactly like innocence. The line is parsed and the field checked properly below.
+        got, answered = _loki_fetch('|= "%s"' % svc, now - WINDOW_S, LOKI_EVENT_LIMIT)
+        ok = ok or answered
+        if len(got) >= LOKI_EVENT_LIMIT:
+            partial = True
+        # The heartbeat is on stdout too and carries the same service name, so it comes back with
+        # this query. Drop it: _loki_beats already owns that question, it is not traffic, and ~1440
+        # beats a day would eat the line budget that real requests need.
+        # DEDUPE, because one request can produce TWO stdout lines: the project's own telemetry
+        # AND the perseus sidecar's observe(). Counting both would double every number on the page
+        # -- a confident wrong figure, which is worse than the zero it replaces. The key is the
+        # request itself; `ts` is whole seconds, so two identical requests from one address in the
+        # same second collapse into one. That is a known, bounded UNDERCOUNT in the noisiest
+        # direction only, and it is stated here rather than discovered later.
+        for d in got:
+            if d.get("service") != svc or d.get("evt") == "perseus_beat":
+                continue
+            k = (d.get("evt"), d.get("ts"), d.get("ip"), d.get("method"), d.get("path"))
+            if k in seen_keys:
+                continue
+            seen_keys.add(k)
+            rows.append(d)
+    _LOKI_EVENTS["rows"], _LOKI_EVENTS["ok"], _LOKI_EVENTS["partial"] = rows, ok, partial
+    return rows, ok, partial
 
 
 def _all_beats():
@@ -158,9 +240,20 @@ def _all_beats():
 
 
 def _tail_events(limit_bytes=4_000_000):
+    """Every event this container can reach: the mounted logs FIRST, then Loki for the projects
+    whose log is not among them.
+
+    The Loki rows are merged HERE, in the one function both `status()` (the counts) and `since()`
+    -> `watch()` (the alerting) already call, so the page and the pager cannot end up looking at
+    different traffic. A file that IS mounted always wins: it needs no network and it is still
+    readable when Loki is the thing that is down, which is exactly when this page gets opened."""
     rows = []
     for path in [EVENTS] + EXTRA_EVENTS:
         rows.extend(_tail_one(path, limit_bytes))
+    seen = {r.get("service") for r in rows}
+    if any(p.get("own_log") and p["service"] not in seen for p in PROJECTS):
+        extra, _ok, _partial = _loki_events()
+        rows.extend(extra)
     return rows
 
 
@@ -262,6 +355,14 @@ def watch(seen_ts, alert):
 def status():
     beats, rows, now = _all_beats(), _tail_events(), time.time()
     pub = _cycle()
+    # Which own-log projects Loki actually answered for, so a row can say where its numbers came
+    # from. Cached, so this costs nothing on top of the read _tail_events just did.
+    _lrows, _lok, _lpartial = _loki_events()
+    loki_svcs = {r.get("service") for r in _lrows}
+    floor = ""
+    if _lpartial:
+        floor = (" These counts are a FLOOR, not a total: the Loki fetch is capped at %d lines per "
+                 "project and that cap was reached." % LOKI_EVENT_LIMIT)
 
     per = {}
     for r in rows:
@@ -310,13 +411,16 @@ def status():
             if sidecar == "not installed":
                 sidecar = "unverifiable"
             if sidecar == "active":
-                # The beat came from the project's stdout via Loki, because its beat FILE lands on a
-                # volume this container does not mount. The sidecar is proven running; only the
-                # TRAFFIC counts remain unreachable, which is what keeps the state `elsewhere`.
-                why = ("sidecar heartbeat confirmed via stdout (cycle %s). Its traffic counts write "
-                       "to its own event volume (%s), which this container does not mount, so the "
-                       "numbers below stay blank -- run `python fleet.py` for those."
-                       % ((b or {}).get("cycle"), proj["own_log"]))
+                # The beat came from the project's stdout via Loki, so the sidecar is proven. The
+                # traffic is normally read from Loki too (see _loki_events) -- reaching this line
+                # means that lookup returned nothing, which is a statement about LOKI, never about
+                # the project. Say which, because "quiet" and "unreadable" are different facts.
+                why = ("sidecar heartbeat confirmed via stdout (cycle %s), but its TRAFFIC could "
+                       "not be read: its event volume (%s) is not mounted here and Loki %s. The "
+                       "zeros below are our blind spot, NOT a quiet project -- run "
+                       "`python fleet.py`, which reads its own log over ssh."
+                       % ((b or {}).get("cycle"), proj["own_log"],
+                          "returned no lines for it" if _lok else "did not answer"))
             else:
                 why = ("writes to its own event volume (%s), which this container does not mount -- "
                        "so neither its traffic NOR its sidecar heartbeat can reach this page. This "
@@ -327,6 +431,15 @@ def status():
             state = "silent"
             why = ("no log line in %dh. We are BLIND to this project, which is NOT the same as it "
                    "being quiet." % (WINDOW_S // 3600))
+        elif proj.get("own_log") and svc in loki_svcs and sidecar == "active":
+            # FULL PARITY, WITHOUT THE COUPLING. Its event volume is not mounted here and must not
+            # be; its lines are read from the shared Loki that its own promtail already pushes to.
+            # The same rows feed watch(), so this project can page the operator like any other.
+            state = "live"
+            why = ("logging and enforcing cycle %s. Its traffic is read from the shared Loki, not "
+                   "from a volume mount -- mounting a sibling's volume is the `external:` coupling "
+                   "that made this deploy fail on staging.%s"
+                   % ((b or {}).get("cycle"), floor))
         elif sidecar == "active":
             state = "live"
             why = "logging, and the sidecar is enforcing cycle %s" % (b or {}).get("cycle")
@@ -360,6 +473,9 @@ def status():
         "elsewhere": sum(1 for p in out if p["state"] == "elsewhere"),
         # STATE THE LIMIT ON THE PAGE ITSELF. A number that came from a log nobody is writing is
         # not a measurement, and the reader cannot tell from the number alone.
-        "caveat": ("Counts come from the shared events log. A project that does not write to it "
-                   "reads as SILENT, which means we cannot see it -- never that it is safe."),
+        "loki_ok": _lok,
+        "loki_partial": _lpartial,
+        "caveat": ("Counts come from the shared events log, plus the shared Loki for the projects "
+                   "whose event volume is not mounted here. A project we cannot read reads as "
+                   "SILENT or ELSEWHERE, which means we cannot see it -- never that it is safe."),
     }
