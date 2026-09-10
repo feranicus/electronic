@@ -232,6 +232,15 @@ def remote(proxy=True):
     "echo -n 'colt-web image : '; docker inspect colt-web -f '{{.Config.Image}}'",
     "echo -n 'colt-web nets  : '; docker inspect colt-web -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'; echo",
     "echo -n 'caddy->colt-web: '; docker exec \"$CADDY_CT\" wget -qO- -T5 http://colt-web:8000/api/me 2>&1 | head -c 60; echo",
+    # ---- THE ADMIN PAGES ARE PART OF THE APP, AND NOTHING HERE EVER PROVED THEY LOAD ----------
+    # /api/me answering 401 proves the process is up and the gate is on. It proves NOTHING about a
+    # route that computes something, and the Fleet page shipped BROKEN THREE TIMES behind a green
+    # deploy: the tests all monkeypatch the log paths and unset LOKI_URL, so not one of them ever
+    # called status() with the environment the container actually has. This runs it IN the
+    # container, with the real .env, the real mounts and the real PROJECTS list, and `set -e` makes
+    # a failure fail the DEPLOY instead of the operator. It reaches nothing outside the box.
+    "echo '== admin: the fleet status must actually compute, with the REAL env =='",
+    "docker exec colt-web python3 -c 'import sys;from app import fleet;d=fleet.status();n=len(d.get(\"projects\") or []);print(\"fleet.status(): %d project(s), error=%s\" % (n, d.get(\"error\")));sys.exit(1 if (d.get(\"error\") or n == 0) else 0)'",
     "curl -sk --resolve cybergod.ai:443:127.0.0.1 https://cybergod.ai/api/me -o /dev/null -w 'public via caddy = %{http_code}  (401 = LIVE)\\n'",
     "",
     ])

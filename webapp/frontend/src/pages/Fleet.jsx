@@ -77,6 +77,20 @@ export default function Fleet() {
 function FleetBody({ d, t, blind, unguarded }) {
   return (
     <>
+      {/* THE CAUSE, ON THE PAGE. When the backend cannot compute the status it now returns a
+          rendered page with `error` set and NO projects, instead of a 500 with an empty body.
+          Three deploy cycles were spent on "Could not read the fleet status." precisely because
+          the page could not tell the operator what had actually gone wrong. Not translated:
+          this is a raw exception for whoever is debugging, and translating it would hide it. */}
+      {d.error ? (
+        <div className="err">
+          <b>{d.error}</b>
+          {(d.error_where || []).map((l, i) => (
+            <div key={i} style={{ fontFamily: "monospace", fontSize: "0.85em", opacity: 0.8 }}>{l}</div>
+          ))}
+        </div>
+      ) : null}
+
       <div className="fleet-sum">
         <div className="fleet-stat">
           <b>{d.guarded}</b><span>{t("fleet.guarded")}</span>

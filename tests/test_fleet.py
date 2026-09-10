@@ -493,6 +493,80 @@ def test_an_unreadable_events_log_does_not_crash_the_page(monkeypatch, tmp_path)
     assert not [p for p in st["projects"] if p["state"] in ("live", "observed")]
 
 
+# ---------------------------------------------- the page shipped broken behind a GREEN suite (09-10)
+# 663 tests passed while https://cybergod.ai/app/admin -> Fleet rendered nothing but "Could not read
+# the fleet status.", three deploys running. The reason is in this file: EVERY test above calls
+# _setup(), which repoints EVENTS / BEAT_DIR / BLOCKLIST at a tmp dir and DELETES LOKI_URL. The
+# suite therefore never once exercised the code path the container runs. A fixture that replaces
+# the thing under test is a test of the fixture.
+
+def test_status_answers_with_the_MODULE_DEFAULTS_not_only_a_fixture(monkeypatch):
+    """status() with NO monkeypatching of paths -- the shape the container actually runs.
+
+    On any machine that is not the droplet /var/log/colt does not exist, and that is the point:
+    every one of those reads is supposed to degrade to a state, never to an exception. This is the
+    test whose absence let a 500 ship green three times."""
+    import urllib.request
+
+    def offline(url, timeout=0):
+        raise OSError("tests must not reach the internet")
+
+    monkeypatch.setattr(urllib.request, "urlopen", offline)
+    fleet._LOKI_CACHE.update(ts=0.0, beats={})
+    fleet._LOKI_EVENTS.update(ts=0.0, rows=[], ok=False, partial=False, busy=False)
+
+    st = fleet.status()
+    assert isinstance(st, dict) and "projects" in st
+    assert len(st["projects"]) == len(fleet.PROJECTS)
+    for p in st["projects"]:
+        assert p["state"] in ("live", "observed", "silent", "elsewhere"), p
+        assert p["why"], "every row must carry its own reason, including on the degraded path"
+
+
+def test_a_typo_in_an_env_number_cannot_stop_the_module_importing(monkeypatch, capsys):
+    """`int(os.environ.get(...))` at module level is a 500 on EVERY request, because the route does
+    `from . import fleet` inside the handler -- and the page cannot say why. Fall back, and NAME it:
+    a swallowed exception returning a plausible default is indistinguishable from a measurement."""
+    monkeypatch.setenv("PERSEUS_LOKI_TTL", "five minutes")
+    assert fleet._num("PERSEUS_LOKI_TTL", 300, int) == 300
+    assert "fleet_config_bad" in capsys.readouterr().out, "a bad value must be named, not hidden"
+    monkeypatch.setenv("PERSEUS_LOKI_TTL", "60")
+    assert fleet._num("PERSEUS_LOKI_TTL", 300, int) == 60, "a GOOD value must still be honoured"
+
+
+def test_the_route_renders_the_CAUSE_instead_of_a_blank_500(monkeypatch):
+    """THE THREE WASTED CYCLES. Any exception became a 500 with an empty body, so the operator got
+    a dead page and no cause and I got to guess. The handler now catches, prints the traceback to
+    stdout (promtail ships it to Loki) and returns a RENDERED page carrying the error -- with NO
+    projects, because a fleet page that invents rows is the defect this module exists to prevent."""
+    sys.path.insert(0, os.path.join(ROOT, "webapp", "backend"))
+    from app import main as _main
+
+    monkeypatch.setattr(_main, "_require_admin", lambda request: None)
+
+    def boom():
+        raise RuntimeError("the thing that actually broke")
+
+    monkeypatch.setattr(fleet, "status", boom)
+    d = _main.admin_fleet(None)
+    assert d["projects"] == [], "an unknown state must never be rendered as healthy rows"
+    assert "the thing that actually broke" in d["error"], d.get("error")
+    assert d["error_where"], "the page must say WHERE it broke, not only that it did"
+    assert d["guarded"] == 0 and d["blind"] == 0
+
+
+def test_the_deploy_proves_the_fleet_endpoint_computes_in_the_container():
+    """A route that COMPUTES something is not proven by /api/me answering 401. The deploy must run
+    status() inside the container, with the real .env and the real mounts, and `set -e` must make a
+    failure fail the DEPLOY. Asserted on the call site, not on a comment."""
+    src = open(os.path.join(ROOT, "deploy_web_direct.py"), encoding="utf-8").read()
+    code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
+    assert "set -e" in code, "without set -e a failing check does not fail the deploy"
+    assert "docker exec colt-web python3" in code and "fleet.status()" in code, \
+        "the deploy must actually call fleet.status() inside the container"
+    assert "sys.exit(1" in code, "the check must be able to FAIL, or it is not a check"
+
+
 def test_the_endpoint_is_admin_only():
     """Hiding a tab is presentation. The route must depend on _require_admin, or anyone can issue
     the request the tab would have issued."""

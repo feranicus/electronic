@@ -85,17 +85,49 @@ def _loki_query_url():
     return (u.split("/loki/api/v1/")[0] + "/loki/api/v1/query_range") if "/loki/api/v1/" in u else ""
 
 
-LOKI_TIMEOUT_S = float(os.environ.get("PERSEUS_LOKI_TIMEOUT", "3"))
+def _num(name, default, cast):
+    """A config value must never be able to stop this MODULE FROM IMPORTING.
+
+    `int(os.environ.get(...))` at module level looks harmless and is not: the route does
+    `from . import fleet` inside the handler, so an empty or non-numeric env var raises ValueError
+    on EVERY request and the page shows nothing but "Could not read the fleet status." -- with no
+    hint that the cause is a typo in a .env file. Fall back to the default and SAY SO on stdout,
+    which promtail ships to Loki, so the next person reads a cause instead of guessing at one.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return cast(raw)
+    except Exception:
+        print('{"evt":"fleet_config_bad","name":"%s","value":"%s","using":"%s"}'
+              % (name, str(raw)[:40], default), flush=True)
+        return default
+
+
+LOKI_TIMEOUT_S = _num("PERSEUS_LOKI_TIMEOUT", 3.0, float)
 # Raw lines pulled per own-log project per window. Bounded because a status page must not be a
 # lever for making our own server work; if a project genuinely exceeds it the counts are reported
 # as a FLOOR rather than silently understated (see _loki_events).
-LOKI_EVENT_LIMIT = int(os.environ.get("PERSEUS_LOKI_LIMIT", "2000"))
+LOKI_EVENT_LIMIT = _num("PERSEUS_LOKI_LIMIT", 2000, int)
 # Traffic counts do not need per-minute freshness, and every refresh is a real query against a
 # shared Loki. Five minutes, refreshed off the request path.
-LOKI_EVENT_TTL_S = int(os.environ.get("PERSEUS_LOKI_TTL", "300"))
-# A KILL SWITCH, because the first version of this lookup took the Admin page down and the only
-# way back was a redeploy. `set_secret.py PERSEUS_LOKI_EVENTS` + restart now disables it instead.
-LOKI_EVENTS_ON = os.environ.get("PERSEUS_LOKI_EVENTS", "1") != "0"
+LOKI_EVENT_TTL_S = _num("PERSEUS_LOKI_TTL", 300, int)
+# DEFAULT OFF. THIS IS A RETREAT TO THE LAST STATE THAT DEMONSTRABLY WORKED.
+#
+# The traffic-from-Loki lookup is the ONLY thing the last two ships put on the request path, and
+# the Admin page has been dead for both of them. It has never once been observed working. Three
+# rules in CLAUDE.md say what to do here and I ignored all of them: measure before naming a cause,
+# an optional lookup may never make a page worse, and a feature nobody can see is not a feature.
+#
+# With this OFF, status() takes exactly the path of the version the operator last saw working:
+# klima and s4biz render `elsewhere` with `active` sidecars proven by their stdout heartbeat, which
+# was already working in production. The counts go back to being honestly unavailable rather than
+# dishonestly absent.
+#
+# It is turned back on -- per box, no redeploy -- once the fleet telemetry below shows what the
+# endpoint is actually doing:  python set_secret.py PERSEUS_LOKI_EVENTS   (value: 1)
+LOKI_EVENTS_ON = os.environ.get("PERSEUS_LOKI_EVENTS", "0") == "1"
 _LOKI_CACHE = {"ts": 0.0, "beats": {}}
 _LOKI_EVENTS = {"ts": 0.0, "rows": [], "ok": False, "partial": False, "busy": False}
 # Tried in order; the FIRST that returns anything wins. See _loki_beats for why this is a list.
@@ -417,7 +449,55 @@ def watch(seen_ts, alert):
     return newest
 
 
+def _emit(**k):
+    """Fleet telemetry, through the SAME writer as access logging (telemetry.emit): stdout, which
+    promtail ships to Loki, plus the shared events log.
+
+    WHY THIS EXISTS. The operator: "we don't have visibility that that is what causing the issue".
+    Correct, and it is the reason this took three ships. Every other request on this box is
+    observed; the one page whose whole job is observing was itself unobserved, so when it broke
+    there was nothing to read and I guessed instead of measuring. That is defect class 1 pointed
+    straight at the observer.
+
+    A second writer here would drift from the first, so this is a thin wrapper, not a copy. It can
+    never raise: telemetry that breaks the request it observes is worse than no telemetry.
+    """
+    try:
+        from . import telemetry
+        telemetry.emit(**k)
+    except Exception:
+        try:
+            print(json.dumps(dict(k, ts=time.time())), flush=True)
+        except Exception:
+            pass
+
+
 def status():
+    t0 = time.time()
+    try:
+        out = _status()
+    except Exception as exc:
+        # NAMED, then re-raised. The route catches it and renders the cause; this line is what makes
+        # the failure searchable in Loki afterwards, with the same key the success path uses.
+        _emit(evt="fleet_status", outcome="error", err=repr(exc)[:300],
+              ms=int((time.time() - t0) * 1000))
+        raise
+    _emit(evt="fleet_status", outcome="ok",
+          ms=int((time.time() - t0) * 1000),
+          projects=len(out.get("projects") or []),
+          # The four questions this page can be wrong about, recorded on EVERY call so a change in
+          # them is visible as a change, not discovered by someone opening the page.
+          states={s: sum(1 for p in out["projects"] if p["state"] == s)
+                  for s in ("live", "observed", "silent", "elsewhere")},
+          loki_events_on=LOKI_EVENTS_ON, loki_ok=out.get("loki_ok"),
+          loki_partial=out.get("loki_partial"),
+          loki_rows=len(_LOKI_EVENTS.get("rows") or []),
+          loki_cache_age_s=int(time.time() - (_LOKI_EVENTS.get("ts") or 0)),
+          beats_dir=BEAT_DIR, events_log=EVENTS)
+    return out
+
+
+def _status():
     # ONE read of the traffic cache, taken FIRST and then handed to _tail_events, so the counts and
     # the badge that explains them describe the same snapshot. This read never blocks: the request
     # path gets whatever the background refresh last put there, and a cold cache renders `elsewhere`
@@ -435,6 +515,12 @@ def status():
     for r in rows:
         s = r.get("service") or ""
         if not s:
+            continue
+        # THIS PAGE'S OWN TELEMETRY IS NOT THIS PAGE'S TRAFFIC. _emit writes through the shared
+        # writer, so its lines land in the same events log status() reads -- and the browser polls
+        # every 30s, so colt-web would accrue ~2,880 self-inflicted "lines" a day and the observer
+        # would be measuring itself. Exactly the heartbeat rule, one evt name over.
+        if r.get("evt") in ("fleet_status", "perseus_beat"):
             continue
         p = per.setdefault(s, {"lines": 0, "http": 0, "attacks": 0, "alerts": 0,
                                "visitors": set(), "last_ts": 0})

@@ -426,7 +426,12 @@ writing a check, a fixture or a diagnostic.
     page's own budget.** It parses inside its own `try`, it cannot raise past its caller, and it
     never runs on a request path: a background refresh fills a cache, the request reads it. A status
     page that hangs is its own outage, and a 500 from a nice-to-have is worse than the gap it filled.
-51. **One response is built from ONE snapshot.** Reading the same cache twice inside one handler
+51. **A route that COMPUTES is not verified by a route that answers 401.** Liveness is not the
+    feature. If a deploy does not exercise the page, the page ships broken behind a green suite —
+    and it did, three times. Run it where it runs, with the real env, and let `set -e` fail the ship.
+52. **A handler must be able to describe its own failure.** A 500 with an empty body costs rounds
+    of guessing: catch, print the traceback, and RENDER the cause with no invented rows.
+53. **One response is built from ONE snapshot.** Reading the same cache twice inside one handler
     lets a refresh land in between and the two halves then describe different moments — `live`
     beside zero traffic. Read once, pass it down.
 

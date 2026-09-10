@@ -180,6 +180,11 @@ try:
             from . import fleet as _fl
             from . import notify as _nt
             seen, seen_ts = {}, int(time.time())
+            # Has the fleet PAGE itself been working? Edge-triggered like everything else here: a
+            # page that has been broken for a day must not re-page every five minutes, and a page
+            # that comes back must say so. None = we have not observed it yet, so the first
+            # observation never pages (a restart is not an incident).
+            page_ok = None
             while True:
                 await _aio.sleep(300)
                 try:
@@ -198,8 +203,28 @@ try:
                     if changed:
                         _nt.telegram("FLEET STATE CHANGED\n" + "\n".join(changed) +
                                      "\n\ncybergod.ai/app/admin -> Fleet")
+                    # THE PAGE CAME BACK. Only worth saying if we had reported it broken.
+                    if page_ok is False:
+                        _nt.telegram("FLEET PAGE RECOVERED\ncybergod.ai/app/admin -> Fleet is "
+                                     "computing again.")
+                    page_ok = True
                 except Exception as exc:
                     print('{"evt":"fleet_watch_error","err":"%s"}' % repr(exc)[:160], flush=True)
+                    # AND NOW IT SAYS SO. The Admin page was dead for three consecutive ships while
+                    # this handler quietly printed one line into a log nobody was reading. An alert
+                    # nobody gets is not an alert, and the operator found out by opening the page.
+                    # Edge-triggered: it pages on the transition, never on the steady state.
+                    if page_ok is not False:
+                        try:
+                            import traceback as _tb
+                            _nt.telegram(
+                                "FLEET PAGE IS BROKEN\n"
+                                "cybergod.ai/app/admin -> Fleet cannot compute its status.\n\n"
+                                + repr(exc)[:300] + "\n\n"
+                                + "\n".join(_tb.format_exc().strip().splitlines()[-3:]))
+                        except Exception:
+                            pass
+                    page_ok = False
 
         _aio.create_task(_decisions_loop())
         _aio.create_task(_panel_loop())
@@ -714,8 +739,33 @@ def admin_fleet(request: Request):
     and that it is an enforcement client with no telemetry anyway -- so no message could ever have
     reached him. This page makes that state visible instead of leaving it to be discovered."""
     _require_admin(request)
-    from . import fleet
-    return fleet.status()
+    # THE PAGE MUST SAY WHAT BROKE. This route spent three deploy cycles rendering nothing but
+    # "Could not read the fleet status." because any exception -- including an ImportError on the
+    # module itself, which a bare `from . import fleet` raises on EVERY request -- became a 500 with
+    # an empty body. The operator then has a dead page and no cause, and I get to guess.
+    #
+    # So a failure is CAUGHT, printed to stdout (promtail ships it to Loki, so it survives), and
+    # returned as a rendered page carrying the error. It is NOT swallowed into a plausible default:
+    # `projects` stays EMPTY and `error` is set, because a fleet page that invents rows is the exact
+    # defect this module exists to prevent.
+    try:
+        from . import fleet
+        return fleet.status()
+    except Exception as exc:
+        import traceback
+        tb = traceback.format_exc()
+        print('{"evt":"fleet_status_error","err":%s}' % json.dumps(repr(exc)[:300]), flush=True)
+        print(tb, flush=True)
+        return {
+            "generated": int(time.time()), "window_h": 24, "projects": [],
+            "published": {"cycle": None, "patterns": 0, "age_s": None},
+            "guarded": 0, "blind": 0, "elsewhere": 0,
+            "error": "%s: %s" % (type(exc).__name__, str(exc)[:200]),
+            "error_where": (tb.strip().splitlines() or ["?"])[-2:],
+            "caveat": ("The fleet status could not be computed, so NOTHING below is a statement "
+                       "about the projects. The cause is named above and the full traceback is in "
+                       "colt-web's log."),
+        }
 
 
 @app.get("/api/admin/users")
