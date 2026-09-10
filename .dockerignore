@@ -8,6 +8,13 @@
 !colt_auth.py
 !user_store.py
 !webapp
+# THE SECURITY BRAIN. webapp/Dockerfile does `COPY perseus /opt/perseus/perseus` because
+# perseus.service runs `docker exec colt-web ... /opt/perseus/perseus/hub.py`, and that path only
+# ever existed on the HOST. This file starts with `*`, so it is an ALLOW-LIST: a path that is not
+# named here is excluded from the build context and the COPY fails with "/perseus: not found".
+# Adding it to deploy_web_direct.INCLUDE was necessary and not sufficient - defect class 35 lists
+# `.dockerignore` by name as the wiring point that gets missed, and it got missed.
+!perseus
 # ...but NOT the operator's node_modules. `COPY webapp/frontend/ ./` runs AFTER `npm install` in the
 # fe stage, so a host node_modules would be copied straight OVER the fresh install — and npm
 # packages carry PER-PLATFORM binaries (esbuild ships @esbuild/<os>-<arch> as an optional dep).

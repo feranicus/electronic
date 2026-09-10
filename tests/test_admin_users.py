@@ -479,3 +479,69 @@ def test_every_root_file_a_dockerfile_copies_is_actually_packed_to_the_droplet()
     assert not missing, (
         "these files are COPYd by a Dockerfile but are NOT in deploy_web_direct.INCLUDE, so they "
         "never reach the droplet and the image build fails: %s" % missing)
+
+
+def test_every_dockerfile_COPY_survives_BOTH_wiring_points():
+    """THE SAME TRAP, ONE LEVEL UP: the test above covers root-level FILES only.
+
+    `COPY perseus /opt/perseus/perseus` is a DIRECTORY, so it was invisible to that check and to the
+    hardcoded `!user_store.py` assertion beside it. It was added to deploy_web_direct.INCLUDE and
+    the staging build still died:
+
+        COPY perseus /opt/perseus/perseus -> "/perseus": not found
+
+    because `.dockerignore` opens with `*` and is therefore an ALLOW-LIST. A path not named there is
+    excluded from the build context. Grepping it for "perseus" returned nothing, and nothing was
+    read as "not excluded" -- absence of evidence, in the most literal form available.
+
+    So: derive EVERY COPY source from the Dockerfiles and check it against BOTH wiring points, for
+    files and directories alike. Defect class 35 names `.dockerignore` explicitly; this is the check
+    that makes the rule enforceable instead of remembered.
+    """
+    import re as _re
+    sys.path.insert(0, ROOT)
+    import deploy_web_direct
+
+    ignore = _src(".dockerignore")
+    assert _re.search(r"^\*\s*$", ignore, _re.M), (
+        "this test assumes .dockerignore is an ALLOW-LIST (a bare `*` then `!path` lines). It is "
+        "not any more, so the context reasoning below is wrong - rewrite it, do not delete it.")
+    allowed = {l[1:].strip() for l in ignore.splitlines() if l.startswith("!")}
+
+    import deploy as _deploy
+    # EACH IMAGE IS PACKED FROM ITS OWN LIST. colt-web ships deploy_web_direct.INCLUDE; the bots
+    # ship deploy.BOTS_INCLUDE, and deploy.py says in its own comment that the two are deliberately
+    # NOT the same set. Checking every Dockerfile against the web list would fail on `assess-bot`
+    # and teach the next reader to widen the wrong list.
+    PACKED_BY = (
+        ("webapp/Dockerfile", deploy_web_direct.INCLUDE),
+        ("assess-bot/Dockerfile", _deploy.BOTS_INCLUDE),
+        ("cassandra-bot/Dockerfile", _deploy.BOTS_INCLUDE),
+    )
+
+    def packed(s, lst):
+        parts = s.split("/")
+        return any("/".join(parts[:i]) in lst for i in range(1, len(parts) + 1))
+
+    seen, out, unpacked = 0, [], []
+    for df, lst in PACKED_BY:
+        for s in _re.findall(r"^COPY\s+(?:--from=\S+\s+)?(\S+)\s+\S+\s*$", _src(df), _re.M):
+            top = s.split("/")[0]
+            # Skip stage-internal sources (`--from=fe /fe/dist`) and anything whose root is not a
+            # real path in this repo: those are not read from the build context.
+            if not top or top.startswith("-") or not os.path.exists(os.path.join(ROOT, top)):
+                continue
+            seen += 1
+            if top not in allowed:
+                out.append("%s: %s" % (df, s))
+            if not packed(s, lst):
+                unpacked.append("%s: %s" % (df, s))
+    assert seen, "no COPY sources resolved; the regex stopped matching the Dockerfiles"
+
+    assert not out, (
+        ".dockerignore starts with `*`, so it is an allow-list: these COPY sources are NOT in the "
+        "build context and the image build fails with \"not found\". Add `!<top-level>`: %s"
+        % sorted(out))
+    assert not unpacked, (
+        "these COPY sources never reach the droplet - the pack list decides that, and it is a "
+        "SEPARATE list from .dockerignore: %s" % sorted(unpacked))
