@@ -594,15 +594,33 @@ def watch(seen_ts, alert):
         elif ip and not hostile:
             p["visitors"].add(ip)
 
+    try:
+        from . import shield_console as _sc
+    except Exception:
+        _sc = None                        # no console -> the legacy flat alert, never silence
+
     for svc, p in sorted(per.items()):
         name = next((x["name"] for x in PROJECTS if x["service"] == svc), svc)
         # VARIETY, NOT VOLUME. One address asking for many DIFFERENT things it cannot have is a
         # scan; the same address missing one stale link a hundred times is a person. That
         # distinction is what stopped two real visitors being blocked on 10 Aug.
-        for ip, paths in p["probes"].items():
-            if len(paths) >= 4:
+        for ip, paths in sorted(p["probes"].items()):
+            if len(paths) < 4:
+                continue
+            # THE MENU, THROUGH THE ONE CONSOLE. This used to be a flat string: the operator got
+            # "SCANNER on jobhuntwow.com" and had nothing to press, because colt-web has no code in
+            # that project's request path. It now has `perseus_holds.json`, which that project's
+            # sidecar already polls, so the same alert carries the same buttons cybergod's does --
+            # minus everything this design cannot honour for a sibling.
+            #
+            # announce_fleet OWNS the suppression (already held / dismissed / an unanswered menu
+            # still on his phone) as well as the send, so the edge-trigger lives beside the state it
+            # is triggered on instead of being re-derived here.
+            if _sc is None:
                 alert("SCANNER on %s\n%s asked for %d distinct probe paths\n  %s"
                       % (name, ip, len(paths), "\n  ".join(sorted(paths)[:6])))
+            else:
+                _sc.announce_fleet(name, svc, ip, sorted(paths), send=alert)
     return newest
 
 

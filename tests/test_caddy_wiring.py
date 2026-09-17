@@ -35,21 +35,47 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CADDY_DIR = os.path.join(ROOT, "deploy", "caddy")
 DEPLOY = os.path.join(ROOT, "deploy_web_direct.py")
 
-pytestmark = pytest.mark.skipif(shutil.which("sed") is None,
-                                reason="sed is not available on this machine")
+# The wiring is a bash SEQUENCE sharing a shell variable, so it needs a real shell as well as sed.
+# Skipped cleanly where either is missing rather than failing falsely - which on the operator's
+# Windows box means this whole module is skipped, so it is CI and the droplet that exercise it, not
+# `python ship.py`. That is worth knowing before trusting a green run to have covered this.
+pytestmark = pytest.mark.skipif(shutil.which("sed") is None or shutil.which("bash") is None,
+                                reason="needs sed and bash; not present on this machine")
 
 
-def _sed_commands():
-    """The `sed -i ... "$CF"` lines the deploy actually runs, taken from the script.
+def _wiring_script():
+    """The caddy-wiring SEQUENCE the deploy actually runs, taken from the RENDERED remote script.
 
-    Extracted, never retyped: a test that reimplements the thing it checks proves nothing about
-    what ships. Comments are stripped first, so the explanation of the REMOVED blunt sed (which
-    quotes it verbatim) cannot be mistaken for a live command - that exact false positive has
-    already cost this repo several cycles.
+    THE ORIGINAL REASONING STANDS and is kept above: a range delete keyed on a word that appears in
+    another project's prose destroyed jobhuntwow's block on every deploy. That is still what this
+    file pins.
+
+    REWRITTEN 2026-09-10, per defect class 17. The doctrine changed underneath it, so the test
+    changed with it rather than being deleted. The deploy no longer uses `sed -i` ANYWHERE:
+    `sed -i` does not edit in place, it writes a temp file and renames it, which gives the file a
+    NEW INODE. /etc/caddy/Caddyfile is a single-FILE bind mount, so the proxy follows the OLD inode
+    and reads a file nobody can see; the only repair is restarting the shared proxy that owns :443
+    for every domain, which is how one ship briefly dropped all six sites. The wiring is now `sed`
+    as a FILTER into a shell variable, a size floor, and `>` to truncate the existing inode.
+
+    So the extractor takes the whole SEGMENT rather than individual commands: these lines share a
+    shell variable and mean nothing run separately. Rendered, not retyped, for the same reason as
+    before - and reading the rendered bash also avoids the escaping trap that made an earlier
+    version of this extractor match the Python source instead of the script.
     """
-    src = open(DEPLOY, encoding="utf-8").read()
-    code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
-    return re.findall(r'"(sed -i .*?\$CF\\")"', code)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_dwd_caddy", DEPLOY)
+    dwd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dwd)
+    lines = dwd.remote(True).splitlines()
+    start = next((i for i, l in enumerate(lines)
+                  if "wire cybergod.ai into the shared caddy" in l), None)
+    end = next((i for i, l in enumerate(lines)
+                if start is not None and i > start and "caddy validate" in l), None)
+    assert start is not None and end is not None, (
+        "the caddy-wiring segment could not be located in the rendered deploy script; its markers "
+        "moved, so this test is no longer reading what ships. Re-anchor it, do not delete it.")
+    return "\n".join(l for l in lines[start + 1:end] if not l.strip().startswith("#"))
 
 
 def _blocks():
@@ -87,15 +113,26 @@ def test_the_wiring_touches_only_our_own_block():
         before = {n: _block_of(open(cf, encoding="utf-8").read(), n)
                   for n in ("jhw:jobhuntwow", "polara:klima")}
 
-        cmds = _sed_commands()
-        assert cmds, "no sed commands found in deploy_web_direct.py - the extractor is broken"
-        for c in cmds:
-            subprocess.run(c.replace('\\"$CF\\"', cf), shell=True, check=True, timeout=60)
-        # ...then the deploy appends our committed block back
-        with open(cf, "a", encoding="utf-8", newline="\n") as fh:
-            fh.write(blocks["cybergod.caddy"])
+        script = _wiring_script()
+        assert "$CF" in script, "the wiring no longer names $CF - the extractor is reading the " \
+                                "wrong segment and this test would pass against nothing"
+        # PROVE THE INODE SURVIVES. That is the whole point of the rewrite: the old `sed -i` gave
+        # the file a new one and the shared proxy kept reading the old. On a filesystem without
+        # inode numbers this is 0 and the comparison is vacuous, so it is only asserted when real.
+        ino_before = os.stat(cf).st_ino
+        # cwd=ROOT because the wiring does `cat deploy/caddy/cybergod.caddy`, a repo-relative path.
+        # The appended block is part of the extracted segment now, so the test no longer appends it.
+        subprocess.run(["bash", "-c", "set -e\nCF=%s\n%s" % (cf, script)],
+                       cwd=ROOT, check=True, timeout=60)
 
         after_text = open(cf, encoding="utf-8").read()
+        if ino_before:
+            assert os.stat(cf).st_ino == ino_before, (
+                "the wiring REPLACED the file's inode. /etc/caddy/Caddyfile is a single-file bind "
+                "mount, so the running proxy would keep reading the old one and the only repair is "
+                "restarting the process that owns :443 for every domain on the box.")
+        assert blocks["cybergod.caddy"].strip().splitlines()[0] in after_text, \
+            "our own block is missing after the wiring - it deleted and never re-added it"
         for name, was in before.items():
             if not was:
                 continue
@@ -115,8 +152,13 @@ def test_no_range_delete_keyed_on_a_word_that_appears_in_prose():
     """The specific shape that caused it. A marker delete is bounded and unambiguous; a delete
     that starts at any line MENTIONING a word will eventually start inside somebody else's
     comment - and here it already did, on every deploy."""
-    bad = [c for c in _sed_commands()
-           if re.search(r"/[^/]*/,\s*/", c) and "BEGIN" not in c]
+    # Reads the RENDERED wiring now, for the same reason as the test above: the deploy stopped
+    # using `sed -i`, so an extractor looking for that spelling found nothing and this check went
+    # quietly vacuous. A range delete is the shape that hurts, whether or not the -i flag is on it.
+    ranges = re.findall(r"sed[^\n]*?(/[^/\n]*/\s*,\s*/[^/\n]*/)\s*d", _wiring_script())
+    assert ranges, ("no range delete found in the wiring at all. That is either a real improvement "
+                    "or a broken extractor, and the two must not look alike - re-read the segment.")
+    bad = [r for r in ranges if "BEGIN" not in r or "END" not in r]
     assert not bad, (
         "a range delete is not bounded by BEGIN/END markers, so it can start inside another "
         "project's block: %s" % bad)
@@ -131,13 +173,13 @@ def test_our_own_block_is_still_actually_replaced():
         stale = blocks["cybergod.caddy"].replace("colt-web:8000", "STALE-UPSTREAM:9999")
         with open(cf, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(_monolith(dict(blocks, **{"cybergod.caddy": stale})))
-        for c in _sed_commands():
-            subprocess.run(c.replace('\\"$CF\\"', cf), shell=True, check=True, timeout=60)
-        mid = open(cf, encoding="utf-8").read()
-        assert "STALE-UPSTREAM" not in mid, "the old cybergod block was not removed"
-        with open(cf, "a", encoding="utf-8", newline="\n") as fh:
-            fh.write(blocks["cybergod.caddy"])
+        # The wiring now removes AND re-adds our block in one sequence (the `cat` is inside it), so
+        # this no longer appends the fresh block by hand. cwd=ROOT because that cat is a
+        # repo-relative path.
+        subprocess.run(["bash", "-c", "set -e\nCF=%s\n%s" % (cf, _wiring_script())],
+                       cwd=ROOT, check=True, timeout=60)
         end = open(cf, encoding="utf-8").read()
+        assert "STALE-UPSTREAM" not in end, "the old cybergod block was not removed"
         assert end.count("# colt:cybergod BEGIN") == 1, "the block was duplicated"
         assert "colt-web:8000" in end, "the fresh block was not installed"
     finally:
