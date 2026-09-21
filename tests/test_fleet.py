@@ -274,7 +274,20 @@ def test_an_own_log_project_gets_REAL_counts_from_loki_not_zeros(monkeypatch, tm
     r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 3, "a project we CAN read must not render as zero"
     assert r["attacks_24h"] == 1, "the same probe_shape classifier must run over its paths"
-    assert r["visitors_24h"] == 3
+    # THE DOCTRINE THIS ASSERTION ENCODED WAS WRONG, AND IT IS KEPT HERE SO THE WHY SURVIVES.
+    # It used to read `r["visitors_24h"] == 3`, because VISITORS was `len(set(ip))` over every
+    # evt=http line -- a curl one-liner and a Chrome user were both "a visitor", and the `bot`
+    # field was sitting unread in the same record. One of these three lines is `/.env` from a
+    # scanner and it was being counted as a visitor on the operator's own dashboard.
+    # These stub lines carry no `bot`, no `hv` and no `sf`, which is EXACTLY the shape of every
+    # line a sibling project wrote before that change shipped. So the honest answer is: we know
+    # three distinct addresses arrived, and we cannot say which of them were people.
+    assert r["addresses_24h"] == 3, "the address total must survive; it is the one figure that " \
+        "means the same thing on every row"
+    assert r["visitors_24h"] is None and r["clients_24h"] is None, \
+        "lines carrying no client evidence must render as NOT DETERMINABLE, never as a count"
+    assert r["visitor_split"] == "none"
+    assert r["unjudged_24h"] == 3
     assert r["state"] == "live", "we can see its traffic and its beat; that is not 'elsewhere'"
     assert "Loki" in r["why"] and "volume mount" in r["why"], \
         "the row must say where its numbers came from"
@@ -294,7 +307,12 @@ def test_one_request_logged_twice_is_counted_once(monkeypatch, tmp_path):
     _arm_loki(monkeypatch, _loki_router({"polara-web": [app, side]}))
     r = _rows_after_refresh()["polara-web"]
     assert r["requests_24h"] == 1, "the same request was counted twice (%d)" % r["requests_24h"]
-    assert r["visitors_24h"] == 1
+    # Was `visitors_24h == 1`. The app line here carries `bot: False` but neither `hv` nor `sf`,
+    # and the sidecar line carries nothing at all -- the pre-change shape on both sides. The
+    # address total is still exactly one, which is what this test is actually about; whether that
+    # one address was a person is a question these two lines cannot answer.
+    assert r["addresses_24h"] == 1
+    assert r["visitors_24h"] is None, "a bare `bot: false` is a header's claim, not evidence"
 
 
 def test_a_dead_loki_never_renders_an_own_log_project_as_a_confident_zero(monkeypatch, tmp_path):

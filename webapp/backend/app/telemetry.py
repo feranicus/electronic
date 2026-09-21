@@ -13,6 +13,18 @@ you asked for forensics.
 """
 import asyncio, hashlib, json, os, re, time
 
+# THE CONTRADICTION CHECK'S BIT VALUES HAVE ONE HOME AND THIS IS NOT IT. Imported, both ways,
+# because this module is loaded as `app.telemetry` in the container and as bare `telemetry` by the
+# tests. If it cannot be imported at all the `sf` field is simply not written, which the reader
+# renders as NOT DETERMINABLE -- a missing field is honest, a locally invented bit order is drift.
+try:
+    from . import client_truth
+except ImportError:                      # standalone import (tests)
+    try:
+        import client_truth
+    except ImportError:
+        client_truth = None
+
 EVENTS_LOG   = os.environ.get("EVENTS_LOG", "")
 SERVICE      = os.environ.get("SERVICE", "colt-web")
 HASH_IPS     = os.environ.get("TELEMETRY_HASH_IPS", "0") == "1"
@@ -100,6 +112,44 @@ def classify_ua(ua):
     bot = (br == "-" and os_ == "-")
     return {"bot": bot, "bot_name": "unknown-client" if bot else "-",
             "browser": br, "os": os_, "device": device}
+
+
+def _proto(request):
+    """-> (version, source). WHOSE version it is travels WITH it, or it is not a measurement.
+
+    A diagnostic that does not name its subject sends the next investigation down the wrong road,
+    and this field has two possible subjects. The shared Caddy terminates TLS and opens a FRESH
+    upstream connection to colt-web, and uvicorn implements no HTTP/2 at all, so the ASGI scope's
+    `http_version` is "1.1" for a Chrome visitor and for a Go program alike: it describes the last
+    hop, not the client. If the proxy is ever configured to forward what the client actually spoke
+    (`header_up X-Client-Proto {http.request.proto}`), THAT is a fact about the client and is
+    stamped `p`. client_truth.py refuses to draw any conclusion from an `s`.
+
+    Never raises: this runs inside the observer of every request.
+    """
+    try:
+        fwd = request.headers.get(client_truth.HV_CLIENT_HEADER) if client_truth else None
+        if fwd:
+            return (str(fwd)[:12], client_truth.HV_FROM_CLIENT)
+    except Exception:
+        pass
+    try:
+        v = (request.scope or {}).get("http_version")
+        if not v:
+            return (None, None)
+        return (str(v)[:12], client_truth.HV_FROM_HOP if client_truth else "s")
+    except Exception:
+        return (None, None)
+
+
+def _sf(request):
+    """-> the fetch-metadata presence bitmask, or None when we could not look. Never raises."""
+    if client_truth is None:
+        return None
+    try:
+        return client_truth.sf_mask(request.headers.get)
+    except Exception:
+        return None
 
 
 def emit(**k):
@@ -233,10 +283,18 @@ def install(app, session_email_fn=None):
                 if fn: user = fn(request) or ""
             except Exception:
                 user = ""
+            # ---- EVIDENCE THAT IS NOT FREE TO FAKE, alongside the claim that is ------------------
+            # `bot` below is a substring match on an attacker-controlled header. These two fields
+            # are what a caller compares it against; see client_truth.py for why each one is only
+            # evidence under a stated condition. Written unconditionally so that "we looked and the
+            # client sent none" (sf == 0) stays distinguishable from "nobody ever looked" (no sf
+            # key at all), which is the whole basis of the unknown column on the fleet page.
+            hv, hvs, sf = _proto(request) + (_sf(request),)
             ev = dict(evt="http", ip=_maybe_hash(ip), method=request.method, path=path[:200],
                       status=status, ms=int((time.time() - t0) * 1000), ua=ua[:220],
                       browser=c["browser"], os=c["os"], device=c["device"],
                       bot=c["bot"], bot_name=c["bot_name"],
+                      hv=hv, hvs=hvs, sf=sf,
                       ref=(request.headers.get("referer") or "")[:160],
                       lang=(request.headers.get("accept-language") or "")[:40].split(",")[0],
                       # Caddy/Cloudflare-style country header if a proxy ever sets one
@@ -245,6 +303,14 @@ def install(app, session_email_fn=None):
                                or request.headers.get("x-country")
                                or _country(ip)),
                       user=user)
+            # A FIELD WE COULD NOT MEASURE IS OMITTED, NEVER WRITTEN AS A DEFAULT. `sf: 0` means
+            # the client sent no fetch-metadata header; `sf` absent means client_truth could not be
+            # imported and nobody looked. Writing 0 for the second would manufacture a signal out
+            # of our own failure, which is the "absence of evidence is never a finding" rule at the
+            # emitter instead of at the reader.
+            for _k in ("hv", "hvs", "sf"):
+                if ev.get(_k) is None:
+                    ev.pop(_k, None)
             emit(**ev)
             try:
                 try:

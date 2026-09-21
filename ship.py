@@ -914,14 +914,23 @@ def do_tests():
     # blocks the site's own routes, refuses a mass block, fails OPEN on any internal error, and
     # contains no firewall call at all (Amnezia VPN shares this host). Then it replays the real
     # 10 Aug 2026 scanner and requires that it is actually stopped.
-    _sd = subprocess.run([sys.executable, '-m', 'pytest', 'tests/test_shield.py', '-q'],
+    # test_client_truth.py RIDES IN THE SAME GATE, deliberately, in the SAME subprocess rather than
+    # as a second command the operator has to remember. It is the other half of the same question:
+    # the shield tests prove enforcement never catches a real visitor, and these prove the new
+    # client-contradiction signal never BECOMES enforcement in the first place. A labelling signal
+    # about who is hostile sits one line away from a new reason to refuse somebody.
+    _sd = subprocess.run([sys.executable, '-m', 'pytest', 'tests/test_shield.py',
+                          'tests/test_client_truth.py', '-q'],
                          cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if _sd.returncode != 0:
         print((_sd.stdout or '') + (_sd.stderr or ''))
         sys.exit('[X] ACTIVE DEFENCE REGRESSION - the shield could block a real visitor, fail '
-                 'closed, reach the firewall, or let the model panel leave its bounds. Do not ship.')
+                 'closed, reach the firewall, let the model panel leave its bounds, or the client '
+                 'contradiction signal grew teeth. Do not ship.')
     print('  active defence: scanner stopped, real routes untouched, fails open, firewall never '
           'touched, panel bounded, 42-path scanning corpus covered, middleware+panel WIRED')
+    print('  client truth: contradictions LABEL only - never a block, a tarpit or a rule; '
+          'unjudged lines render as unknown, never as human')
 
     # c''''') THE DRIFT CHECK ITSELF. Its first version md5'd `caddy adapt` against the admin API's
     #        `GET /config/` and failed a HEALTHY staging box twice, blocking a deploy on a defect

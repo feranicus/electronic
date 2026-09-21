@@ -27,6 +27,20 @@ import json
 import os
 import time
 
+# THE CONTRADICTION CHECK, AND IT MAY ONLY LABEL. It blocks nothing and can block nothing; see
+# client_truth.py. Imported both ways because this module is loaded as `app.fleet` in the container
+# and as a bare module by the tests. An import failure costs the visitors/clients SPLIT and nothing
+# else: every row then renders `none`, which is exactly the honest answer when the thing that would
+# have judged the lines is not here. A status page must never 500 over a lookup that makes it more
+# accurate.
+try:
+    from . import client_truth as _client_truth
+except ImportError:                      # standalone import (tests)
+    try:
+        import client_truth as _client_truth
+    except ImportError:
+        _client_truth = None
+
 BEAT_DIR = os.environ.get("PERSEUS_BEATS", "/var/log/colt/perseus_beats")
 EVENTS = os.environ.get("EVENTS_LOG", "/var/log/colt/events.log")
 # EVERY LOG THIS CONTAINER CAN SEE. klima and s4biz write to their OWN volumes, so reading only the
@@ -784,6 +798,45 @@ def _self_service():
         return str(os.environ.get("SERVICE") or "")
 
 
+def _visitor_columns(m):
+    """-> the visitors/clients/unjudged columns for one project row. Never raises.
+
+    ONE PLACE, because the four numbers and the enum that explains them have to be computed from
+    ONE snapshot of ONE accumulator: deriving `visitor_split` anywhere other than beside the counts
+    it describes is how a badge comes to explain numbers it never saw.
+
+    A NUMBER THAT MEANS DIFFERENT THINGS PER ROW IS THE DEFECT THIS PAGE ALREADY HAD. jev, klima,
+    jobhuntwow and s4biz are read through Loki and every line they wrote before this change carries
+    no `bot`, no `hv` and no `sf`. Scoring those as human would be the same confident wrong figure
+    one column over, so a row whose lines carry no evidence renders `none` and its split is NULL.
+    The row says so; it does not guess.
+    """
+    if not m:
+        return {"addresses_24h": 0, "visitors_24h": None, "clients_24h": None,
+                "unjudged_24h": None, "visitor_split": "none"}
+    addr = m.get("addresses") or set()
+    clients = m.get("clients") or set()
+    # PRECEDENCE, AND IT ONLY RUNS ONE WAY. An address seen once as a self-identified bot or once
+    # contradicting itself is a client for the window, even if its other lines looked like a
+    # browser -- a scanner that also fetches the homepage with a clean header set must not buy
+    # itself a place in the visitor count. The reverse is never done.
+    browsers = (m.get("browsers") or set()) - clients
+    unjudged = (m.get("unjudged") or set()) - clients - browsers
+    if not addr:
+        split = "none"
+    elif unjudged and (browsers or clients):
+        split = "partial"
+    elif unjudged:
+        split = "none"
+    else:
+        split = "measured"
+    return {"addresses_24h": len(addr),
+            "visitors_24h": None if split == "none" else len(browsers),
+            "clients_24h": None if split == "none" else len(clients),
+            "unjudged_24h": len(unjudged),
+            "visitor_split": split}
+
+
 def _shield_facts():
     """WHAT THE FULL SHIELD IS DOING, MEASURED IN THIS PROCESS -- never inferred from a name.
 
@@ -881,14 +934,43 @@ def _status():
         if r.get("evt") in ("fleet_status", "perseus_beat"):
             continue
         p = per.setdefault(s, {"lines": 0, "http": 0, "attacks": 0, "alerts": 0,
-                               "visitors": set(), "last_ts": 0, "r429": 0, "rblock": 0})
+                               "addresses": set(), "browsers": set(), "clients": set(),
+                               "unjudged": set(), "last_ts": 0, "r429": 0, "rblock": 0})
         p["lines"] += 1
         p["last_ts"] = max(p["last_ts"], r.get("ts") or 0)
         evt = r.get("evt")
         if evt == "http":
             p["http"] += 1
-            if r.get("ip"):
-                p["visitors"].add(r["ip"])
+            ip = r.get("ip")
+            if ip:
+                # ---- WHO ACTUALLY ARRIVED. THIS COLUMN USED TO BE `len(set(ip))`. --------------
+                # It counted a curl one-liner as a visitor, with the `bot` field sitting unread in
+                # the very same record. Three buckets now, and the third is the one that makes the
+                # other two honest:
+                #   browsers   the record says not-a-bot AND nothing contradicted that claim
+                #   clients    the record says bot, OR the client contradicted its own user agent
+                #   unjudged   the record does not carry the fields to decide -- a line written
+                #              before this shipped, or a sibling project that has not redeployed.
+                # Absence of evidence is never a finding, so `unjudged` is a COLUMN, not a default
+                # into either of the others. An address that ever looked like a client is subtracted
+                # from the browsers below: one address, one bucket, and the conservative direction
+                # is the one that does not put a scanner in the visitor count.
+                p["addresses"].add(ip)
+                if not _client_truth or not _client_truth.has_evidence(r) or "bot" not in r:
+                    p["unjudged"].add(ip)
+                elif r.get("bot"):
+                    p["clients"].add(ip)
+                else:
+                    try:
+                        v = _client_truth.evaluate(r)
+                    except Exception:
+                        v = None            # fail open: an error here is a fact about US
+                    if v is not None and v.reasons:
+                        p["clients"].add(ip)
+                    elif v is not None and v.determinable:
+                        p["browsers"].add(ip)
+                    else:
+                        p["unjudged"].add(ip)
             # ENFORCEMENT THAT ACTUALLY HAPPENED, as opposed to enforcement that is configured.
             # 429 is the ONLY response perseus_client.Middleware produces when it denies, so a 429
             # in a project's own lines is the sidecar's work made visible. Counted separately from
@@ -1152,7 +1234,18 @@ def _status():
             "requests_24h": (m or {}).get("http", 0),
             "attacks_24h": (m or {}).get("attacks", 0),
             "alerts_24h": (m or {}).get("alerts", 0),
-            "visitors_24h": len((m or {}).get("visitors") or ()),
+            # ---- VISITORS / CLIENTS / UNJUDGED, and the flag that says whether the split is real -
+            # `addresses_24h` is the OLD number under its correct name: distinct addresses, nothing
+            # more. It is kept because it is the one figure that means the same thing on every row
+            # whatever evidence a project ships, and losing it would make the two pages disagree.
+            # The split is None -- never 0 -- for a project whose lines we could not read at all,
+            # for exactly the reason `refused_24h` is: "we counted and found none" and "we could not
+            # look" are the two facts this module exists to keep apart.
+            # `visitor_split` is an ENUM KEY and is never translated:
+            #   measured   every http line carried the evidence; the split describes all of them
+            #   partial    some lines did, some did not; `unjudged_24h` is the remainder
+            #   none       no line carried it -- an old log, or a project that has not redeployed
+            **_visitor_columns(m),
             "last_seen": (m or {}).get("last_ts") or None,
             # ---- the SOC half -------------------------------------------------------------------
             "enforce": enforce,                 # enum: unknown | none | armed | empty | active

@@ -43,6 +43,23 @@ function agoOr(s, t) {
   return s === null || s === undefined ? t("fleet.unknown") : ago(s);
 }
 
+// THE ARITHMETIC BEHIND THE VISITORS / CLIENTS SPLIT, ON THE ROW, IN WORDS.
+//
+// `visitor_split` is an ENUM KEY from the backend and is never translated as a key; the sentence is
+// chosen here. A row that says `none` is not a quiet project and is not a project with no visitors
+// -- it is a project whose lines carry none of the evidence the split is computed from, which is
+// every line written before this shipped and every sibling project that has not redeployed. That
+// distinction is the reason the cells above render a WORD instead of a zero.
+//
+// t() takes ONE argument and has no interpolation, so the numbers are composed here; passing a
+// second would silently print the raw template.
+function vsTitle(p, t) {
+  const split = p.visitor_split || "none";
+  const head = `${t("fleet.vsAddr")} ${p.addresses_24h ?? 0}`;
+  const un = `${t("fleet.vsUnjudged")} ${p.unjudged_24h ?? 0}`;
+  return `${head}. ${un}. ${t("fleet.vs." + split)}`;
+}
+
 // `enforce` and `alerting` are ENUM KEYS from the backend and are never translated as keys -- the
 // LABEL is chosen here, at render time. An unrecognised value falls through to the NEUTRAL tone and
 // to t("fleet.e.<whatever>"), which prints a raw key that the SSR guard fails the build on. It must
@@ -158,6 +175,7 @@ function FleetBody({ d, t, blind, unguarded }) {
               <th>{t("fleet.req")}</th>
               <th>{t("fleet.att")}</th>
               <th>{t("fleet.vis")}</th>
+              <th>{t("fleet.cli")}</th>
               <th>{t("fleet.alerts")}</th>
               <th>{t("fleet.lastSeen")}</th>
             </tr>
@@ -194,7 +212,25 @@ function FleetBody({ d, t, blind, unguarded }) {
                 </td>
                 <td>{p.requests_24h}</td>
                 <td className={p.attacks_24h ? "bad" : ""}>{p.attacks_24h}</td>
-                <td>{p.visitors_24h}</td>
+                {/* VISITORS AND CLIENTS ARE TWO NUMBERS BECAUSE THEY ARE TWO FACTS. This column
+                    was `len(set(ip))` over every http line, so a curl one-liner was a visitor and
+                    the `bot` field sat unread in the same record. Now: browser-shaped addresses
+                    here, self-identified tools and self-contradicting clients next door.
+                    NULL IS RENDERED AS A WORD, NEVER AS A ZERO. A project read through Loki whose
+                    lines predate this change carries no evidence at all, and printing 0 visitors
+                    for it would be the confident wrong figure this whole page exists to prevent.
+                    The tooltip always names the address total and the unjudged remainder, so the
+                    reader can see the arithmetic rather than being handed a verdict. */}
+                <td title={vsTitle(p, t)}>
+                  {p.visitors_24h === null || p.visitors_24h === undefined
+                    ? <span className="pill warn">{t("fleet.vsUnknown")}</span>
+                    : p.visitors_24h}
+                </td>
+                <td title={vsTitle(p, t)}>
+                  {p.clients_24h === null || p.clients_24h === undefined
+                    ? <span className="pill warn">{t("fleet.vsUnknown")}</span>
+                    : p.clients_24h}
+                </td>
                 <td>{p.alerts_24h}</td>
                 <td>{when(p.last_seen)}</td>
               </tr>
