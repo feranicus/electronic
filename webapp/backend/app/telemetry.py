@@ -25,6 +25,18 @@ except ImportError:                      # standalone import (tests)
     except ImportError:
         client_truth = None
 
+# THE ASSET LEDGER, same both-ways import and the same degradation. If it cannot be imported the
+# `av` field is simply not written, which the reader renders as "we never looked" -- and since the
+# signal is one-way positive, losing it costs some addresses their CONFIRMED badge and costs
+# nobody anything else. It can never turn an address into a client by being absent.
+try:
+    from . import asset_trace
+except ImportError:                      # standalone import (tests)
+    try:
+        import asset_trace
+    except ImportError:
+        asset_trace = None
+
 EVENTS_LOG   = os.environ.get("EVENTS_LOG", "")
 SERVICE      = os.environ.get("SERVICE", "colt-web")
 HASH_IPS     = os.environ.get("TELEMETRY_HASH_IPS", "0") == "1"
@@ -38,9 +50,14 @@ IP_SALT      = os.environ.get("TELEMETRY_IP_SALT", "colt-cybergod")
 # already recorded: the browser fetches things on the visitor's behalf and those fetches are not
 # navigations. Extensions added: webmanifest, webp/avif/gif (images), mp4/webm (the hero video),
 # json/txt/xml (manifests, robots, sitemap) and eot/otf (fonts).
-SKIP_PATH_RE = re.compile(
-    r"\.(css|js|mjs|map|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot"
-    r"|webmanifest|mp4|webm|json|txt|xml)$", re.I)
+#
+# THE PATTERN IS A NAMED LITERAL, not an inline argument to re.compile, because it now has a SECOND
+# reader. perseus/client.py cannot import this module (it is copied into projects that do not have
+# it) so it restates the pattern, and `test_asset_trace.py` reads both files off disk with `ast` and
+# fails the build if the two ever drift. A literal can be compared; a compiled object cannot.
+SKIP_PATH_PAT = (r"\.(css|js|mjs|map|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot"
+                 r"|webmanifest|mp4|webm|json|txt|xml)$")
+SKIP_PATH_RE = re.compile(SKIP_PATH_PAT, re.I)
 
 _BOTS = [
     ("googlebot", "Googlebot"), ("bingbot", "Bingbot"), ("yandex", "YandexBot"),
@@ -148,6 +165,23 @@ def _sf(request):
         return None
     try:
         return client_truth.sf_mask(request.headers.get)
+    except Exception:
+        return None
+
+
+def _av(ip):
+    """-> distinct assets this address has fetched recently, or None when we could not look.
+
+    ONE-WAY POSITIVE. A count at or above asset_trace.MIN_ASSETS CONFIRMS a browser engine; a zero
+    confirms nothing, because a first navigation, a cached repeat visit and an inline page all
+    produce a zero. `av` ABSENT and `av == 0` are different facts, exactly as `sf` already
+    distinguishes them, so None is returned when the ledger is unavailable and the field is then
+    omitted rather than defaulted. Never raises.
+    """
+    if asset_trace is None:
+        return None
+    try:
+        return int(asset_trace.evidence(ip))
     except Exception:
         return None
 
@@ -274,6 +308,17 @@ def install(app, session_email_fn=None):
         try:
             path = request.url.path
             if SKIP_PATH_RE.search(path) and not blocked:
+                # THE ONE THING THIS EARLY RETURN USED TO THROW AWAY. A subresource is not a page
+                # visit and must not be logged as one -- that part is unchanged and the line is
+                # still not written -- but the FACT that this address pulled the bundle, the
+                # stylesheet and the icons is the strongest server-side proof there is that a
+                # browser engine rendered the page it was given. Recorded in memory, costing zero
+                # log lines, and read back below as `av`. ONE-WAY POSITIVE: see asset_trace.py.
+                if asset_trace is not None:
+                    try:
+                        asset_trace.note(client_ip(request), path)
+                    except Exception:
+                        pass              # fail open, always
                 return
             ua = request.headers.get("user-agent", "")
             c = cls or classify_ua(ua)
@@ -294,7 +339,7 @@ def install(app, session_email_fn=None):
                       status=status, ms=int((time.time() - t0) * 1000), ua=ua[:220],
                       browser=c["browser"], os=c["os"], device=c["device"],
                       bot=c["bot"], bot_name=c["bot_name"],
-                      hv=hv, hvs=hvs, sf=sf,
+                      hv=hv, hvs=hvs, sf=sf, av=_av(ip),
                       ref=(request.headers.get("referer") or "")[:160],
                       lang=(request.headers.get("accept-language") or "")[:40].split(",")[0],
                       # Caddy/Cloudflare-style country header if a proxy ever sets one
@@ -307,8 +352,10 @@ def install(app, session_email_fn=None):
             # the client sent no fetch-metadata header; `sf` absent means client_truth could not be
             # imported and nobody looked. Writing 0 for the second would manufacture a signal out
             # of our own failure, which is the "absence of evidence is never a finding" rule at the
-            # emitter instead of at the reader.
-            for _k in ("hv", "hvs", "sf"):
+            # emitter instead of at the reader. `av` obeys the same rule for the same reason --
+            # though `av: 0` is not a signal in EITHER direction, since the ledger only ever
+            # confirms a browser and never accuses one.
+            for _k in ("hv", "hvs", "sf", "av"):
                 if ev.get(_k) is None:
                     ev.pop(_k, None)
             emit(**ev)

@@ -41,6 +41,19 @@ except ImportError:                      # standalone import (tests)
     except ImportError:
         _client_truth = None
 
+# THE ASSET LEDGER, imported here only for its FLOOR. This module reads the `av` integer that the
+# two emitters already stamped on the record; it never calls note() and never touches the ledger's
+# memory, so the count on a line from jobhuntwow is judged against the same number as a count on a
+# line from colt-web. An import failure costs the CONFIRMED promotion and nothing else: those
+# addresses fall back to whatever the fetch-metadata check said, which is where they already were.
+try:
+    from . import asset_trace as _asset_trace
+except ImportError:                      # standalone import (tests)
+    try:
+        import asset_trace as _asset_trace
+    except ImportError:
+        _asset_trace = None
+
 BEAT_DIR = os.environ.get("PERSEUS_BEATS", "/var/log/colt/perseus_beats")
 EVENTS = os.environ.get("EVENTS_LOG", "/var/log/colt/events.log")
 # EVERY LOG THIS CONTAINER CAN SEE. klima and s4biz write to their OWN volumes, so reading only the
@@ -798,6 +811,31 @@ def _self_service():
         return str(os.environ.get("SERVICE") or "")
 
 
+def _asset_confirms(r):
+    """-> True when this record PROVES a browser engine rendered the page. Never raises.
+
+    ONE-WAY POSITIVE AND NOTHING ELSE. True means confirmed. False means NOT CONFIRMED, which is
+    not a statement about the client at all: `av` absent (an older line, or a project whose
+    asset_trace could not be imported), `av: 0` (a first navigation, a cached repeat visit, an
+    inline page) and `av: 1` all return False and all three leave the address exactly where the
+    other rungs put it. The caller must never read a False as evidence of a script, and the
+    property is asserted across every path in tests/test_asset_trace.py.
+
+    A full headless browser driven by Playwright fetches assets exactly as Chrome does and will be
+    confirmed here. That is stated plainly rather than papered over: what this defeats is the cheap
+    HTTP-client scraper population, not automation that pays for a real engine.
+    """
+    try:
+        if _asset_trace is None:
+            return False
+        av = r.get("av")
+        if av is None:                      # ABSENT is not zero. Nobody looked.
+            return False
+        return int(av) >= int(_asset_trace.MIN_ASSETS)
+    except Exception:
+        return False                        # fail open: no evidence, never a finding
+
+
 def _visitor_columns(m):
     """-> the visitors/clients/unjudged columns for one project row. Never raises.
 
@@ -813,7 +851,7 @@ def _visitor_columns(m):
     """
     if not m:
         return {"addresses_24h": 0, "visitors_24h": None, "clients_24h": None,
-                "unjudged_24h": None, "visitor_split": "none"}
+                "unjudged_24h": None, "confirmed_24h": None, "visitor_split": "none"}
     addr = m.get("addresses") or set()
     clients = m.get("clients") or set()
     # PRECEDENCE, AND IT ONLY RUNS ONE WAY. An address seen once as a self-identified bot or once
@@ -822,6 +860,13 @@ def _visitor_columns(m):
     # itself a place in the visitor count. The reverse is never done.
     browsers = (m.get("browsers") or set()) - clients
     unjudged = (m.get("unjudged") or set()) - clients - browsers
+    # CONFIRMED is a SUBSET of browsers, computed from the same snapshot as the counts it explains,
+    # and it is subtracted by the same precedence: an address that ever looked like a client is a
+    # client even if it also fetched the whole bundle. It is reported so the admin page can say in
+    # a tooltip WHICH half of the visitor count was proved by a browser engine fetching assets
+    # rather than inferred from headers. No visible column changes and no new locale key: a
+    # frontend change would trip the preview gate and this number does not need one yet.
+    confirmed = ((m.get("confirmed") or set()) & browsers)
     if not addr:
         split = "none"
     elif unjudged and (browsers or clients):
@@ -834,6 +879,7 @@ def _visitor_columns(m):
             "visitors_24h": None if split == "none" else len(browsers),
             "clients_24h": None if split == "none" else len(clients),
             "unjudged_24h": len(unjudged),
+            "confirmed_24h": None if split == "none" else len(confirmed),
             "visitor_split": split}
 
 
@@ -935,7 +981,8 @@ def _status():
             continue
         p = per.setdefault(s, {"lines": 0, "http": 0, "attacks": 0, "alerts": 0,
                                "addresses": set(), "browsers": set(), "clients": set(),
-                               "unjudged": set(), "last_ts": 0, "r429": 0, "rblock": 0})
+                               "unjudged": set(), "confirmed": set(),
+                               "last_ts": 0, "r429": 0, "rblock": 0})
         p["lines"] += 1
         p["last_ts"] = max(p["last_ts"], r.get("ts") or 0)
         evt = r.get("evt")
@@ -955,18 +1002,40 @@ def _status():
                 # into either of the others. An address that ever looked like a client is subtracted
                 # from the browsers below: one address, one bucket, and the conservative direction
                 # is the one that does not put a scanner in the visitor count.
+                #
+                # TIER 4 ADDS A FOURTH RUNG AND IT ONLY EVER POINTS ONE WAY. `av` is how many
+                # distinct static assets that address pulled in the last two minutes, which is
+                # the strongest server-side proof that a BROWSER ENGINE rendered the page. The
+                # precedence below is exact and the order is the design:
+                #   1. self-identified bot, or a contradiction recorded  -> client, wins over all
+                #   2. av >= MIN_ASSETS                                  -> browser, CONFIRMED
+                #   3. fetch metadata determinable, no contradiction     -> browser, inferred
+                #   4. otherwise                                         -> unjudged
+                # A LOW OR ZERO `av` MOVES NOTHING. It never takes an address out of browsers and
+                # it never puts one into clients: a first navigation, a cached repeat visit and an
+                # inline page all sit at zero, so zero is evidence of nothing at all. The value of
+                # this rung is that it SHRINKS THE UNJUDGED BUCKET without touching clients.
                 p["addresses"].add(ip)
-                if not _client_truth or not _client_truth.has_evidence(r) or "bot" not in r:
+                if "bot" not in r:
+                    # Rung 1 cannot even be evaluated on a line that carries no claim, so rung 2
+                    # is not applied either. Promoting on `av` alone here would let a record with
+                    # no `bot` field buy a self-declared crawler a place in the visitor count
+                    # through a side door.
                     p["unjudged"].add(ip)
                 elif r.get("bot"):
                     p["clients"].add(ip)
                 else:
-                    try:
-                        v = _client_truth.evaluate(r)
-                    except Exception:
-                        v = None            # fail open: an error here is a fact about US
+                    v = None
+                    if _client_truth and _client_truth.has_evidence(r):
+                        try:
+                            v = _client_truth.evaluate(r)
+                        except Exception:
+                            v = None        # fail open: an error here is a fact about US
                     if v is not None and v.reasons:
                         p["clients"].add(ip)
+                    elif _asset_confirms(r):
+                        p["browsers"].add(ip)
+                        p["confirmed"].add(ip)
                     elif v is not None and v.determinable:
                         p["browsers"].add(ip)
                     else:

@@ -919,8 +919,14 @@ def do_tests():
     # the shield tests prove enforcement never catches a real visitor, and these prove the new
     # client-contradiction signal never BECOMES enforcement in the first place. A labelling signal
     # about who is hostile sits one line away from a new reason to refuse somebody.
+    # test_asset_trace.py RIDES IN THE SAME GATE for the same reason, and it is the half of the
+    # question that is easiest to get backwards. Asset correlation is ONE-WAY POSITIVE: it may
+    # confirm a browser engine and it may never conclude that anything is a script, because the
+    # first navigation from any address, a cached repeat visit and a page served inline all fetch
+    # nothing. The moment a zero becomes incriminating, the signal starts accusing most real people
+    # most of the time, so the property is asserted across every path here rather than trusted.
     _sd = subprocess.run([sys.executable, '-m', 'pytest', 'tests/test_shield.py',
-                          'tests/test_client_truth.py', '-q'],
+                          'tests/test_client_truth.py', 'tests/test_asset_trace.py', '-q'],
                          cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if _sd.returncode != 0:
         print((_sd.stdout or '') + (_sd.stderr or ''))
@@ -931,6 +937,8 @@ def do_tests():
           'touched, panel bounded, 42-path scanning corpus covered, middleware+panel WIRED')
     print('  client truth: contradictions LABEL only - never a block, a tarpit or a rule; '
           'unjudged lines render as unknown, never as human')
+    print('  asset trace: a browser engine can be CONFIRMED; zero assets prove nothing and can '
+          'never make an address a client; ledger bounded and writes no log line')
 
     # c''''') THE DRIFT CHECK ITSELF. Its first version md5'd `caddy adapt` against the admin API's
     #        `GET /config/` and failed a HEALTHY staging box twice, blocking a deploy on a defect
