@@ -290,11 +290,16 @@ function drawTable(slide, rows, opts) {
   const totalFindings = (nCrit + nHigh + nMed + nLow) || findings.length;
   const s = content("EXECUTIVE SUMMARY", "Exposure at a glance");
 
-  const para = t.exec_summary && String(t.exec_summary).trim()
-    ? String(t.exec_summary).trim()
-    : "Passive external reconnaissance of " + (t.company || "the target") + " surfaced "
+  const paraFallback = "Passive external reconnaissance of " + (t.company || "the target") + " surfaced "
       + totalFindings + " finding" + (totalFindings === 1 ? "" : "s")
       + " across the internet-facing estate. All items are observed via Shodan (no active scanning); each is mapped to remediation and the relevant managed service.";
+  // On a truncated recon the deterministic fallback must not describe the estate as complete;
+  // the model gets the same fact through enrich.py and is instructed to state it.
+  const partialLead = (sum.partial_estate && sum.partial_estate.statement)
+    ? String(sum.partial_estate.statement).trim() + " " : "";
+  const para = t.exec_summary && String(t.exec_summary).trim()
+    ? String(t.exec_summary).trim()
+    : partialLead + paraFallback;
   s.addText(para, { x: 0.4, y: 1.32, w: 9.3, h: 1.05, fontSize: 10, fontFace: FB,
     color: C.ink, valign: "top", margin: 0 });
 
@@ -332,11 +337,25 @@ function drawTable(slide, rows, opts) {
     sx += 2.38;
   });
 
+  // PARTIAL ESTATE (caixabank.es, 2026-09-30). When the recon wall-clock budget stopped the sweep,
+  // the engine records it in summary.partial_estate and this banner REPLACES the passive-only
+  // strip with the statement, in the same box (layout arithmetic unchanged). The sentences are
+  // rendered as separate runs so deck_i18n can translate each by pattern. A partial estate must
+  // never read as "nothing else is exposed": absence of evidence is never a finding.
+  const partial = (sum.partial_estate && typeof sum.partial_estate === "object") ? sum.partial_estate : null;
+  const partialSentences = partial ? asLines(partial.sentences).filter(x => x.trim()) : [];
   s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.66, w: 9.3, h: 0.52, fill: { color: C.light }, line: { type: "none" } });
-  s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.66, w: 0.07, h: 0.52, fill: { color: C.teal }, line: { type: "none" } });
-  s.addText([{ text: "Passive only.  ", options: { bold: true, color: C.tealDark } },
-    { text: "Every finding is observed from public data via Shodan " + EMDASH + " visible is not vulnerable. Each maps to a remediation and the relevant managed service.", options: { color: C.ink } }],
-    { x: 0.58, y: 4.70, w: 9.0, h: 0.44, fontSize: 8.6, fontFace: FB, valign: "middle", margin: 0 });
+  s.addShape(pres.shapes.RECTANGLE, { x: 0.4, y: 4.66, w: 0.07, h: 0.52, fill: { color: partial ? C.high : C.teal }, line: { type: "none" } });
+  if (partial && partialSentences.length) {
+    const runs = [{ text: "Partial estate.  ", options: { bold: true, color: C.high } }];
+    partialSentences.forEach((x, i) => runs.push({ text: (i ? " " : "") + x, options: { color: C.ink } }));
+    runs.push({ text: "  Passive only: every finding is observed from public data via Shodan.", options: { color: C.ink } });
+    s.addText(runs, { x: 0.58, y: 4.70, w: 9.0, h: 0.44, fontSize: 8.2, fontFace: FB, valign: "middle", margin: 0 });
+  } else {
+    s.addText([{ text: "Passive only.  ", options: { bold: true, color: C.tealDark } },
+      { text: "Every finding is observed from public data via Shodan " + EMDASH + " visible is not vulnerable. Each maps to a remediation and the relevant managed service.", options: { color: C.ink } }],
+      { x: 0.58, y: 4.70, w: 9.0, h: 0.44, fontSize: 8.6, fontFace: FB, valign: "middle", margin: 0 });
+  }
   footer(s); tracer(s);
 })();
 
@@ -406,7 +425,8 @@ function drawTable(slide, rows, opts) {
       ? [String(sum.dns_hosts || 0), "HOSTS FROM DNS + CT",
          "scanner saw none: SNI-only / filtered", C.tealDark]
       : [filt ? String(filt) : EMDASH, "FILTERED UNIQUE IPs",
-         "after CDN/carrier + FP removal", C.tealDark]),
+         (sum.partial_estate ? "partial: recon stopped at time budget" : "after CDN/carrier + FP removal"),
+         sum.partial_estate ? C.high : C.tealDark]),
     [dropped ? String(dropped) : "0", "DROPPED FALSE-POS", "carrier / CDN / noise removed", C.high],
     [String(nF), "FINDINGS RAISED", "mapped to severity + remediation", C.crit],
   ];

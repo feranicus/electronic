@@ -99,10 +99,19 @@ def detectors():
 def budgets():
     """The timeout arithmetic that silently produced English decks when it did not add up."""
     g = lambda k, d: os.environ.get(k, d)                                        # noqa: E731
-    return {"ENRICH_TIMEOUT": g("ENRICH_TIMEOUT", "(default)"),
-            "ENRICH_BUDGET_S": g("ENRICH_BUDGET_S", "(default)"),
-            "ENRICH_ATTEMPTS": g("ENRICH_ATTEMPTS", "(default)"),
-            "ENRICH_EVIDENCE_CAP": g("ENRICH_EVIDENCE_CAP", "(default)")}
+    out = {"ENRICH_TIMEOUT": g("ENRICH_TIMEOUT", "(default)"),
+           "ENRICH_BUDGET_S": g("ENRICH_BUDGET_S", "(default)"),
+           "ENRICH_ATTEMPTS": g("ENRICH_ATTEMPTS", "(default)"),
+           "ENRICH_EVIDENCE_CAP": g("ENRICH_EVIDENCE_CAP", "(default)")}
+    # The recon wall-clock budget: ONE HOME is shodan_recon.RECON_BUDGET_S_DEFAULT; report the
+    # EFFECTIVE value with provenance so "why did recon stop at 300 s" is answerable from /api/diag.
+    try:
+        import shodan_recon as R
+        _b = R.ReconBudget()
+        out["RECON_BUDGET_S"] = "%d (%s)" % (int(_b.budget_s), _b.source)
+    except Exception as e:
+        out["RECON_BUDGET_S"] = "(unavailable: %s)" % type(e).__name__
+    return out
 
 
 def versions():

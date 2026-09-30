@@ -406,6 +406,10 @@ PROMPT = """%s
    the observed exposure in sector-neutral terms and reference only frameworks that apply
    everywhere (ISO/IEC 27001, NIST CSF). Naming the wrong regulator tells the reader the document
    was not written for them, which discredits every correct finding beside it.
+6. If the RAW FINDINGS carry a "partial_estate" statement, the reconnaissance was stopped by its
+   time budget before every query ran. The exec_summary MUST say so in its first two sentences,
+   and nothing in the deck may describe the estate as complete or claim that anything not listed
+   is not exposed. Hosts that were not queried are unknown, not absent.
 
 Now return ONLY the strict JSON from the OUTPUT CONTRACT above. No text around it."""
 
@@ -928,6 +932,11 @@ def enrich(fj, lang="en"):
             "findings": [{"id": f["id"], "sev": f["sev"], "title": f["title"],
                           "evidence": (f.get("evidence", []) or [])[:_ev_cap]}
                          for f in fj["findings"]]}
+    # A recon the wall-clock budget stopped is a PARTIAL estate. The model must be told, or its
+    # executive summary will describe the estate as complete (guardrail 6 below).
+    _pe = (fj.get("summary") or {}).get("partial_estate")
+    if isinstance(_pe, dict) and _pe.get("statement"):
+        slim["partial_estate"] = str(_pe["statement"])[:400]
     prompt = PROMPT % (_bible(), lang_block(lang),
                        json.dumps(slim, ensure_ascii=False))
     last = ""

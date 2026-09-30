@@ -1056,9 +1056,21 @@ def _status():
                     p["attacks"] += 1
             except Exception:
                 pass
-        elif evt in ("security_alert", "shield_block"):
+        # TWO SPELLINGS FOR ONE FACT, AND THE FLEET PAGE ONLY KNEW ONE OF THEM.
+        # cybergod's own shield.py emits `shield_block`; perseus_client.py - the sidecar copied
+        # into jobhuntwow, s4biz, klima and jev - emits `perseus_shield_block`. This branch listed
+        # only the first, so a block on any of the other four projects was counted as zero and the
+        # alert column read 0 for a site that had refused somebody.
+        # WHY WIDEN HERE RATHER THAN RENAME THE EVENT. Renaming in perseus/client.py is the more
+        # correct fix - one fact should have one name - but that event vocabulary is already in
+        # five projects' logs, in Loki's history, in test_perseus_shield.py and in shield_panel.py,
+        # and changing it makes every line written before the rename unreadable to every consumer
+        # written after it. A rename is a migration, not a one-line fix, and it does not belong in
+        # a change whose subject is jobhuntwow's alerting. This is one line, it touches nothing
+        # else, and it makes the page count what actually happened today.
+        elif evt in ("security_alert", "shield_block", "perseus_shield_block"):
             p["alerts"] += 1
-            if evt == "shield_block":
+            if evt in ("shield_block", "perseus_shield_block"):
                 p["rblock"] += 1
 
     out = []

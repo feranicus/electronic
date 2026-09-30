@@ -257,17 +257,60 @@ def test_the_proxy_refuses_a_model_we_never_chose():
 def test_a_refused_model_is_recorded_with_the_source_ip():
     """The refusal line IS the evidence: who asked, from where, for what. Without it a blocked
     attacker is indistinguishable from nothing happening."""
-    s = _src("proxy.py")
-    i = s.index('caller="proxy.REFUSED"')
-    assert "user=ip" in s[i:i + 120], "the refusal must carry the client address"
+    # Same AST check as the test below, for the same reason: `index()` + a literal grep reads
+    # whichever call happens to come first and breaks the day another call is added above it.
+    import ast
+    n_calls = 0
+    for node in ast.walk(ast.parse(_src("proxy.py"))):
+        if not isinstance(node, ast.Call):
+            continue
+        kw = {k.arg: k.value for k in node.keywords if k.arg}
+        c = kw.get("caller")
+        if not (isinstance(c, ast.Constant) and c.value == "proxy.REFUSED"):
+            continue
+        n_calls += 1
+        assert any(isinstance(n, ast.Name) and n.id == "ip"
+                   for key in ("ip", "user") if key in kw for n in ast.walk(kw[key])), \
+            "the refusal at proxy.py line %d must carry the client address" % node.lineno
+    assert n_calls >= 1, "no caller='proxy.REFUSED' call found - the test is reading nothing"
 
 
 def test_every_forwarded_proxy_call_carries_the_source_ip():
-    """'What IP is using it' was the operator's literal question. Both branches answer it."""
-    s = _src("proxy.py")
-    for caller in ('caller="proxy.chat_completions"', 'caller="proxy.chat_completions.stream"'):
-        i = s.index(caller)
-        assert "user=ip" in s[i:i + 200], "%s does not record the client address" % caller
+    """'What IP is using it' was the operator's literal question. Both branches answer it.
+
+    REWRITTEN 2026-09-30 (defect class 4, and class 17: the doctrine is unchanged, the test was
+    wrong). The first version did `s.index(caller)` and grepped the next 200 characters for the
+    literal `user=ip`. When the budget gate `_meter.gate(caller="proxy.chat_completions", ...,
+    user="proxy:" + ip, ip=ip)` was added ABOVE the original record call, `index()` found the gate
+    instead, the literal was not there, and the test failed on code that records the address in
+    two places. It was asserting a position and a spelling, never the property.
+
+    The property: EVERY call that names one of these callers passes the client address, as a
+    keyword whose value references the name `ip` (`user=ip`, `ip=ip`, `user="proxy:" + ip` all
+    qualify). Checked by AST at every call site, so a new call added later is covered too, and one
+    that forgets the address fails wherever it sits."""
+    import ast
+    tree = ast.parse(_src("proxy.py"))
+    wanted = {"proxy.chat_completions", "proxy.chat_completions.stream"}
+    seen = {w: 0 for w in wanted}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        kw = {k.arg: k.value for k in node.keywords if k.arg}
+        c = kw.get("caller")
+        if not (isinstance(c, ast.Constant) and c.value in wanted):
+            continue
+        seen[c.value] += 1
+        carries = any(
+            isinstance(n, ast.Name) and n.id == "ip"
+            for key in ("ip", "user") if key in kw
+            for n in ast.walk(kw[key]))
+        assert carries, ("a call with caller=%r at proxy.py line %d does not record the client "
+                         "address (no ip=/user= keyword referencing `ip`)" % (c.value, node.lineno))
+    # The fixture must see its subject: if the callers were renamed, this test would otherwise
+    # pass vacuously over zero call sites.
+    for w, n in seen.items():
+        assert n >= 1, "no call with caller=%r found in proxy.py - the test is reading nothing" % w
 
 
 def test_the_correlation_names_the_proxy_caller_first():

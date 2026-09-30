@@ -201,6 +201,10 @@ the droplet .env. `GET /api/diag` + `engine_config.py` report the EFFECTIVE conf
   JSON contract, drop the ceiling; a truncated answer is a dirty failure, a timeout is a clean one.
 - Budgets: `ENRICH_TIMEOUT=175`, `ENRICH_BUDGET_S=380`, head-weighted 55%, subprocess kill at 430s.
   Never issue a request whose completion time exceeds its own timeout.
+- **Recon is bounded too**: `RECON_BUDGET_S` (default 300, ONE home `shodan_recon.ReconBudget`),
+  checked at loop boundaries only, fails OPEN, and a stop is `ident["recon_truncated"]` ->
+  `summary.partial_estate` -> the deck. A truncated scan never reads as "nothing else is exposed".
+  [caixabank.es, 22 min at 55%]
 - Cost: `llm_meter.py` at `enrich._call` — the ONE chokepoint, per-direction pricing, unknown model
   priced at the dearest rate we know, `allow()` checked BEFORE the request, fails OPEN on a storage
   fault and CLOSED on the budget. `spend_watch.py` compares a MEDIAN baseline against the DO

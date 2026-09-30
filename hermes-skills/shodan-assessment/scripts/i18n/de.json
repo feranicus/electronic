@@ -778,7 +778,11 @@
   "Exposed login / admin / OWA panel ((d+) hosts?)$": "Exponiertes Login-/Admin-/OWA-Portal ($1 Hosts)",
   "Weak / legacy TLS": "Schwaches / veraltetes TLS",
   "Self-signed / untrusted certificate ((d+) hosts?)$": "Selbstsigniertes / nicht vertrauenswürdiges Zertifikat ($1 Hosts)",
-  "Verbose service banner": "Ausführliches Dienst-Banner"
+  "Verbose service banner": "Ausführliches Dienst-Banner",
+  "Partial estate.": "Unvollständige Erhebung.",
+  "Hosts not queried are unknown, not absent.": "Nicht abgefragte Hosts sind unbekannt, nicht abwesend.",
+  "Passive only: every finding is observed from public data via Shodan.": "Rein passiv: jeder Befund stammt aus öffentlichen Daten via Shodan.",
+  "partial: recon stopped at time budget": "unvollständig: Recon am Zeitbudget gestoppt"
  },
  "patterns": [
   [
@@ -952,6 +956,26 @@
   [
    "^Largest single PMLs: ",
    "Größte Einzel-WHS: "
+  ],
+  [
+   "^Partial estate: recon stopped at the time budget \\((\\d+) s\\) after (\\d+) s\\.$",
+   "Unvollständige Erhebung: Die Aufklärung wurde nach $2 s am Zeitbudget ($1 s) gestoppt."
+  ],
+  [
+   "^(\\d+) of (\\d+) discovery lookups completed\\.$",
+   "$1 von $2 Identitätsabfragen abgeschlossen."
+  ],
+  [
+   "^(\\d+) of (\\d+) Shodan queries completed\\.$",
+   "$1 von $2 Shodan-Abfragen abgeschlossen."
+  ],
+  [
+   "^(\\d+) of (\\d+) Shodan pivots completed\\.$",
+   "$1 von $2 Shodan-Pivots abgeschlossen."
+  ],
+  [
+   "^(\\d+) of (\\d+) recon steps completed\\.$",
+   "$1 von $2 Aufklärungsschritten abgeschlossen."
   ]
  ],
  "sizes": {

@@ -95,3 +95,8 @@ marketing/campaign/*.webm
 marketing/campaign/*.mp4
 marketing/campaign/*.png
 incident-*.md
+# ...EXCEPT the archived forensic evidence. The two 2026-09-06 incident reports are the ONLY
+# surviving record of the LLM-jacking: they were drawn from a 30-day Loki window that has since
+# rolled off, so nothing can regenerate them. They were gitignored and living in one working
+# tree, one `git clean` away from making the incident unverifiable. Archived deliberately.
+!docs/forensics/evidence/incident-*.md

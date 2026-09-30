@@ -42,10 +42,13 @@ pages only show up in the render.
 These were found while fact-checking the manual. The manual is written to be accurate; the PRODUCT
 should be fixed:
 
-1. `NewAssessment.jsx` says both "Typically 3–7 minutes" and "usually takes about two minutes".
-   Pick one.
-2. The Assess screen still warns "refreshing cancels the run". It no longer does — the job is
-   server-side and the page re-attaches. The string is stale.
+1. FIXED 2026-09-30. The Assess screen now says two minutes is typical, a large estate takes longer
+   and is bounded by the recon time budget (`RECON_BUDGET_S`, default 300 s, one home in
+   `shodan_recon.py`). A run the budget stops is reported as a PARTIAL estate in the summary, the
+   findings deck and the model prose; it never reads as "nothing else is exposed".
+2. FIXED 2026-09-30. The Assess and Compliance screens now say the run continues on the server and
+   the page re-attaches; the "refreshing cancels the run" string is gone from all six locales
+   (asserted by `test_recon_budget.py`, wired into ship.py).
 3. `legal.jsx` claims 30-day log retention; `obs/loki-config.yml` is set to 168h (7 days).
    The manual says "up to 30 days" so it is not wrong, but the two should agree.
 4. `legal.jsx` claims assessment data is kept "90 days, or until deleted by the user". There is no

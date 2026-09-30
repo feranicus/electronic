@@ -557,6 +557,11 @@ def main():
         ident = fj.get("identity", {})
     else:
         if not a.seed: ap.error("need --seed or --from-findings")
+        # THE RECON WALL-CLOCK BUDGET (caixabank.es, 22 minutes at 55%). Started before identity
+        # resolution so the whole recon phase is one bounded interval; shodan_recon checks it at
+        # every loop boundary and records exhaustion on ident["recon_truncated"].
+        _rb = R.recon_budget(reset=True).start()
+        _pg("Identity + certificate discovery (recon budget %ds)" % int(_rb.budget_s), 3)
         ident = R.resolve_identity(a.seed, allow_public_suffix=a.allow_public_suffix)
         for asn in a.asn:
             asn = "AS"+asn.lstrip("ASas")
@@ -575,8 +580,22 @@ def main():
         open(os.path.join(a.outdir,"filters.md"),"w").write(R.filters_md(ident,F))
         if not os.environ.get("SHODAN_API_KEY"):
             print("SHODAN_API_KEY not set", file=sys.stderr); sys.exit(2)
-        _pg("Shodan recon + Top-10 super-filters", 8)
-        fj = R.run(ident, F, a.audience)
+        _pg("Shodan recon + Top-10 super-filters (%ds of %ds recon budget)"
+            % (int(_rb.elapsed()), int(_rb.budget_s)), 8)
+        # Recon owns the 8% -> 55% span of the bar. Each query/pivot reports elapsed against the
+        # budget, so the operator can SEE the phase is bounded instead of watching 55% for 22 min.
+        fj = R.run(ident, F, a.audience,
+                   progress=lambda msg, frac: _pg(msg, 8 + int(47 * max(0.0, min(1.0, frac)))))
+        _trunc = ident.get("recon_truncated")
+        if _trunc:
+            _ev(evt="recon_truncated", company=_tag, budget_s=_trunc.get("budget_s"),
+                elapsed_s=_trunc.get("elapsed_s"), phase=_trunc.get("phase"),
+                done=_trunc.get("done"), pending=_trunc.get("pending"),
+                hosts_queried=_trunc.get("hosts_queried"))
+            _pg("Recon stopped at the %ds time budget during %s: %d of %d %s completed; the "
+                "estate is PARTIAL and the deck will say so"
+                % (_trunc.get("budget_s") or 0, _trunc.get("phase"), _trunc.get("done") or 0,
+                   _trunc.get("total") or 0, _trunc.get("unit") or "steps"), 55)
         # SCOPE BLOW-OUT GUARD (bibeltv.de, 2026-07): an over-matching pivot once adopted ~998
         # strangers' hosts as the customer's estate — 1003 IPs in the findings against 5 on the
         # asset-inventory slide — and NOTHING in the pipeline objected. A wrong estate is not a
@@ -638,7 +657,8 @@ def main():
         json.dump(fj, open(os.path.join(a.outdir,"findings.json"),"w"), indent=2, ensure_ascii=False)
         open(os.path.join(a.outdir,"findings.md"),"w").write(R.findings_md(fj))
 
-    _ev(evt="phase", name="recon", status="ok", company=_tag, ms=int((_t.time()-_ts)*1000))
+    _ev(evt="phase", name="recon", status=("truncated" if ident.get("recon_truncated") else "ok"),
+        company=_tag, ms=int((_t.time()-_ts)*1000))
 
     # --- BGP / ASN resilience -> NIS2 Art 21 continuity exposure (additive, non-fatal) ---
     try:

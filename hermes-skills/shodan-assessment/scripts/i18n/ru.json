@@ -778,7 +778,11 @@
   "Exposed login / admin / OWA panel ((d+) hosts?)$": "Экспонированная панель входа / администрирования / OWA (хостов",
   "Weak / legacy TLS": "Слабый / устаревший TLS",
   "Self-signed / untrusted certificate ((d+) hosts?)$": "Самоподписанный / недоверенный сертификат (хостов",
-  "Verbose service banner": "Подробный баннер службы"
+  "Verbose service banner": "Подробный баннер службы",
+  "Partial estate.": "Неполный охват.",
+  "Hosts not queried are unknown, not absent.": "Неопрошенные хосты неизвестны, а не отсутствуют.",
+  "Passive only: every finding is observed from public data via Shodan.": "Только пассивно: каждая находка получена из открытых данных через Shodan.",
+  "partial: recon stopped at time budget": "неполно: разведка остановлена по лимиту времени"
  },
  "patterns": [
   [
@@ -952,6 +956,26 @@
   [
    "^Largest single PMLs: ",
    "Наибольшие отдельные ВМУ: "
+  ],
+  [
+   "^Partial estate: recon stopped at the time budget \\((\\d+) s\\) after (\\d+) s\\.$",
+   "Неполный охват: разведка остановлена по лимиту времени ($1 с) через $2 с."
+  ],
+  [
+   "^(\\d+) of (\\d+) discovery lookups completed\\.$",
+   "Выполнено $1 из $2 запросов идентификации."
+  ],
+  [
+   "^(\\d+) of (\\d+) Shodan queries completed\\.$",
+   "Выполнено $1 из $2 запросов Shodan."
+  ],
+  [
+   "^(\\d+) of (\\d+) Shodan pivots completed\\.$",
+   "Выполнено $1 из $2 pivot-запросов Shodan."
+  ],
+  [
+   "^(\\d+) of (\\d+) recon steps completed\\.$",
+   "Выполнено $1 из $2 шагов разведки."
   ]
  ],
  "sizes": {},

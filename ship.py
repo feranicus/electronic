@@ -21,6 +21,7 @@ What it orchestrates (each of these is still runnable alone for debugging, but y
     hermes-skills/.../test_ca_pivot.py         CA-pivot regression (bibeltv false POSITIVES)
     hermes-skills/.../test_recall.py           recall regression (bibeltv false NEGATIVES)
     hermes-skills/.../test_scope_abakus.py     scope regression (abakus wa.me -> 236 Meta hosts)
+    hermes-skills/.../test_recon_budget.py     recon is bounded by RECON_BUDGET_S (caixabank 22 min)
     author_geopol.py + build_geopol_html.js    the 5th deliverable (GEOPOL HTML) renders
     py_compile over every engine script        catches the truncation/syntax class of bug
     ship_web.py                                web: build -> GHCR -> Actions -> droplet -> Caddy
@@ -814,6 +815,22 @@ def do_tests():
         print((_rp.stdout or '') + (_rp.stderr or ''))
         sys.exit('[X] run() path test failed - the engine would crash or mis-scope in production')
     print('  run() path: executes clean, co-tenant guard correct on the shared /24')
+
+    # THE RECON WALL-CLOCK BUDGET (caixabank.es, 2026-09-30). A bank-sized estate sat at 55% for
+    # 22 minutes because enrichment had a ceiling and recon had none. This drives run() against a
+    # stub Shodan on a FAKE clock and proves: the sweep stops at RECON_BUDGET_S and keeps what it
+    # has; no request is ISSUED after the deadline (the check sits at loop boundaries, an in-flight
+    # page always completes); a complete run has NO truncation key; a truncated run carries the
+    # partial-estate statement into the summary and the deck and never claims scanner_blind; bad
+    # env values and a broken clock fail OPEN; and the six UI locales no longer tell the operator
+    # that refreshing cancels a run that re-attaches.
+    _rbud = subprocess.run([sys.executable, os.path.join(engine, 'test_recon_budget.py')],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+    if _rbud.returncode != 0:
+        print((_rbud.stdout or '') + (_rbud.stderr or ''))
+        sys.exit('[X] RECON BUDGET REGRESSION - recon is unbounded again, or a partial estate would '
+                 'ship as complete. Do not ship.')
+    print('  recon budget: bounded at RECON_BUDGET_S, in-flight calls finish, truncation reaches the deck')
 
     # c''''''') THE ABAKUS-TK.DE SCOPE REGRESSION (2026-08). A 20-person telecoms reseller with one
     #           shared IONOS VIP was shipped a deck claiming 401 IPs across 42 ASNs and 49 countries,

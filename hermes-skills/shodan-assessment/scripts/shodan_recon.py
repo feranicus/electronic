@@ -38,6 +38,157 @@ CDNS = ("cloudflare","akamai","fastly","cloudfront","amazon","aws","google","inc
 
 def _is(name, tup): return bool(name) and any(t in name.lower() for t in tup)
 
+
+# ---- RECON WALL-CLOCK BUDGET (caixabank.es, 2026-09-30) ---------------------------------------
+# A run against a bank sat at "Shodan recon + Top-10 super-filters" for over 22 minutes: 32 domains
+# from certificates, ~400 hostnames, one whois-org pivot adding +477 hosts, and Shodan throttling
+# the basic plan ("Unable to parse JSON response") between pages. Enrichment has had a ceiling for
+# months (ENRICH_TIMEOUT / ENRICH_BUDGET_S / the 430 s subprocess kill); recon had NONE. On a
+# bank-sized estate it ran until Shodan finished, and the UI promised two minutes the whole time.
+#
+# THE DEFAULT. run_assessment's own progress weights say recon is ~60-80 s of a ~2 min job, and the
+# web UI tells the operator recon is "the long part (~2-3 min)". 300 s is 2x the upper end the UI
+# already states and ~4x a normal run, so a normal estate never sees it, and a bank-sized one is
+# bounded at five minutes instead of twenty-two. Enrichment's own ceiling is 380 s; recon should
+# not be allowed more than the phase that writes the prose.
+#
+# THIS IS THE ONE HOME for the value: compose must not restate it (the ENRICH_MODELS lesson), and
+# engine_config.budgets() reports the effective value with provenance.
+#
+# RULES the budget obeys, each earned elsewhere in this file:
+#   * It is checked at LOOP BOUNDARIES only, before the next unit of work starts. A single HTTP
+#     call is never interrupted (every remote call keeps its own hard timeout for that).
+#   * It FAILS OPEN: a broken clock or a bad env var applies the default and never aborts a run.
+#   * Exhaustion keeps everything gathered so far and records the truncation as FIRST-CLASS DATA
+#     on ident (`recon_truncated`), exactly like selectors_refused and pivots_rolled_back, so the
+#     summary, the deck and the prose can say "partial estate" instead of presenting a partial
+#     estate as complete. Absence of evidence is never a finding, and "not queried" is absence.
+RECON_BUDGET_S_DEFAULT = 300
+
+
+class ReconBudget:
+    """Wall-clock budget for the recon phase (identity discovery + Shodan sweep + pivots)."""
+
+    def __init__(self, budget_s=None, clock=None):
+        self._clock = clock or time.monotonic
+        raw = os.environ.get("RECON_BUDGET_S", "") if budget_s is None else budget_s
+        b = None
+        try:
+            b = float(raw) if str(raw).strip() != "" else None
+        except Exception:
+            b = None                  # "abc" in the env is not a reason to abort an assessment
+        if b is None or not (b > 0):
+            self.source = "default"
+            b = float(RECON_BUDGET_S_DEFAULT)
+        else:
+            self.source = "arg" if budget_s is not None else "env"
+        self.budget_s = b
+        self.t0 = None
+        self.truncated = None        # the record, once exhaustion has been declared
+        self.checks = 0              # how many boundary checks ran (tests assert it is > 0)
+
+    def _now(self):
+        try:
+            return float(self._clock())
+        except Exception:
+            return None               # a broken clock means "never exhausted" (fail open)
+
+    def start(self):
+        if self.t0 is None:
+            self.t0 = self._now()
+        return self
+
+    def elapsed(self):
+        now = self._now()
+        if self.t0 is None or now is None:
+            return 0.0
+        return max(0.0, now - self.t0)
+
+    def remaining(self):
+        return max(0.0, self.budget_s - self.elapsed())
+
+    def stopped(self):
+        return self.truncated is not None
+
+    def exhausted(self):
+        """True once the budget is spent. Counted, so a test can prove the check actually ran."""
+        self.checks += 1
+        if self.truncated is not None:
+            return True
+        if self.t0 is None:
+            return False
+        try:
+            return self.elapsed() >= self.budget_s
+        except Exception:
+            return False
+
+    def check(self, ident, phase, unit, done, total, hosts=None):
+        """Boundary check. Returns True when the caller must stop its loop now.
+
+        The FIRST exhaustion writes ident["recon_truncated"]; later phases that find the budget
+        already spent add a line to its `skipped` list so the record says what was never run."""
+        if not self.exhausted():
+            return False
+        pending = max(0, int(total) - int(done))
+        if self.truncated is None:
+            self.truncated = {"budget_s": int(round(self.budget_s)),
+                              "elapsed_s": int(round(self.elapsed())),
+                              "phase": phase, "unit": unit,
+                              "done": int(done), "pending": pending, "total": int(total),
+                              "hosts_queried": (len(hosts) if hosts is not None else 0),
+                              "skipped": []}
+            if isinstance(ident, dict):
+                ident["recon_truncated"] = self.truncated
+            print("[auto] RECON BUDGET EXHAUSTED after %ds (budget %ds) during %s: %d of %d %s "
+                  "completed, %d pending. Keeping everything gathered so far; the estate is "
+                  "PARTIAL and will be reported as such."
+                  % (self.truncated["elapsed_s"], self.truncated["budget_s"], phase, done, total,
+                     unit, pending), file=sys.stderr)
+        elif pending and phase != self.truncated.get("phase"):
+            line = "%s: %d of %d %s not run" % (phase, pending, total, unit)
+            if line not in self.truncated["skipped"] and len(self.truncated["skipped"]) < 12:
+                self.truncated["skipped"].append(line)
+        return True
+
+
+_BUDGET = None
+
+
+def recon_budget(reset=False, **kw):
+    """The process-wide recon budget. run_assessment starts it before identity resolution;
+    autodiscover() and run() start it lazily so a standalone call is bounded too."""
+    global _BUDGET
+    if _BUDGET is None or reset:
+        _BUDGET = ReconBudget(**kw)
+    return _BUDGET
+
+
+def partial_estate_statement(trunc):
+    """Customer-facing sentences for a truncated recon. Numbers only inside each sentence, so the
+    deck's pattern-based i18n can translate them; the phase is its own sentence for the same
+    reason. Absence of evidence is never a finding: the last sentence says so."""
+    if not trunc:
+        return None
+    _ph = str(trunc.get("phase") or "")
+    if _ph.startswith("identity discovery"):
+        phase_line = "%d of %d discovery lookups completed."
+    elif _ph.startswith("Shodan queries"):
+        phase_line = "%d of %d Shodan queries completed."
+    elif _ph.startswith("Shodan pivots"):
+        phase_line = "%d of %d Shodan pivots completed."
+    else:
+        phase_line = "%d of %d recon steps completed."
+    sentences = [
+        "Partial estate: recon stopped at the time budget (%d s) after %d s."
+        % (int(trunc.get("budget_s") or 0), int(trunc.get("elapsed_s") or 0)),
+        phase_line % (int(trunc.get("done") or 0), int(trunc.get("total") or 0)),
+        "Hosts not queried are unknown, not absent.",
+    ]
+    return {"statement": " ".join(sentences), "sentences": sentences,
+            "hosts_queried": int(trunc.get("hosts_queried") or 0),
+            "phase": trunc.get("phase"), "done": int(trunc.get("done") or 0),
+            "total": int(trunc.get("total") or 0), "skipped": list(trunc.get("skipped") or [])}
+
 # ------------------------------------------------------------------ identity ---
 def _get_json(url, timeout=15, headers=None):
     # `headers` is additive on top of UA. It was added for CertSpotter's optional API key, and
@@ -504,19 +655,32 @@ def _is_saas_tenancy(name):
     return False
 
 
-def _probe_subdomains(domains, cap=120):
+def _probe_subdomains(domains, cap=120, stop=None):
     """Resolve a curated subdomain list against each known domain.
+
+    `stop(done, total)` is the recon budget's boundary check; when it returns True the probe
+    returns what it has found so far (a partial map is still a map of real hosts).
 
     WHY THIS EXISTS (bibeltv.de): crt.sh failed on three consecutive runs (timeout, 404, 503) and it
     was the ONLY source of subdomains, so the engine never saw gitlab.bibel.tv or vpn.bibeltv.de —
     the two most valuable hosts in the estate. DNS is a second, independent source that cannot be
     taken out by one flaky service, and a name that RESOLVES is proof the host exists."""
     found = {}
-    for d in list(domains)[:4]:                       # apexes only; keep the query count sane
-        d = str(d).lower().lstrip(".")
+    apexes = [str(d).lower().lstrip(".") for d in list(domains)[:4]]   # apexes only; keep the query count sane
+    total = len(apexes) * len(PROBE_SUBS)
+    done = 0
+    halted = False
+    for d in apexes:
+        if halted:
+            break
         for sub in PROBE_SUBS:
+            # BUDGET BOUNDARY: one DNS query is the unit of work; the check sits before it starts.
+            if stop is not None and stop(done, total):
+                halted = True
+                break
             fqdn = sub + "." + d
             ips = _resolve(fqdn)
+            done += 1
             if ips:
                 found[fqdn] = ips
             if len(found) >= cap:
@@ -1149,6 +1313,12 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
                           can state it and the gate stays strict (client domains never adopted)."""
     orgs=list(orgs or []); brands=list(brands or []); domains=list(domains or [])
     favicons=list(favicons or []); cert_orgs=list(cert_orgs or [])
+    # The recon wall-clock budget. Started here if run_assessment has not already started it, so a
+    # standalone autodiscover() is bounded too. Every loop below that issues one network call per
+    # iteration checks it BEFORE the next call (never mid-call).
+    _bud = recon_budget().start()
+    def _over(unit, done, total):
+        return _bud.check(ident, "identity discovery", unit, done, total)
     # --- REFINE overrides: normalise excludes into apexes + IPs, and force-pin supplied hosts -------
     exclude_apexes=set(); exclude_ips=set()
     for x in (excludes or []):
@@ -1303,9 +1473,13 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
     #        "owned" and never searched, and the deck came out byte-identical. Each subsidiary is
     #        now treated as a first-class seed: its own CT enumeration, its own subdomain probe,
     #        its own identity clauses.
-    for _gd in sorted(_group_doms):
+    _gd_list = sorted(_group_doms)
+    for _gi, _gd in enumerate(_gd_list):
         if _gd in exclude_apexes:
             continue
+        # BUDGET BOUNDARY: one CT enumeration per subsidiary; checked before it is issued.
+        if _over("subsidiary CT lookups", _gi, len(_gd_list)):
+            break
         # THE ABAKUS-TK.DE FIX (2026-08). This loop used to append straight into `domains`,
         # bypassing _consider_domain() and therefore every check the engine has -- and _owns_apex
         # then returned True for these apexes BECAUSE they were in group_domains. Discovery
@@ -1356,7 +1530,8 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
         print("[auto] DNS probe SKIPPED for %d non-brand group domain(s) (CT enumeration only, "
               "avoids speculative noise on a partner/network brand): %s"
               % (len(_skipped), ", ".join(_skipped[:6])), file=sys.stderr)
-    probed = _probe_subdomains(sorted(_probe_apexes))
+    probed = _probe_subdomains(sorted(_probe_apexes),
+                               stop=lambda done, total: _over("DNS probes", done, total))
 
     # ---- RESOLVE WHAT CT ACTUALLY TOLD US (ns03.ru, 2026-08-09) --------------------------------
     # THE BUG THIS FIXES, and it silently gutted a whole assessment: Certificate Transparency
@@ -1374,7 +1549,11 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
                  and any(d == a or d.endswith("." + a) for a in candidate_apexes)]
     if _ct_fqdns:
         _ct_live = {}
-        for _n in _ct_fqdns[:120]:            # bounded: one query each, and CT lists can be long
+        _ct_batch = _ct_fqdns[:120]           # bounded: one query each, and CT lists can be long
+        for _ni, _n in enumerate(_ct_batch):
+            # BUDGET BOUNDARY: one DNS resolution per CT name; checked before the next one starts.
+            if _over("CT name resolutions", _ni, len(_ct_batch)):
+                break
             _ips = _resolve(_n)
             if _ips:
                 _ct_live[_n] = _ips
@@ -1410,7 +1589,10 @@ def autodiscover(ident, orgs=None, brands=None, domains=None, favicons=None,
                                        cap=int(os.environ.get("NAMING_CAP", "220")),
                                        known=_known_names)
             _hits = {}
-            for _c2 in _cands:
+            for _ci, _c2 in enumerate(_cands):
+                # BUDGET BOUNDARY: one DNS resolution per candidate name.
+                if _over("naming-convention candidates", _ci, len(_cands)):
+                    break
                 _ips2 = _resolve(_c2)
                 if _ips2:
                     _hits[_c2] = _ips2
@@ -2187,13 +2369,43 @@ TEMPLATES = {
 SEV_ORDER = ["CRITICAL","HIGH","MEDIUM","LOW"]
 
 # ------------------------------------------------------------------- run ---
-def run(ident, F, audience, limit_per_query=500):
+def run(ident, F, audience, limit_per_query=500, progress=None):
     import shodan
     api = shodan.Shodan(os.environ["SHODAN_API_KEY"])
     own_asns = set(ident["asns"])
     hosts = {}; asns=set(); countries=set(); records=0; dropped=0; inv={}
     _by_dom = {}          # discovered domain -> {ips it returned}
     _no_dom = set()       # ips proved by something NOT attributable to one discovered domain
+
+    # THE RECON BUDGET (see ReconBudget). Started lazily so a standalone run() is bounded too.
+    # `_over(phase, unit, done, total)` is the ONE boundary check every loop below calls BEFORE it
+    # issues the next Shodan request; a request that has started is always allowed to finish.
+    # `_PAGE` is Shodan's cursor page size: inside a cursor the check runs once per page, because a
+    # page is the HTTP unit (records within a page have already arrived).
+    _bud = recon_budget().start()
+    _PAGE = 100
+    def _over(phase, unit, done, total):
+        return _bud.check(ident, phase, unit, done, total, hosts)
+    def _paged(cursor, phase, unit, done, total):
+        """The cursor fetches the NEXT page inside next(), so the only place a check can sit
+        BEFORE that HTTP call is after the last record of the previous page has been yielded.
+        This wrapper does that counting once, so the consumers' own `continue`s cannot skip it."""
+        n = 0
+        for m in cursor:
+            yield m
+            n += 1
+            if n % _PAGE == 0 and _over(phase, unit, done, total):
+                return                              # page boundary, never mid-page
+    def _tick(msg):
+        """Progress for the operator: what is running, and elapsed against the budget."""
+        if progress is None:
+            return
+        try:
+            _el = int(_bud.elapsed()); _bs = int(_bud.budget_s)
+            progress("%s (%ds of %ds recon budget)" % (msg, _el, _bs),
+                     min(1.0, _el / float(max(1, _bs))))
+        except Exception:
+            pass
 
     # ---- RARITY GATE ON BRAND SELECTORS (the abakus-tk.de failure, 2026-08) ---------------------
     # "Abakus" is the German word for abacus. ssl:"abakus" / http.title:"abakus" / http.html:"abakus"
@@ -2228,14 +2440,21 @@ def run(ident, F, audience, limit_per_query=500):
             return False
         return True
 
-    for f in [f for f in F if f.get("run")]:
+    _runnable = [f for f in F if f.get("run")]
+    for _qi, f in enumerate(_runnable):
+        # BUDGET BOUNDARY: before the rarity count() and the query itself.
+        if _over("Shodan queries", "queries", _qi, len(_runnable)):
+            break
+        _tick("Shodan recon: query %d of %d" % (_qi + 1, len(_runnable)))
         if not _selector_is_distinctive(f):
             continue
         q = f["clause"]; cat = f.get("cat", "sweep")
         _fdom = f.get("dom")
         n = 0
         try:
-            for m in api.search_cursor(q):
+            # BUDGET BOUNDARY inside the cursor: once per PAGE, never mid-page (see _paged). The
+            # records of this query gathered so far are kept; the query counts as not completed.
+            for m in _paged(api.search_cursor(q), "Shodan queries", "queries", _qi, len(_runnable)):
                 tags = m.get("tags") or []
                 if "honeypot" in tags: dropped += 1; continue
                 if cat == "sweep":
@@ -2395,8 +2614,13 @@ def run(ident, F, audience, limit_per_query=500):
             {"pivot": label, "added": len(added), "budget": _pivot_budget})
         return 0
 
-    for _cn in [c for c, n in sorted(seen_iss.items(), key=lambda x: -x[1]) if n >= 2][:6]:
+    _ca_cands = [c for c, n in sorted(seen_iss.items(), key=lambda x: -x[1]) if n >= 2][:6]
+    for _pi, _cn in enumerate(_ca_cands):
         if _cn in ident.get("internal_cas", []): continue
+        # BUDGET BOUNDARY: before the rarity count() and the pivot query.
+        if _over("Shodan pivots: internal CA", "pivots", _pi, len(_ca_cands)):
+            break
+        _tick("Shodan recon: internal-CA pivot %d of %d" % (_pi + 1, len(_ca_cands)))
         ok, why = _private_ca_ok(_cn, ident, api)
         if not ok:
             print(f"[auto] internal-CA pivot REFUSED on {_cn!r}: {why}", file=sys.stderr)
@@ -2405,7 +2629,8 @@ def run(ident, F, audience, limit_per_query=500):
         print(f"[auto] internal-CA pivot on {_cn!r} ({why})", file=sys.stderr)
         try:
             k = 0; skipped = 0; _add, _aasn = [], []
-            for _m in api.search_cursor(f'ssl.cert.issuer.cn:"{_cn}"'):
+            for _m in _paged(api.search_cursor(f'ssl.cert.issuer.cn:"{_cn}"'),
+                             "Shodan pivots: internal CA", "pivots", _pi, len(_ca_cands)):
                 ip2 = _m.get("ip_str")
                 if ip2 and ip2 not in hosts:
                     # a pivot may only ADD a host it can independently tie to the target
@@ -2521,14 +2746,20 @@ def run(ident, F, audience, limit_per_query=500):
         return any(t in sq for t in _btoks) and not _is(name, CDNS) and not _is(name, PUBLIC_CAS)
 
     # ssl.cert.subject.o: pivot — brand-token cert Organisations seen on the estate.
-    for _o in [o for o, n in sorted(seen_o.items(), key=lambda x: -x[1])][:6]:
+    _o_cands = [o for o, n in sorted(seen_o.items(), key=lambda x: -x[1])][:6]
+    for _pi, _o in enumerate(_o_cands):
         if not _brandish(_o) or _o in ident.get("cert_orgs", []):
             continue
+        # BUDGET BOUNDARY: before the pivot query is issued.
+        if _over("Shodan pivots: cert subject-O", "pivots", _pi, len(_o_cands)):
+            break
+        _tick("Shodan recon: cert-O pivot %d of %d" % (_pi + 1, len(_o_cands)))
         ident.setdefault("cert_orgs", []).append(_o)
         print(f"[auto] cert subject-O pivot on {_o!r}", file=sys.stderr)
         try:
             k = 0; _add, _aasn = [], []
-            for _m in api.search_cursor('ssl.cert.subject.o:"%s"' % _o):
+            for _m in _paged(api.search_cursor('ssl.cert.subject.o:"%s"' % _o),
+                             "Shodan pivots: cert subject-O", "pivots", _pi, len(_o_cands)):
                 ip2 = _m.get("ip_str")
                 if ip2 and ip2 not in hosts:
                     hosts.setdefault(ip2, []).append(_m)      # a target-O cert IS proof of ownership
@@ -2562,13 +2793,20 @@ def run(ident, F, audience, limit_per_query=500):
               "case-insensitive, so the extras were the same search"
               % (len(_org_pivots), len(_by_fold)), file=sys.stderr)
     _org_pivots = set(_by_fold.values())
-    for _oc in sorted(_org_pivots, key=len, reverse=True)[:4]:
+    _org_cands = sorted(_org_pivots, key=len, reverse=True)[:4]
+    for _pi, _oc in enumerate(_org_cands):
         if len(_oc) < 5:
             continue
+        # BUDGET BOUNDARY: before the pivot query is issued. This is the pivot that added +477
+        # hosts on caixabank.es while Shodan throttled every page.
+        if _over("Shodan pivots: whois-org", "pivots", _pi, len(_org_cands)):
+            break
+        _tick("Shodan recon: whois-org pivot %d of %d" % (_pi + 1, len(_org_cands)))
         print(f"[auto] whois-org pivot on org:\"{_oc}\" (legal suffix stripped)", file=sys.stderr)
         try:
             k = 0; _add, _aasn = [], []
-            for _m in api.search_cursor('org:"%s"' % _oc):
+            for _m in _paged(api.search_cursor('org:"%s"' % _oc),
+                             "Shodan pivots: whois-org", "pivots", _pi, len(_org_cands)):
                 ip2 = _m.get("ip_str")
                 if ip2 and ip2 not in hosts:
                     # org: is broad — keep only if the host's own org/whois carries the phrase, or it
@@ -3063,7 +3301,11 @@ def run(ident, F, audience, limit_per_query=500):
     # says "possible" and clarify.py puts it to the operator. Confirming it in a refine run is what
     # turns it into a real finding.
     _no_service = []
-    for _fq, _ips in (ident.get("resolved") or {}).items():
+    # A TRUNCATED recon cannot tell "no record" from "never asked": the budget stopped the sweep
+    # before every query ran, so a name absent from `hosts` is absence of evidence twice over.
+    # The candidate list is therefore not built at all on a truncated run.
+    _trunc = ident.get("recon_truncated")
+    for _fq, _ips in (({} if _trunc else (ident.get("resolved") or {})).items()):
         _v4 = [i for i in _ips if ":" not in str(i)]
         if not _v4:
             continue
@@ -3103,7 +3345,9 @@ def run(ident, F, audience, limit_per_query=500):
     # presence is shared hosting and SaaS. Say so explicitly rather than letting a silent zero look
     # like a broken run, and record it so the decks and the LLM prose can state the honest headline
     # ("no attributable external exposure") instead of reaching for filler.
-    if not hosts and (ident.get("pinned") or ident.get("domains")):
+    # ...unless the recon budget stopped the sweep: then an empty host set says nothing about the
+    # estate, only about the clock, and "nothing of yours is observable" would be a false claim.
+    if not hosts and (ident.get("pinned") or ident.get("domains")) and not _trunc:
         ident["no_attributable_estate"] = True
         print("[auto] NO ATTRIBUTABLE ESTATE: every observed record belonged to a co-tenant or a "
               "provider. The customer's own addresses are known (%d pinned) but nothing on them "
@@ -3162,6 +3406,27 @@ def run(ident, F, audience, limit_per_query=500):
         print("[auto] country NOT inferred from the estate: every host is on provider space, so "
               "those countries belong to the suppliers (%s). Frameworks fall back to the "
               "jurisdiction-neutral set." % ",".join(sorted(countries)[:6]), file=sys.stderr)
+    # THE TRUNCATION REACHES THE CUSTOMER. Computed here, after the last gate that can change the
+    # host set, from the record the budget wrote on ident. Present ONLY when recon was truncated
+    # (absent otherwise, never None or {}), so every consumer can test it with one `if`.
+    # `scanner_blind` is ALSO gated on it: "DNS proves hosts and the scanner saw none" is a
+    # statement about Shodan's visibility, and on a run the clock stopped it is a statement about
+    # the clock. A truncated scan must never read as "nothing else is exposed".
+    _partial = partial_estate_statement(_trunc) if _trunc else None
+    _summary = {"records": records, "unique_ips": len(hosts), "asns": len(asns) or len(ident["asns"]),
+                "dns_hosts": len(ident.get("resolved") or {}),
+                "dns_addresses": len({ip for v in (ident.get("resolved") or {}).values()
+                                      for ip in v}),
+                "scanner_blind": (not hosts) and bool(ident.get("resolved")) and not _trunc,
+                "countries": len(countries), "dropped_false_positives": dropped,
+                "behind_cdn": ident["org_is_cdn"],
+                "inventory": sorted(
+                    ({"asn": ("AS"+str(a)) if str(a).isdigit() else str(a), "holder": e["holder"] or "—",
+                      "country": ",".join(sorted(e["cc"])) or "—", "hosts": len(e["ips"])} for a, e in inv.items()),
+                    key=lambda r: -r["hosts"])[:12],
+                "critical": counts["CRITICAL"], "high": counts["HIGH"], "medium": counts["MEDIUM"], "low": counts["LOW"]}
+    if _partial:
+        _summary["partial_estate"] = _partial
     return {"target": {"company": company_name(ident), "audience": audience or "Internal — Cybergod LLC · S4Biz Group",
                        "date": datetime.date.today().isoformat(),
                        "country": _cc,
@@ -3174,18 +3439,7 @@ def run(ident, F, audience, limit_per_query=500):
             # zero is what SHODAN could see, because the estate is SNI-only and filters scanners.
             # Publishing only the scanner's number tells the customer they have no internet presence,
             # which is false, and it is the single most damaging thing this deck can say.
-            "summary": {"records": records, "unique_ips": len(hosts), "asns": len(asns) or len(ident["asns"]),
-                        "dns_hosts": len(ident.get("resolved") or {}),
-                        "dns_addresses": len({ip for v in (ident.get("resolved") or {}).values()
-                                              for ip in v}),
-                        "scanner_blind": (not hosts) and bool(ident.get("resolved")),
-                        "countries": len(countries), "dropped_false_positives": dropped,
-                        "behind_cdn": ident["org_is_cdn"],
-                        "inventory": sorted(
-                            ({"asn": ("AS"+str(a)) if str(a).isdigit() else str(a), "holder": e["holder"] or "—",
-                              "country": ",".join(sorted(e["cc"])) or "—", "hosts": len(e["ips"])} for a, e in inv.items()),
-                            key=lambda r: -r["hosts"])[:12],
-                        "critical": counts["CRITICAL"], "high": counts["HIGH"], "medium": counts["MEDIUM"], "low": counts["LOW"]},
+            "summary": _summary,
             "findings": findings}
 
 def findings_md(o):
@@ -3193,6 +3447,8 @@ def findings_md(o):
     L = [f"# {t['company']} — Shodan findings", "", f"- Scope: {t['scope']}",
          f"- Records: {s['records']} · IPs: {s['unique_ips']} · dropped FPs: {s['dropped_false_positives']} · behind CDN: {s['behind_cdn']}",
          f"- Severity: CRIT {s['critical']} · HIGH {s['high']} · MED {s['medium']} · LOW {s['low']}", ""]
+    if s.get("partial_estate"):
+        L.insert(3, "- **%s**" % s["partial_estate"]["statement"])
     for f in o["findings"]:
         L.append(f"## [{f['sev']}] {f['id']} — {f['title']}")
         for e in f["evidence"]: L.append(f"    {e}")
@@ -3217,6 +3473,7 @@ def main():
     ap.add_argument("--print-filters", action="store_true")
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
+    recon_budget(reset=True).start()          # the clock covers identity resolution too
     ident = resolve_identity(a.seed)
     for asn in a.asn:
         asn = "AS" + re.sub(r'(?i)^AS?', '', asn)
