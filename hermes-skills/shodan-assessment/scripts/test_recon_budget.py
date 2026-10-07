@@ -342,7 +342,13 @@ check('evt="recon_truncated"' in ra_code, "run_assessment emits evt=recon_trunca
 ec = io.open(os.path.join(HERE, "engine_config.py"), encoding="utf-8").read()
 check('"RECON_BUDGET_S"' in ec, "engine_config reports the effective RECON_BUDGET_S")
 en_py = io.open(os.path.join(HERE, "enrich.py"), encoding="utf-8").read()
-check('slim["partial_estate"]' in en_py and "partial_estate" in en_py.split("PROMPT = ")[1].split('"""')[1],
+# Behaviour, not a source string: the payload builder moved into enrich.slim_payload() (AS37468).
+os.environ.setdefault("OPENAI_API_KEY", "test")
+import enrich as _EN
+_pl = _EN.slim_payload({"target": {"company": "X"}, "findings": [],
+                        "summary": {"partial_estate": {"statement": "STOPPED-AT-BUDGET"}}})
+check(_pl.get("partial_estate") == "STOPPED-AT-BUDGET"
+      and "partial_estate" in en_py.split("PROMPT = ")[1].split('"""')[1],
       "enrich.py passes the statement to the model AND the prompt instructs it to state the partial estate")
 
 print()

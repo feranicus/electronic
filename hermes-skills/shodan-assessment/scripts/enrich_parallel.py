@@ -58,6 +58,40 @@ def _log(m):
     print(m, file=sys.stderr, flush=True)
 
 
+# ---- THE ENRICHMENT PHASE IS BOUNDED, END TO END ------------------------------------------------
+# ENRICH_BUDGET_S bounds the serial chain and the 430s kill bounds the enrich.py subprocess, but the
+# map-reduce top-up runs AFTER both, in-process, with nothing above it: 6 shards at 150s on 4
+# workers is two waves, and the targeted retry then runs SERIALLY at 150s per batch. On AS37468
+# (Angola Cables, 2026-10-07) that put the run past 19 minutes with recon done at 118s. Every call
+# below now takes min(its own cap, time left before the phase deadline), and a call that would get
+# less than SHARD_FLOOR_S is not issued at all: its findings keep their template text and the report
+# says so. ONE home: WALL_S_DEFAULT and phase_deadline().
+WALL_S_DEFAULT = 540          # whole enrichment phase (chain + top-up), from the start of enrich.py
+SHARD_FLOOR_S = 45            # a shard call shorter than this cannot finish the rich contract
+
+
+def wall_s():
+    try:
+        return max(60, int(os.environ.get("ENRICH_WALL_S", WALL_S_DEFAULT)))
+    except ValueError:
+        return WALL_S_DEFAULT
+
+
+def phase_deadline(t0):
+    """Absolute epoch by which the whole enrichment phase must be finished."""
+    return float(t0) + wall_s()
+
+
+def _slice(per, deadline):
+    """Timeout for a call starting NOW: its own cap, never past the deadline. None = do not call."""
+    if deadline is None:
+        return per
+    left = deadline - time.time()
+    if left < SHARD_FLOOR_S:
+        return None
+    return int(min(per, left))
+
+
 def shard(findings, size=SHARD_SIZE):
     """Split findings into batches, INTERLEAVED by severity.
 
@@ -75,17 +109,23 @@ def shard(findings, size=SHARD_SIZE):
     return [b for b in buckets if b]
 
 
-def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None):
+def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None, deadline=None):
     """One map task: full contract, but only this batch's findings. Returns (dict_by_id, meta).
 
     `model` is explicit because the shards used to inherit E.MODEL — the HEAD of the chain — with no
     failover of any kind. On lotto24.de the head was a model that could not answer at all, so all
     three top-up attempts hit exactly the same wall the serial chain had just hit.
     """
-    sub = dict(fj)
-    sub["findings"] = batch
     ids = [f.get("id") for f in batch]
     t0 = time.time()
+    # Sized when the call STARTS, not when it was queued: with 4 workers a 5th shard begins only
+    # when one of the first four ends, and its cap must come out of what is left by then.
+    if deadline is not None:
+        timeout = _slice(timeout if timeout else int(os.environ.get("ENRICH_SHARD_TIMEOUT", "150")),
+                         deadline)
+        if timeout is None:
+            return {}, {"shard": idx, "ids": ids, "returned": [], "model": model,
+                        "error": "skipped: enrichment phase deadline", "skipped": True, "ms": 0}
     # BUILD THE PROMPT EXACTLY AS THE SERIAL PATH DOES.
     #
     # E.PROMPT is a %-FORMAT TEMPLATE with three placeholders: (bible, language block, findings).
@@ -99,7 +139,18 @@ def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None):
     # H1 came back with a 38-char `what`, a 259-char `why` and ONE `rem` where the slide has room
     # for five. Coverage said 100% because every id came back. Presence is not depth.
     _lang = E.lang_block(lang)      # one registry; a per-file `if de` is how a language gets missed
-    prompt = E.PROMPT % (E._bible(), _lang, json.dumps(sub, ensure_ascii=False)[:14000])
+    # THE SAME PAYLOAD AS THE SERIAL PATH, NEVER SLICED. It used to be json.dumps(the WHOLE file)
+    # [:14000]; on AS37468 target.bgp alone passed 14,000 chars and the findings were cut off, so
+    # the model wrote BGP prose onto a database finding. Fail CLOSED if a finding is not visible.
+    _payload = E.slim_payload(fj, batch)
+    _pj = json.dumps(_payload, ensure_ascii=False)
+    _blind = [str(f.get("id")) for f in batch
+              if ('"id": %s' % json.dumps(f.get("id"), ensure_ascii=False)) not in _pj
+              or (f.get("title") and json.dumps(f.get("title"), ensure_ascii=False) not in _pj)]
+    if _blind:
+        return {}, {"shard": idx, "ids": ids, "returned": [], "model": model, "ms": 0,
+                    "error": "refused: findings not in the payload: %s" % ", ".join(_blind)}
+    prompt = E.PROMPT % (E._bible(), _lang, _pj)
     prompt += ("\n\nYou are enriching a SUBSET of the estate. You MUST return a rewritten object "
                "for EVERY one of these finding ids, with no omissions: %s\n"
                "Every rule in the bible above applies in full to each of them — 3 sentences of "
@@ -115,10 +166,22 @@ def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None):
         _out = int((_usage or {}).get("completion_tokens") or 0)
         if not isinstance(j, dict):
             j = {}
-        got = {}
+        got, ungrounded = {}, []
+        by_id = {str(f.get("id")): f for f in batch}
         for x in (j.get("findings") or []):
-            if isinstance(x, dict) and x.get("id"):
-                got[str(x["id"])] = x
+            if not (isinstance(x, dict) and x.get("id")):
+                continue
+            fid = str(x["id"])
+            if fid not in by_id:
+                continue                 # a shard may only write the findings it was given
+            ok_g, _hit = E.grounded(by_id[fid], x)
+            if not ok_g:
+                ungrounded.append(fid)   # stays MISSING -> retried on another vendor, else template
+                continue
+            got[fid] = x
+        if ungrounded:
+            _log("[enrich-mr]   shard %d (%s): REJECTED prose for %s - it names nothing of the "
+                 "finding it was written for" % (idx, model, ", ".join(ungrounded)))
         _ms = int((time.time() - t0) * 1000)
         return got, {"shard": idx, "ids": ids, "returned": sorted(got),
                      # MEASURE THROUGHPUT. Every timeout diagnosis so far has turned on "how many
@@ -134,7 +197,7 @@ def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None):
                     "ms": int((time.time() - t0) * 1000)}
 
 
-def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
+def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS, deadline=None):
     """Map-reduce enrich. Returns (merged_findings_by_id, report)."""
     import enrich as E
     findings = [f for f in (fj.get("findings") or []) if isinstance(f, dict) and f.get("id")]
@@ -164,7 +227,7 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
 
     merged, metas = {}, []
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(batches)))) as pool:
-        futs = {pool.submit(_call_shard, E, fj, b, lang, i, _for(i), _per): i
+        futs = {pool.submit(_call_shard, E, fj, b, lang, i, _for(i), _per, deadline): i
                 for i, b in enumerate(batches)}
         for fut in as_completed(futs):
             got, meta = fut.result()
@@ -178,6 +241,7 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
     # ---- COVERAGE CONTRACT: retry ONLY the ids nobody returned --------------------------------
     want = {str(f["id"]) for f in findings}
     missing = sorted(want - set(merged))
+    _retry_cut = False
     if missing:
         _log("[enrich-mr] %d finding(s) not rewritten -> targeted retry: %s"
              % (len(missing), ", ".join(missing)))
@@ -187,7 +251,12 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
         # identical failures on lotto24.de. A different vendor does not share the failure domain.
         for _bi, b in enumerate(shard(retry, max(1, shard_size - 1))):
             _alt = _chain[min(_bi + 1, len(_chain) - 1)] if len(_chain) > 1 else _chain[0]
-            got, meta = _call_shard(E, fj, b, lang, 900 + _bi, _alt, _per)
+            if deadline is not None and _slice(_per, deadline) is None:
+                _log("[enrich-mr]   retry skipped: %ds left before the %ds enrichment deadline"
+                     % (max(0, int(deadline - time.time())), wall_s()))
+                _retry_cut = True
+                break
+            got, meta = _call_shard(E, fj, b, lang, 900 + _bi, _alt, _per, deadline)
             merged.update(got)
             metas.append(meta)
             _log("[enrich-mr]   retry via %s: %d/%d ids%s"
@@ -216,6 +285,7 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS):
     report = {"coverage": round(cov, 3), "total": len(want), "rewritten": rewritten,
               "missing": sorted(want - set(merged)), "shards": metas,
               "exec_summary": next((m["exec"] for m in metas if m.get("exec")), ""),
+              "deadline_hit": _retry_cut or any(m.get("skipped") for m in metas),
               "wall_ms": max([m["ms"] for m in metas] or [0]),
               "serial_ms_equiv": sum(m["ms"] for m in metas)}
     _log("[enrich-mr] COVERAGE %d/%d = %.0f%%  (wall %dms vs %dms serial-equivalent)"

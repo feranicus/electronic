@@ -12,7 +12,7 @@ Usage:
     python3 run_assessment.py --seed "Company" --asn AS123 --net 1.2.3.0/24 --outdir /root/work
     python3 run_assessment.py --from-findings /root/work/findings.json --company keb.de --outdir /root/work
 """
-import os, sys, json, argparse, subprocess, datetime
+import os, sys, json, argparse, subprocess, datetime, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # THE DOCUMENT LANGUAGE, resolved in ONE place. `"de" if lang.startswith("de") else "en"` was
@@ -710,6 +710,7 @@ def main():
             # NO capture_output: enrich must stream. Its PROGRESS/failover lines are useless if they
             # only appear after the step finishes — the operator needs to see "deepseek timed out,
             # switching to gemma" WHILE it happens, not in a post-mortem dump.
+            _t0_enrich = time.time()     # the enrichment PHASE clock: chain + top-up share it
             r = subprocess.run(["python3", "-u", os.path.join(HERE, "enrich.py"),
                                 os.path.join(a.outdir, "findings.json"), a.lang],
                                timeout=430,   # must exceed ENRICH_BUDGET_S (380) or we
@@ -758,9 +759,19 @@ def main():
                 if _all and _cov0 < float(os.environ.get("ENRICH_MIN_COVERAGE", "0.8")):
                     print("[enrich] coverage %.0f%% after the single call — topping up with "
                           "parallel shards" % (_cov0 * 100), file=sys.stderr)
-                    _merged, _rep = _MR.run(fj, a.lang)
+                    # BOUNDED: the top-up gets what is left of the phase, never a fresh clock.
+                    _dl = _MR.phase_deadline(_t0_enrich)
+                    print("[enrich] top-up has %ds left of the %ds enrichment phase"
+                          % (max(0, int(_dl - time.time())), _MR.wall_s()), file=sys.stderr)
+                    _merged, _rep = _MR.run(fj, a.lang, deadline=_dl)
                     fj = _MR.apply(fj, _merged)
                     _cov0 = _rep["coverage"]
+                    if _rep.get("deadline_hit"):
+                        fj.setdefault("target", {})["enrich_truncated"] = {
+                            "wall_s": _MR.wall_s(), "missing": _rep.get("missing") or []}
+                        print("[warn] enrichment phase hit its %ds wall: %d finding(s) keep "
+                              "template text" % (_MR.wall_s(), len(_rep.get("missing") or [])),
+                              file=sys.stderr)
                 fj.setdefault("target", {})["enrich_coverage"] = round(_cov0, 3)
                 _ev(evt="enrich_coverage", company=fj.get("target", {}).get("company"),
                     coverage=round(_cov0, 3), findings=len(_all))
@@ -769,7 +780,7 @@ def main():
             except Exception as _e:
                 print("[warn] coverage top-up skipped: %s" % type(_e).__name__, file=sys.stderr)
         except subprocess.TimeoutExpired:
-            print("[warn] enrich TIMED OUT (240s) — model too slow; kept templated text", file=sys.stderr)
+            print("[warn] enrich TIMED OUT (430s subprocess kill) — kept templated text", file=sys.stderr)
         except Exception as e:
             print(f"[warn] enrich skipped: {e}", file=sys.stderr)
 

@@ -247,6 +247,42 @@ def length_budgets():
           "whole sentences only: an over-long one is dropped, never trimmed mid-thought")
 
 
+def cover_title():
+    """AS37468 (2026-10-07): a flat 70pt cover title wrapped "Angola Cables - Angola Cables" onto
+    three lines through the subtitle and the creed. The name must fit its box in Arial Black
+    metrics (~0.72em per glyph, wider than capacity()'s 0.5em), and a doubled RIR name collapses."""
+    print("\n== 7. cover title fits, doubled registry names collapse ==")
+    os.environ.setdefault("SHODAN_API_KEY", "test")
+    import shodan_recon as R
+    for raw, want in (("Angola Cables - Angola Cables", "Angola Cables"),
+                      ("Angola Cables - Angola Cable", "Angola Cables"),
+                      ("ACME AG ACME AG", "ACME AG"),
+                      ("Foo - Bar", "Foo - Bar"),
+                      ("Colt - Colt Technology", "Colt - Colt Technology")):
+        got = R._dedupe_lead(raw)
+        check(got == want, "company_name %r -> %r (want %r)" % (raw, got, want))
+    tmp = tempfile.mkdtemp()
+    for name in ("Angola Cables", "Colt Technology Services Group",
+                 "Banco de Fomento Angola SA Sociedade Aberta Luanda Republica"):
+        fj = {"target": {"company": name, "scope": "ASN AS1", "date": "2026-10-07"},
+              "summary": {}, "findings": [{"id": "C1", "sev": "CRITICAL", "title": "x",
+                                           "evidence": ["192.0.2.1"]}]}
+        src = os.path.join(tmp, "c.json"); out = os.path.join(tmp, "c.pptx")
+        json.dump(fj, open(src, "w", encoding="utf-8"))
+        ok, err = build("build_findings_deck.js", [src], out)
+        if not ok:
+            check(False, "cover renders for %r %s" % (name, err)); continue
+        box = [b for b in shapes(out, 1) if name[:20] in b[0]]
+        if not box:
+            check(False, "cover title for %r not found on slide 1" % name); continue
+        txt, x, y, w, h, pt = box[0]
+        per_line = max(1, int((w * 72.0) / (pt * 0.72)))
+        lines = -(-len(txt) // per_line)
+        need = lines * pt * 1.2 / 72.0
+        check(pt <= 36 and need <= h + 0.05,
+              "cover %r: %dpt, %d line(s) need %.2fin of a %.2fin box" % (txt, pt, lines, need, h))
+
+
 def main():
     tmp = tempfile.mkdtemp()
     fj = json.load(open(os.path.join(SAMPLE, "findings.sample.json"), encoding="utf-8"))
@@ -348,6 +384,7 @@ def main():
 
     colt_regressions()
     length_budgets()
+    cover_title()
 
     print("\n" + "=" * 78)
     print("  test_deck_quality: %s" % ("ALL PASSED" if not FAILS else "%d FAILURE(S)" % len(FAILS)))

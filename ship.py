@@ -22,6 +22,8 @@ What it orchestrates (each of these is still runnable alone for debugging, but y
     hermes-skills/.../test_recall.py           recall regression (bibeltv false NEGATIVES)
     hermes-skills/.../test_scope_abakus.py     scope regression (abakus wa.me -> 236 Meta hosts)
     hermes-skills/.../test_recon_budget.py     recon is bounded by RECON_BUDGET_S (caixabank 22 min)
+    hermes-skills/.../test_enrich_deadline.py  enrichment phase bounded by ENRICH_WALL_S (AS37468 19 min)
+    hermes-skills/.../test_enrich_grounding.py AI prose must name its own finding (AS37468 BGP-on-DB)
     author_geopol.py + build_geopol_html.js    the 5th deliverable (GEOPOL HTML) renders
     py_compile over every engine script        catches the truncation/syntax class of bug
     ship_web.py                                web: build -> GHCR -> Actions -> droplet -> Caddy
@@ -831,6 +833,32 @@ def do_tests():
         sys.exit('[X] RECON BUDGET REGRESSION - recon is unbounded again, or a partial estate would '
                  'ship as complete. Do not ship.')
     print('  recon budget: bounded at RECON_BUDGET_S, in-flight calls finish, truncation reaches the deck')
+
+    # AS37468 (2026-10-07): recon done at 118s, run still at 88% past 19 minutes. The chain spent
+    # 407s on four whole-estate timeouts and the map-reduce top-up then ran with no ceiling. This
+    # proves every shard and retry is sized from ONE phase deadline (ENRICH_WALL_S), work the wall
+    # cuts stays missing (never invented), two consecutive chain timeouts hand over to the shards,
+    # and run_assessment actually passes the deadline (by AST).
+    _edl = subprocess.run([sys.executable, os.path.join(engine, 'test_enrich_deadline.py')],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+    if _edl.returncode != 0:
+        print((_edl.stdout or '') + (_edl.stderr or ''))
+        sys.exit('[X] ENRICHMENT DEADLINE REGRESSION - the enrichment phase is unbounded again. '
+                 'Do not ship.')
+    print('  enrichment: bounded at ENRICH_WALL_S end to end, chain hands over after 2 timeouts')
+
+    # AS37468 / angolacables.co.ao (2026-10-07): the shard prompt was json.dumps(WHOLE file)[:14000]
+    # and target.bgp (2,392 RIPEstat neighbours) pushed every finding past the cut. The model wrote
+    # BGP carrier diversity onto an exposed-database finding, deck-wide. This proves both paths use
+    # ONE slim payload, a blind shard is never sent, and prose that names nothing of its finding is
+    # rejected (template kept) on BOTH paths.
+    _grd = subprocess.run([sys.executable, os.path.join(engine, 'test_enrich_grounding.py')],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+    if _grd.returncode != 0:
+        print((_grd.stdout or '') + (_grd.stderr or ''))
+        sys.exit('[X] ENRICHMENT GROUNDING REGRESSION - AI prose can again land on a finding it was '
+                 'not written for. Do not ship.')
+    print('  enrichment: one slim payload, blind shards refused, ungrounded prose rejected')
 
     # c''''''') THE ABAKUS-TK.DE SCOPE REGRESSION (2026-08). A 20-person telecoms reseller with one
     #           shared IONOS VIP was shipped a deck claiming 401 IPs across 42 ASNs and 49 countries,

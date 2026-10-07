@@ -375,7 +375,22 @@ def _dedupe_lead(name):
     parts = str(name or "").split()
     while len(parts) > 1 and parts[0].lower() == parts[1].lower():
         parts.pop(0)
-    return " ".join(parts)
+    out = " ".join(parts)
+    # THE WHOLE NAME REPEATED (AS37468, 2026-10-07): RIPE's as-name/org pair joined as
+    # "Angola Cables - Angola Cables" (and the netname variant "... - Angola Cable"), which wrapped
+    # the 70pt cover title onto three lines. Collapse ONLY when one side equals the other, or is the
+    # other minus a trailing plural 's'. "Foo - Bar" and "Colt - Colt Technology" are untouched.
+    import re as _re
+    halves = _re.split(r"\s+[-\u2013\u2014/|]\s+", out)
+    if len(halves) == 2:
+        a, b = (h.strip() for h in halves)
+        na, nb = a.lower().rstrip("s"), b.lower().rstrip("s")
+        if a and b and na == nb:
+            return a if len(a) >= len(b) else b
+    w = out.split()
+    if len(w) >= 2 and len(w) % 2 == 0 and [x.lower() for x in w[:len(w)//2]] == [x.lower() for x in w[len(w)//2:]]:
+        return " ".join(w[:len(w)//2])          # "ACME AG ACME AG" -> "ACME AG"
+    return out
 
 
 def company_name(ident):

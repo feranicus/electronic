@@ -243,8 +243,16 @@ function drawTable(slide, rows, opts) {
   corner(s, C.black, 22);
   s.addText("EXTERNAL ATTACK SURFACE ASSESSMENT", { x: 0.5, y: 1.20, w: 7.5, h: 0.3,
     fontSize: 11, fontFace: FA, color: C.black, bold: true, charSpacing: 3, margin: 0 });
-  s.addText(t.company || "Target", { x: 0.46, y: 1.62, w: 8, h: 1.05,
-    fontSize: 70, fontFace: FD, color: C.black, bold: true, margin: 0 });
+  // COVER TITLE SIZE IS ARITHMETIC (defect class 45). It was a flat 70pt: "Angola Cables - Angola
+  // Cables" (29 chars) wrapped onto three lines and ran through the eyebrow, the subtitle and the
+  // creed. 36pt Arial Black is ~0.36in per glyph, so ~22 characters fit the 8in box on ONE line;
+  // longer names step down and may take two lines, which the 1.05in box holds at <=28pt. Over 60
+  // characters the name is clamped: the cover names the company, the scope line carries the rest.
+  const _co = (() => { const v = String(t.company || "Target");
+                       return v.length > 60 ? v.slice(0, 59).trimEnd() + "\u2026" : v; })();
+  const _coSize = _co.length <= 22 ? 36 : _co.length <= 34 ? 28 : 22;
+  s.addText(_co, { x: 0.46, y: 1.55, w: 8, h: 1.05, valign: "middle",
+    fontSize: _coSize, fontFace: FD, color: C.black, bold: true, margin: 0 });
   s.addShape(pres.shapes.RECTANGLE, { x: 0.54, y: 2.78, w: 0.22, h: 0.22,
     fill: { color: C.med }, line: { type: "none" } });
   s.addText("Shodan external reconnaissance " + MIDDOT + " Critical " + MIDDOT + " High " + MIDDOT + " Medium " + MIDDOT + " Low",

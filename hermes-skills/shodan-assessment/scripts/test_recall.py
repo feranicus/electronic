@@ -315,7 +315,9 @@ import enrich as _E, enrich_parallel as _P, json as _json2
 _saved_call = _E._call
 _E._call = lambda t, model=None, timeout=None, max_tokens=None: (
     _json2.dumps({"exec_summary": "s" * 120,
-                  "findings": [{"id": i, "what": ["w"], "why": ["y" * 120],
+                  # Prose names the finding's port: since AS37468 (2026-10-07) enrich.grounded()
+                  # rejects prose that names nothing of its finding, and "w"/"yyy" named nothing.
+                  "findings": [{"id": i, "what": ["Port 443 answers on 203.0.113.9."], "why": ["y" * 120],
                                 "rem": [{"tag": "COLT", "title": "t", "body": "b" * 120}]}
                                for i in ["A1", "A2"]]}), {"completion_tokens": 800})
 _fjs = {"target": {"company": "T"},
@@ -395,7 +397,7 @@ import json as _j3
 _seen = {}
 def _fake_rich(text, model=None, timeout=None, max_tokens=None):
     _seen["p"] = text
-    return _j3.dumps({"findings": [{"id": i, "what": ["w" * 60], "why": ["y" * 300],
+    return _j3.dumps({"findings": [{"id": i, "what": ["Port 443 on 203.0.113.1 " + "w" * 40], "why": ["y" * 300],
                                     "rem": [{"tag": "COLT", "title": "t", "body": "b" * 200}] * 3}
                                    for i in ["H1", "H2"]]}), {"completion_tokens": 3200}
 _sv = _E._call

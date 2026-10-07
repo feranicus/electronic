@@ -290,6 +290,67 @@ def _clamp_list(xs, n):
     return out
 
 
+# ---------------------------------------------------------------------------------------------
+# THE PAYLOAD AND THE GROUNDING GATE — ONE home for both enrichment paths.
+#
+# AS37468 (Angola Cables, 2026-10-07). The shard path built its prompt from the WHOLE findings file
+# (target, identity, summary, then findings) and cut the JSON at 14,000 characters. target.bgp for
+# a transit carrier carries every RIPEstat neighbour (135 upstreams + 2,392 peers/downstreams for
+# AS37468), so the cut fell inside the BGP block and NO finding reached the model: no title, no
+# host, no port. The prompt still demanded prose for "C1, C2, C3", so the model wrote the only thing
+# it could see, BGP carrier diversity, onto an exposed-database finding. Every paragraph in that
+# deck came from those blind shards. Fix: one slim payload, never sliced by characters, and a
+# deterministic check that prose names something of the finding it is attached to.
+# ---------------------------------------------------------------------------------------------
+def slim_payload(fj, findings=None):
+    """What the model is shown. Findings FIRST-CLASS, evidence capped per finding, nothing else
+    from the estate (target.bgp, identity, summary are engine facts the slides already render)."""
+    t = fj.get("target") or {}
+    cap = int(os.environ.get("ENRICH_EVIDENCE_CAP", "6"))
+    src = fj.get("findings") if findings is None else findings
+    out = {"company": t.get("company", "?"), "scope": str(t.get("scope", ""))[:300],
+           "findings": [{"id": f["id"], "sev": f.get("sev"), "title": f.get("title"),
+                         "evidence": [str(e)[:200] for e in (f.get("evidence") or [])[:cap]]}
+                        for f in (src or []) if isinstance(f, dict) and f.get("id")]}
+    _pe = (fj.get("summary") or {}).get("partial_estate")
+    if isinstance(_pe, dict) and _pe.get("statement"):
+        out["partial_estate"] = str(_pe["statement"])[:400]
+    return out
+
+
+_GROUND_STOP = {"exposed", "exposure", "hosts", "host", "more", "with", "from", "service",
+                "services", "version", "later", "http", "https", "server", "servers", "critical",
+                "high", "medium", "low", "open", "public", "internet", "access", "remote", "port",
+                "ports", "edge", "management", "interface", "verbose", "unknown", "other", "default"}
+
+
+def anchor_tokens(f):
+    """Language-independent facts of ONE finding the prose must touch: CVE ids, ports, IPs,
+    product/title words of 4+ letters. The model may paraphrase; it may not be about something else."""
+    ev = " ".join(str(e) for e in (f.get("evidence") or [])[:20])
+    text = " ".join([str(f.get("title") or ""), ev, " ".join(str(c) for c in (f.get("cves") or []))])
+    toks = {c.lower() for c in re.findall(r"CVE-\d{4}-\d{4,7}", text, re.I)}
+    toks |= set(re.findall(r":(\d{2,5})\b", text))
+    toks |= set(re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", text))
+    toks |= {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9]{3,}", text)} - _GROUND_STOP
+    toks |= {w.lower() for w in re.findall(r"\b[A-Z]{3}\b", text)}     # BGP, SSH, RDP, SMB, FTP
+    return toks
+
+
+def grounded(f, x):
+    """(ok, anchors) — does the returned prose x name anything from finding f?"""
+    toks = anchor_tokens(f)
+    if not toks:
+        return True, []              # nothing to anchor on; logged by the caller, never silent
+    parts = [str(x.get("what") or ""), str(x.get("why") or "")]
+    for r in (x.get("rem") or []):
+        parts.append(" ".join(str(r.get(k) or "") for k in ("title", "body")) if isinstance(r, dict)
+                     else str(r))
+    prose = " ".join(parts).lower()
+    hit = sorted(t for t in toks if re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", prose))
+    return bool(hit), hit
+
+
 def normalise_prose(x):
     """Clean ONE model-returned finding into the shape the deck renders. THE ONLY implementation.
 
@@ -927,22 +988,29 @@ def enrich(fj, lang="en"):
     # Cap the evidence per finding: the model needs a few concrete host:port examples to be specific,
     # not all 3,971. On a large estate the full list bloats the prompt (and therefore the latency)
     # without making the prose any better.
-    _ev_cap = int(os.environ.get("ENRICH_EVIDENCE_CAP", "6"))
-    slim = {"company": company, "scope": fj["target"].get("scope", "")[:300],
-            "findings": [{"id": f["id"], "sev": f["sev"], "title": f["title"],
-                          "evidence": (f.get("evidence", []) or [])[:_ev_cap]}
-                         for f in fj["findings"]]}
-    # A recon the wall-clock budget stopped is a PARTIAL estate. The model must be told, or its
-    # executive summary will describe the estate as complete (guardrail 6 below).
-    _pe = (fj.get("summary") or {}).get("partial_estate")
-    if isinstance(_pe, dict) and _pe.get("statement"):
-        slim["partial_estate"] = str(_pe["statement"])[:400]
+    # A partial estate is carried inside slim_payload (guardrail 6): ONE builder for both paths.
+    slim = slim_payload(fj)
     prompt = PROMPT % (_bible(), lang_block(lang),
                        json.dumps(slim, ensure_ascii=False))
     last = ""
     t0_chain = time.time()
     tried = 0
+    # TWO TIMEOUTS ON THE WHOLE-ESTATE PROMPT END THE CHAIN. Every model in the chain gets the SAME
+    # prompt, so when two vendors in a row cannot finish it inside their slice, the prompt is the
+    # problem (or the gateway is slow), not the vendor. AS37468, 2026-10-07: deepseek 175s, llama
+    # 112s, gemma 60s, kimi 60s, all TimeoutError, 407s for nothing; the SAME models then returned
+    # prose on 3-finding shards. Stop here and let the bounded map-reduce top-up do the work.
+    _TO_STOP = max(1, int(os.environ.get("ENRICH_CHAIN_TIMEOUT_STOP", "2")))
+    _timeouts_in_a_row = 0
     for mi, model in enumerate(MODELS):
+      if _timeouts_in_a_row >= _TO_STOP:
+          print("[warn] enrich: %d models in a row timed out on the whole-estate prompt — "
+                "stopping the chain, the sharded top-up takes over" % _timeouts_in_a_row,
+                file=sys.stderr)
+          print(json.dumps({"evt": "qwen_attempt", "company": company, "status": "chain_stopped",
+                            "reason": "consecutive_timeouts", "count": _timeouts_in_a_row,
+                            "skipped": MODELS[mi:]}), flush=True)
+          break
       for attempt in range(ATTEMPTS):
         if time.time() - t0_chain > BUDGET_S:
             last = last or "budget exhausted"
@@ -989,6 +1057,13 @@ def enrich(fj, lang="en"):
                 if not x:
                     f.setdefault("_enriched", False)
                     continue
+                _ok_g, _hit = grounded(f, x)
+                if not _ok_g:
+                    print("[warn] enrich %s: prose for %s names nothing of the finding (%s) — "
+                          "REJECTED, template kept" % (model, f["id"], str(f.get("title"))[:60]),
+                          file=sys.stderr)
+                    f.setdefault("_enriched", False)
+                    continue
                 # MARK IT. Without this flag nothing downstream can tell LLM prose from the canned
                 # TEMPLATES fallback — which is why "coverage 0%" fired a pointless map-reduce
                 # top-up on a run where deepseek-3.2 had in fact rewritten every finding.
@@ -1022,6 +1097,8 @@ def enrich(fj, lang="en"):
         except Exception as e:
             last = repr(e)
             code = getattr(e, "code", None)
+            _is_to = isinstance(e, TimeoutError) or "timed out" in last.lower()
+            _timeouts_in_a_row = (_timeouts_in_a_row + 1) if _is_to else 0
             if isinstance(e, (AttributeError, TypeError, ValueError, KeyError)):
                 # a PARSE failure, not a network one — record the shape so the next fix is not a guess
                 try:

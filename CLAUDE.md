@@ -205,6 +205,13 @@ the droplet .env. `GET /api/diag` + `engine_config.py` report the EFFECTIVE conf
   checked at loop boundaries only, fails OPEN, and a stop is `ident["recon_truncated"]` ->
   `summary.partial_estate` -> the deck. A truncated scan never reads as "nothing else is exposed".
   [caixabank.es, 22 min at 55%]
+- **So is the whole enrichment phase**: `ENRICH_WALL_S` (default 540, ONE home
+  `enrich_parallel.WALL_S_DEFAULT`) from the start of enrich.py; every shard AND retry is sized from
+  that deadline when it starts, a call under 45s is not issued, cut ids stay template text and
+  `target.enrich_truncated` says so. Two consecutive chain timeouts hand over to the shards. [AS37468]
+- **The model sees ONLY `enrich.slim_payload()`** (both paths, never `json.dumps(...)[:N]`), a shard
+  that cannot see its findings is not sent, and `enrich.grounded()` rejects prose naming nothing of
+  its finding (port, product, CVE, title word): template beats a confident wrong paragraph. [AS37468]
 - Cost: `llm_meter.py` at `enrich._call` — the ONE chokepoint, per-direction pricing, unknown model
   priced at the dearest rate we know, `allow()` checked BEFORE the request, fails OPEN on a storage
   fault and CLOSED on the budget. `spend_watch.py` compares a MEDIAN baseline against the DO
