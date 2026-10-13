@@ -227,6 +227,53 @@ check("ENRICH_CHAIN_TIMEOUT_STOP=4 lets all four run (models called: %s)" % got,
       got == ["m1", "m2", "m3", "m4"])
 os.environ.pop("ENRICH_CHAIN_TIMEOUT_STOP", None)
 
+# 8: requests are SIZED to measured throughput (AS37468 / angolacables.co.ao, 2026-10-07)
+import enrich as RE  # noqa: E402
+CHAIN = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it", "kimi-k2.6"]
+fit16 = RE.findings_that_fit("deepseek-3.2", 175)
+check("arithmetic: 16 findings do not fit the fastest model's 175s slice (fits %d)" % fit16,
+      fit16 < 16)
+check("llama fits fewer findings than deepseek in the same 150s (%d vs %d)"
+      % (RE.findings_that_fit("llama-4-maverick", 150), RE.findings_that_fit("deepseek-3.2", 150)),
+      RE.findings_that_fit("llama-4-maverick", 150) < RE.findings_that_fit("deepseek-3.2", 150))
+
+calls8 = []
+_sv = (RE._call, RE.MODELS, RE.TIMEOUT)
+RE._call = lambda *a, **k: (calls8.append(1), (_ for _ in ()).throw(TimeoutError("timed out")))[1]
+RE.MODELS, RE.TIMEOUT = CHAIN, 175
+try:
+    fj16, msg = RE.enrich(_fj(16), "en")
+finally:
+    pass
+check("16 findings: the whole-estate call is NOT issued (calls=%d)" % len(calls8), not calls8)
+check("16 findings: every finding is left un-enriched for the sharded top-up",
+      all(f.get("_enriched") is False for f in fj16["findings"]))
+del calls8[:]
+try:
+    RE.enrich(_fj(2), "en")
+except Exception:
+    pass
+check("2 findings: the whole-estate call IS issued (calls=%d)" % len(calls8), len(calls8) >= 1)
+RE._call, RE.MODELS, RE.TIMEOUT = _sv
+
+seen8 = []
+E8 = _stub_E(0.01, seen8)
+E8.MODELS = CHAIN
+E8.findings_that_fit, E8.tok_s = RE.findings_that_fit, RE.tok_s
+os.environ["ENRICH_SHARD_TIMEOUT"] = "150"
+_, rep8 = _run(E8, _fj(12), shard_size=3, workers=4)
+over = [(m["model"], len(m["ids"])) for m in rep8["shards"]
+        if len(m["ids"]) > max(1, RE.findings_that_fit(m["model"], 150))]
+check("every shard fits its model's 150s at the measured rate (oversized: %s)" % over, not over)
+check("deepseek still gets multi-finding shards (sizes %s)"
+      % sorted({len(m["ids"]) for m in rep8["shards"] if m["model"] == "deepseek-3.2"}),
+      any(len(m["ids"]) > 1 for m in rep8["shards"] if m["model"] == "deepseek-3.2"))
+os.environ["ENRICH_SHARD_TIMEOUT"] = "3"
+
+import model_watch as MW  # noqa: E402
+check("model_watch: openai-gpt-6-1-sol is recognised as not entitled (no probe, no FAIL line)",
+      MW.entitled("openai-gpt-6-1-sol")[0] is False and MW.entitled("deepseek-3.2")[0] is True)
+
 print()
 if FAILS:
     print("FAIL  %d check(s): %s" % (len(FAILS), ", ".join(FAILS)))

@@ -1457,6 +1457,19 @@ def do_tests():
         print("      Fix later with:  %s -m pip install pytest" % py)
         print("  " + "!" * 66)
         return
+    # WARM GIT'S INDEX ONCE, and say how long it took. The deploy-immutability tests call
+    # `git status` with a timeout; on the 2026-10-13 ship it exceeded 30s on this PC (a full index
+    # refresh) and three tests errored in setup. One refresh up front with a generous ceiling makes
+    # those calls instant, and the printed number turns the next slow run into a measurement.
+    _t_idx = time.time()
+    try:
+        _ri = subprocess.run(["git", "update-index", "-q", "--refresh"], cwd=HERE,
+                             capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=300)
+        print("  git index refresh: %.1fs%s" % (time.time() - _t_idx,
+              "" if time.time() - _t_idx < 20 else "  (slow: antivirus / cold cache / foreign index)"))
+    except subprocess.TimeoutExpired:
+        print("  [!] git index refresh did not finish in 300s - the git tests below will fail too")
     rc = run([py, "-m", "pytest", "tests/", "-q"], check=False)
     if rc == 5:
         print("  (pytest collected no tests — treating as pass)")
@@ -1563,7 +1576,7 @@ def warn_if_tree_moved_since_commit():
     """
     try:
         out = subprocess.run(["git", "status", "--porcelain"], cwd=HERE, capture_output=True,
-                             text=True, encoding="utf-8", errors="replace", timeout=30).stdout
+                             text=True, encoding="utf-8", errors="replace", timeout=120).stdout
     except Exception:
         return
     dirty = [ln[3:].strip() for ln in (out or "").splitlines() if ln.strip()]

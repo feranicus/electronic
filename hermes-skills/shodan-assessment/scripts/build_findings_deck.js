@@ -128,7 +128,55 @@ const order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const bySev = Object.fromEntries(order.map(sev =>
   [sev, findings.filter(f => (f.sev || "").toUpperCase() === sev)]));
 const hasInventory = Array.isArray(sum.inventory) && sum.inventory.length > 0;
-let TOTAL = 3; // title + exec + index
+// ---- FINDINGS INDEX PAGINATION (angolacables.co.ao, 2026-10-07) ------------------------------
+// The index was ONE table squeezed to fit (rowH floor 0.16"). PowerPoint grows a row to fit its
+// wrapped text whatever height we ask for, so 21 findings with two-line titles ran through the
+// footer and off the slide. Rows are now MEASURED (same character arithmetic as fitText) and split
+// across as many index pages as they need. ONE plan, used for TOTAL and for rendering, so the
+// N/TOTAL tracer cannot drift.
+const IDX = { top: 1.30, bottom: 5.18, head: 0.28, colW: [0.85, 0.5, 4.3, 1.55, 2.1],
+              fs: 7.6, fsMono: 7.2, anchorMax: 90 };
+function idxAnchor(f) {
+  const ev = asLines(f.evidence);
+  const a = ev.length ? String(ev[0]) : EMDASH;
+  return a.length > IDX.anchorMax ? a.slice(0, IDX.anchorMax - 1).trimEnd() + "\u2026" : a;
+}
+function idxLines(text, wIn, pt, mono) {
+  const perLine = Math.max(6, Math.floor(((wIn - 0.14) * 72) / (pt * (mono ? 0.6 : 0.5))));
+  return Math.max(1, Math.ceil(String(text || "").length / perLine));
+}
+function idxRowH(f) {
+  const n = Math.max(idxLines(f.title || "Finding", IDX.colW[2], IDX.fs, false),
+                     idxLines(cveFamily(f), IDX.colW[3], IDX.fsMono, true),
+                     idxLines(idxAnchor(f), IDX.colW[4], IDX.fsMono, true));
+  return Math.max(0.24, n * IDX.fs * 1.22 / 72 + 0.10);
+}
+function idxSplit(ordered, cap) {
+  const pages = [];
+  let cur = [], used = 0;
+  for (const f of ordered) {
+    const h = idxRowH(f);
+    if (cur.length && used + h > cap) { pages.push(cur); cur = []; used = 0; }
+    cur.push(f); used += h;
+  }
+  if (cur.length || !pages.length) pages.push(cur);
+  return pages;
+}
+function indexPages() {
+  const ordered = order.flatMap(sev => bySev[sev]);
+  const room = IDX.bottom - IDX.top - IDX.head;
+  const greedy = idxSplit(ordered, room);            // fewest pages that fit
+  if (greedy.length < 2) return greedy;
+  // Same page count, balanced by height: 9/10/2 reads as an afterthought, 7/7/7 as a table.
+  const total = ordered.reduce((a, f) => a + idxRowH(f), 0);
+  for (let cap = total / greedy.length; cap <= room; cap += 0.05) {
+    const even = idxSplit(ordered, cap);
+    if (even.length === greedy.length) return even;
+  }
+  return greedy;
+}
+const INDEX_PAGES = indexPages();
+let TOTAL = 2 + INDEX_PAGES.length; // title + exec + findings-index page(s)
 TOTAL += 1; // methodology & data scope
 if (hasInventory) TOTAL += 1; // asset inventory
 for (const sev of order) {
@@ -377,12 +425,9 @@ function drawTable(slide, rows, opts) {
   const totalFindings = (nCrit + nHigh + nMed + nLow) || findings.length;
   const hdr = totalFindings + " findings " + MIDDOT + " " + nCrit + " critical " + MIDDOT + " "
     + nHigh + " high " + MIDDOT + " " + nMed + " medium " + MIDDOT + " " + nLow + " low";
-  const s = content("FINDINGS INDEX", hdr);
-
   const sevFill = { CRITICAL: C.crit, HIGH: C.high, MEDIUM: C.med, LOW: C.low };
   const sevFg = { CRITICAL: C.white, HIGH: C.white, MEDIUM: C.black, LOW: C.white };
-
-  const rows = [[
+  const head = () => [[
     { text: "SEV", options: { fill: C.tealDark, color: C.white, bold: true } },
     { text: "ID", options: { fill: C.tealDark, color: C.white, bold: true } },
     { text: "FINDING", options: { fill: C.tealDark, color: C.white, bold: true } },
@@ -390,31 +435,40 @@ function drawTable(slide, rows, opts) {
     { text: "EVIDENCE ANCHOR", options: { fill: C.tealDark, color: C.white, bold: true } },
   ]];
 
-  const ordered = order.flatMap(sev => bySev[sev]);
-  ordered.forEach((f, i) => {
-    const sev = (f.sev || "LOW").toUpperCase();
-    const ev = asLines(f.evidence);
-    const anchor = ev.length ? ev[0] : EMDASH;
-    const zebra = i % 2 === 1 ? C.light : C.white;
-    rows.push([
-      { text: sev, options: { fill: sevFill[sev] || C.low, color: sevFg[sev] || C.white, bold: true, fontSize: 7.2, align: "center" } },
-      { text: String(f.id || ""), options: { fill: zebra, bold: true, fontSize: 7.6 } },
-      { text: String(f.title || "Finding"), options: { fill: zebra, fontSize: 7.6 } },
-      { text: cveFamily(f), options: { fill: zebra, fontSize: 7.2, fontFace: FM, color: C.tealDark, bold: true } },
-      { text: anchor, options: { fill: zebra, fontSize: 7.2, fontFace: FM, color: C.inkMuted } },
-    ]);
+  let zi = 0;
+  INDEX_PAGES.forEach((page, p) => {
+    // The eyebrow stays the EXACT dictionary key (a composed "FINDINGS INDEX 2/3" would stay
+    // English in the DE/RU deck); the page counter is its own digits-only label.
+    const s = content("FINDINGS INDEX", hdr);
+    if (INDEX_PAGES.length > 1) {
+      s.addText((p + 1) + " / " + INDEX_PAGES.length, { x: 8.5, y: 1.04, w: 1.2, h: 0.2,
+        fontSize: 9, fontFace: FB, color: C.teal, bold: true, align: "right", margin: 0 });
+    }
+    const rows = head();
+    const rowHs = [IDX.head];
+    page.forEach(f => {
+      const sev = (f.sev || "LOW").toUpperCase();
+      const zebra = zi++ % 2 === 1 ? C.light : C.white;
+      rows.push([
+        { text: sev, options: { fill: sevFill[sev] || C.low, color: sevFg[sev] || C.white, bold: true, fontSize: 7.2, align: "center" } },
+        { text: String(f.id || ""), options: { fill: zebra, bold: true, fontSize: IDX.fs } },
+        { text: String(f.title || "Finding"), options: { fill: zebra, fontSize: IDX.fs } },
+        { text: cveFamily(f), options: { fill: zebra, fontSize: IDX.fsMono, fontFace: FM, color: C.tealDark, bold: true } },
+        { text: idxAnchor(f), options: { fill: zebra, fontSize: IDX.fsMono, fontFace: FM, color: C.inkMuted } },
+      ]);
+      rowHs.push(idxRowH(f));
+    });
+    if (!page.length) {
+      rows.push([{ text: EMDASH, options: { align: "center" } },
+        { text: "", options: {} },
+        { text: "No findings recorded", options: {} },
+        { text: EMDASH, options: {} },
+        { text: EMDASH, options: {} }]);
+      rowHs.push(0.30);
+    }
+    drawTable(s, rows, { x: 0.4, y: IDX.top, w: 9.3, colW: IDX.colW, rowH: rowHs });
+    footer(s); tracer(s);
   });
-  if (!ordered.length) {
-    rows.push([{ text: EMDASH, options: { align: "center" } },
-      { text: "", options: {} },
-      { text: "No findings recorded", options: {} },
-      { text: EMDASH, options: {} },
-      { text: EMDASH, options: {} }]);
-  }
-
-  const rowH = Math.max(0.16, Math.min(0.30, 3.9 / Math.max(rows.length, 1)));
-  drawTable(s, rows, { x: 0.4, y: 1.30, w: 9.3, colW: [0.85, 0.5, 4.3, 1.55, 2.1], rowH });
-  footer(s); tracer(s);
 })();
 
 // ===================================================================

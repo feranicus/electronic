@@ -200,7 +200,10 @@ the droplet .env. `GET /api/diag` + `engine_config.py` report the EFFECTIVE conf
 - This gateway makes `max_tokens` and `response_format:json_object` MUTUALLY EXCLUSIVE. Keep the
   JSON contract, drop the ceiling; a truncated answer is a dirty failure, a timeout is a clean one.
 - Budgets: `ENRICH_TIMEOUT=175`, `ENRICH_BUDGET_S=380`, head-weighted 55%, subprocess kill at 430s.
-  Never issue a request whose completion time exceeds its own timeout.
+  Never issue a request whose completion time exceeds its own timeout. Throughput has ONE home,
+  `enrich.MODEL_TOK_S` (measured 5-26 tok/s, NOT the 100 once assumed) x `TOKENS_PER_FINDING` 600:
+  the whole-estate call is skipped when it cannot fit, shards are sized per model, and every run
+  logs the rate it measured and flags a table >2x off. [AS37468: all 4 models 'failed' = arithmetic]
 - **Recon is bounded too**: `RECON_BUDGET_S` (default 300, ONE home `shodan_recon.ReconBudget`),
   checked at loop boundaries only, fails OPEN, and a stop is `ident["recon_truncated"]` ->
   `summary.partial_estate` -> the deck. A truncated scan never reads as "nothing else is exposed".

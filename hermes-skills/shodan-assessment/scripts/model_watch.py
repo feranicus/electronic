@@ -142,7 +142,9 @@ def _price(mid):
 # by name -- that is exactly the signal that would have caught `deepseek-v4-pro-0813` and
 # `glm-5.3-flash` on the day they appeared. It is the PROBE that is skipped, not the notice.
 # Set MODEL_WATCH_PROBE_ALL_VENDORS=1 to probe them anyway (e.g. after buying entitlement).
-UNENTITLED_PREFIXES = ("anthropic-", "openai-gpt-5", "openai-gpt-4", "openai-o1", "openai-o3")
+# "openai-gpt-" not per-version: listing gpt-4 and gpt-5 let openai-gpt-6-1-sol through on
+# 2026-10-07 and it printed FAIL 403 on the deploy. CLAUDE.md says EVERY commercial openai-gpt-*.
+UNENTITLED_PREFIXES = ("anthropic-", "openai-gpt-", "openai-o1", "openai-o3")
 
 
 def entitled(mid):

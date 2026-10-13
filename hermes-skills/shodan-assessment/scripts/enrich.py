@@ -570,12 +570,33 @@ def _post(payload, timeout=None):
     with urllib.request.urlopen(req, timeout=(timeout or TIMEOUT)) as r:
         return json.loads(r.read())
 
-# Measured generation rate on this account (~100 output tokens/second). Used to size a request to
-# the time it is actually given: see _call's max_tokens note.
-TOK_PER_S = int(os.environ.get("ENRICH_TOK_PER_S", "100"))
+# ---- THROUGHPUT: the ONE home for "how fast does each model write on this account" -------------
+# This used to say "~100 output tokens/second, measured". The per-shard tok_s lines in the AS37468 and
+# angolacables.co.ao logs (2026-10-07) measured 5-26: deepseek 15.3 / 25.8 / 22.6 / 22.9, gemma
+# 12.5 / 7.0, llama 5.5. At ~600 output tokens per finding (1600/3, 1375/2, 1867/3, 1841/3 in the same
+# logs) a 16-finding whole-estate answer needs ~9,600 tokens = 8 minutes on the FASTEST model, and
+# it was given 175s. Every model "failed" on every large estate because every request was
+# arithmetically impossible. Values are conservative medians; enrich_parallel logs the rate it
+# actually measured on every run and warns when this table is stale.
+TOK_PER_S = int(os.environ.get("ENRICH_TOK_PER_S", "15"))       # unknown model: measured median
+MODEL_TOK_S = {"deepseek": 20, "gemma": 9, "llama": 5, "kimi": 9}
+TOKENS_PER_FINDING = int(os.environ.get("ENRICH_TOKENS_PER_FINDING", "600"))
 
 
-def feasible_max_tokens(seconds, ceiling=11000, floor=2500):
+def tok_s(model):
+    m = str(model or "").lower()
+    for k, v in MODEL_TOK_S.items():
+        if m.startswith(k):
+            return v
+    return TOK_PER_S
+
+
+def findings_that_fit(model, seconds):
+    """How many findings this model can write the full contract for inside `seconds` (80% margin)."""
+    return int(max(0, seconds) * tok_s(model) * 0.8 // max(1, TOKENS_PER_FINDING))
+
+
+def feasible_max_tokens(seconds, ceiling=11000, floor=700, model=None):
     """How many output tokens can realistically be generated inside `seconds`.
 
     THE lotto24.de ARITHMETIC. max_tokens was a flat 11000, which needs ~110s at the measured rate.
@@ -586,7 +607,7 @@ def feasible_max_tokens(seconds, ceiling=11000, floor=2500):
     Asking for fewer tokens yields shorter prose, which is a real cost — but shorter real prose beats
     the templated text that a timeout leaves behind, and it beats spending the budget on nothing.
     """
-    return int(max(floor, min(ceiling, seconds * TOK_PER_S * 0.8)))
+    return int(max(floor, min(ceiling, seconds * tok_s(model) * 0.8)))
 
 
 class BudgetExceeded(RuntimeError):
@@ -992,6 +1013,22 @@ def enrich(fj, lang="en"):
     slim = slim_payload(fj)
     prompt = PROMPT % (_bible(), lang_block(lang),
                        json.dumps(slim, ensure_ascii=False))
+    # DO NOT SEND A REQUEST THAT CANNOT FINISH. If no model in the chain can write the whole estate
+    # inside its slice, the chain is 380s of guaranteed timeouts; the bounded sharded top-up does the
+    # same work in pieces that fit. Findings stay un-enriched here, so coverage is 0 and it fires.
+    _n = len(fj.get("findings") or [])
+    _fit = max([findings_that_fit(m, TIMEOUT) for m in MODELS] or [0])
+    if _n > _fit:
+        print("[enrich] whole-estate call skipped: %d finding(s) x ~%d tokens needs ~%ds on the "
+              "fastest model (%s, %d tok/s), the slice is %ds - handing over to the shards"
+              % (_n, TOKENS_PER_FINDING, _n * TOKENS_PER_FINDING // max(1, max(tok_s(m) for m in MODELS)),
+                 max(MODELS, key=tok_s), max(tok_s(m) for m in MODELS), TIMEOUT), file=sys.stderr)
+        for f in fj.get("findings") or []:
+            if isinstance(f, dict):
+                f.setdefault("_enriched", False)
+        print(json.dumps({"evt": "qwen_attempt", "company": company, "status": "chain_skipped",
+                          "reason": "infeasible", "findings": _n, "fit": _fit}), flush=True)
+        return fj, "whole-estate call infeasible (%d findings > %d that fit) - sharded" % (_n, _fit)
     last = ""
     t0_chain = time.time()
     tried = 0
@@ -1036,10 +1073,10 @@ def enrich(fj, lang="en"):
         # while the floor above hands out 60s — so on lotto24.de models 3 and 4 were each issued a
         # request that could not physically finish, and each burned its whole 60s timing out. Two of
         # the four "model failures" in that run were arithmetic, not models.
-        _mt = feasible_max_tokens(per_call)
+        _mt = feasible_max_tokens(per_call, model=model)
         if _mt < 11000:
             print("[enrich] %s: %ds slice -> max_tokens %d (a full 11000-token answer needs ~%ds)"
-                  % (model, per_call, _mt, 11000 // max(1, TOK_PER_S)), file=sys.stderr)
+                  % (model, per_call, _mt, 11000 // max(1, tok_s(model))), file=sys.stderr)
         try:
             t = time.time()
             content, usage = _call(prompt, model, per_call, max_tokens=_mt); j = _json(content)

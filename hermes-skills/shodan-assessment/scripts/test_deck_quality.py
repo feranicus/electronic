@@ -283,6 +283,68 @@ def cover_title():
               "cover %r: %dpt, %d line(s) need %.2fin of a %.2fin box" % (txt, pt, lines, need, h))
 
 
+def index_pagination():
+    """angolacables.co.ao (2026-10-07): 21 findings in ONE index table ran through the footer and off
+    the slide. The index must paginate. Checked from the XML, not from the builder's own estimate:
+    a builder that declared tiny row heights would otherwise pass its own check."""
+    print("\n== 8. findings index paginates instead of running off the slide ==")
+    tmp = tempfile.mkdtemp()
+    src = os.path.join(HERE, "fixtures", "angolacables_21_findings.json")
+    fj = json.load(open(src, encoding="utf-8"))
+    out = os.path.join(tmp, "idx.pptx")
+    ok, err = build("build_findings_deck.js", [src], out)
+    if not ok:
+        check(False, "index fixture deck renders %s" % err); return
+    z = zipfile.ZipFile(out)
+    names = sorted((n for n in z.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", n)),
+                   key=lambda n: int(re.findall(r"\d+", n)[0]))
+    EMU = 914400.0
+    idx_pages, seen = [], {}
+    for n in names:
+        xml = z.read(n).decode("utf8")
+        if "FINDINGS INDEX" not in xml or "<a:tbl>" not in xml:
+            continue
+        idx_pages.append(n)
+        top = int(re.search(r'<p:graphicFrame>.*?<a:off x="\d+" y="(\d+)"', xml, re.S).group(1)) / EMU
+        rows = re.findall(r'<a:tr h="(\d+)">(.*?)</a:tr>', xml, re.S)
+        total_h = sum(int(h) for h, _ in rows) / EMU
+        check(top + total_h <= 5.20,
+              "%s: table %.2f\" + %.2f\" of rows ends at %.2f\" (footer at 5.32\")"
+              % (n.split("/")[-1], top, total_h, top + total_h))
+        for h, body in rows[1:]:
+            cells = re.findall(r"<a:tc>(.*?)</a:tc>", body, re.S)
+            texts = ["".join(re.findall(r"<a:t>(.*?)</a:t>", c, re.S)) for c in cells]
+            if len(texts) < 5:
+                continue
+            fid = texts[1]
+            seen[fid] = seen.get(fid, 0) + 1
+            # independent need: title at 7.6pt in 4.3", anchor in mono 7.2pt in 2.1"
+            need_lines = max(-(-len(texts[2]) // max(1, int(4.1 * 72 / (7.6 * 0.5)))),
+                             -(-len(texts[4]) // max(1, int(1.95 * 72 / (7.2 * 0.6)))))
+            need = need_lines * 7.6 * 1.15 / 72
+            if int(h) / EMU + 0.001 < need:
+                check(False, "%s row %s declared %.2f\" but its text needs %.2f\""
+                      % (n.split("/")[-1], fid, int(h) / EMU, need))
+    want = [f["id"] for f in fj["findings"]]
+    check(len(idx_pages) >= 2, "21 findings span %d index slide(s) (>= 2)" % len(idx_pages))
+    check(sorted(seen) == sorted(want) and all(v == 1 for v in seen.values()),
+          "every finding appears on exactly one index slide (%d of %d, duplicates %s)"
+          % (len(seen), len(want), [k for k, v in seen.items() if v > 1]))
+    last = z.read(names[-1]).decode("utf8")
+    m = re.findall(r"(\d+)/(\d+)</a:t>", last)
+    check(bool(m) and int(m[-1][0]) == int(m[-1][1]) == len(names),
+          "tracer on the last slide reads %s and the deck has %d slides" % (m[-1] if m else None, len(names)))
+    # a short estate stays on one page
+    small = dict(fj); small["findings"] = fj["findings"][:6]
+    sp = os.path.join(tmp, "small.json"); json.dump(small, open(sp, "w", encoding="utf-8"))
+    out2 = os.path.join(tmp, "small.pptx")
+    ok2, _ = build("build_findings_deck.js", [sp], out2)
+    z2 = zipfile.ZipFile(out2)
+    n2 = sum(1 for n in z2.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", n)
+             and "FINDINGS INDEX" in z2.read(n).decode("utf8") and "<a:tbl>" in z2.read(n).decode("utf8"))
+    check(ok2 and n2 == 1, "6 findings stay on ONE index slide (got %d)" % n2)
+
+
 def main():
     tmp = tempfile.mkdtemp()
     fj = json.load(open(os.path.join(SAMPLE, "findings.sample.json"), encoding="utf-8"))
@@ -385,6 +447,7 @@ def main():
     colt_regressions()
     length_budgets()
     cover_title()
+    index_pagination()
 
     print("\n" + "=" * 78)
     print("  test_deck_quality: %s" % ("ALL PASSED" if not FAILS else "%d FAILURE(S)" % len(FAILS)))

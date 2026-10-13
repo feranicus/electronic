@@ -204,14 +204,31 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS, deadline=None):
     if not findings:
         return {}, {"coverage": 1.0, "total": 0, "rewritten": 0, "shards": []}
 
-    batches = shard(findings, shard_size)
-    _log("[enrich-mr] %d finding(s) -> %d shard(s) of <=%d, %d worker(s)"
-         % (len(findings), len(batches), shard_size, workers))
-
-    # A shard is SMALL (<= shard_size findings), so it needs far less wall-clock than the monolithic
-    # call — give it a cap that is actually achievable rather than inheriting the chain's.
+    # A shard is SMALL, so it needs far less wall-clock than the monolithic call — give it a cap that
+    # is actually achievable rather than inheriting the chain's.
     _per = int(os.environ.get("ENRICH_SHARD_TIMEOUT", "150"))
     _chain = list(getattr(E, "MODELS", None) or [getattr(E, "MODEL", None)])
+    _fit = getattr(E, "findings_that_fit", None)
+
+    # SIZE EACH SHARD TO ITS MODEL. A flat 3 findings is ~1,800 output tokens: 90s on deepseek,
+    # ~360s on llama at the 5 tok/s measured on AS37468, against a 150s cap. Round-robin the vendors
+    # as before (one vendor's bad minute must not take all the work), but each takes only what it
+    # can finish. Never fewer than one finding: a model that cannot fit one is still the only way
+    # that finding gets prose, and the deadline bounds it.
+    def _plan(items, offset=0):
+        out, q, i = [], list(items), offset
+        while q:
+            m = _chain[i % len(_chain)] if _chain else None
+            cap = max(1, min(shard_size, _fit(m, _per) if _fit else shard_size))
+            out.append((q[:cap], m))
+            q, i = q[cap:], i + 1
+        return out
+
+    ranked = [f for b in shard(findings, 1) for f in b]       # severity order, deterministic
+    plan = _plan(ranked)
+    batches = [b for b, _ in plan]
+    _log("[enrich-mr] %d finding(s) -> %d shard(s) sized per model (<=%d), %d worker(s)"
+         % (len(findings), len(batches), shard_size, workers))
 
     # SPREAD THE SHARDS ACROSS VENDORS. Every shard used to be sent to _chain[0], so the four of them
     # shared ONE failure domain: on bottomline.com the head model was already stalling (it had just
@@ -222,8 +239,8 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS, deadline=None):
     # and never carried across to the shards, which is where most large estates are actually enriched.
     # Round-robin bounds a single vendor's bad minute to 1/N of the work instead of all of it, and the
     # targeted retry below still re-asks anything a weaker model missed.
-    _for = lambda i: _chain[i % len(_chain)] if _chain and len(_chain) > 1 else (_chain or [None])[0]
-    _log("[enrich-mr] shard models: %s" % ", ".join(str(_for(i)) for i in range(len(batches))))
+    _for = lambda i: plan[i][1]
+    _log("[enrich-mr] shard models: %s" % ", ".join("%s x%d" % (m, len(b)) for b, m in plan))
 
     merged, metas = {}, []
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(batches)))) as pool:
@@ -249,8 +266,7 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS, deadline=None):
         # FAIL OVER TO A DIFFERENT MODEL on the retry. Re-asking the model that just failed to answer
         # is not a retry, it is the same call again — which is precisely what produced three
         # identical failures on lotto24.de. A different vendor does not share the failure domain.
-        for _bi, b in enumerate(shard(retry, max(1, shard_size - 1))):
-            _alt = _chain[min(_bi + 1, len(_chain) - 1)] if len(_chain) > 1 else _chain[0]
+        for _bi, (b, _alt) in enumerate(_plan(retry, 1)):
             if deadline is not None and _slice(_per, deadline) is None:
                 _log("[enrich-mr]   retry skipped: %ds left before the %ds enrichment deadline"
                      % (max(0, int(deadline - time.time())), wall_s()))
@@ -282,10 +298,24 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS, deadline=None):
              % (len(_thin), _min, ", ".join(_thin)))
     rewritten = len((set(merged) & want) - set(_thin))
     cov = rewritten / float(len(want)) if want else 1.0
+    # REPORT THE RATE WE MEASURED, so the throughput table cannot silently go stale again.
+    _rates = {}
+    for m in metas:
+        if m.get("model") and isinstance(m.get("tok_s"), (int, float)) and m.get("tokens_out", 0) >= 50:
+            _rates.setdefault(m["model"], []).append(float(m["tok_s"]))
+    for _m, _v in sorted(_rates.items()):
+        _med = sorted(_v)[len(_v) // 2]
+        _tab = E.tok_s(_m) if hasattr(E, "tok_s") else None
+        _log("[enrich-mr] measured %s: %.1f tok/s over %d call(s) (table %s)%s"
+             % (_m, _med, len(_v), _tab,
+                "  !! table is >2x off - update enrich.MODEL_TOK_S" if _tab and
+                (_med < _tab / 2.0 or _med > _tab * 2.0) else ""))
+    report_rates = {k: sorted(v)[len(v) // 2] for k, v in _rates.items()}
     report = {"coverage": round(cov, 3), "total": len(want), "rewritten": rewritten,
               "missing": sorted(want - set(merged)), "shards": metas,
               "exec_summary": next((m["exec"] for m in metas if m.get("exec")), ""),
               "deadline_hit": _retry_cut or any(m.get("skipped") for m in metas),
+              "measured_tok_s": report_rates,
               "wall_ms": max([m["ms"] for m in metas] or [0]),
               "serial_ms_equiv": sum(m["ms"] for m in metas)}
     _log("[enrich-mr] COVERAGE %d/%d = %.0f%%  (wall %dms vs %dms serial-equivalent)"

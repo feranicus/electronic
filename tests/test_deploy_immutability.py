@@ -220,3 +220,36 @@ def test_the_archive_is_forced_to_repository_line_endings():
     assert "core.autocrlf=false" in call, (
         "git archive is not forced to core.autocrlf=false - on Windows it will emit CRLF and the "
         "deployed artifact will differ from the one a Linux packer produces")
+
+
+def test_an_unknown_tree_is_never_reported_clean(dwd, monkeypatch):
+    """2026-10-13: `git status` timed out at 30s on the operator's PC. Before the fix, a git FAILURE
+    returned "" and _tree_state() read that as "nothing dirty" - an unknown tree reported clean.
+    A failing git must raise, and the ceiling must fit a cold Windows index refresh."""
+    import subprocess as _sp
+
+    class _R:
+        returncode, stdout, stderr = 128, "", "fatal: index file corrupt"
+
+    monkeypatch.setitem(dwd["_tree_state"].__globals__, "subprocess",
+                        type("S", (), {"run": staticmethod(lambda *a, **k: _R()),
+                                       "TimeoutExpired": _sp.TimeoutExpired}))
+    with pytest.raises(RuntimeError) as e:
+        dwd["_tree_state"]()
+    assert "index file corrupt" in str(e.value), "the failure must name git's own reason"
+    assert dwd["GIT_TIMEOUT_S"] >= 120, (
+        "a local git call on Windows legitimately takes >30s after a full index refresh "
+        "(GIT_TIMEOUT_S=%s)" % dwd["GIT_TIMEOUT_S"])
+
+
+def test_ship_refreshes_the_git_index_before_the_suite():
+    """Wiring: the warm-up must run BEFORE pytest, or the git tests still meet a cold index."""
+    import ast as _ast
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ship.py"),
+               encoding="utf-8").read()
+    calls = [n for n in _ast.walk(_ast.parse(src)) if isinstance(n, _ast.Call)]
+    def _lits(c):
+        return [x.value for a in c.args for x in _ast.walk(a) if isinstance(x, _ast.Constant)]
+    refresh = [c.lineno for c in calls if "update-index" in _lits(c) and "--refresh" in _lits(c)]
+    suite = [c.lineno for c in calls if "pytest" in _lits(c) and "tests/" in _lits(c)]
+    assert refresh and suite and min(refresh) < min(suite), (refresh, suite)

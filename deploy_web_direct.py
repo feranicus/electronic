@@ -51,12 +51,23 @@ def _keep(name):
 def _filter(ti):
     return ti if _keep(ti.name) else None
 
+GIT_TIMEOUT_S = 180     # a local git call on Windows, cold: see _tree_state
+
+
 def _tree_state():
     """(is_clean, short_sha, dirty_paths) — what git thinks of the working tree, right now."""
+    # FAILS CLOSED. g() used to return "" when git failed, and _tree_state() read "" as "no dirty
+    # paths" - an unknown tree reported as a CLEAN one. And 30s was not what a local `git status`
+    # legitimately takes on Windows: after a full index refresh (antivirus, cold cache, an index last
+    # written by another git) it timed out in the 2026-10-13 ship. 180s, and ship.py refreshes the
+    # index once beforehand so this call is normally instant.
     def g(*a):
         r = subprocess.run(["git"] + list(a), cwd=HERE, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=30)
-        return (r.stdout or "").strip() if r.returncode == 0 else ""
+                           encoding="utf-8", errors="replace", timeout=GIT_TIMEOUT_S)
+        if r.returncode != 0:
+            raise RuntimeError("git %s failed (rc=%s): %s"
+                               % (" ".join(a), r.returncode, (r.stderr or "").strip()[:300]))
+        return (r.stdout or "").strip()
     sha = g("rev-parse", "--short", "HEAD")
     dirty = [ln[2:].strip() for ln in g("status", "--porcelain").splitlines() if ln.strip()]
     return (not dirty), sha, dirty

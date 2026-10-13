@@ -98,8 +98,10 @@ check("shard prompt carries NONE of target.bgp (no 'AS5000', no 'peers_or_downst
 
 # 2. serial prompt uses the same payload
 E._call = lambda prompt, model, timeout, max_tokens=None: (seen.append(prompt), (_ for _ in ()).throw(TimeoutError("timed out")))[1]
-saved = (E.MODELS, E.ATTEMPTS, E.BUDGET_S)
-E.MODELS, E.ATTEMPTS, E.BUDGET_S = ["m1"], 1, 10_000
+# The serial path now refuses a request that cannot finish (enrich.findings_that_fit). These checks
+# are about the PAYLOAD and the GATE, not throughput, so make the chain feasible on purpose.
+saved = (E.MODELS, E.ATTEMPTS, E.BUDGET_S, E.TOK_PER_S)
+E.MODELS, E.ATTEMPTS, E.BUDGET_S, E.TOK_PER_S = ["m1"], 1, 10_000, 10_000
 try:
     E.enrich(json.loads(json.dumps(ESTATE)), "en")
 except Exception:
@@ -137,7 +139,7 @@ check("serial: BGP prose on C1 rejected, template kept (_enriched=%r)" % by["C1"
       by["C1"].get("_enriched") is not True and "carrier" not in str(by["C1"].get("what", "")).lower())
 check("serial: grounded prose on C2 accepted (_enriched=%r)" % by["C2"].get("_enriched"),
       by["C2"].get("_enriched") is True)
-E.MODELS, E.ATTEMPTS, E.BUDGET_S = saved
+E.MODELS, E.ATTEMPTS, E.BUDGET_S, E.TOK_PER_S = saved
 
 # 5. fail closed when the payload cannot show a finding
 real = E.slim_payload
