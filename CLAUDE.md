@@ -71,6 +71,17 @@ the size budget, because a rule that is only written down goes stale, and this o
    - If a reply is about to end with two `python ...` lines, that is the signal: go back and fold
      them into the orchestrator, then give the single command.
 
+## TWO DEVELOPERS (2026-10) — what a second pair of hands changes
+
+`teamlock.py` is the ONE deploy lock, a `mkdir` on the droplet itself (`/opt/colt-stack/.deploy.lock`),
+because the droplet is the only thing every deploy path touches. It covers the staging gate AND both
+production deploys, fails OPEN if the droplet is unreachable, and clears by STALENESS (45 min), never
+by trusting a `finally`. Both CI workflows now share ONE concurrency group, `production-droplet`.
+`ship.py` refuses to deploy off `main` (`SHIP_ALLOW_BRANCH=1`), refuses to commit on a tree behind
+origin (`SHIP_ALLOW_BEHIND=1`), prints every path `git add -A` is about to take grouped by area, and
+refuses `--rollback last-known-good` when that pointer is another developer's deploy
+(`SHIP_ALLOW_OTHERS_ROLLBACK=1`). Proved by `tests/test_teamwork.py`.
+
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
 After finishing ANY piece of work the user must trigger, end the reply with the exact command,

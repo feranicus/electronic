@@ -17,7 +17,11 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: prod-web-deploy
+  # ONE GROUP FOR THE WHOLE DROPLET. These were two groups (prod-deploy / prod-web-deploy),
+  # so a bots deploy and a web deploy could recreate containers on the same box at the same
+  # time. They share a droplet, a Caddyfile and the colt_events volume, so they share a queue.
+  # Laptops join the same queue through teamlock.py, which locks the droplet itself.
+  group: production-droplet
   cancel-in-progress: false
 
 env:

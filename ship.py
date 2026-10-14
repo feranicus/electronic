@@ -1504,9 +1504,117 @@ def _clear_stale_git_locks():
                      % (name, e.__class__.__name__))
 
 
+def _git(*a, timeout=120):
+    r = subprocess.run(["git"] + list(a), cwd=HERE, text=True, capture_output=True,
+                       encoding="utf-8", errors="replace", timeout=timeout)
+    return r.returncode, (r.stdout or "").strip()
+
+
+def current_branch():
+    rc, out = _git("rev-parse", "--abbrev-ref", "HEAD")
+    return out if rc == 0 else ""
+
+
+def collaboration_guards(deploying):
+    """TWO DEVELOPERS, ONE main. The three ways a second pair of hands breaks this pipeline.
+
+    1. WRONG BRANCH. `do_git` does `git add -A` and pushes to main unconditionally. On a feature
+       branch that pushes somebody else's branch content to main; from a detached HEAD it pushes
+       nothing and says it pushed. Deploying is refused off main, because main is what deploys.
+    2. BEHIND ORIGIN. If the other developer pushed while you were testing, your `git add -A`
+       commit is built on a tree that is missing his work, and your deploy ships a version of the
+       repo that never existed on GitHub. Pull first, re-run the tests, then ship.
+    3. A COMMIT THAT IS NOT YOURS. `git add -A` takes the WHOLE tree, including a file the other
+       developer left open in an editor on a shared checkout. We cannot know who typed what, so we
+       do the one honest thing: print exactly what is about to be committed, grouped by area, so a
+       surprise is visible BEFORE the push rather than in the next person's git log.
+
+    Every guard is overridable, because a guard an informed operator cannot override is a bug
+    (CLAUDE.md). The override is an env var, so it is deliberate and it is visible in the shell.
+    """
+    br = current_branch()
+    want = os.environ.get("SHIP_BRANCH", "main")
+    if br != want:
+        print("\n  [!] you are on branch %r, not %r." % (br or "(detached HEAD)", want))
+        if deploying and os.environ.get("SHIP_ALLOW_BRANCH") != "1":
+            sys.exit("[X] refusing to deploy from %r.\n"
+                     "    main is what deploys. Open a pull request, or run the gates only:\n"
+                     "        python ship.py --test\n"
+                     "    Deliberate override:  set SHIP_ALLOW_BRANCH=1" % (br or "detached HEAD"))
+        print("      (not deploying, so continuing)")
+
+    _git("fetch", "origin", want, timeout=180)
+    rc, out = _git("rev-list", "--left-right", "--count", "origin/%s...HEAD" % want)
+    behind = ahead = 0
+    if rc == 0 and out:
+        parts = out.replace("\t", " ").split()
+        if len(parts) == 2:
+            behind, ahead = int(parts[0]), int(parts[1])
+    if behind:
+        rc2, whoelse = _git("log", "--format=%an", "-%d" % behind, "origin/%s" % want)
+        names = ", ".join(sorted(set(x for x in whoelse.splitlines() if x))) or "someone"
+        print("\n  [!] origin/%s has %d commit(s) you do not have, from: %s" % (want, behind, names))
+        if os.environ.get("SHIP_ALLOW_BEHIND") != "1":
+            sys.exit("[X] refusing to commit on top of a stale tree.\n"
+                     "    Another developer pushed while you were working. Do this instead:\n"
+                     "        git pull --rebase origin %s\n"
+                     "        python ship.py\n"
+                     "    Deliberate override:  set SHIP_ALLOW_BEHIND=1" % want)
+        print("      SHIP_ALLOW_BEHIND=1 — continuing anyway.")
+
+    rc, out = _git("status", "--porcelain")
+    paths = [ln[3:].strip() for ln in out.splitlines() if ln.strip()]
+    if paths:
+        areas = {}
+        for pth in paths:
+            areas.setdefault(pth.replace("\\", "/").split("/")[0], []).append(pth)
+        print("  about to commit %d path(s) in %d area(s):" % (len(paths), len(areas)))
+        for area in sorted(areas):
+            got = areas[area]
+            print("      %-34s %d  %s" % (area, len(got),
+                                          ", ".join(os.path.basename(x) for x in got[:3])
+                                          + (" ..." if len(got) > 3 else "")))
+    return ahead, behind
+
+
+def resolve_rollback_target(ref):
+    """(sha, author) for a rollback ref, or exit with the reason. SEPARATE FROM do_rollback ON
+    PURPOSE: do_rollback stashes, resets --hard and redeploys, so it can never be executed in a
+    test, and a guard that is only ever grepped for is not a guard (defect class 4 - assert the
+    PROPERTY, not a string the source also contains).
+
+    WHOSE SAFE-POINT IS THIS? `last-known-good` is a MOVING pointer, and with two developers the
+    newest one may be the other person's deploy from twenty minutes ago; rolling back to it reverts
+    his work as well as yours. The dated good-* tags are immutable and unambiguous, so the fix is
+    not to change the mechanism - it is to say out loud where the pointer went and who put it
+    there, and to require an explicit tag when that turns out to be somebody else.
+    """
+    rc, sha = _git("rev-parse", "--verify", ref + "^{commit}")
+    if rc != 0:
+        sys.exit("[X] %r is not a known ref/tag. See your safe-points with:  git tag -l 'good-*'" % ref)
+    sha = sha.strip()[:12]
+    _, meta = _git("show", "-s", "--format=%an|%ad|%s", "--date=short", sha)
+    author, when, subject = (meta.split("|", 2) + ["?", "?", "?"])[:3]
+    _, me = _git("config", "user.name")
+    print("  %s -> %s   %s   %s" % (ref, sha, when, subject[:58]))
+    print("  tagged by: %s" % author)
+    if ref == "last-known-good" and me and author and author != me \
+            and os.environ.get("SHIP_ALLOW_OTHERS_ROLLBACK") != "1":
+        _, tags = _git("tag", "-l", "good-*", "--sort=-creatordate")
+        recent = [t for t in tags.splitlines() if t][:5]
+        sys.exit("\n[X] 'last-known-good' currently points at %s's deploy, not yours.\n"
+                 "    Rolling back to it reverts his work too. Name the safe-point you mean:\n"
+                 "%s\n"
+                 "        python ship.py --rollback <tag>\n"
+                 "    Deliberate override:  set SHIP_ALLOW_OTHERS_ROLLBACK=1"
+                 % (author, "\n".join("        %s" % t for t in recent) or "        (no good-* tags yet)"))
+    return sha, author
+
+
 def do_git(message):
     say("2/5  COMMIT + PUSH — GitHub is the single source of truth")
     _clear_stale_git_locks()
+    collaboration_guards(deploying=True)
     run(["git", "add", "-A"], check=False)
     rc = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=HERE).returncode
     if rc == 0:
@@ -1532,7 +1640,8 @@ def tag_known_good():
     run(["git", "tag", tag], check=False)                        # immutable dated snapshot
     run(["git", "push", "-f", "origin", "last-known-good"], check=False)
     run(["git", "push", "origin", tag], check=False)
-    print("\n  SAFE-POINT saved: %s  (and moved 'last-known-good').  To roll back later:" % tag)
+    print("\n  SAFE-POINT saved: %s by %s  (and moved 'last-known-good').  To roll back later:"
+          % (tag, _git("config", "user.name")[1] or "?"))
     print("      python ship.py --rollback            # -> last-known-good, redeploys")
     print("      python ship.py --rollback %s   # -> this exact point" % tag)
     return tag
@@ -1544,16 +1653,26 @@ def do_rollback(ref):
     print("  restoring the repo to %r ..." % ref)
     _clear_stale_git_locks()
     # show what we're about to move to, and refuse if it doesn't exist
-    r = subprocess.run(["git", "rev-parse", "--verify", ref + "^{commit}"], cwd=HERE,
-                       text=True, capture_output=True, encoding="utf-8", errors="replace")
-    if r.returncode != 0:
-        sys.exit("[X] %r is not a known ref/tag. See your safe-points with:  git tag -l 'good-*'" % ref)
+    resolve_rollback_target(ref)
+    # A ROLLBACK IS A DEPLOY. It runs do_web + do_bots, so it has to join the same queue as
+    # everything else: rolling back on top of a colleague's in-flight deploy is the worst possible
+    # moment to be recreating containers. Taken here, after the ref is validated, so a typo costs
+    # nothing. Released by the explicit call before sys.exit below.
+    _rb_lock = None
+    if not DRY:
+        import teamlock
+        _rb_lock = teamlock.held("rollback to %s" % ref)
+        if not _rb_lock.__enter__():
+            sys.exit(2)
+
     run(["git", "stash", "push", "-u", "-m", "pre-rollback"], check=False)   # park any local mess
     run(["git", "reset", "--hard", ref])
     print("  PC restored to %s. Redeploying that state to the droplet..." % ref)
     do_web(False)
     do_bots()
     ok = do_verify(True, True)
+    if _rb_lock is not None:
+        _rb_lock.__exit__(None, None, None)
     print("\n" + "=" * 74)
     print("  ROLLBACK COMPLETE — droplet + PC are back on %r." % ref)
     print("  (your pre-rollback changes are parked in `git stash` — `git stash pop` to get them back.)")
@@ -1977,6 +2096,19 @@ def main():
     #      again, then has 2 soldiers + 2 auditors write the verdict digest to email + Telegram.
     #      The gate itself is deterministic (operating principle 5: the LLM assists, never decides).
     #      Skipped by --no-stage, and never blocks a rollback.
+    # ---- ONE DEPLOY AT A TIME (teamlock.py) ---------------------------------------------------
+    #      Covers the staging gate AND both production deploys, deliberately as ONE lock: the gate
+    #      reboots the twin, and a second developer's gate starting mid-reboot reads the first
+    #      developer's half-booted box as a failure. CI serialises itself with a concurrency group;
+    #      this is what makes a laptop respect the same queue. Fails OPEN if the droplet is
+    #      unreachable - the deploy below would fail anyway, with a better message.
+    _lock = None
+    if not DRY:
+        import teamlock
+        _lock = teamlock.held("staging gate + production deploy")
+        if not _lock.__enter__():
+            sys.exit(2)
+
     if not a.no_stage and not DRY:
         print("\n" + "-" * 74)
         print("  STAGING GATE — validate on the twin, reboot it, then decide     [+%ds]"
@@ -2019,12 +2151,24 @@ def main():
             print("  [!] staging gate could not run (%s: %s) — continuing to production."
                   % (type(_e).__name__, str(_e)[:160]))
 
+    # WHICH PATH DEPLOYS. Default today is direct ssh from this PC, because that is the path with
+    # years of runs behind it and CLAUDE.md defect class 51 is explicit that an unexercised route
+    # ships broken. `SHIP_DEPLOY=ci` flips it permanently with no code change, for the day the
+    # droplet key should live only in GitHub Actions and no laptop. `--ci` flips it for one run.
+    _use_ci = a.ci or os.environ.get("SHIP_DEPLOY", "").lower() == "ci"
     if web:
-        do_web(a.ci)
+        do_web(_use_ci)
     if bots:
         do_bots()
 
     ok = do_verify(web, bots)
+
+    # The deploy itself is done. caddyguard/perseus/dbbackup below are idempotent building blocks
+    # that two runs can safely overlap on, so the lock comes off here rather than at the very end:
+    # holding it through a 10-minute tail is how the next developer concludes it is stuck.
+    if _lock is not None:
+        _lock.__exit__(None, None, None)
+        _lock = None
 
     # ---- SHARED-PROXY GUARDRAILS (2026-08-07 outage) -----------------------------------------
     #      Every project on this box appends a MARKED block into ONE shared /opt/videodead/
