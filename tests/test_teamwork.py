@@ -481,3 +481,40 @@ def test_the_shell_harness_is_the_only_thing_windows_loses():
                   "test_the_deploy_is_wrapped_in_the_lock_and_released_before_the_long_tail"):
         assert guard not in needs_shell, (
             "%s would be SKIPPED on Windows, where the operator actually ships" % guard)
+
+
+def test_ci_takes_the_same_lock_the_laptops_use():
+    """The concurrency group serialises CI against CI. It cannot see `python ship.py` running on
+    somebody's PC - only the lock on the droplet can. A CI deploy that skips it reintroduces
+    exactly the collision teamlock exists to prevent."""
+    import yaml as _yaml
+    doc = _yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "web-deploy.yml"),
+                               encoding="utf-8"))
+    steps = doc["jobs"]["deploy"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    runs = [s.get("run", "") for s in steps]
+    acq = next((i for i, r in enumerate(runs) if "teamlock.py --acquire" in r), None)
+    rel = next((i for i, r in enumerate(runs) if "teamlock.py --release" in r), None)
+    assert acq is not None, "the CI deploy never takes the deploy lock: %s" % names
+    assert rel is not None, "the CI deploy never gives the lock back: %s" % names
+    touch = next(i for i, n in enumerate(names) if "Ship compose" in n)
+    assert acq < touch, "the lock is taken AFTER the droplet is already being written to"
+    assert rel > touch, "the lock is released before the deploy finishes"
+    assert steps[rel].get("if") == "always()", (
+        "a failed or cancelled deploy must still release the lock")
+    for i in (acq, rel):
+        assert steps[i].get("env", {}).get("SSH_KEY"), (
+            "the lock step has no SSH key, so it can never reach the droplet")
+
+
+def test_the_acquire_verb_exits_non_zero_when_somebody_else_holds_it():
+    """CI has no context manager: one step takes it, a later step gives it back. The exit CODE is
+    what stops the workflow, so it has to be non-zero."""
+    import ast
+    fn = next(n for n in ast.walk(ast.parse(open(os.path.join(ROOT, "teamlock.py"),
+                                                 encoding="utf-8").read()))
+              if isinstance(n, ast.FunctionDef) and n.name == "main")
+    body = ast.unparse(fn)
+    assert "a.acquire" in body and "return 2" in body, (
+        "--acquire must exit non-zero when the lock is held, or CI deploys straight through it")
+    assert "a.release" in body

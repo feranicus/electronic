@@ -232,10 +232,32 @@ class held:
 def main():
     ap = argparse.ArgumentParser(description="the one-deploy-at-a-time lock on the droplet")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--acquire", action="store_true",
+                    help="take the lock and exit non-zero if somebody else holds it (for CI)")
+    ap.add_argument("--release", action="store_true", help="give it back (safe if you never had it)")
     ap.add_argument("--break", dest="brk", action="store_true",
                     help="drop a lock you are SURE is dead (a crashed run, a closed laptop)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
+    if a.acquire:
+        # For a CI runner: one process takes it, a LATER process gives it back, so the context
+        # manager is no use here. Exit 2 when held, so the workflow stops before it recreates a
+        # container the other deploy is in the middle of replacing.
+        ok, info = acquire()
+        if not ok:
+            print("HELD by %s for %s - not deploying"
+                  % (info.get("HOLDER", "?"), _fmt_age(info.get("AGE"))))
+            return 2
+        if info.get("BROKE"):
+            print("took it, after breaking a stale lock from %s (%s old)"
+                  % (info["BROKE"], _fmt_age(info.get("BROKE_AGE"))))
+        else:
+            print("acquired by %s" % who())
+        return 0
+    if a.release:
+        r = release()
+        print(r.get("RESULT", r))
+        return 0
     if a.brk:
         r = release(force=True)
         print(json.dumps(r) if a.json else

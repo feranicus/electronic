@@ -81,6 +81,14 @@ by trusting a `finally`. Both CI workflows now share ONE concurrency group, `pro
 origin (`SHIP_ALLOW_BEHIND=1`), prints every path `git add -A` is about to take grouped by area, and
 refuses `--rollback last-known-good` when that pointer is another developer's deploy
 (`SHIP_ALLOW_OTHERS_ROLLBACK=1`). Proved by `tests/test_teamwork.py`.
+The CI deploy job takes the SAME lock (`teamlock.py --acquire` / `--release if: always()`),
+because a concurrency group cannot see a laptop.
+
+**A PROBE THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER.** `deploy.run()` folds stderr into
+stdout, so a failed ssh made `sshout()` return ssh's own error text as the probe's ANSWER:
+`ensure_docker()` read it as "docker is missing" and ran `apt-get install docker-ce` against
+production. `sshout` now appends a sentinel only a shell that really ran can echo, and exits
+otherwise. [2026-10-14, GitHub Actions, malformed DROPLET_SSH_KEY] `tests/test_probe_fail_closed.py`
 
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 

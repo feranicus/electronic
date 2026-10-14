@@ -85,6 +85,17 @@ jobs:
             exit 1
           fi
 
+      # ONE DEPLOY AT A TIME, ACROSS RUNNERS AND LAPTOPS. The concurrency group above serialises
+      # CI against CI; it cannot see `python ship.py` deploying from somebody's PC. teamlock locks
+      # the DROPLET itself, which is the one thing both paths have to touch. Exit 2 = somebody else
+      # is mid-deploy, so stop before recreating a container they are replacing.
+      - name: Take the deploy lock
+        env:
+          DROPLET_HOST: ${{ vars.DROPLET_HOST || '64.225.108.200' }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+          SSH_KEY: /home/runner/.ssh/deploy_key
+        run: python3 teamlock.py --acquire
+
       - name: Ship compose + Caddy snippet to the droplet
         env:
           H: ${{ vars.DROPLET_HOST || '64.225.108.200' }}
@@ -141,3 +152,13 @@ jobs:
           echo "[verify] https://cybergod.ai/api/me (from droplet) -> $code   (401 = up + auth working)"
           docker compose -p colt-stack -f docker-compose.web.yml ps
           REMOTE
+
+      # always(): a failed or cancelled deploy must still give the lock back. Staleness (45 min)
+      # is the backstop for a runner that is killed outright and never reaches this step.
+      - name: Release the deploy lock
+        if: always()
+        env:
+          DROPLET_HOST: ${{ vars.DROPLET_HOST || '64.225.108.200' }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+          SSH_KEY: /home/runner/.ssh/deploy_key
+        run: python3 teamlock.py --release

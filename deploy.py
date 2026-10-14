@@ -92,22 +92,50 @@ def ssh(cmd, check=True, capture=False, echo=True, timeout=90, retries=2):
                 print("  (ssh failed/timed out — sshd throttle? retrying in 5s)", flush=True)
                 time.sleep(5)
     raise last if last else RuntimeError("ssh failed")
+# A PROBE THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER (CLAUDE.md defect class 1).
+#
+# THE INCIDENT, 2026-10-14 (GitHub Actions run, bad DROPLET_SSH_KEY). `run()` folds stderr into
+# stdout when capturing, so a failed ssh made `sshout` return ssh's OWN error text:
+#     Load key "/home/runner/.ssh/deploy_key": error in libcrypto
+#     root@64.225.108.200: Permission denied (publickey,password).
+# That string is non-empty, so the old `if rc == 0 or out: return out` handed it back as the
+# probe's ANSWER. `ensure_docker()` then asked `if "OK" in <that>` -> no -> "docker is missing" ->
+# and ran `apt-get install docker-ce containerd.io` against a production droplet that also hosts
+# Amnezia VPN, VideoDead and six public domains. Only the install's own ssh failing stopped it.
+# Every one of the six sshout() callers had the same shape: a transport failure read as a negative
+# finding about the system.
+#
+# The sentinel is the fix, and it belongs HERE rather than in six callers (ONE HOME): only a shell
+# that really ran on the droplet can echo it. The remote command's own exit code is irrelevant —
+# `;` not `&&` — because a probe is allowed to answer "no", it is just not allowed to not run.
+_PROBE_MARK = "__sshout_ok_4f1c__"
+
+
 def sshout(cmd, timeout=30, tries=3):
     # deploy.py opens ~12 rapid ssh connections; sshd (MaxStartups) can throttle the Nth one, so a
     # read-only probe occasionally times out even though the droplet is fine. Retry a couple of times
     # with a short back-off BEFORE giving up — a transient throttle must not kill the whole deploy.
     out, rc = "", 0
     for i in range(tries):
-        r = ssh(cmd, check=False, capture=True, echo=False, timeout=timeout)
-        out = (r.stdout or "").strip(); rc = r.returncode
-        if rc == 0 or out:
-            return out
+        r = ssh(cmd + "; echo " + _PROBE_MARK, check=False, capture=True, echo=False, timeout=timeout)
+        out = (r.stdout or ""); rc = r.returncode
+        if _PROBE_MARK in out:                      # the remote shell RAN; its answer is real
+            return out.replace(_PROBE_MARK, "").strip()
         if i < tries - 1:
-            print("  (ssh probe timed out/failed rc=%s — retrying in 3s, %d left)" % (rc, tries - 1 - i), flush=True)
+            print("  (ssh probe did not run rc=%s — retrying in 3s, %d left)" % (rc, tries - 1 - i), flush=True)
             time.sleep(3)
-    sys.exit("[X] ssh to %s@%s kept failing (rc=%d) on a read-only check after %d tries. Nothing was\n"
-             "    changed. The web app already deployed. Test with:  ssh -v %s@%s \"echo ok\""
-             % (USER, HOST, rc, tries, USER, HOST))
+    hint = ""
+    low = (out or "").lower()
+    if "libcrypto" in low or "permission denied" in low or "unprotected private key" in low:
+        hint = ("\n    This is an SSH AUTHENTICATION failure, not a missing tool on the droplet."
+                "\n    In GitHub Actions: the DROPLET_SSH_KEY secret must be the COMPLETE OpenSSH"
+                "\n    private key, BEGIN/END lines included, with a trailing newline.")
+    sys.exit("[X] ssh to %s@%s could not RUN a read-only check after %d tries (rc=%s). Nothing was\n"
+             "    changed, and nothing was concluded about the droplet: a probe that cannot see its\n"
+             "    subject must never report its own blindness as a finding.%s\n"
+             "    Last output: %s\n"
+             "    Test with:  ssh -v %s@%s \"echo ok\""
+             % (USER, HOST, tries, rc, hint, (out or "(nothing)").strip()[:300], USER, HOST))
 def scp(local_path, remote_path):
     return run(["scp", *SSH_OPTS, local_path, "%s@%s:%s" % (USER, HOST, remote_path)], timeout=300)
 
