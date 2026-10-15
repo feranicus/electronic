@@ -142,6 +142,18 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          # PROVE THE SECRET IS A KEY, here, before six steps of anonymous failures. On
+          # 2026-10-14 every deploy died at the first ssh with "error in libcrypto" and the next
+          # step concluded the DROPLET was missing docker. ssh-keygen -y writes the PUBLIC half,
+          # discarded, so no key material can reach this log.
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
+            echo "::error::DROPLET_SSH_KEY is not a usable OpenSSH private key. OpenSSH itself"
+            echo "::error::cannot derive its public half ('error in libcrypto'). Common causes: a"
+            echo "::error::PuTTY .ppk, the .pub half, a passphrase-protected key, or a missing"
+            echo "::error::trailing newline. Fix it from a key PROVEN to work against the droplet:"
+            echo "::error::    python ship.py --fix-ci-key"
+            exit 1
+          fi
           ssh-keyscan -H "${{ vars.DROPLET_HOST || '64.225.108.200' }}" >> ~/.ssh/known_hosts 2>/dev/null || true
       - name: Deploy scanned image
         env:

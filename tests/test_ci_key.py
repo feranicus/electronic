@@ -1,0 +1,487 @@
+"""test_ci_key.py - a credential nobody can read back must be PROVEN before it is written.
+
+THE INCIDENT, 2026-10-14. Every GitHub Actions deploy this repo had ever attempted died at the
+first ssh:
+
+    Load key "/home/runner/.ssh/deploy_key": error in libcrypto
+    root@64.225.108.200: Permission denied (publickey,password).
+
+The workflows write the secret correctly (`printf '%s\\n'`), so the SECRET'S CONTENT was never a
+usable key. It was uploaded by setup_github_cicd.py, which read a file and handed it to
+`gh secret set` without ever parsing it, let alone authenticating with it. A GitHub secret cannot
+be read back by anybody, so the write was unverifiable in BOTH directions and the credential rotted
+silently for weeks while the workflow kept reporting a droplet problem.
+
+The property under test is one sentence: `push()` uploads ONLY a key that shape-checked, that
+OpenSSH itself parsed, and that the droplet accepted - and an UNKNOWN at any step is not a pass
+(defect class 1: a check that cannot see its subject must not answer about it).
+"""
+import os
+import sys
+
+import pytest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+import ci_key                                                        # noqa: E402
+
+# A real passphrase-less ed25519 key's SHAPE. The body is deliberately not a valid key: these tests
+# are about the text checks, and the ones that need a real key use ssh-keygen to make one.
+GOOD = ("-----BEGIN OPENSSH PRIVATE KEY-----\n"
+        "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtz\n"
+        "c2gtZWQyNTUxOQAAACBQ0ZQ3Yw1b2mQ4h5Zr8KkqS7bJ5n0wX1yYc2dEf3gHiA\n"
+        "AAAJiZvXHfmb1x3wAAAAtzc2gtZWQyNTUxOQAAACBQ0ZQ3Yw1b2mQ4h5Zr8Kkq\n"
+        "-----END OPENSSH PRIVATE KEY-----\n")
+
+
+# ---------------------------------------------------------------- shape: turn libcrypto into words
+def test_a_good_key_passes_the_shape_check():
+    """Prove the fixture first (defect class 12): if GOOD does not pass, every negative below is
+    measuring the fixture rather than the guard."""
+    ok, why = ci_key.key_shape(GOOD)
+    assert ok, why
+
+
+@pytest.mark.parametrize("text,needle", [
+    (GOOD.rstrip("\n"), "TRAILING NEWLINE"),
+    (GOOD.replace("\n", ""), "ONE line"),
+    (GOOD.split("-----END")[0], "END line is MISSING"),
+    ("PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\n", "PuTTY"),
+    ("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI gh-actions-deploy\n", "PUBLIC half"),
+    ("-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,1\n"
+     "abc\n-----END RSA PRIVATE KEY-----\n", "PASSPHRASE"),
+    ("", "EMPTY"),
+    ("   \n\n", "EMPTY"),
+    (None, "could not be read"),
+    ("hello world, this is not a key at all\nsecond line\nthird\nfourth\n", "no BEGIN line"),
+])
+def test_every_way_a_secret_goes_wrong_is_named_not_shrugged_at(text, needle):
+    """Defect class 26: a diagnostic that does not NAME its subject sends the next investigation
+    down the wrong road. 'error in libcrypto' sent this one at the droplet for weeks."""
+    ok, why = ci_key.key_shape(text)
+    assert not ok, "accepted a broken key: %r" % (text[:40] if text else text)
+    assert needle in why, "the cause was not named. got: %s" % why
+
+
+def test_the_shape_check_never_echoes_the_key_body():
+    """A diagnostic that prints the thing it is diagnosing puts a private key in a CI log."""
+    body = GOOD.splitlines()[1]
+    for text in (GOOD.rstrip("\n"), GOOD.replace("\n", ""), GOOD.split("-----END")[0]):
+        _, why = ci_key.key_shape(text)
+        assert body not in why, "the failure message leaked key material"
+        assert body[:20] not in why
+
+
+# ---------------------------------------------------------------- the gate in front of the upload
+class _Spy:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, cmd, stdin_text):
+        self.calls.append((cmd, stdin_text))
+        return 0, "ok"
+
+
+@pytest.fixture
+def keyfile(tmp_path):
+    p = tmp_path / "colt_deploy"
+    p.write_text(GOOD, encoding="utf-8")
+    return str(p)
+
+
+def test_push_sends_the_value_on_stdin_never_in_argv(keyfile):
+    """The set_secret.py rule, applied here: argv is visible in the process table and in shell
+    history; a secret belongs on stdin."""
+    spy = _Spy()
+    ok, detail = ci_key.push(keyfile, repo="feranicus/electronic", runner=spy)
+    assert ok, detail
+    (cmd, stdin_text), = spy.calls
+    assert stdin_text == GOOD, "the key did not travel on stdin"
+    joined = " ".join(cmd)
+    assert "BEGIN OPENSSH" not in joined, "the key appeared in argv: %s" % joined
+    assert cmd[:4] == ["gh", "secret", "set", "DROPLET_SSH_KEY"]
+
+
+def test_an_unknown_auth_result_is_not_a_pass(monkeypatch, keyfile):
+    """THE WHOLE POINT. The old script uploaded whatever it read. A timed-out probe tells us
+    nothing about the key, and nothing is not permission to overwrite a credential."""
+    monkeypatch.setattr(ci_key, "parses", lambda p: (True, "SHA256:fake"))
+    monkeypatch.setattr(ci_key, "authenticates", lambda *a, **k: (None, "timed out"))
+    assert ci_key.check(keyfile) is False, "an UNKNOWN was scored as a usable key"
+
+
+def test_a_key_the_droplet_rejects_is_not_a_pass(monkeypatch, keyfile):
+    monkeypatch.setattr(ci_key, "parses", lambda p: (True, "SHA256:fake"))
+    monkeypatch.setattr(ci_key, "authenticates",
+                        lambda *a, **k: (False, "not in authorized_keys"))
+    assert ci_key.check(keyfile) is False
+
+
+def test_a_key_openssh_cannot_parse_never_reaches_the_droplet_probe(monkeypatch, keyfile):
+    """Order matters: ssh-ing with a garbage key just produces another libcrypto line."""
+    probed = []
+    monkeypatch.setattr(ci_key, "parses", lambda p: (False, "error in libcrypto"))
+    monkeypatch.setattr(ci_key, "authenticates",
+                        lambda *a, **k: (probed.append(1), (True, "x"))[1])
+    assert ci_key.check(keyfile) is False
+    assert not probed, "it tried to authenticate with a key OpenSSH had already rejected"
+
+
+def test_a_fully_proven_key_passes(monkeypatch, keyfile):
+    """A gate that cannot pass is not a gate (defect class 3 inverted)."""
+    monkeypatch.setattr(ci_key, "parses", lambda p: (True, "SHA256:fake"))
+    monkeypatch.setattr(ci_key, "authenticates", lambda *a, **k: (True, "authenticated"))
+    assert ci_key.check(keyfile) is True
+
+
+def test_parses_uses_openssh_itself_and_discards_its_output(tmp_path):
+    """Same binary as the runner, same verdict. Uses a REAL generated key, so this is the one test
+    that proves the shape checks and the parse check agree."""
+    import shutil
+    import subprocess
+    if not shutil.which("ssh-keygen"):
+        pytest.skip("ssh-keygen not on PATH")
+    p = tmp_path / "real"
+    subprocess.run(["ssh-keygen", "-t", "ed25519", "-f", str(p), "-N", "", "-q"], check=True)
+    ok, fp = ci_key.parses(str(p))
+    assert ok is True, fp
+    assert "SHA256:" in fp, "the fingerprint was not reported: %s" % fp
+    assert "PRIVATE KEY" not in fp, "parse() leaked key material into its own answer"
+    ok_shape, why = ci_key.key_shape(p.read_text(encoding="utf-8"))
+    assert ok_shape, "a key ssh-keygen accepts was rejected by the shape check: %s" % why
+    # And the public half must FAIL the shape check, since that is a real paste mistake.
+    ok_pub, why_pub = ci_key.key_shape((tmp_path / "real.pub").read_text(encoding="utf-8"))
+    assert not ok_pub and "PUBLIC half" in why_pub
+
+
+# ------------------------------------------- THE REAL ROOT CAUSE: a passphrase-protected CI key
+# This is the defect the first version of this file shipped WITHOUT, and it is the one that broke
+# every CI deploy. `~/.ssh/colt_deploy` on the operator's PC is a perfectly good OpenSSH key with a
+# passphrase. A GitHub runner has no keyboard, so it can never unlock it: "error in libcrypto".
+# The header check could not see it, because a modern OpenSSH key says NOTHING about encryption in
+# its armour - no "ENCRYPTED", no "Proc-Type: 4,ENCRYPTED". Those are PEM-era tells. The cipher name
+# lives in the clear inside the base64, and reading it is the only way to answer the question
+# without asking a human for the passphrase.
+_SSHKEYGEN = __import__("shutil").which("ssh-keygen")
+_needs_keygen = pytest.mark.skipif(not _SSHKEYGEN, reason="ssh-keygen not on PATH")
+
+
+@pytest.fixture(scope="module")
+def real_keys(tmp_path_factory):
+    """One key with a passphrase and one without, both made by ssh-keygen itself. Prove the fixture
+    (defect class 12): if these two files do not actually differ in encryption, every assertion
+    below is measuring nothing."""
+    import subprocess
+    if not _SSHKEYGEN:
+        pytest.skip("ssh-keygen not on PATH")
+    d = tmp_path_factory.mktemp("keys")
+    plain, enc = d / "plain", d / "enc"
+    subprocess.run(["ssh-keygen", "-t", "ed25519", "-f", str(plain), "-N", "", "-q"], check=True)
+    subprocess.run(["ssh-keygen", "-t", "ed25519", "-f", str(enc), "-N", "correct horse", "-q"],
+                   check=True)
+    pt = plain.read_text(encoding="utf-8")
+    et = enc.read_text(encoding="utf-8")
+    assert "ENCRYPTED" not in et and "Proc-Type" not in et, (
+        "FIXTURE INVALID: this OpenSSH build announces encryption in the armour, so the incident "
+        "this test encodes could not have happened the way it did")
+    assert pt != et
+    return {"plain": str(plain), "enc": str(enc), "plain_text": pt, "enc_text": et}
+
+
+@_needs_keygen
+def test_the_cipher_is_read_from_the_body_not_the_header(real_keys):
+    assert ci_key.openssh_cipher(real_keys["plain_text"]) == "none"
+    assert ci_key.openssh_cipher(real_keys["enc_text"]) not in (None, "none"), (
+        "a passphrase-protected key reported no cipher - it would pass straight to GitHub")
+
+
+@_needs_keygen
+def test_a_passphrase_protected_key_is_refused_and_the_reason_is_the_passphrase(real_keys):
+    """THE WHOLE POINT. The operator supplied the CORRECT passphrase and was still told the key was
+    unusable; the message must say why that is right, not imply his key is corrupt."""
+    ok, why = ci_key.key_shape(real_keys["enc_text"])
+    assert not ok, "a passphrase-protected key passed the shape check"
+    assert "PASSPHRASE" in why.upper()
+    assert "libcrypto" in why, "the message must connect to the error he has actually been seeing"
+    ok2, why2 = ci_key.key_shape(real_keys["plain_text"])
+    assert ok2, "a passphrase-less key was refused: %s" % why2
+
+
+@_needs_keygen
+def test_no_check_ever_prompts_the_operator(real_keys, monkeypatch):
+    """A check that stops and interrogates the human has stopped measuring. The first version ran
+    `ssh-keygen -y -f <key>` with an inherited stdin, so it ASKED HIM to type the passphrase and
+    then reported his correct passphrase as incorrect.
+
+    Proved by making any read of this process's stdin fail: `parses` must answer anyway.
+    """
+    import subprocess as sp
+    real = sp.run
+    seen = {}
+
+    def guard(cmd, *a, **k):
+        if isinstance(cmd, (list, tuple)) and cmd and "ssh-keygen" in str(cmd[0]):
+            seen["stdin"] = k.get("stdin")
+            assert k.get("stdin") is sp.DEVNULL, (
+                "ssh-keygen was run with an inheritable stdin (%r): it can prompt" % k.get("stdin"))
+            # `-y` is the only verb that DECRYPTS, so it is the only one that can prompt.
+            # `-l` reads the public blob and never asks for anything.
+            if "-y" in cmd:
+                assert "-P" in cmd, (
+                    "ssh-keygen -y was run without -P, so it falls back to prompting")
+        return real(cmd, *a, **k)
+
+    monkeypatch.setattr(ci_key.subprocess, "run", guard)
+    ok, detail = ci_key.parses(real_keys["enc"])
+    assert seen.get("stdin") is sp.DEVNULL
+    assert ok is False, "an unusable-by-CI key was reported as parseable"
+    assert "passphrase" in detail.lower()
+    assert "correct" in detail.lower(), (
+        "the operator typed the right passphrase; the message must not imply otherwise")
+    ok2, fp = ci_key.parses(real_keys["plain"])
+    assert ok2 is True and "SHA256:" in fp
+
+
+@_needs_keygen
+def test_mint_makes_a_passphrase_less_key_and_never_overwrites_one(tmp_path):
+    p = str(tmp_path / "colt_ci")
+    ok, detail = ci_key.mint(p)
+    assert ok, detail
+    text = open(p, encoding="utf-8").read()
+    assert ci_key.openssh_cipher(text) == "none", "minted a key a runner cannot use"
+    ok_shape, why = ci_key.key_shape(text)
+    assert ok_shape, why
+    before = text
+    ok2, detail2 = ci_key.mint(p)
+    assert ok2 and "already exists" in detail2
+    assert open(p, encoding="utf-8").read() == before, (
+        "mint overwrote an existing key, orphaning whatever is in authorized_keys")
+
+
+@_needs_keygen
+def test_provisioning_never_reads_or_writes_the_operators_own_key(tmp_path, monkeypatch):
+    """His personal key is not ours to strip, copy or move. A dedicated key can also be revoked on
+    its own by deleting one line from authorized_keys."""
+    his = tmp_path / "id_ed25519"
+    import subprocess
+    subprocess.run(["ssh-keygen", "-t", "ed25519", "-f", str(his), "-N", "his pass", "-q"],
+                   check=True)
+    before = his.read_bytes()
+    opened = []
+    real_open = open
+
+    def spy(f, *a, **k):
+        opened.append(str(f))
+        return real_open(f, *a, **k)
+
+    monkeypatch.setattr(ci_key, "CANDIDATES", [str(his)])
+    monkeypatch.setitem(__builtins__ if isinstance(__builtins__, dict)
+                        else __builtins__.__dict__, "open", spy)
+    ci_key.mint(str(tmp_path / "colt_ci"))
+    monkeypatch.undo()
+    assert his.read_bytes() == before, "the operator's own key was modified"
+    assert not [o for o in opened if o == str(his)], "the operator's own key was read: %s" % opened
+
+
+def test_authorize_sends_only_the_public_half(tmp_path, monkeypatch):
+    priv = tmp_path / "colt_ci"
+    priv.write_text(GOOD, encoding="utf-8")
+    (tmp_path / "colt_ci.pub").write_text("ssh-ed25519 AAAAC3Nza-TEST ci@x\n", encoding="utf-8")
+    sent = {}
+
+    class _R:
+        stdout, stderr, returncode = "__authorized__\n", "", 0
+
+    def fake_run(cmd, *a, **k):
+        sent["cmd"] = " ".join(cmd)
+        return _R()
+
+    monkeypatch.setattr(ci_key.subprocess, "run", fake_run)
+    ok, detail = ci_key.authorize(str(priv))
+    assert ok, detail
+    assert "AAAAC3Nza-TEST" in sent["cmd"]
+    assert "BEGIN OPENSSH" not in sent["cmd"], "the PRIVATE key was sent to the droplet"
+    # Assert the PROPERTY, not the presence of a string the VERIFICATION grep also contains
+    # (defect class 4): the append itself must be the right-hand side of a `grep ... ||`. The first
+    # version of this line passed against an unconditional append, because the trailing
+    # "grep -qxF ... && echo __authorized__" kept the needle in the command.
+    assert "~/.ssh/authorized_keys || printf" in sent["cmd"], (
+        "the append is not guarded by the grep, so a re-run duplicates the line:\n  %s"
+        % sent["cmd"])
+
+
+def test_authorize_believes_the_droplet_not_itself(tmp_path, monkeypatch):
+    """The success token is the DROPLET's answer. Without it nothing was proven, so authorize must
+    refuse - otherwise a dead ssh becomes 'authorized' and the deploy proceeds on a key the box has
+    never heard of (defect class 1, the same shape as the sshout incident)."""
+    priv = tmp_path / "colt_ci"
+    priv.write_text(GOOD, encoding="utf-8")
+    (tmp_path / "colt_ci.pub").write_text("ssh-ed25519 AAAAC3Nza-TEST ci@x\n", encoding="utf-8")
+
+    class _Dead:
+        stdout = ""
+        stderr = "root@64.225.108.200: Permission denied (publickey,password).\n"
+        returncode = 255
+
+    monkeypatch.setattr(ci_key.subprocess, "run", lambda *a, **k: _Dead())
+    ok, detail = ci_key.authorize(str(priv))
+    assert ok is False, "a failed ssh was reported as a successful authorization"
+    assert "Permission denied" in detail, "the cause was not quoted: %s" % detail
+
+
+def test_authorizing_twice_really_leaves_one_line(tmp_path, monkeypatch):
+    """The structural check above says the shape is right; this RUNS the remote script against a
+    throwaway HOME and counts the lines, because PARSE is not RUN (defect class 48).
+
+    WINDOWS SKIPS, and the gate is teamlock's existing `shell_harness_allowed()` rather than a
+    second copy of the same decision (ONE HOME, defect class 32). The first version of this test
+    used a bare `shutil.which("bash")` and failed on the operator's box: `bash` there is WSL's
+    bash.exe, and the stripped env I handed it made WSL itself fail with an RPC error in UTF-16.
+    That is defect class 19 twice over - green in a Linux sandbox said nothing about his machine,
+    and the failure named my harness instead of the code. This script only ever executes on the
+    Ubuntu droplet over ssh, so Git Bash/WSL would test the emulation either way; CI and the
+    droplet keep the real coverage. TEAMLOCK_TEST_SHELL=1 forces it.
+    """
+    import subprocess
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_teamwork import shell_harness_allowed
+    ok_shell, why = shell_harness_allowed()
+    if not ok_shell:
+        pytest.skip(why)
+    priv = tmp_path / "colt_ci"
+    priv.write_text(GOOD, encoding="utf-8")
+    (tmp_path / "colt_ci.pub").write_text("ssh-ed25519 AAAAC3Nza-TEST ci@x\n", encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+    scripts = []
+
+    class _R:
+        stdout, stderr, returncode = "__authorized__\n", "", 0
+
+    def capture(cmd, *a, **k):
+        scripts.append(cmd[-1])
+        return _R()
+
+    monkeypatch.setattr(ci_key.subprocess, "run", capture)
+    ci_key.authorize(str(priv))
+    monkeypatch.undo()
+    script, = scripts
+    for _ in range(3):
+        env = dict(os.environ, HOME=str(home))
+        r = subprocess.run(["bash", "-c", script], env=env,
+                           capture_output=True, text=True, timeout=60)
+        assert "__authorized__" in r.stdout, r.stderr
+    lines = (home / ".ssh" / "authorized_keys").read_text().splitlines()
+    assert lines.count("ssh-ed25519 AAAAC3Nza-TEST ci@x") == 1, (
+        "three runs left %d copies of the key: %r" % (len(lines), lines))
+
+    # AND IT MUST BE ABLE TO FAIL (defect class 3). Make the append impossible and assert the
+    # script does NOT say __authorized__: a success token printed without checking the file is a
+    # fail-open, and the next thing to happen would be a deploy with an unusable secret.
+    broken = tmp_path / "broken"
+    (broken / ".ssh" / "authorized_keys").mkdir(parents=True)   # cannot be appended to
+    r = subprocess.run(["bash", "-c", script], env=dict(os.environ, HOME=str(broken)),
+                       capture_output=True, text=True, timeout=60)
+    assert "__authorized__" not in r.stdout, (
+        "the script reported success while the key was NOT in authorized_keys")
+
+
+# ---------------------------------------------------------------- wiring (defect class 9)
+def _wf(name):
+    return open(os.path.join(ROOT, ".github", "workflows", name),
+               encoding="utf-8").read()
+
+
+@pytest.mark.parametrize("name", ["deploy.yml", "web-deploy.yml", "provision-patchwatch.yml"])
+def test_every_workflow_that_writes_the_key_also_validates_it(name):
+    """Behaviour AND wiring. A workflow that installs the secret without checking it is the exact
+    hole this incident came through, and a fourth workflow added later must not reopen it."""
+    s = _wf(name)
+    assert "deploy_key" in s
+    assert "ssh-keygen -y -f ~/.ssh/deploy_key" in s, (
+        "%s writes the deploy key but never asks OpenSSH whether it IS one" % name)
+    assert ">/dev/null" in s.split("ssh-keygen -y -f ~/.ssh/deploy_key")[1][:30], (
+        "%s lets ssh-keygen print the public key into the build log" % name)
+    assert "ship.py --fix-ci-key" in s, "%s does not say how to fix it" % name
+
+
+def test_the_validation_runs_before_the_first_use_of_the_key():
+    """A check after the failure it was meant to explain is decoration. The validate step must come
+    before the first ssh/scp that uses the key in each workflow."""
+    for name in ("deploy.yml", "web-deploy.yml", "provision-patchwatch.yml"):
+        s = _wf(name)
+        guard = s.index("ssh-keygen -y -f ~/.ssh/deploy_key")
+        uses = [s.index(t) for t in ("-i ~/.ssh/deploy_key", "SSH_KEY: /home/runner/.ssh/deploy_key")
+                if t in s]
+        assert uses, "%s never uses the key it installs" % name
+        assert guard < min(uses), "%s uses the key before validating it" % name
+
+
+def test_ship_py_repairs_the_key_instead_of_stopping():
+    """ONE COMMAND (operating principle 7) and FULL AUTOMATION (principle 1). --fix-ci-key must
+    mint and authorize a usable key when the only one present cannot work, then carry on into the
+    ship - not print advice and exit. Asserted on the AST so a later edit cannot quietly turn it
+    back into an operator step."""
+    import ast
+    tree = ast.parse(open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read())
+    main = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "main"][0]
+    blk = [n for n in ast.walk(main) if isinstance(n, ast.If)
+           and "fix_ci_key" in ast.unparse(n.test)]
+    assert len(blk) == 1, "--fix-ci-key has %d homes in main()" % len(blk)
+    body = ast.unparse(blk[0])
+    assert "ci_key.check" in body, "it does not prove the key"
+    assert "ci_key.provision" in body, (
+        "it does not repair an unusable key - it tells the operator to go and do it")
+    assert "ci_key.push" in body, "it never sets the secret"
+    assert body.count("sys.exit(2)") >= 2, "a refusal path does not stop the run"
+    # and it must FALL THROUGH on success, or the operator needs a second command
+    assert "return" not in body.split("ci_key.push")[-1], (
+        "it returns after fixing the key, which makes this two commands")
+
+
+def test_the_shape_check_has_one_home():
+    """ONE HOME (defect class 32). The reason the old path failed is that nothing owned the question
+    'is this a key'. If a second copy appears, the newer one always loses."""
+    import ast
+    import glob
+    offenders = []
+    for f in glob.glob(os.path.join(ROOT, "*.py")):
+        if os.path.basename(f) in ("ci_key.py",):
+            continue
+        src = open(f, encoding="utf-8", errors="replace").read()
+        if "BEGIN OPENSSH PRIVATE KEY" in src and "PuTTY-User-Key-File" in src:
+            offenders.append(os.path.basename(f))
+    assert not offenders, "a second key-shape checker appeared in: %s" % offenders
+    tree = ast.parse(open(os.path.join(ROOT, "ci_key.py"), encoding="utf-8").read())
+    names = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+    assert names.count("key_shape") == 1
+
+
+def test_setup_github_cicd_no_longer_uploads_an_unproven_key():
+    """The script that created this incident must not be able to create it again.
+
+    Assert the PROPERTY by AST, not a string the explanatory comment also contains (defect class
+    4): the first version of this test passed against `pass  # import ci_key`, because the comment
+    saying what was removed contained the name of the thing that was removed. This now requires a
+    real CALL to ci_key.check whose line number precedes the upload."""
+    import ast
+    src = open(os.path.join(ROOT, "setup_github_cicd.py"), encoding="utf-8").read()
+    tree = ast.parse(src)
+    upload = min(n.lineno for n in ast.walk(tree) if isinstance(n, ast.Constant)
+                 and n.value == "DROPLET_SSH_KEY")
+    proofs = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
+              and isinstance(n.func, ast.Attribute) and n.func.attr == "check"
+              and isinstance(n.func.value, ast.Name) and n.func.value.id == "ci_key"]
+    assert proofs, "setup_github_cicd.py never calls ci_key.check - it uploads a key on faith"
+    assert min(proofs) < upload, (
+        "ci_key.check runs at line %d, AFTER the upload at line %d" % (min(proofs), upload))
+    guarded = [n for n in ast.walk(tree) if isinstance(n, ast.If)
+               and any(getattr(c, "lineno", None) in proofs for c in ast.walk(n.test))]
+    assert guarded, "ci_key.check is called but its answer is not acted on"
+    for node in guarded:
+        assert not [c for c in ast.walk(node.test) if isinstance(c, ast.Constant)], (
+            "the verdict is short-circuited by a constant: if %s" % ast.unparse(node.test))
+        assert any(isinstance(c, ast.Call) and ast.unparse(c).startswith("sys.exit")
+                   for c in ast.walk(node)), (
+            "a failed proof does not stop the upload: if %s" % ast.unparse(node.test))

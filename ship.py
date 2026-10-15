@@ -2022,11 +2022,47 @@ def main():
                     help="validate on staging but SKIP the reboot test (faster, weaker — the "
                          "reboot is the test that would have caught the 2026-08-07 outage)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
+    ap.add_argument("--fix-ci-key", action="store_true",
+                    help="prove the deploy key works and set the DROPLET_SSH_KEY secret from it "
+                         "(the CI deploy path has never authenticated; 'error in libcrypto')")
     ap.add_argument("--rollback", nargs="?", const="AUTO", default=None,
                     help="restore a known-good state and redeploy it (default: last-known-good; "
                          "or pass a tag like good-20260722-143000)")
     a = ap.parse_args()
     DRY = a.dry_run
+
+    # The CI deploy path has NEVER authenticated: every run dies at the first ssh with
+    # "error in libcrypto", which means the DROPLET_SSH_KEY secret is not a usable OpenSSH private
+    # key. A GitHub secret cannot be read back by anyone, so the only way to know is to prove a
+    # local key works and then overwrite the secret FROM that proven key. Narrow, read-only until
+    # the checks pass, and it exits here rather than continuing into a deploy.
+    # ONE COMMAND. This does NOT exit: it repairs the credential and then ships as normal, because
+    # "run the key fix, then run the ship" is two commands and two commands is the rule I keep
+    # breaking. A key that cannot be proven stops the run (exit 2) rather than shipping quietly
+    # with CI still broken.
+    if a.fix_ci_key and not DRY:
+        import ci_key
+        print("\n" + "-" * 74)
+        print("  CI DEPLOY KEY — prove it, then set the secret from it")
+        print("-" * 74)
+        _kp = ci_key.find_key()
+        _ok_key = bool(_kp) and ci_key.check(_kp)
+        if not _ok_key:
+            # The usual reason, measured on this PC on 2026-10-14: the only deploy key here has a
+            # PASSPHRASE, and a runner has no keyboard. Minting a dedicated passphrase-less key is
+            # the automated repair, not an operator step, and it leaves his own key untouched.
+            if not _kp:
+                print("  no private key found in %s" % ", ".join(ci_key.CANDIDATES))
+            _ok_key, _kp = ci_key.provision()
+        if not _ok_key:
+            print("\n  [X] no key could be made usable by GitHub Actions. The secret was NOT")
+            print("      touched and nothing was shipped. Fix what is named above and re-run.")
+            sys.exit(2)
+        _ok_push, _detail = ci_key.push(_kp)
+        print("  %s %s" % ("[ok]" if _ok_push else "[X] ", _detail))
+        if not _ok_push:
+            sys.exit(2)
+        print("  continuing with the normal ship.")
 
     if a.rollback is not None:
         do_rollback(a.rollback)          # exits inside

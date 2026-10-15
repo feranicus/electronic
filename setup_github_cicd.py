@@ -71,6 +71,19 @@ def main():
         run(["ssh","-o","StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4","%s@%s" % (a.user,a.host), remote])
 
     # --- 3) secrets ---
+    # PROVE THE KEY FIRST. Until 2026-10-14 this line uploaded whatever the file contained, and
+    # what it contained was not a usable OpenSSH private key: every Actions deploy for weeks died
+    # at the first ssh with "error in libcrypto" while the next step concluded the DROPLET was
+    # missing docker. A GitHub secret cannot be read back by anyone, so an unproven write here is
+    # unverifiable in both directions. ci_key owns the question "is this a key, and does the
+    # droplet accept it" (ONE HOME); this refuses rather than writing a credential on faith.
+    import ci_key
+    print("=== proving the deploy key before it becomes a secret ===")
+    if not ci_key.check(priv):
+        sys.exit("!! the deploy key above is not usable by GitHub Actions. Nothing was uploaded.\n"
+                 "   Fix what is named, then re-run. Secrets are unreadable once set, so a key\n"
+                 "   that has not been proven here can only be diagnosed from a failed deploy.")
+
     print("=== setting GitHub Actions secrets on %s (encrypted by gh) ===" % a.repo)
     run(["gh","secret","set","DROPLET_SSH_KEY","--repo",a.repo], inp=open(priv,encoding="utf-8").read())
     run(["gh","secret","set","DROPLET_HOST","--repo",a.repo,"--body",a.host])

@@ -84,6 +84,23 @@ refuses `--rollback last-known-good` when that pointer is another developer's de
 The CI deploy job takes the SAME lock (`teamlock.py --acquire` / `--release if: always()`),
 because a concurrency group cannot see a laptop.
 
+**A CREDENTIAL NOBODY CAN READ BACK MUST BE PROVEN BEFORE IT IS WRITTEN.** `setup_github_cicd.py`
+uploaded `DROPLET_SSH_KEY` from a file it never parsed, so every CI deploy for weeks died at the
+first ssh ("error in libcrypto") while the next step blamed the droplet. `ci_key.py` is the ONE home
+for "is this a key": shape -> `ssh-keygen -y -P "" </dev/null` -> one real ssh -> only then
+`gh secret set` with the value on **stdin**. An UNKNOWN at any step is not a pass.
+**The actual cause was a PASSPHRASE**, and a modern OpenSSH key hides that: there is no `ENCRYPTED`
+header, the cipher name is in the clear inside the base64 (`openssh_cipher()`, "none" = usable), so
+a header-only check passes it to a runner that has no keyboard. **A check must never prompt** —
+asking the operator for the passphrase turned his correct one into "incorrect passphrase supplied"
+and read as a corrupt key. `--fix-ci-key` MINTS a dedicated passphrase-less key, authorizes it
+(public half only, `grep -qxF ... ||`, verified on the box) and ships; his own key is never read,
+copied or changed. Every workflow that installs the key validates it first. A POSIX-shell test
+harness uses `shell_harness_allowed()` (ONE HOME, in test_teamwork.py) — `shutil.which("bash")` is
+NOT that gate: on this operator's box `bash` is WSL's bash.exe and a stripped `env=` makes WSL
+itself fail in UTF-16. Inherit `os.environ`, override only what the test needs.
+[2026-10-14] `tests/test_ci_key.py`
+
 **A PROBE THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER.** `deploy.run()` folds stderr into
 stdout, so a failed ssh made `sshout()` return ssh's own error text as the probe's ANSWER:
 `ensure_docker()` read it as "docker is missing" and ran `apt-get install docker-ce` against
