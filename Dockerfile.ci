@@ -34,6 +34,29 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt \
  && pip install --no-cache-dir ruff pytest \
  && pip install --no-cache-dir shodan mmh3 google-auth requests
 
+# NODE DEPENDENCIES. The comment above used to claim none were needed. That was MEASURED over
+# webapp/frontend/tools/*.mjs - which really do import only builtins - and then generalised to
+# "the gates", which is a different set: the engine's five deck builders
+# (build_findings_deck.js and friends) `require("pptxgenjs")`. CI therefore died with
+# MODULE_NOT_FOUND on the first deck the quality gate tried to render. Defect class 35 - the
+# denominator was one directory, the conclusion was about all of them.
+#
+# DERIVED, not hand-listed: `npm ci` installs exactly what the COMMITTED lockfile pins
+# (pptxgenjs 4.0.1), so this layer cannot drift from what the engine actually declares, and a new
+# dependency arrives here the moment it is added there. Measured across every .js/.mjs a gate
+# runs: pptxgenjs is the only non-builtin in the tree.
+#
+# NODE_PATH rather than a node_modules inside the workspace, because the gate runs against a COPY
+# of the checkout and a checkout contains no node_modules. Node consults NODE_PATH for bare
+# specifiers like "pptxgenjs", so resolution works from wherever the copy lands. MEASURED both
+# ways: without it the require fails with exactly the MODULE_NOT_FOUND CI reported; with it the
+# module resolves from an unrelated directory.
+COPY hermes-skills/shodan-assessment/package.json \
+     hermes-skills/shodan-assessment/package-lock.json \
+     /opt/gatedeps/
+RUN cd /opt/gatedeps && npm ci --omit=dev --no-audit --no-fund
+ENV NODE_PATH=/opt/gatedeps/node_modules
+
 # The gates execute repository code, so they run as a NON-ROOT user. A gate is allowed to read the
 # tree and write temp files; it is never allowed to be the most privileged thing in the pipeline.
 RUN useradd --create-home --uid 10001 gates

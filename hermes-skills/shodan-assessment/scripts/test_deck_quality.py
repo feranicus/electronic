@@ -63,11 +63,41 @@ def capacity(w_in, h_in, pt):
     return chars_per_line * lines
 
 
+def node_error(stderr):
+    """The line that NAMES the cause, then context - never a blind slice of the tail.
+
+    THE 2026-10-15 CI RUN. `pptxgenjs` was missing from the gate image, so every deck builder died
+    with `Error: Cannot find module 'pptxgenjs'`. This function used to return `stderr[-300:]`, and
+    node prints the cause on the FIRST line and the stack after it, so the 300-character tail cut
+    the cause off and reported fragments of stack frames instead: "e._load", "odule._load",
+    "ule._load" - the same message truncated at three different offsets, which read like three
+    different faults. Nine failures, and not one of them said what was actually wrong.
+
+    Defect class 25 generalises: grep for the error VOCABULARY first, then show context. The
+    Python form of that rule says the cause is the LAST line; node is the other way round, which
+    is exactly why the rule is "find the cause", not "take an end of the string".
+    """
+    lines = [l for l in (stderr or "").splitlines() if l.strip()]
+    if not lines:
+        return "(no stderr - the builder wrote nothing)"
+    cause = next((l.strip() for l in lines
+                  if re.search(r"^\s*(Error|TypeError|ReferenceError|SyntaxError|RangeError|"
+                               r"AssertionError)\b|Cannot find module|MODULE_NOT_FOUND|"
+                               r"ERR_[A-Z_]+", l)), None)
+    if cause is None:
+        return " | ".join(l.strip() for l in lines[:3])[:300]
+    # The cause, then the first frame that points INTO this repo - that is the line a reader
+    # actually needs, and a stack frame from node's own internals never is.
+    frame = next((l.strip() for l in lines
+                  if "scripts" in l and "node:internal" not in l and l.strip() != cause), "")
+    return (cause + ("   <- " + frame if frame else ""))[:400]
+
+
 def build(builder, args, out):
     r = subprocess.run(["node", os.path.join(HERE, builder)] + args + [out],
                        capture_output=True, text=True, timeout=180,
                        env={**os.environ, "DECK_LANG": os.environ.get("DECK_LANG", "en")})
-    return os.path.exists(out), (r.stderr or "")[-300:]
+    return os.path.exists(out), node_error(r.stderr) if not os.path.exists(out) else ""
 
 
 

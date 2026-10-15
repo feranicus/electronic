@@ -218,6 +218,22 @@ CI now mounts the checkout **`:ro`** and the gate runs against a copy it owns (`
 which makes "the gate phase is side-effect free" a mount option rather than a comment.
 [2026-10-15] `tests/test_pipeline_architecture.py`
 
+**"NO node_modules ARE NEEDED" WAS MEASURED OVER ONE DIRECTORY.** True of
+`webapp/frontend/tools/*.mjs` (builtins only), false of the engine's five deck builders, which all
+`require("pptxgenjs")` — so the gate died `MODULE_NOT_FOUND` on the first deck. His box hides it:
+`hermes-skills/shodan-assessment/node_modules` is gitignored, so only a fresh checkout can show it.
+Dockerfile.ci now runs **`npm ci`** from the COMMITTED lockfile (the ONE HOME, pptxgenjs 4.0.1) and
+sets `NODE_PATH`, because the gate runs against a COPY and a checkout has no node_modules
+(MEASURED both ways). The guard DERIVES the dependency set from every `require`/`import` in
+gate-run JS and fails if one is undeclared — class 35.
+**AND THE GATE MUST SAY WHAT BROKE**: `build()` returned `stderr[-300:]`, but node puts the cause
+on the FIRST line, so nine failures reported `e._load` / `odule._load` / `ule._load` — one string
+cut at three offsets, reading as three faults. `node_error()` finds the error vocabulary, then the
+frame inside this repo. Two of my own guards could not fail: the Dockerfile assertions matched the
+COMMENT explaining them (class 4, the sixth time), and the node_error tests never touched the CALL
+SITE (class 9). All four mutations now fail.
+[2026-10-15] `tests/test_gate_diagnostics.py`
+
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
 After finishing ANY piece of work the user must trigger, end the reply with the exact command,

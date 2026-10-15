@@ -19,7 +19,9 @@ list is that a rule which is only written down goes stale:
   4. ONE DEPLOY AT A TIME, across runners AND laptops.
 """
 import glob
+import json
 import os
+import re
 import sys
 
 import pytest
@@ -152,6 +154,86 @@ def test_the_compile_gate_does_not_need_to_write_next_to_the_source():
         "do_tests() shells out to py_compile again. It writes __pycache__ beside the source, so "
         "it fails on a read-only or foreign-owned tree and reports that as broken code.")
     assert "compile(" in src, "the compile gate no longer compiles anything"
+
+
+#: Node builtins a gate script may use with no package.json entry, bare or `node:`-prefixed.
+_NODE_BUILTINS = {
+    "assert", "buffer", "child_process", "console", "crypto", "dns", "events", "fs", "http",
+    "https", "module", "net", "os", "path", "perf_hooks", "process", "querystring", "readline",
+    "stream", "string_decoder", "timers", "tls", "url", "util", "v8", "vm", "worker_threads",
+    "zlib",
+}
+_REQUIRE = re.compile(r"""require\(\s*['"]([^'"]+)['"]\s*\)""")
+_IMPORT = re.compile(r"""^\s*import\s[^;\n]*?from\s*['"]([^'"]+)['"]""", re.M)
+
+
+def _gate_js_dependencies():
+    """Every third-party module the gate-run JavaScript actually imports, read FROM the source.
+
+    Derived, never hand-listed (defect class 35): the whole reason CI broke is that somebody
+    measured one directory and wrote a conclusion about all of them.
+    """
+    found = {}
+    for sub in ("webapp/frontend/tools", "hermes-skills/shodan-assessment/scripts"):
+        d = os.path.join(ROOT, sub)
+        for dirpath, _dirs, files in os.walk(d):
+            if "node_modules" in dirpath:
+                continue
+            for f in files:
+                if not f.endswith((".js", ".mjs")):
+                    continue
+                p = os.path.join(dirpath, f)
+                src = open(p, encoding="utf-8", errors="replace").read()
+                for spec in _REQUIRE.findall(src) + _IMPORT.findall(src):
+                    if spec.startswith((".", "/")):
+                        continue
+                    name = spec[5:] if spec.startswith("node:") else spec
+                    base = name.split("/")[0]
+                    if base in _NODE_BUILTINS:
+                        continue
+                    found.setdefault(base, os.path.relpath(p, ROOT).replace("\\", "/"))
+    return found
+
+
+def test_the_gate_image_installs_the_node_dependencies_the_gates_actually_import():
+    """CI died with `Cannot find module 'pptxgenjs'` because Dockerfile.ci claimed no node_modules
+    were needed. That claim was true of webapp/frontend/tools - which import only builtins - and
+    false of the engine's five deck builders, which all require pptxgenjs. The node_modules on the
+    operator's box is gitignored, so the checkout CI gets has none and his machine could never
+    reveal this.
+
+    This asserts the real property: every third-party module the gate JavaScript imports is
+    declared in the committed package.json the image installs from. A new dependency added to the
+    engine fails HERE, on his laptop, rather than after a push.
+    """
+    deps = _gate_js_dependencies()
+    declared = set(json.load(open(
+        os.path.join(ROOT, "hermes-skills", "shodan-assessment", "package.json"),
+        encoding="utf-8")).get("dependencies", {}))
+    missing = {k: v for k, v in deps.items() if k not in declared}
+    assert not missing, (
+        "gate JavaScript imports %d module(s) that hermes-skills/shodan-assessment/package.json "
+        "does not declare, so the CI image will not install them and the gate dies with "
+        "MODULE_NOT_FOUND: %s" % (len(missing), missing))
+    assert deps, "the dependency scan found nothing at all - it is reading the wrong tree"
+
+
+def test_the_image_installs_from_the_lockfile_and_node_can_find_it():
+    """`npm ci` not `npm install`, so the image gets exactly what the committed lockfile pins and
+    cannot drift. NODE_PATH because the gate runs against a COPY of the checkout, and a checkout
+    contains no node_modules - resolution has to work from wherever that copy lands."""
+    # STRIP THE COMMENTS FIRST (defect class 4). Both of these assertions originally passed
+    # against a Dockerfile whose `npm ci` and NODE_PATH had been removed, because the long comment
+    # explaining WHY they exist still contained both strings. A check that matches its own
+    # rationale measures nothing. CLAUDE.md records this happening five separate times; six now.
+    raw = open(os.path.join(ROOT, "Dockerfile.ci"), encoding="utf-8").read()
+    df = "\n".join(l for l in raw.splitlines() if not l.lstrip().startswith("#"))
+    assert "npm ci" in df, (
+        "the gate image no longer installs node dependencies from the lockfile; the deck builders "
+        "will fail with MODULE_NOT_FOUND")
+    assert "NODE_PATH" in df, (
+        "nothing tells node where those modules are, and they are not inside the copied workspace")
+    assert "package-lock.json" in df, "npm ci without the lockfile copied in cannot run"
 
 
 # ----------------------------------------------------------------- 2. ONE AUTOMATIC PATH
