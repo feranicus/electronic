@@ -104,10 +104,23 @@ the lowest level takes precedence … the environment-level secret takes precede
 secrets are read when a run is QUEUED while environment secrets are read when the JOB STARTS.
 deploy.yml's deploy job declares `environment: production`, so a correct `gh secret set --repo`
 can be written into a scope that job never reads, and the log looks identical to "the fix failed".
-`ci_key.scopes()` MEASURES where it is defined, `environments_used_by_workflows()` derives the
-targets from the workflow files, and `push_everywhere()` writes all of them (partial = failure).
-Every workflow prints the installed key's FINGERPRINT (public) before validating it.
-[2026-10-14/15] `tests/test_ci_key.py`
+`ci_key.scopes()` MEASURES where it is defined (it was repository-only, so precedence was NOT the
+cause — the measurement is why that was not built on), `environments_used_by_workflows()` derives
+the targets, `push_everywhere()` writes all of them. Every workflow prints the installed key's
+FINGERPRINT (public) before validating it, and that line is what finally named the real cause.
+**A PRIVATE KEY IS BYTES.** `subprocess.run(input=<str>, text=True)` wraps stdin in a TextIOWrapper
+with newline=None, which rewrites every `\n` as `os.linesep` — `\r\n` on Windows — so every upload
+from this PC mangled the key. `setup_github_cicd.py` had the same shape from day one.
+`read_key_bytes()` + bytes on stdin; text-mode READ is equally banned (universal newlines silently
+repair the input). **THE TWO OpenSSH BUILDS DISAGREE, and that is why this was invisible** (MEASURED
+2026-10-15, same bytes): **Linux** OpenSSH, which the runner uses, gives rc 255 "error in libcrypto";
+**Win32** OpenSSH gives rc 0 and prints the public key. So `ssh-keygen` on this box can NEVER catch
+this class — `key_shape()` rejects any `\r` itself, carrying the RUNNER's rule, and the CRLF
+experiment skips where the local OpenSSH is tolerant (detected, not `sys.platform`). Defect class 21
+both directions, and it applies to FIXTURES: `Path.write_text` translates too (an AST test forbids
+it there now). On Windows `os.chmod(0o600)` does NOT make a private ACL, so ssh-keygen refuses on
+"Bad permissions" before reading a byte: let ssh-keygen CREATE the file, rewrite only its content,
+run the control first. [2026-10-14/15] `tests/test_ci_key.py`
 
 **A PROBE THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER.** `deploy.run()` folds stderr into
 stdout, so a failed ssh made `sshout()` return ssh's own error text as the probe's ANSWER:

@@ -84,8 +84,16 @@ def main():
                  "   Fix what is named, then re-run. Secrets are unreadable once set, so a key\n"
                  "   that has not been proven here can only be diagnosed from a failed deploy.")
 
+    # The upload goes through ci_key (ONE HOME) because this line is where the whole incident
+    # started: `inp=open(priv).read()` + subprocess text mode rewrote every "\n" as "\r\n" on
+    # Windows, so the secret has held a CRLF-mangled key since the day it was created, and OpenSSH
+    # answers CRLF with "error in libcrypto". A private key is BYTES; never read one as text.
     print("=== setting GitHub Actions secrets on %s (encrypted by gh) ===" % a.repo)
-    run(["gh","secret","set","DROPLET_SSH_KEY","--repo",a.repo], inp=open(priv,encoding="utf-8").read())
+    ok_push, detail = ci_key.push_everywhere(priv, a.repo)
+    for label, ok_one, d in detail:
+        print("  %s %-22s %s" % ("ok" if ok_one else "!!", label, d))
+    if not ok_push:
+        sys.exit("!! the deploy key could not be set in every scope the workflows read.")
     run(["gh","secret","set","DROPLET_HOST","--repo",a.repo,"--body",a.host])
     run(["gh","secret","set","DROPLET_USER","--repo",a.repo,"--body",a.user])
     run(["gh","secret","list","--repo",a.repo], check=False)

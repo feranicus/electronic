@@ -130,6 +130,17 @@ def key_shape(text):
                        "repo has been seeing. A CI deploy key must have no passphrase; mint a "
                        "dedicated one with --mint, which leaves this key untouched"
                        % (cipher or "PEM-encrypted"))
+    # CARRIAGE RETURNS. The key is read by a LINUX runner, and Linux OpenSSH refuses a CR inside
+    # the base64 body with "error in libcrypto". Win32 OpenSSH TOLERATES it (measured 2026-10-15:
+    # the same bytes give rc=0 on Windows and rc=255 on Linux), so `ssh-keygen -y` on this
+    # operator's box cannot catch this class at all - it is the reason a mangled key looked healthy
+    # locally and died only on the runner. This check therefore encodes the RUNNER's rule, not the
+    # local binary's, and it works identically on every platform.
+    if "\r" in text:
+        return False, ("this key contains CARRIAGE RETURNS (CRLF line endings). The Linux OpenSSH "
+                       "on a GitHub runner refuses that with 'error in libcrypto' - even though "
+                       "Windows OpenSSH reads it happily, which is why it looks fine here. Any "
+                       "path that touched it as TEXT rewrote its newlines")
     if text.count("\n") < 3:
         return False, ("the key is on ONE line (%d newlines). Its line breaks were collapsed on "
                        "the way into the secret; paste the file verbatim" % text.count("\n"))
@@ -141,8 +152,20 @@ def key_shape(text):
 
 
 def read_key(path):
+    """The key as TEXT, for inspection only. Never for upload - see read_key_bytes."""
+    b = read_key_bytes(path)
+    return None if b is None else b.decode("utf-8", "replace")
+
+
+def read_key_bytes(path):
+    """The key as the EXACT BYTES on disk. This is what must reach GitHub.
+
+    An SSH private key is a byte-exact artifact: OpenSSH parses the base64 body strictly and a
+    stray CR makes it unreadable. Any path that reads it as text and writes it back through a
+    newline-translating layer silently rewrites the file. So the upload path never decodes.
+    """
     try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
+        with open(path, "rb") as fh:
             return fh.read()
     except OSError:
         return None
@@ -355,12 +378,23 @@ def push(path, repo=REPO, runner=None, env=None):
         if st.returncode != 0:
             return False, "gh is installed but not authenticated. Run: gh auth login"
 
-        def runner(cmd, stdin_text):
-            r = subprocess.run(cmd, input=stdin_text, capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", timeout=120)
-            return r.returncode, (r.stdout or "") + (r.stderr or "")
+        def runner(cmd, stdin_bytes):
+            # BYTES, NEVER text=True. THIS IS THE WHOLE BUG (defect class 21: line endings are the
+            # platform's business). subprocess wraps stdin in io.TextIOWrapper with newline=None,
+            # which on WRITE translates every "\n" into os.linesep. On the operator's Windows box
+            # os.linesep is "\r\n", so a perfectly good key was uploaded to GitHub with CRLF line
+            # endings, and OpenSSH refuses CR inside the base64 body with - exactly -
+            # "error in libcrypto". MEASURED on a real ed25519 key: LF parses, the same bytes with
+            # CRLF give rc=255 and that message.
+            #
+            # setup_github_cicd.py had this same shape from the first day, which is why the secret
+            # has never once worked, and why minting a proven passphrase-less key still produced a
+            # runner that said "not a key": the file on disk was fine every time; the UPLOAD was not.
+            r = subprocess.run(cmd, input=stdin_bytes, capture_output=True, timeout=120)
+            out = (r.stdout or b"") + (r.stderr or b"")
+            return r.returncode, out.decode("utf-8", "replace")
 
-    text = read_key(path)
+    text = read_key_bytes(path)
     if text is None:
         return False, "the key file disappeared between the check and the upload"
     cmd = ["gh", "secret", "set", SECRET, "--repo", repo]

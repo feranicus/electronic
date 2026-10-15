@@ -34,6 +34,13 @@ GOOD = ("-----BEGIN OPENSSH PRIVATE KEY-----\n"
         "AAAJiZvXHfmb1x3wAAAAtzc2gtZWQyNTUxOQAAACBQ0ZQ3Yw1b2mQ4h5Zr8Kkq\n"
         "-----END OPENSSH PRIVATE KEY-----\n")
 
+# EVERY fixture that puts key material on disk writes THESE BYTES, in binary. Discovered the hard
+# way on the operator's box, 2026-10-15: `Path.write_text(GOOD, encoding="utf-8")` goes through a
+# TextIOWrapper with newline=None, so on Windows it wrote the file with CRLF, read_key_bytes
+# faithfully returned CRLF, and the test failed while the CODE was correct. Defect class 21 is not
+# only about the product; a fixture that will be hashed, diffed or parsed is written in BINARY.
+GOOD_BYTES = GOOD.encode("utf-8")
+
 
 # ---------------------------------------------------------------- shape: turn libcrypto into words
 def test_a_good_key_passes_the_shape_check():
@@ -86,7 +93,7 @@ class _Spy:
 @pytest.fixture
 def keyfile(tmp_path):
     p = tmp_path / "colt_deploy"
-    p.write_text(GOOD, encoding="utf-8")
+    p.write_bytes(GOOD_BYTES)          # BINARY: write_text translates on Windows
     return str(p)
 
 
@@ -97,7 +104,10 @@ def test_push_sends_the_value_on_stdin_never_in_argv(keyfile):
     ok, detail = ci_key.push(keyfile, repo="feranicus/electronic", runner=spy)
     assert ok, detail
     (cmd, stdin_text), = spy.calls
-    assert stdin_text == GOOD, "the key did not travel on stdin"
+    # REWRITTEN 2026-10-15 (defect class 17), old reasoning kept: this asserted `== GOOD`, a str,
+    # which is exactly the shape that let subprocess text mode rewrite "\n" as "\r\n" on Windows
+    # and upload an unreadable key. The payload is now BYTES, and the test says so.
+    assert stdin_text == GOOD.encode("utf-8"), "the key did not travel on stdin, as bytes"
     joined = " ".join(cmd)
     assert "BEGIN OPENSSH" not in joined, "the key appeared in argv: %s" % joined
     assert cmd[:4] == ["gh", "secret", "set", "DROPLET_SSH_KEY"]
@@ -286,8 +296,8 @@ def test_provisioning_never_reads_or_writes_the_operators_own_key(tmp_path, monk
 
 def test_authorize_sends_only_the_public_half(tmp_path, monkeypatch):
     priv = tmp_path / "colt_ci"
-    priv.write_text(GOOD, encoding="utf-8")
-    (tmp_path / "colt_ci.pub").write_text("ssh-ed25519 AAAAC3Nza-TEST ci@x\n", encoding="utf-8")
+    priv.write_bytes(GOOD_BYTES)
+    (tmp_path / "colt_ci.pub").write_bytes(b"ssh-ed25519 AAAAC3Nza-TEST ci@x\n")
     sent = {}
 
     class _R:
@@ -316,8 +326,8 @@ def test_authorize_believes_the_droplet_not_itself(tmp_path, monkeypatch):
     refuse - otherwise a dead ssh becomes 'authorized' and the deploy proceeds on a key the box has
     never heard of (defect class 1, the same shape as the sshout incident)."""
     priv = tmp_path / "colt_ci"
-    priv.write_text(GOOD, encoding="utf-8")
-    (tmp_path / "colt_ci.pub").write_text("ssh-ed25519 AAAAC3Nza-TEST ci@x\n", encoding="utf-8")
+    priv.write_bytes(GOOD_BYTES)
+    (tmp_path / "colt_ci.pub").write_bytes(b"ssh-ed25519 AAAAC3Nza-TEST ci@x\n")
 
     class _Dead:
         stdout = ""
@@ -350,8 +360,8 @@ def test_authorizing_twice_really_leaves_one_line(tmp_path, monkeypatch):
     if not ok_shell:
         pytest.skip(why)
     priv = tmp_path / "colt_ci"
-    priv.write_text(GOOD, encoding="utf-8")
-    (tmp_path / "colt_ci.pub").write_text("ssh-ed25519 AAAAC3Nza-TEST ci@x\n", encoding="utf-8")
+    priv.write_bytes(GOOD_BYTES)
+    (tmp_path / "colt_ci.pub").write_bytes(b"ssh-ed25519 AAAAC3Nza-TEST ci@x\n")
     home = tmp_path / "home"
     home.mkdir()
     scripts = []
@@ -385,6 +395,218 @@ def test_authorizing_twice_really_leaves_one_line(tmp_path, monkeypatch):
                        capture_output=True, text=True, timeout=60)
     assert "__authorized__" not in r.stdout, (
         "the script reported success while the key was NOT in authorized_keys")
+
+
+# --------------------- THE ROOT CAUSE: subprocess text mode rewrote the key on the way to GitHub
+# 2026-10-15. A proven, passphrase-less key was uploaded and the runner still said
+# "(no fingerprint: not a key)". The file on disk was correct every single time. The UPLOAD was not.
+#
+# `subprocess.run(..., input=<str>, text=True)` wraps stdin in io.TextIOWrapper with newline=None,
+# and TextIOWrapper on WRITE translates "\n" into os.linesep. On the operator's Windows box
+# os.linesep is "\r\n". So `gh secret set` received the key with CRLF line endings, and OpenSSH
+# rejects a CR inside the base64 body with exactly "error in libcrypto".
+#
+# MEASURED, not reasoned: a real ed25519 key parses with LF; the same bytes with every "\n"
+# replaced by "\r\n" give rc=255 and that message. test_crlf_really_is_what_breaks_a_key proves it
+# here, so this test file does not rest on my description of OpenSSH's behaviour.
+#
+# setup_github_cicd.py had the identical shape (`inp=open(priv).read()`), which is why the secret
+# has never worked since the day it was created - and why the passphrase, though a genuine second
+# defect, was not the thing still breaking it.
+#
+# Defect class 21: "Line endings are the platform's business."
+# Defect class 20: SIMULATE the platform, do not skip it. These run on Linux and on Windows.
+
+@_needs_keygen
+def test_crlf_really_is_what_breaks_a_key(real_keys, tmp_path):
+    """PROVE THE FIXTURE (defect class 12). If CRLF did not actually break a key, every assertion
+    below would be enforcing a rule with no incident behind it."""
+    import subprocess
+
+    def keygen_y(path):
+        return subprocess.run(["ssh-keygen", "-y", "-f", str(path), "-P", ""],
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+
+    # LET SSH-KEYGEN CREATE THE FILE, then rewrite only its CONTENT.
+    #
+    # The first version of this test wrote the bytes itself and called os.chmod(0o600). On the
+    # operator's Windows box that produces an ACL OpenSSH considers world-readable, so ssh-keygen
+    # refused on "Bad permissions" and never looked at the key at all - the test was measuring
+    # Windows ACL inheritance while claiming to measure CRLF (defect class 12: a fixture that does
+    # not reproduce the condition under test is a test of the fixture; defect class 13: a negative
+    # that passes because of ANOTHER guard measures that other guard).
+    #
+    # ssh-keygen sets a correct private ACL when it creates a key, on every platform. Overwriting
+    # the bytes in place does not change the ACL, so the only variable left between the control
+    # and the experiment is the line endings.
+    subject = tmp_path / "subject"
+    subprocess.run(["ssh-keygen", "-t", "ed25519", "-f", str(subject), "-N", "", "-q"], check=True)
+    lf = subject.read_bytes()
+    assert b"\r\n" not in lf, "the generated key already had CRLF; the premise is wrong"
+
+    control = keygen_y(subject)
+    assert control.returncode == 0, (
+        "CONTROL FAILED: ssh-keygen rejected the key before any CRLF was introduced, so this "
+        "machine cannot run the experiment. It said: %r" % ((control.stderr or "")[:200],))
+
+    subject.write_bytes(lf.replace(b"\n", b"\r\n"))          # same file, same ACL, CRLF content
+    r = keygen_y(subject)
+    said = r.stderr + r.stdout
+
+    # THE SUBJECT OF THIS EXPERIMENT IS THE RUNNER'S OpenSSH, AND THE RUNNER IS LINUX.
+    #
+    # Measured 2026-10-15, both ways, on the same bytes:
+    #   Linux OpenSSH : CRLF key -> rc=255, "error in libcrypto"   <- what the runner does
+    #   Win32 OpenSSH : CRLF key -> rc=0, prints the public key    <- what the operator's box does
+    #
+    # So this cannot be proven on Windows, and that tolerance is itself part of the story: it is
+    # why a CRLF-mangled key looked perfectly healthy every time it was checked locally and died
+    # only on the runner. Defect class 19 inverted - green on his box was never evidence about the
+    # Linux machine that actually had to read the key.
+    #
+    # The gate DETECTS the behaviour rather than branching on sys.platform (defect class 20): if
+    # the local OpenSSH tolerates CRLF it is not the implementation under test, so a result here
+    # would mean nothing. CI (ubuntu-latest) and the droplet keep the real coverage.
+    if r.returncode == 0:
+        pytest.skip("this OpenSSH tolerates CRLF in a private key (Win32 does; the GitHub runner's "
+                    "Linux OpenSSH does not), so the experiment cannot be run here - and that very "
+                    "tolerance is why the mangled key looked fine on this machine")
+
+    assert "permission" not in said.lower(), (
+        "the refusal is about file permissions, not the key bytes: %r" % said[:200])
+    assert "libcrypto" in said, (
+        "CRLF broke the key but not with the message the operator saw: %r" % said[:200])
+
+
+def test_the_shape_check_catches_crlf_even_where_the_local_openssh_does_not():
+    """The local ssh-keygen is NOT a proxy for the runner's. Win32 OpenSSH parses a CRLF key
+    happily (measured), so `parses()` on the operator's box cannot see this defect - which is
+    exactly how a mangled key passed every local check for weeks. key_shape carries the RUNNER's
+    rule instead, so it fails identically on Windows, Linux and CI."""
+    crlf = GOOD.replace("\n", "\r\n")
+    ok, why = ci_key.key_shape(crlf)
+    assert not ok, "a CRLF key passed the shape check; the runner will reject it"
+    assert "CARRIAGE RETURN" in why.upper()
+    assert "libcrypto" in why, "the message must connect to what the runner will actually say"
+    # a lone CR anywhere is enough - this is not a 'does it end with CRLF' check
+    assert not ci_key.key_shape(GOOD.replace("KEY-----\n", "KEY-----\r\n", 1))[0]
+    # and the clean key must still pass, or the check is just always-fail
+    assert ci_key.key_shape(GOOD)[0]
+
+
+def test_no_fixture_in_this_file_writes_key_material_as_text():
+    """The guard on the guards. My own fixtures used Path.write_text and put CRLF on disk on
+    Windows, which made a correct implementation look broken and cost a ship. A file this suite
+    will hand to ssh-keygen or compare byte-for-byte is written in BINARY, always - so assert it,
+    rather than trusting that I will remember (defect class 21, applied to the tests themselves)."""
+    import ast
+    src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    tree = ast.parse(src)
+    bad = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "write_text":
+                bad.append("line %d: %s" % (node.lineno, ast.unparse(node)[:80]))
+            # tempfile.NamedTemporaryFile("w", ...) / open(..., "w") for key bytes
+            if node.func.attr == "NamedTemporaryFile" and node.args:
+                mode = node.args[0]
+                if isinstance(mode, ast.Constant) and "b" not in str(mode.value):
+                    bad.append("line %d: NamedTemporaryFile(%r)" % (node.lineno, mode.value))
+    assert not bad, "key material written through a newline-translating layer:\n  " + "\n  ".join(bad)
+
+
+def test_the_upload_sends_raw_bytes_so_no_layer_can_rewrite_them(tmp_path):
+    """The property, stated once: what reaches gh is byte-identical to the file."""
+    p = tmp_path / "colt_ci"
+    p.write_bytes(GOOD.encode("utf-8"))
+    seen = {}
+
+    def runner(cmd, stdin_payload):
+        seen["payload"] = stdin_payload
+        return 0, "ok"
+
+    ok, detail = ci_key.push(str(p), "feranicus/electronic", runner)
+    assert ok, detail
+    assert isinstance(seen["payload"], bytes), (
+        "the key was handed over as str; subprocess text mode will rewrite its newlines on Windows")
+    assert seen["payload"] == p.read_bytes(), "the uploaded bytes differ from the file on disk"
+
+
+def test_reading_the_key_never_normalises_what_is_on_disk(tmp_path):
+    """Both directions, not just the write. Python's text-mode READ uses universal newlines, so
+    `open(path).read()` turns a CRLF file into LF - the bytes stop being the file's bytes, and a
+    reader that quietly repairs its input cannot report that the input was broken.
+
+    This is the mutation that escaped the first run of this suite: swapping the binary read for a
+    text read passed everything, because on Linux the two agree for an LF file. They do not agree
+    for the file that actually caused the incident."""
+    p = tmp_path / "crlf_on_disk"
+    raw = GOOD.encode("utf-8").replace(b"\n", b"\r\n")
+    p.write_bytes(raw)
+    assert ci_key.read_key_bytes(str(p)) == raw, (
+        "the reader normalised the file instead of reporting it verbatim")
+
+
+def test_no_upload_path_uses_subprocess_text_mode(tmp_path):
+    """SIMULATE WINDOWS (defect class 20), do not skip it: force os.linesep behaviour by giving
+    the real `push` a subprocess.run that translates newlines exactly as Windows would, then
+    assert the bytes gh would have received are unchanged.
+
+    A `sys.platform` skip would have hidden this from the one machine that needed it - which is
+    precisely what happened for weeks."""
+    import io
+    p = tmp_path / "colt_ci"
+    p.write_bytes(GOOD.encode("utf-8"))
+    captured = {}
+
+    def windows_like_run(cmd, input=None, capture_output=False, timeout=None, **kw):
+        # Reproduce what CPython does: if text/encoding is requested, stdin is a TextIOWrapper
+        # with newline=None, which on Windows writes os.linesep for every "\n".
+        if kw.get("text") or kw.get("encoding"):
+            buf = io.BytesIO()
+            w = io.TextIOWrapper(buf, encoding="utf-8", newline="\r\n", write_through=True)
+            w.write(input or "")
+            w.flush()
+            captured["bytes"] = buf.getvalue()
+        else:
+            captured["bytes"] = input
+
+        class _R:
+            returncode = 0
+            stdout = b"" if not (kw.get("text") or kw.get("encoding")) else ""
+            stderr = stdout
+        return _R()
+
+    real_run = ci_key.subprocess.run
+    ci_key.subprocess.run = windows_like_run
+    try:
+        ci_key.shutil.which = lambda n: "/usr/bin/gh"
+        ok, detail = ci_key.push(str(p), "feranicus/electronic")
+    finally:
+        ci_key.subprocess.run = real_run
+        import shutil as _sh
+        ci_key.shutil.which = _sh.which
+    assert ok, detail
+    assert captured["bytes"] == p.read_bytes(), (
+        "on a Windows box the upload would have mangled the key: %r"
+        % captured["bytes"][:60])
+    assert b"\r\n" not in captured["bytes"], "CRLF reached gh secret set"
+
+
+def test_setup_github_cicd_uploads_through_the_one_home():
+    """The script that created the broken secret must not have its own upload path any more
+    (ONE HOME, defect class 32) - it had the identical `open(priv).read()` + text-mode shape."""
+    import ast
+    src = open(os.path.join(ROOT, "setup_github_cicd.py"), encoding="utf-8").read()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        txt = ast.unparse(node)
+        if "gh" in txt and "secret" in txt and "DROPLET_SSH_KEY" in txt:
+            raise AssertionError(
+                "setup_github_cicd.py still calls gh secret set for the key itself: %s" % txt[:160])
+    assert "ci_key.push_everywhere" in src, "it no longer uploads the key at all"
 
 
 # ------------------------------------------- SCOPE: a secret set correctly, into the wrong level
@@ -456,8 +678,8 @@ def test_push_everywhere_writes_the_repository_and_every_declared_environment():
         return 0, "ok"
 
     import tempfile
-    with tempfile.NamedTemporaryFile("w", suffix="key", delete=False, encoding="utf-8") as fh:
-        fh.write(GOOD)
+    with tempfile.NamedTemporaryFile("wb", suffix="key", delete=False) as fh:
+        fh.write(GOOD_BYTES)
         p = fh.name
     try:
         ok, details = ci_key.push_everywhere(p, "feranicus/electronic", runner,
@@ -480,8 +702,8 @@ def test_push_everywhere_fails_if_any_scope_fails():
         return (1, "denied") if "--env" in cmd else (0, "ok")
 
     import tempfile
-    with tempfile.NamedTemporaryFile("w", suffix="key", delete=False, encoding="utf-8") as fh:
-        fh.write(GOOD)
+    with tempfile.NamedTemporaryFile("wb", suffix="key", delete=False) as fh:
+        fh.write(GOOD_BYTES)
         p = fh.name
     try:
         ok, details = ci_key.push_everywhere(p, "feranicus/electronic", runner,
@@ -588,8 +810,13 @@ def test_setup_github_cicd_no_longer_uploads_an_unproven_key():
     import ast
     src = open(os.path.join(ROOT, "setup_github_cicd.py"), encoding="utf-8").read()
     tree = ast.parse(src)
-    upload = min(n.lineno for n in ast.walk(tree) if isinstance(n, ast.Constant)
-                 and n.value == "DROPLET_SSH_KEY")
+    # REWRITTEN 2026-10-15 (defect class 17), old reasoning kept: this anchored on the literal
+    # "DROPLET_SSH_KEY", which that file used to pass to `gh secret set` itself. It no longer has
+    # its own upload path at all - ci_key owns it - so the anchor is now the call that uploads.
+    uploads = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
+               and isinstance(n.func, ast.Attribute) and n.func.attr == "push_everywhere"]
+    assert uploads, "setup_github_cicd.py no longer uploads the key through ci_key"
+    upload = min(uploads)
     proofs = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
               and isinstance(n.func, ast.Attribute) and n.func.attr == "check"
               and isinstance(n.func.value, ast.Name) and n.func.value.id == "ci_key"]
