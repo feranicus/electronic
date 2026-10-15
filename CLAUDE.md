@@ -206,6 +206,18 @@ back to an assumed path fails instead of passing. The module gate is now `shell_
 (ONE HOME), never `shutil.which("bash")`. Mutations caught: the bare-word range delete, the assumed
 path, and `sed -i` restoring the inode swap. [2026-10-15] `tests/test_caddy_wiring.py`
 
+**124 FILES "BROKEN", NONE OF THEM BROKEN.** The first gate run to get past gitleaks failed the
+compile check on EVERY python file: `py_compile` writes the .pyc beside the source, the checkout
+belongs to the runner, the container is uid 10001 — EACCES on `__pycache__`, swallowed, rendered as
+a syntax verdict with no reason printed (classes 1 and 26; the image even sets
+`PYTHONDONTWRITEBYTECODE=1`, which py_compile ignores by design). MEASURED: a file holding `x = 1`
+fails identically in a read-only directory. Compile IN-PROCESS from BYTES — no write, no
+subprocess, no mount, and `compile()` raises on exactly what the gate is for. `do_tests()` also
+refreshes the git index and regenerates a stale SBOM, so one writer at a time was never the fix:
+CI now mounts the checkout **`:ro`** and the gate runs against a copy it owns (`GATE_WORKDIR`),
+which makes "the gate phase is side-effect free" a mount option rather than a comment.
+[2026-10-15] `tests/test_pipeline_architecture.py`
+
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
 After finishing ANY piece of work the user must trigger, end the reply with the exact command,

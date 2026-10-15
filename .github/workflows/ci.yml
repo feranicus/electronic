@@ -85,13 +85,31 @@ jobs:
       #
       # NO SECRETS ARE PASSED TO THIS STEP. The gate phase must not be able to change anything,
       # and the surest way to guarantee that is to give it nothing to change anything with.
+      #
+      # READ-ONLY MOUNT, WRITABLE COPY (2026-10-15). The first run that ever got this far reported
+      # "compile check: 124 file(s) broken" - every python file in the repo. None of them was
+      # broken: `python -m py_compile` writes the .pyc into __pycache__ BESIDE THE SOURCE, the
+      # checkout is owned by the runner and this container is uid 10001, so all 124 failed with
+      # "[Errno 13] Permission denied" and the check reported a permissions fact as a syntax
+      # verdict. do_tests() also refreshes the git index and can regenerate the SBOM, so fixing
+      # only the compile check would have failed at the next writer.
+      #
+      # So the gate gets a workspace it OWNS, and the checkout is mounted `:ro`. That turns "the
+      # gate phase is side-effect free" - the claim this whole job rests on, since it runs on every
+      # pull request - from a comment into a mount option the kernel enforces. A gate that tries to
+      # modify the developer's tree now fails on the mount instead of succeeding quietly.
+      #
+      # `cp -a` across the uid boundary was MEASURED, not assumed (defect class 29): copying a
+      # world-readable tree owned by another uid returns 0 as a non-root user - cp drops the
+      # ownership it cannot preserve rather than failing - so `set -e` does not kill the gate here.
+      # It would fail on a directory it cannot READ, which is exactly what it should do.
       - name: Gates (python ship.py --test)
         run: |
           docker run --rm \
             --network none \
             --user 10001:10001 \
-            -v "$PWD:/src" -w /src \
+            -v "$PWD:/src:ro" \
             -e SHIP_GATES_OFFLINE=1 \
             -e PYTHONIOENCODING=utf-8 \
             colt-gates:ci \
-            python ship.py --test
+            sh -ec 'cp -a /src/. "$GATE_WORKDIR"/ && cd "$GATE_WORKDIR" && python ship.py --test'

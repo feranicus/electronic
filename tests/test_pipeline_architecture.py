@@ -117,6 +117,43 @@ def test_the_gate_phase_really_is_side_effect_free():
         "the one droplet-writing branch is no longer guarded by SHIP_GATES_OFFLINE")
 
 
+def test_the_checkout_is_mounted_read_only_and_the_gate_works_on_a_copy():
+    """THE 124 "BROKEN" FILES, 2026-10-15. The first gate run that got past gitleaks reported every
+    python file in the repo as broken. Not one of them was: `python -m py_compile` writes the .pyc
+    into __pycache__ beside the source, the checkout belongs to the runner, the container is uid
+    10001, and so all 124 failed with EACCES - a permissions fact rendered as a syntax verdict.
+
+    do_tests() also refreshes the git index and can regenerate the SBOM, so this was never going to
+    be fixed one writer at a time. The gate gets a workspace it owns, and `:ro` turns "the gate
+    phase is side-effect free" - the claim that makes it safe to run on every pull request - into
+    something the kernel enforces instead of something a comment asserts.
+    """
+    steps = runs(load("ci.yml")["jobs"]["quality-and-secrets"]["steps"])
+    assert ":ro" in steps, (
+        "the checkout is no longer mounted read-only. A gate that can modify the tree it is "
+        "judging can also make itself pass.")
+    assert "-v \"$PWD:/src\" -w /src" not in steps, (
+        "the gate is running IN the mounted checkout again; that is the configuration that "
+        "produced 124 false 'broken' files")
+    assert "GATE_WORKDIR" in steps, (
+        "the gate no longer runs in its own writable workspace")
+
+
+def test_the_compile_gate_does_not_need_to_write_next_to_the_source():
+    """The specific mechanism, pinned so it cannot come back. `py_compile` exists to WRITE
+    bytecode; the image even sets PYTHONDONTWRITEBYTECODE=1, which py_compile ignores by design.
+    Compiling in-process needs no write, no subprocess and no mount, and raises SyntaxError on
+    exactly what this gate is for."""
+    import ast
+    tree = ast.parse(open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read())
+    fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "do_tests"][0]
+    src = ast.unparse(fn)
+    assert "py_compile" not in src, (
+        "do_tests() shells out to py_compile again. It writes __pycache__ beside the source, so "
+        "it fails on a read-only or foreign-owned tree and reports that as broken code.")
+    assert "compile(" in src, "the compile gate no longer compiles anything"
+
+
 # ----------------------------------------------------------------- 2. ONE AUTOMATIC PATH
 def test_exactly_one_workflow_deploys_on_push():
     """Two automatic paths to one droplet is the defect this pipeline was built to remove."""

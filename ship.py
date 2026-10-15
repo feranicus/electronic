@@ -475,8 +475,23 @@ def do_tests():
     say("1/5  TESTS — nothing ships if these fail")
     engine = os.path.join(HERE, "hermes-skills", "shodan-assessment", "scripts")
 
-    # a) compile every engine + root script: catches truncation and syntax breakage early
-    bad = []
+    # a) compile every engine + root script: catches truncation and syntax breakage early.
+    #
+    #    IN-PROCESS `compile()`, NOT `python -m py_compile` (2026-10-15). py_compile WRITES the
+    #    .pyc into __pycache__ beside the source, so it needs the SOURCE DIRECTORY to be writable.
+    #    The CI gate runs this image as `--user 10001:10001` over a mounted /src, which it is not:
+    #    every one of the 124 files returned rc 1 with "[Errno 13] Permission denied:
+    #    '__pycache__'", the check swallowed that output, and the gate reported "124 file(s)
+    #    broken" - a permissions fact presented as a syntax verdict, with no reason printed.
+    #    Defect class 1 (a check reporting its own blindness as a finding about the system) and
+    #    class 26 (it never named its subject). MEASURED: a file containing `x = 1` fails exactly
+    #    the same way in a read-only directory.
+    #
+    #    compile() raises SyntaxError on precisely what this gate exists to catch - truncation and
+    #    broken syntax - writes nothing, needs no subprocess, and cannot be defeated by a mount.
+    #    Bytes, not text: compile() honours the encoding cookie and the BOM itself, and reading as
+    #    text would apply universal newlines and silently repair the input (defect class 21).
+    bad, unreadable = [], []
     for root in (engine, HERE, os.path.join(HERE, "webapp", "backend", "app")):
         if not os.path.isdir(root):
             continue
@@ -484,10 +499,26 @@ def do_tests():
             if not fn.endswith(".py") or fn.startswith("linkedin_verifier_old"):
                 continue
             p = os.path.join(root, fn)
-            if subprocess.run([sys.executable, "-m", "py_compile", p],
-                              capture_output=True).returncode != 0:
-                bad.append(os.path.relpath(p, HERE))
+            rel = os.path.relpath(p, HERE)
+            try:
+                with open(p, "rb") as fh:
+                    src = fh.read()
+            except OSError as e:          # a CRASH, not a FINDING (defect class 10)
+                unreadable.append("%s (%s)" % (rel, e))
+                continue
+            try:
+                compile(src, p, "exec")
+            except (SyntaxError, ValueError) as e:
+                bad.append("%s  %s" % (rel, str(e).splitlines()[0] if str(e) else type(e).__name__))
     print("  compile check: %d file(s) broken" % len(bad))
+    if unreadable:
+        # Never counted as "broken": not being able to READ a file is a statement about this
+        # machine, which is the exact confusion that produced the 124.
+        print("  [X] compile check could not READ %d file(s) - it did not inspect them, and this "
+              "is NOT a verdict on their contents:" % len(unreadable))
+        for u in unreadable:
+            print("      " + u)
+        sys.exit("[X] the compile gate could not see its subject, so it has no answer")
 
     # BEFORE any test runs. The suite imports the FastAPI app, so a dependency declared in
     # requirements.txt but absent from THIS interpreter fails with a message that looks like a code

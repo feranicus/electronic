@@ -39,6 +39,17 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt \
 RUN useradd --create-home --uid 10001 gates
 USER gates
 
+# THE GATE'S OWN WORKSPACE. ship.py's test phase is side-effect free with respect to the PRODUCT -
+# it deploys nothing - but it is not side-effect free with respect to the working tree: it refreshes
+# the git index, it regenerates the SBOM when stale, and several gates build artifacts. Handing it
+# a read-only bind mount made it fail on permissions and report that as a finding about the code
+# (124 "broken" files that all compiled perfectly). So CI mounts the checkout read-only at /src and
+# the gate runs against a copy it owns here. One home for that path, named rather than repeated in
+# the workflow's shell.
+ENV GATE_WORKDIR=/home/gates/work
+RUN mkdir -p /home/gates/work
+WORKDIR /home/gates/work
+
 # TESTS MUST NOT REACH THE INTERNET (defect class 18). The suite stubs its own HTTP, and this is
 # the belt to that brace: a gate that tries to resolve a name through a proxy that is not there
 # fails loudly instead of quietly measuring the live world.
@@ -48,5 +59,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SHIP_GATES_OFFLINE=1
 
 # No ENTRYPOINT on purpose. The caller names the command, and the only command CI should ever name
-# is the orchestrator's own test phase:
-#     docker run --rm -v "$PWD:/src" <image> python ship.py --test
+# is the orchestrator's own test phase, against a copy of a READ-ONLY checkout:
+#     docker run --rm --network none --user 10001:10001 -v "$PWD:/src:ro" <image> \
+#       sh -ec 'cp -a /src/. "$GATE_WORKDIR"/ && cd "$GATE_WORKDIR" && python ship.py --test'
