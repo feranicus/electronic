@@ -37,10 +37,20 @@ CONFIG = os.path.join(ROOT, ".gitleaks.toml")
 PRIVATE_KEY = re.compile(r"-----BEGIN[ A-Z]*PRIVATE KEY[A-Z ]*-----")
 GITHUB_PAT = re.compile(r"gh[pousr]_[0-9a-zA-Z]{36}")
 
-# The ONLY token-shaped strings allowed to exist in the allowlisted files, each because a test
-# needs the guard to redact it. Anything else is a finding, even inside an allowlisted path.
-SYNTHETIC = {
-    "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+# The ONLY token-shaped strings allowed in the allowlisted files, PINNED BY DIGEST rather than
+# written out. Each is there because a test needs the LLM guard to redact it; anything else is a
+# finding, even inside an allowlisted path.
+#
+# WHY A DIGEST. The first version listed the token literally - and gitleaks flagged THIS FILE, the
+# one whose entire job is to police secret-shaped text. The options were to allowlist the guard
+# itself (who then guards the guard?) or to stop carrying the literal. A digest is the honest third
+# answer: it pins the expected value exactly, it is not obfuscation-to-dodge-the-scanner (nothing
+# here is a secret being hidden), and it means this file can stay UNDER the scanner like every
+# other file in the repo. The allowlist stays at three entries, which is the point of capping it.
+#
+#   ghp_ + 36 chars, the one used in tests/test_llm_guard.py:
+SYNTHETIC_SHA256 = {
+    "fc25e1a8a3075e9f2e1a457f7b25351671610c2115c3b4d5633458a55e478823",
 }
 
 
@@ -68,11 +78,15 @@ def key_blocks(src):
     """
     out, cur = [], None
     for line in src.splitlines():
-        # ONE-LINE FORM FIRST. A key copied out of JSON arrives as a single escaped string -
-        # "-----BEGIN PRIVATE KEY-----\nMII...\n-----END PRIVATE KEY-----\n" - which is exactly how
-        # a Google service-account file stores one, and therefore the likeliest accident of all.
-        # A line-by-line scanner that only pairs a BEGIN line with a later END line never sees it;
-        # that gap let the second mutation through on the first attempt.
+        # ONE-LINE FORM FIRST. A key copied out of JSON arrives as a single escaped string: the
+        # BEGIN armour, then an escaped newline, then the base64, then the END armour, all on one
+        # physical line. That is exactly how a Google service-account file stores one, and
+        # therefore the likeliest accident of all. A line-by-line scanner that only pairs a BEGIN
+        # line with a later END line never sees it; that gap let the second mutation through on the
+        # first attempt. (The two armour strings are DELIBERATELY not spelled out here: this file
+        # is the one place in the repo that must stay under the scanner, and a complete BEGIN/END
+        # pair in a comment is a gitleaks finding no matter how harmless the surrounding prose.
+        # test_this_file_is_not_itself_a_finding below is what holds that line.)
         if (re.search(r"-----BEGIN[ A-Z]*PRIVATE KEY[A-Z ]*-----", line)
                 and re.search(r"-----END[ A-Z]*PRIVATE KEY[A-Z ]*-----", line)):
             label = re.search(r"-----BEGIN ([A-Z ]*PRIVATE KEY)-----", line).group(1)
@@ -155,12 +169,50 @@ def test_no_allowlisted_file_contains_a_key_that_parses(rel, tmp_path):
 @pytest.mark.parametrize("rel", ["ci_key.py", "tests/test_ci_key.py", "tests/test_llm_guard.py"])
 def test_no_allowlisted_file_carries_an_undocumented_token(rel):
     """A token inside an exempted file must be one this suite deliberately put there."""
+    import hashlib
     src = open(os.path.join(ROOT, rel), encoding="utf-8").read()
     found = set(GITHUB_PAT.findall(src))
-    unknown = found - SYNTHETIC
+    unknown = {t for t in found
+               if hashlib.sha256(t.encode()).hexdigest() not in SYNTHETIC_SHA256}
+    # The REDACTED form is printed, never the token: a failing test that prints the credential it
+    # found has leaked it into the CI log, which is public on this repository.
     assert not unknown, (
-        "%s contains token(s) not in the documented synthetic set, and gitleaks is allowlisted "
-        "here: %s" % (rel, sorted(unknown)))
+        "%s contains %d token(s) not in the documented synthetic set, and gitleaks is allowlisted "
+        "here. First 8 chars: %s"
+        % (rel, len(unknown), sorted(t[:8] + "..." for t in unknown)))
+
+
+#: gitleaks' own default rules, transcribed from its rule definitions. The private-key rule spans
+#: from BEGIN to the next `KEY-----`, which is why a complete pair inside a COMMENT is a finding.
+_GITLEAKS_PRIVATE_KEY = re.compile(
+    r"(?i)-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY( BLOCK)?-----[\s\S-]*?KEY( BLOCK)?-----")
+_GITLEAKS_GITHUB_PAT = re.compile(r"gh[pousr]_[0-9a-zA-Z]{36}")
+
+
+def test_this_file_is_not_itself_a_finding():
+    """THE GUARD MUST STAY UNDER THE SCANNER, or the question "who guards the guard" has no answer.
+
+    Twice now this file has been the thing gitleaks flagged. First the synthetic token was written
+    out literally (line 43, RuleID github-pat) - fixed by pinning it as SYNTHETIC_SHA256. Then a
+    comment explaining the one-line JSON key form spelled out a complete BEGIN/END armour pair
+    (line 82, RuleID private-key), which gitleaks' rule matches across everything between them.
+
+    Both times the tempting fix was to add this path to the allowlist, and both times that would
+    have been the wrong answer: an allowlisted guard is a guard nobody checks. So the rule is that
+    THIS file carries no credential-shaped literal, and this test is what enforces it - against
+    gitleaks' own regexes, not a paraphrase of them, so it fails here rather than in CI.
+    """
+    rel = os.path.relpath(os.path.abspath(__file__), ROOT).replace("\\", "/")
+    assert rel not in allowlisted_paths(), (
+        "%s has been added to the gitleaks allowlist. It is the guard FOR that allowlist; "
+        "exempting it means nothing checks it." % rel)
+    src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    for name, rx in (("private-key", _GITLEAKS_PRIVATE_KEY), ("github-pat", _GITLEAKS_GITHUB_PAT)):
+        m = rx.search(src)
+        assert m is None, (
+            "this file would trip gitleaks' %s rule at line %d, and it is NOT allowlisted, so the "
+            "gate will fail. Describe the shape in prose instead of writing the literal."
+            % (name, src[:m.start()].count("\n") + 1))
 
 
 def test_the_allowlist_is_small_enough_to_read():
@@ -177,11 +229,13 @@ def test_the_service_account_keys_are_not_in_the_repository():
     gitignored and have never been committed - verified 2026-10-15 - and on a PUBLIC repository
     that distinction is the whole ballgame. Asserted here so a future `git add -f` is caught by
     the suite rather than by somebody reading the repo."""
-    r = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=60)
+    # -z, NOT .split(): this repository has tracked paths containing spaces, and splitting on
+    # whitespace shreds them into fragments that no longer match the pattern below. Found while
+    # sweeping the tree with these same rules - the sweep crashed on `26.04.08_CIO ...`.
+    r = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, timeout=60)
     if r.returncode != 0:
         pytest.skip("git not available here")
-    tracked = set((r.stdout or "").split())
+    tracked = {p for p in r.stdout.decode("utf-8", "replace").split("\0") if p}
     leaked = [f for f in tracked
               if f.endswith("_sa.json") or re.match(r"colt-bots-[0-9a-f]+\.json$", f)]
     assert not leaked, "a service-account key is TRACKED in a public repository: %s" % leaked

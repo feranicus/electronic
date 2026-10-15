@@ -185,8 +185,26 @@ token appears, if an entry is stale, or if the list grows. Two of my own version
 could not fail: a greedy `.*?` returned ONE 25 KB "block" of source (class 13), and re-wrapping
 every body in OPENSSH armour made a real RSA PEM unparseable for the WRONG reason. Keep the armour
 label; handle the one-line escaped form, which is how a service-account JSON stores a key.
+**AND THE GUARD ITSELF MUST STAY UNDER THE SCANNER** — twice gitleaks flagged `test_secret_scan.py`:
+first the synthetic PAT written out literally, then a complete BEGIN/END armour pair inside a
+COMMENT (the rule spans everything between them). Both times allowlisting the guard was the
+tempting fix and the wrong one — who guards the guard. Pin the token as `SYNTHETIC_SHA256`, describe
+armour in prose, and `test_this_file_is_not_itself_a_finding` asserts it against gitleaks' OWN two
+regexes so it fails locally, not in CI. All four mutations caught.
 The repo is **PUBLIC**; `gmail_sa.json` / `colt-bots-*.json` hold REAL keys, are gitignored and
-have never been committed (verified, and now asserted). [2026-10-15] `tests/test_secret_scan.py`
+have never been committed (verified, and now asserted — via `git ls-files -z`, because tracked paths
+here contain spaces and `.split()` shreds them). [2026-10-15] `tests/test_secret_scan.py`
+
+**A TEST THAT CANNOT RUN ANYWHERE HAS NO BASELINE, AND NOBODY NOTICES.** `test_caddy_wiring.py`
+pins the 2026-08-14 "LIVE shared config is DAMAGED" incident, but the wiring later grew the two
+`docker ps` / `docker inspect` lines that ASK the container where its Caddyfile is: the extracted
+segment then re-assigned `$CF` over the fixture's temp file, and with no docker binary the sequence
+died `rc 127` under `set -e`. Skipped on Windows, never reached in CI (gitleaks failed first), so
+two red tests sat unseen. **SIMULATE docker, do not trim the segment** (class 20): a stub answers
+`ps`/`inspect` with the fixture's own path, and the test asserts the stub WAS consulted — so going
+back to an assumed path fails instead of passing. The module gate is now `shell_harness_allowed()`
+(ONE HOME), never `shutil.which("bash")`. Mutations caught: the bare-word range delete, the assumed
+path, and `sed -i` restoring the inode swap. [2026-10-15] `tests/test_caddy_wiring.py`
 
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 

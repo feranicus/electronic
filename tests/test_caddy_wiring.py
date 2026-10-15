@@ -22,25 +22,83 @@ except ours is byte-identical afterwards.
 
 Stdlib only, and it needs `sed` - skipped cleanly where that is unavailable so it can never be a
 false failure on a machine without it.
+
+THE SECOND INCIDENT (2026-10-15). The wiring grew two lines on the front that ASK THE CONTAINER
+where its Caddyfile actually is (`docker ps` then `docker inspect`, per defect class 39 - never
+assume a path or a compose prefix). Correct in production, and it silently broke this test: the
+extracted segment re-assigned `$CF` over the temp file the fixture had just prepared, and on any
+machine without a docker binary the whole sequence died at `rc 127` under `set -e`. Nothing noticed
+because the one gate that would have run it had been failing earlier, at gitleaks.
+
+So the fix is to SIMULATE docker, not to cut those lines out of the segment (defect class 20 - a
+skip hides the defect from the machine that needs it, and trimming the segment would quietly stop
+covering the shipped discovery). A stub `docker` answers `ps` with a container name and `inspect`
+with the fixture's own path, and the test asserts the stub was really called - so if the deploy ever
+goes back to assuming a path, this fails instead of passing vacuously.
 """
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 
 import pytest
 
+from test_teamwork import shell_harness_allowed
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CADDY_DIR = os.path.join(ROOT, "deploy", "caddy")
 DEPLOY = os.path.join(ROOT, "deploy_web_direct.py")
 
-# The wiring is a bash SEQUENCE sharing a shell variable, so it needs a real shell as well as sed.
-# Skipped cleanly where either is missing rather than failing falsely - which on the operator's
-# Windows box means this whole module is skipped, so it is CI and the droplet that exercise it, not
-# `python ship.py`. That is worth knowing before trusting a green run to have covered this.
-pytestmark = pytest.mark.skipif(shutil.which("sed") is None or shutil.which("bash") is None,
-                                reason="needs sed and bash; not present on this machine")
+# The wiring is a bash SEQUENCE sharing a shell variable, so it needs a real POSIX shell as well as
+# sed. `shutil.which("bash")` is NOT that gate and CLAUDE.md says so: on the operator's Windows box
+# that resolves to WSL's bash.exe, which tests the emulation rather than the droplet. ONE HOME for
+# the decision, shared with the teamlock harness. So this whole module is skipped on his PC and it
+# is CI and the droplet that exercise it - worth knowing before trusting a green local run.
+_SHELL_OK, _SHELL_WHY = shell_harness_allowed()
+pytestmark = pytest.mark.skipif(not _SHELL_OK or shutil.which("sed") is None,
+                                reason=_SHELL_WHY or "needs sed; not present on this machine")
+
+
+def _docker_stub(work, cf):
+    """A fake `docker` on PATH that points the wiring at `cf`, plus the env to run it with.
+
+    The shipped segment asks the container where its Caddyfile is mounted. That is the right
+    behaviour and it must stay under test, so rather than removing those two lines from what is
+    measured, this answers them. Returns (env, logpath); the log is how the test proves the stub was
+    actually consulted (defect class 12 - prove the fixture, or a wiring that went back to assuming
+    a path would read as a pass).
+    """
+    binf = os.path.join(work, "bin")
+    os.makedirs(binf, exist_ok=True)
+    log = os.path.join(work, "docker.log")
+    stub = os.path.join(binf, "docker")
+    with open(stub, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write('#!/bin/sh\n'
+                 'echo "$@" >> "$DOCKER_STUB_LOG"\n'
+                 'case "$1" in\n'
+                 '  ps)      echo videodead-caddy-1 ;;\n'
+                 # The real `docker inspect --format` prints the mount SOURCE on the host. Here that
+                 # is the fixture's Caddyfile, which is the whole point: the wiring then rewrites a
+                 # file the test controls instead of a real shared proxy's config.
+                 '  inspect) printf \'%s\\n\' "$DOCKER_STUB_CF" ;;\n'
+                 '  *)       echo "stub docker: unexpected verb $1" >&2; exit 97 ;;\n'
+                 'esac\n')
+    os.chmod(stub, os.stat(stub).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    env = dict(os.environ)          # INHERIT, override only what the test needs
+    env["PATH"] = binf + os.pathsep + env.get("PATH", "")
+    env["DOCKER_STUB_LOG"] = log
+    env["DOCKER_STUB_CF"] = cf
+    return env, log
+
+
+def _assert_stub_was_consulted(log):
+    verbs = open(log, encoding="utf-8").read() if os.path.exists(log) else ""
+    assert "ps" in verbs and "inspect" in verbs, (
+        "the wiring no longer ASKS the container where its Caddyfile is mounted (stub saw: %r). "
+        "That is defect class 39 - a path assumed instead of measured - and it is also the reason "
+        "this test can trust the file it just inspected." % verbs)
 
 
 def _wiring_script():
@@ -122,8 +180,10 @@ def test_the_wiring_touches_only_our_own_block():
         ino_before = os.stat(cf).st_ino
         # cwd=ROOT because the wiring does `cat deploy/caddy/cybergod.caddy`, a repo-relative path.
         # The appended block is part of the extracted segment now, so the test no longer appends it.
+        env, log = _docker_stub(work, cf)
         subprocess.run(["bash", "-c", "set -e\nCF=%s\n%s" % (cf, script)],
-                       cwd=ROOT, check=True, timeout=60)
+                       cwd=ROOT, check=True, timeout=60, env=env)
+        _assert_stub_was_consulted(log)
 
         after_text = open(cf, encoding="utf-8").read()
         if ino_before:
@@ -176,8 +236,10 @@ def test_our_own_block_is_still_actually_replaced():
         # The wiring now removes AND re-adds our block in one sequence (the `cat` is inside it), so
         # this no longer appends the fresh block by hand. cwd=ROOT because that cat is a
         # repo-relative path.
+        env, log = _docker_stub(work, cf)
         subprocess.run(["bash", "-c", "set -e\nCF=%s\n%s" % (cf, _wiring_script())],
-                       cwd=ROOT, check=True, timeout=60)
+                       cwd=ROOT, check=True, timeout=60, env=env)
+        _assert_stub_was_consulted(log)
         end = open(cf, encoding="utf-8").read()
         assert "STALE-UPSTREAM" not in end, "the old cybergod block was not removed"
         assert end.count("# colt:cybergod BEGIN") == 1, "the block was duplicated"
