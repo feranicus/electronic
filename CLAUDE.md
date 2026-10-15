@@ -160,8 +160,33 @@ action_required/null/dead-API/non-JSON are all not-green, and **`skipped` especi
 did not run is not a gate that passed. `--direct` stays for the day the pipeline is what is broken.
 Two settings only the owner can change: add the collaborator with **write** (never admin), and turn
 on "Require a pull request before merging" with yourself OFF the bypass list.
+**A RED GATE LEAVES YOU ON THE BRANCH, SO THE NEXT RUN MUST RESUME IT.** PR #19 failed its gate,
+which correctly left the branch and PR standing as the evidence — and the next `ship.py --pr` then
+hit his OWN guard: "refusing to deploy from 'ship/…'". Two defects: PR mode called
+`collaboration_guards(deploying=True)`, which is fatal off main because MAIN IS WHAT DEPLOYS (in PR
+mode the laptop deploys nothing, so it is `deploying=False`); and shipflow would have cut a SECOND
+ship/ branch off the first, orphaning the open PR. "Resumable by construction" was a docstring
+claim with nothing asserting it. Standing on a `ship/` branch now MEANS resume — same branch, same
+PR — proved against a real throwaway git repo, and all four mutations (including re-introducing
+each exact bug) fail the suite.
 `tests/test_shipflow.py` · `tests/test_pipeline_architecture.py` ·
 `docs/decisions/2026-10-pipeline-architecture.md`
+
+**THE SECRET SCANNER HAD BEEN RED FOR TWO MONTHS AND NOBODY SAW IT.** The first run that actually
+blocked a merge (PR #19) reported 5 gitleaks findings; the oldest, `tests/test_llm_guard.py`, has
+been in the tree since 2026-08-22. The bypass made a failing scanner invisible — "an alert nobody
+gets is not an alert", proven on this repo. All 5 are code ABOUT secrets (the BEGIN/END delimiters
+`ci_key.py` matches on, synthetic key fixtures, the token list the LLM guard must redact), so they
+are PATH-allowlisted in `.gitleaks.toml` — never obfuscated, because hiding from the scanner
+teaches the next person to do it too. **An allowlist is a new hole, so it ships with its own
+guard**: `tests/test_secret_scan.py` extracts every PEM block from each allowlisted file and hands
+it to `ssh-keygen -y` — OpenSSH decides, not a regex — and fails if one PARSES, if an undocumented
+token appears, if an entry is stale, or if the list grows. Two of my own versions of that guard
+could not fail: a greedy `.*?` returned ONE 25 KB "block" of source (class 13), and re-wrapping
+every body in OPENSSH armour made a real RSA PEM unparseable for the WRONG reason. Keep the armour
+label; handle the one-line escaped form, which is how a service-account JSON stores a key.
+The repo is **PUBLIC**; `gmail_sa.json` / `colt-bots-*.json` hold REAL keys, are gitignored and
+have never been committed (verified, and now asserted). [2026-10-15] `tests/test_secret_scan.py`
 
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 

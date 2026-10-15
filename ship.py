@@ -2172,7 +2172,14 @@ def main():
         import shipflow
         say("2/5  PULL REQUEST — main is reached only through a green gate")
         _clear_stale_git_locks()
-        collaboration_guards(deploying=True)
+        # deploying=FALSE, and that is the point rather than a loophole. The wrong-branch guard is
+        # fatal only when this script is about to deploy, because main is what deploys. In PR mode
+        # the laptop deploys NOTHING - pipeline.yml does, after the merge - and being on a ship/
+        # branch is the normal mid-flow state, not a mistake. Calling it with deploying=True made
+        # the flow refuse to resume its own branch after a red gate, which is exactly the state a
+        # red gate is supposed to leave behind. The stale-tree guard and the "what am I about to
+        # commit" printout still run, because those matter more with two people, not less.
+        collaboration_guards(deploying=False)
         _ok, _info = shipflow.run(a.message or "ship: engine + web update")
         if not _ok:
             print("\n[X] %s" % _info.get("error", "the PR flow did not complete"))

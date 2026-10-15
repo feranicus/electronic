@@ -186,23 +186,37 @@ def run(message, dry=False):
     info = {}
     base_before = (_git("rev-parse", "--abbrev-ref", "HEAD").stdout or "").strip()
 
+    # RESUME, RATHER THAN BRANCH OFF A BRANCH.
+    #
+    # A red gate deliberately leaves the branch and the PR in place - they are the evidence. The
+    # first version of this then tried to cut a NEW ship/ branch from the old one on the next run,
+    # which is wrong twice over: it orphans the open PR, and the second branch carries the first
+    # one's history. "Resumable by construction" was a claim with nothing asserting it, which is
+    # the same defect as a check that cannot fail. Being on a ship/ branch now MEANS resume.
+    cur = base_before
+    resuming = cur.startswith("ship/")
+
     st = (_git("status", "--porcelain").stdout or "").strip()
-    if not st:
+    if not st and not resuming:
         ahead = (_git("rev-list", "--count", "origin/%s..HEAD" % BASE).stdout or "0").strip()
         if ahead in ("0", ""):
             print("  (nothing to ship: the tree is clean and %s is not ahead of origin)" % BASE)
             return True, {"noop": True}
 
-    br = branch_name(message)
+    br = cur if resuming else branch_name(message)
     info["branch"] = br
     if dry:
-        print("  DRY RUN: would branch %s, open a PR, wait for %s, then merge" % (br, GATE))
+        print("  DRY RUN: would %s %s, open a PR, wait for %s, then merge"
+              % ("resume" if resuming else "branch", br, GATE))
         return True, info
 
-    print("  branch : %s" % br)
-    r = _git("checkout", "-b", br)
-    if r.returncode != 0:
-        return False, {"error": "could not create %s: %s" % (br, (r.stderr or "").strip()[:200])}
+    if resuming:
+        print("  resume : %s (a previous run left it open; its PR is reused)" % br)
+    else:
+        print("  branch : %s" % br)
+        r = _git("checkout", "-b", br)
+        if r.returncode != 0:
+            return False, {"error": "could not create %s: %s" % (br, (r.stderr or "").strip()[:200])}
 
     _git("add", "-A")
     if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=HERE).returncode != 0:

@@ -198,6 +198,96 @@ def test_the_flow_can_be_made_the_default_without_a_code_change():
     assert "SHIP_FLOW" in _main_src(), "there is no way to make the PR flow the default"
 
 
+# ----------------------------------------------------------------- RESUME (the defect of 2026-10-15)
+# A red gate on PR #19 left the operator ON the ship/ branch, which is correct: the branch and the
+# PR are the evidence of what failed. The next `python ship.py --pr` then did two wrong things, and
+# his own guard caught the louder one:
+#
+#   [!] you are on branch 'ship/feran-...', not 'main'.
+#   [X] refusing to deploy from 'ship/feran-...'.
+#
+#   1. ship.py called collaboration_guards(deploying=True). That guard is fatal off main because
+#      MAIN IS WHAT DEPLOYS - but in PR mode the laptop deploys nothing, and standing on a ship/
+#      branch is the normal mid-flow state.
+#   2. shipflow would have cut a SECOND ship/ branch from the first, orphaning the open PR and
+#      carrying the old branch's history into the new one.
+#
+# "Resumable by construction" was in the docstring with nothing asserting it - a claim, not a
+# property (defect class 3). These tests run the real thing against a real git repo.
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    """A throwaway git repo with an origin, so the flow runs for real instead of against mocks."""
+    import subprocess as sp
+    if not __import__("shutil").which("git"):
+        pytest.skip("git not available")
+    origin, work = tmp_path / "origin.git", tmp_path / "work"
+    sp.run(["git", "init", "--bare", "-b", "main", str(origin)], check=True, capture_output=True)
+    sp.run(["git", "clone", str(origin), str(work)], check=True, capture_output=True)
+    for k, v in (("user.email", "t@example.invalid"), ("user.name", "T"), ("commit.gpgsign", "false")):
+        sp.run(["git", "-C", str(work), "config", k, v], check=True, capture_output=True)
+    (work / "a.txt").write_bytes(b"one\n")
+    sp.run(["git", "-C", str(work), "add", "-A"], check=True, capture_output=True)
+    sp.run(["git", "-C", str(work), "commit", "-m", "init"], check=True, capture_output=True)
+    sp.run(["git", "-C", str(work), "push", "-u", "origin", "main"], check=True, capture_output=True)
+    monkeypatch.setattr(shipflow, "HERE", str(work))
+    return work
+
+
+def test_a_red_gate_leaves_you_on_the_branch_and_the_next_run_resumes_it(repo, monkeypatch):
+    """THE PROPERTY. Two runs, one branch, one PR - not a second branch cut from the first."""
+    seen = {"prs": [], "merged": []}
+    monkeypatch.setattr(shipflow, "open_pr",
+                        lambda br, msg, base=None: (seen["prs"].append(br), (7, "url"))[1])
+    monkeypatch.setattr(shipflow, "merge_pr",
+                        lambda n, method="squash": (seen["merged"].append(n), (True, "merged"))[1])
+
+    # Run 1: the gate fails. The flow must stop and leave us standing on the branch.
+    monkeypatch.setattr(shipflow, "wait_for_gate", lambda *a, **k: (False, "concluded failure"))
+    (repo / "b.txt").write_bytes(b"two\n")
+    ok, info = shipflow.run("first try")
+    assert ok is False and "gate not green" in info["error"]
+    first = info["branch"]
+    on = (shipflow._git("rev-parse", "--abbrev-ref", "HEAD").stdout or "").strip()
+    assert on == first, "a red gate did not leave the work on its branch (on %r)" % on
+
+    # Run 2: the fix lands, the gate is green. SAME branch, SAME PR.
+    monkeypatch.setattr(shipflow, "wait_for_gate", lambda *a, **k: (True, "ok"))
+    (repo / "b.txt").write_bytes(b"two, fixed\n")
+    ok, info2 = shipflow.run("second try")
+    assert ok is True, info2
+    assert info2["branch"] == first, (
+        "the second run cut a NEW branch (%s) instead of resuming %s, orphaning the open PR"
+        % (info2["branch"], first))
+    assert seen["prs"] == [first, first], "open_pr was not asked for the same branch twice"
+    assert seen["merged"] == [7]
+
+
+def test_resuming_returns_to_main_after_the_merge(repo, monkeypatch):
+    monkeypatch.setattr(shipflow, "open_pr", lambda br, msg, base=None: (3, "url"))
+    monkeypatch.setattr(shipflow, "merge_pr", lambda n, method="squash": (True, "merged"))
+    monkeypatch.setattr(shipflow, "wait_for_gate", lambda *a, **k: (False, "failure"))
+    (repo / "c.txt").write_bytes(b"x\n")
+    shipflow.run("one")
+    monkeypatch.setattr(shipflow, "wait_for_gate", lambda *a, **k: (True, "ok"))
+    (repo / "c.txt").write_bytes(b"y\n")
+    assert shipflow.run("two")[0] is True
+    on = (shipflow._git("rev-parse", "--abbrev-ref", "HEAD").stdout or "").strip()
+    assert on == "main", "after a resumed merge the operator is left on %r, not main" % on
+
+
+def test_pr_mode_does_not_use_the_deploying_branch_guard():
+    """collaboration_guards(deploying=True) is fatal off main because MAIN IS WHAT DEPLOYS. PR
+    mode deploys nothing from the laptop, so passing True made the flow refuse to resume the very
+    branch a red gate is meant to leave behind."""
+    blocks = [n for n in ast.walk(ast.parse(_main_src()))
+              if isinstance(n, ast.If) and "_flow_pr" in ast.unparse(n.test)]
+    body = ast.unparse(blocks[0])
+    assert "collaboration_guards(deploying=False)" in body, (
+        "PR mode still uses the deploying guard; it cannot resume its own branch")
+    assert "collaboration_guards(deploying=True)" not in body
+
+
 # ----------------------------------------------------------------- failure is recoverable
 def test_a_failed_gate_leaves_the_pr_open_rather_than_destroying_the_evidence():
     src = ast.unparse(ast.parse(open(os.path.join(ROOT, "shipflow.py"), encoding="utf-8").read()))
