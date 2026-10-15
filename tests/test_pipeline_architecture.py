@@ -19,7 +19,9 @@ list is that a rule which is only written down goes stale:
   4. ONE DEPLOY AT A TIME, across runners AND laptops.
 """
 import glob
+import json
 import os
+import re
 import sys
 
 import pytest
@@ -115,6 +117,153 @@ def test_the_gate_phase_really_is_side_effect_free():
     src = ast.unparse(fn)
     assert "GATES_OFFLINE" in src, (
         "the one droplet-writing branch is no longer guarded by SHIP_GATES_OFFLINE")
+
+
+def test_the_checkout_is_mounted_read_only_and_the_gate_works_on_a_copy():
+    """THE 124 "BROKEN" FILES, 2026-10-15. The first gate run that got past gitleaks reported every
+    python file in the repo as broken. Not one of them was: `python -m py_compile` writes the .pyc
+    into __pycache__ beside the source, the checkout belongs to the runner, the container is uid
+    10001, and so all 124 failed with EACCES - a permissions fact rendered as a syntax verdict.
+
+    do_tests() also refreshes the git index and can regenerate the SBOM, so this was never going to
+    be fixed one writer at a time. The gate gets a workspace it owns, and `:ro` turns "the gate
+    phase is side-effect free" - the claim that makes it safe to run on every pull request - into
+    something the kernel enforces instead of something a comment asserts.
+    """
+    steps = runs(load("ci.yml")["jobs"]["quality-and-secrets"]["steps"])
+    assert ":ro" in steps, (
+        "the checkout is no longer mounted read-only. A gate that can modify the tree it is "
+        "judging can also make itself pass.")
+    assert "-v \"$PWD:/src\" -w /src" not in steps, (
+        "the gate is running IN the mounted checkout again; that is the configuration that "
+        "produced 124 false 'broken' files")
+    assert "GATE_WORKDIR" in steps, (
+        "the gate no longer runs in its own writable workspace")
+
+
+def test_the_compile_gate_does_not_need_to_write_next_to_the_source():
+    """The specific mechanism, pinned so it cannot come back. `py_compile` exists to WRITE
+    bytecode; the image even sets PYTHONDONTWRITEBYTECODE=1, which py_compile ignores by design.
+    Compiling in-process needs no write, no subprocess and no mount, and raises SyntaxError on
+    exactly what this gate is for."""
+    import ast
+    tree = ast.parse(open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read())
+    fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "do_tests"][0]
+    src = ast.unparse(fn)
+    assert "py_compile" not in src, (
+        "do_tests() shells out to py_compile again. It writes __pycache__ beside the source, so "
+        "it fails on a read-only or foreign-owned tree and reports that as broken code.")
+    assert "compile(" in src, "the compile gate no longer compiles anything"
+
+
+#: Node builtins a gate script may use with no package.json entry, bare or `node:`-prefixed.
+_NODE_BUILTINS = {
+    "assert", "buffer", "child_process", "console", "crypto", "dns", "events", "fs", "http",
+    "https", "module", "net", "os", "path", "perf_hooks", "process", "querystring", "readline",
+    "stream", "string_decoder", "timers", "tls", "url", "util", "v8", "vm", "worker_threads",
+    "zlib",
+}
+_REQUIRE = re.compile(r"""require\(\s*['"]([^'"]+)['"]\s*\)""")
+_IMPORT = re.compile(r"""^\s*import\s[^;\n]*?from\s*['"]([^'"]+)['"]""", re.M)
+
+
+def _gate_js_dependencies():
+    """Every third-party module the gate-run JavaScript actually imports, read FROM the source.
+
+    Derived, never hand-listed (defect class 35): the whole reason CI broke is that somebody
+    measured one directory and wrote a conclusion about all of them.
+    """
+    found = {}
+    for sub in ("webapp/frontend/tools", "hermes-skills/shodan-assessment/scripts"):
+        d = os.path.join(ROOT, sub)
+        for dirpath, _dirs, files in os.walk(d):
+            if "node_modules" in dirpath:
+                continue
+            for f in files:
+                if not f.endswith((".js", ".mjs")):
+                    continue
+                p = os.path.join(dirpath, f)
+                src = open(p, encoding="utf-8", errors="replace").read()
+                for spec in _REQUIRE.findall(src) + _IMPORT.findall(src):
+                    if spec.startswith((".", "/")):
+                        continue
+                    name = spec[5:] if spec.startswith("node:") else spec
+                    base = name.split("/")[0]
+                    if base in _NODE_BUILTINS:
+                        continue
+                    found.setdefault(base, os.path.relpath(p, ROOT).replace("\\", "/"))
+    return found
+
+
+def test_the_gate_image_installs_the_node_dependencies_the_gates_actually_import():
+    """CI died with `Cannot find module 'pptxgenjs'` because Dockerfile.ci claimed no node_modules
+    were needed. That claim was true of webapp/frontend/tools - which import only builtins - and
+    false of the engine's five deck builders, which all require pptxgenjs. The node_modules on the
+    operator's box is gitignored, so the checkout CI gets has none and his machine could never
+    reveal this.
+
+    This asserts the real property: every third-party module the gate JavaScript imports is
+    declared in the committed package.json the image installs from. A new dependency added to the
+    engine fails HERE, on his laptop, rather than after a push.
+    """
+    deps = _gate_js_dependencies()
+    declared = set(json.load(open(
+        os.path.join(ROOT, "hermes-skills", "shodan-assessment", "package.json"),
+        encoding="utf-8")).get("dependencies", {}))
+    missing = {k: v for k, v in deps.items() if k not in declared}
+    assert not missing, (
+        "gate JavaScript imports %d module(s) that hermes-skills/shodan-assessment/package.json "
+        "does not declare, so the CI image will not install them and the gate dies with "
+        "MODULE_NOT_FOUND: %s" % (len(missing), missing))
+    assert deps, "the dependency scan found nothing at all - it is reading the wrong tree"
+
+
+def test_the_web_stack_is_pinned_not_floored():
+    """A FLOOR MEANS NOBODY CAN SAY WHAT WAS TESTED.
+
+    requirements.txt already argues this at length for python-multipart - "a floor defeats the
+    immutability guarantee", because pip resolves independently in every build. starlette was
+    never held to it: `starlette>=1.3.1` let the CI image and the operator's machine land on
+    different releases, and two white-label tests then failed in CI and passed locally because
+    which responses poll for a client disconnect had changed between them.
+
+    Only the packages that actually serve requests are required to be exact. A floor on a library
+    that cannot change request handling is a different, smaller question, and a guard that
+    demanded exactness everywhere would be noise.
+    """
+    req = os.path.join(ROOT, "webapp", "backend", "requirements.txt")
+    serves_traffic = {"fastapi", "starlette", "uvicorn", "python-multipart"}
+    floored = []
+    for raw in open(req, encoding="utf-8"):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name = line
+        for sep in ("[", "<", ">", "=", "!", "~", ";", " "):
+            name = name.split(sep, 1)[0]
+        if name.strip().lower() in serves_traffic and "==" not in line:
+            floored.append(line)
+    assert not floored, (
+        "these serve HTTP and are declared with a floor, so every image build may resolve a "
+        "different release than the one the suite ran against: %s" % floored)
+
+
+def test_the_image_installs_from_the_lockfile_and_node_can_find_it():
+    """`npm ci` not `npm install`, so the image gets exactly what the committed lockfile pins and
+    cannot drift. NODE_PATH because the gate runs against a COPY of the checkout, and a checkout
+    contains no node_modules - resolution has to work from wherever that copy lands."""
+    # STRIP THE COMMENTS FIRST (defect class 4). Both of these assertions originally passed
+    # against a Dockerfile whose `npm ci` and NODE_PATH had been removed, because the long comment
+    # explaining WHY they exist still contained both strings. A check that matches its own
+    # rationale measures nothing. CLAUDE.md records this happening five separate times; six now.
+    raw = open(os.path.join(ROOT, "Dockerfile.ci"), encoding="utf-8").read()
+    df = "\n".join(l for l in raw.splitlines() if not l.lstrip().startswith("#"))
+    assert "npm ci" in df, (
+        "the gate image no longer installs node dependencies from the lockfile; the deck builders "
+        "will fail with MODULE_NOT_FOUND")
+    assert "NODE_PATH" in df, (
+        "nothing tells node where those modules are, and they are not inside the copied workspace")
+    assert "package-lock.json" in df, "npm ci without the lockfile copied in cannot run"
 
 
 # ----------------------------------------------------------------- 2. ONE AUTOMATIC PATH

@@ -148,10 +148,112 @@ the build path is byte-identical and untouched, asserted), and `WEB_TAG` makes s
 SAME bytes. CI calls the repo's scripts — stagegate.py, deploy*.py, caddyguard.py — never inline ssh.
 
 **A REQUIRED STATUS CHECK CANNOT BE SATISFIED BY A DIRECT PUSH** (GitHub: checks must pass "before
-collaborators can make changes to a branch"; a new commit has no check runs yet). That is why every
-ship prints `Bypassed rule violations`, and why a COLLABORATOR's push would be rejected after the
-staging gate. Decide: drop the rule + bypass list (keeps direct push), or move ship.py to a PR flow.
-`tests/test_pipeline_architecture.py` · `docs/decisions/2026-10-pipeline-architecture.md`
+collaborators can make changes to a branch"; a new commit has no check runs yet). That is the
+`Bypassed rule violations` line on every ship, and why a COLLABORATOR's push would be rejected
+AFTER the staging gate. **`shipflow.py` is the answer**: `python ship.py --pr` (or `SHIP_FLOW=pr`)
+does branch -> push -> PR -> WAIT for the gate -> squash-merge, so main only receives commits a
+green gate has seen, with no bypass. A PR's head commit DOES get check runs, which is what makes
+the rule satisfiable. **The merge IS the deploy** — pipeline.yml fires on push to main, so PR mode
+STOPS there (asserted: the branch calls no do_web/do_bots/do_verify/tag_known_good) or one commit
+would deploy twice again. Nothing merges on an UNKNOWN state: pending/missing/cancelled/timed_out/
+action_required/null/dead-API/non-JSON are all not-green, and **`skipped` especially** — a gate that
+did not run is not a gate that passed. `--direct` stays for the day the pipeline is what is broken.
+Two settings only the owner can change: add the collaborator with **write** (never admin), and turn
+on "Require a pull request before merging" with yourself OFF the bypass list.
+**A RED GATE LEAVES YOU ON THE BRANCH, SO THE NEXT RUN MUST RESUME IT.** PR #19 failed its gate,
+which correctly left the branch and PR standing as the evidence — and the next `ship.py --pr` then
+hit his OWN guard: "refusing to deploy from 'ship/…'". Two defects: PR mode called
+`collaboration_guards(deploying=True)`, which is fatal off main because MAIN IS WHAT DEPLOYS (in PR
+mode the laptop deploys nothing, so it is `deploying=False`); and shipflow would have cut a SECOND
+ship/ branch off the first, orphaning the open PR. "Resumable by construction" was a docstring
+claim with nothing asserting it. Standing on a `ship/` branch now MEANS resume — same branch, same
+PR — proved against a real throwaway git repo, and all four mutations (including re-introducing
+each exact bug) fail the suite.
+`tests/test_shipflow.py` · `tests/test_pipeline_architecture.py` ·
+`docs/decisions/2026-10-pipeline-architecture.md`
+
+**THE SECRET SCANNER HAD BEEN RED FOR TWO MONTHS AND NOBODY SAW IT.** The first run that actually
+blocked a merge (PR #19) reported 5 gitleaks findings; the oldest, `tests/test_llm_guard.py`, has
+been in the tree since 2026-08-22. The bypass made a failing scanner invisible — "an alert nobody
+gets is not an alert", proven on this repo. All 5 are code ABOUT secrets (the BEGIN/END delimiters
+`ci_key.py` matches on, synthetic key fixtures, the token list the LLM guard must redact), so they
+are PATH-allowlisted in `.gitleaks.toml` — never obfuscated, because hiding from the scanner
+teaches the next person to do it too. **An allowlist is a new hole, so it ships with its own
+guard**: `tests/test_secret_scan.py` extracts every PEM block from each allowlisted file and hands
+it to `ssh-keygen -y` — OpenSSH decides, not a regex — and fails if one PARSES, if an undocumented
+token appears, if an entry is stale, or if the list grows. Two of my own versions of that guard
+could not fail: a greedy `.*?` returned ONE 25 KB "block" of source (class 13), and re-wrapping
+every body in OPENSSH armour made a real RSA PEM unparseable for the WRONG reason. Keep the armour
+label; handle the one-line escaped form, which is how a service-account JSON stores a key.
+**AND THE GUARD ITSELF MUST STAY UNDER THE SCANNER** — twice gitleaks flagged `test_secret_scan.py`:
+first the synthetic PAT written out literally, then a complete BEGIN/END armour pair inside a
+COMMENT (the rule spans everything between them). Both times allowlisting the guard was the
+tempting fix and the wrong one — who guards the guard. Pin the token as `SYNTHETIC_SHA256`, describe
+armour in prose, and `test_this_file_is_not_itself_a_finding` asserts it against gitleaks' OWN two
+regexes so it fails locally, not in CI. All four mutations caught.
+The repo is **PUBLIC**; `gmail_sa.json` / `colt-bots-*.json` hold REAL keys, are gitignored and
+have never been committed (verified, and now asserted — via `git ls-files -z`, because tracked paths
+here contain spaces and `.split()` shreds them). [2026-10-15] `tests/test_secret_scan.py`
+
+**A TEST THAT CANNOT RUN ANYWHERE HAS NO BASELINE, AND NOBODY NOTICES.** `test_caddy_wiring.py`
+pins the 2026-08-14 "LIVE shared config is DAMAGED" incident, but the wiring later grew the two
+`docker ps` / `docker inspect` lines that ASK the container where its Caddyfile is: the extracted
+segment then re-assigned `$CF` over the fixture's temp file, and with no docker binary the sequence
+died `rc 127` under `set -e`. Skipped on Windows, never reached in CI (gitleaks failed first), so
+two red tests sat unseen. **SIMULATE docker, do not trim the segment** (class 20): a stub answers
+`ps`/`inspect` with the fixture's own path, and the test asserts the stub WAS consulted — so going
+back to an assumed path fails instead of passing. The module gate is now `shell_harness_allowed()`
+(ONE HOME), never `shutil.which("bash")`. Mutations caught: the bare-word range delete, the assumed
+path, and `sed -i` restoring the inode swap. [2026-10-15] `tests/test_caddy_wiring.py`
+
+**124 FILES "BROKEN", NONE OF THEM BROKEN.** The first gate run to get past gitleaks failed the
+compile check on EVERY python file: `py_compile` writes the .pyc beside the source, the checkout
+belongs to the runner, the container is uid 10001 — EACCES on `__pycache__`, swallowed, rendered as
+a syntax verdict with no reason printed (classes 1 and 26; the image even sets
+`PYTHONDONTWRITEBYTECODE=1`, which py_compile ignores by design). MEASURED: a file holding `x = 1`
+fails identically in a read-only directory. Compile IN-PROCESS from BYTES — no write, no
+subprocess, no mount, and `compile()` raises on exactly what the gate is for. `do_tests()` also
+refreshes the git index and regenerates a stale SBOM, so one writer at a time was never the fix:
+CI now mounts the checkout **`:ro`** and the gate runs against a copy it owns (`GATE_WORKDIR`),
+which makes "the gate phase is side-effect free" a mount option rather than a comment.
+[2026-10-15] `tests/test_pipeline_architecture.py`
+
+**"NO node_modules ARE NEEDED" WAS MEASURED OVER ONE DIRECTORY.** True of
+`webapp/frontend/tools/*.mjs` (builtins only), false of the engine's five deck builders, which all
+`require("pptxgenjs")` — so the gate died `MODULE_NOT_FOUND` on the first deck. His box hides it:
+`hermes-skills/shodan-assessment/node_modules` is gitignored, so only a fresh checkout can show it.
+Dockerfile.ci now runs **`npm ci`** from the COMMITTED lockfile (the ONE HOME, pptxgenjs 4.0.1) and
+sets `NODE_PATH`, because the gate runs against a COPY and a checkout has no node_modules
+(MEASURED both ways). The guard DERIVES the dependency set from every `require`/`import` in
+gate-run JS and fails if one is undeclared — class 35.
+**AND THE GATE MUST SAY WHAT BROKE**: `build()` returned `stderr[-300:]`, but node puts the cause
+on the FIRST line, so nine failures reported `e._load` / `odule._load` / `ule._load` — one string
+cut at three offsets, reading as three faults. `node_error()` finds the error vocabulary, then the
+frame inside this repo. Two of my own guards could not fail: the Dockerfile assertions matched the
+COMMENT explaining them (class 4, the sixth time), and the node_error tests never touched the CALL
+SITE (class 9). All four mutations now fail.
+[2026-10-15] `tests/test_gate_diagnostics.py`
+
+**HIS GREEN SUITE WAS TESTING A STACK THAT DOES NOT SHIP.** Four tests passed on his PC and failed
+in CI, one root cause each, all the same shape — the laptop is not the runner.
+**(a) A FLOOR IS NOT A PIN.** `starlette>=1.3.1` let the image and his box land on different
+releases; which responses poll for a client disconnect changed between them, so the white-label
+harness — which answered `http.request` FOREVER, wrong on every version — raised `Unexpected
+message received` only there. ASGI says one body then `http.disconnect`; `_receive_for()` is the
+ONE HOME and a contract test pins it, because on a tolerant starlette the endpoint tests pass
+anyway. Pinned `starlette==1.7.0`; a test forbids a floor on anything serving HTTP.
+**(b) `ensure_app_requirements()` INSTALLS MISSING, NEVER UPGRADES** (still right), but its
+docstring claimed drift "is answered by the image build" — it is not: he held fastapi 0.115 /
+starlette 0.46 against a declared 0.141/1.7. `report_requirement_drift()` is wired into ship.py,
+NAMES each mismatch, is silent when they agree, and never blocks.
+**(c) A TZ-MIXED DATE IS A PRODUCTION BUG.** `spend_watch.baseline()` parsed with local `mktime`
+and formatted with UTC `gmtime`, dropping a real day off the window east of Greenwich (MEASURED:
+UTC [0.4,0.4,0,0]=0.20, Berlin [0.4,0,0,0]=0.00). The droplet is UTC so the alert was never wrong
+there; his test asserted the buggy 0.00 and CI was the first to disagree. `calendar.timegm`, plus
+a four-timezone test.
+**(d) `jobhuntwow-app/` IS GITIGNORED** — zero tracked files, so asserting its paths answered
+"wiring is wrong" when the truth was "not in this checkout" (class 1). In-repo half always
+asserted; sibling half runs on his box, skips with a reason elsewhere. [2026-10-15]
 
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 

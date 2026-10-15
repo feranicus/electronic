@@ -309,7 +309,89 @@ def ensure_app_requirements(py=None):
         print("    installed %s" % spec)
 
 
-ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
+def report_requirement_drift(py=None):
+    """Say so when the testing interpreter holds a DIFFERENT version than requirements.txt declares.
+
+    ensure_app_requirements() installs only what is missing and never upgrades, for a good reason
+    that still stands: a blanket upgrade can move fastapi or starlette underneath everything else
+    in a developer's interpreter. It concluded that version drift "is answered by the image build".
+
+    IT IS NOT, and 2026-10-15 measured the cost. The operator's Python held fastapi 0.115 /
+    starlette 0.46 while requirements.txt declares fastapi 0.141 and the image resolved a 1.x
+    starlette. Two white-label tests passed locally and failed in CI, because which responses poll
+    for a client disconnect changed between those releases. The local suite was green about a stack
+    that is not the one that ships, which is defect class 19 wearing a different hat: green on his
+    box was never evidence about the runner.
+
+    So this does not upgrade anything - it NAMES the drift. Edge-triggered by construction: silent
+    when the versions agree, so it can never become the warning that fires every run and trains the
+    operator to read past it. It is a finding, not a failure: the image is authoritative, and
+    refusing to ship because a laptop is behind would be a manual step dressed up as a gate.
+    """
+    py = py or sys.executable
+    req = os.path.join(HERE, "webapp", "backend", "requirements.txt")
+    if not os.path.exists(req):
+        return []
+    want = []
+    for raw in open(req, encoding="utf-8"):
+        line = raw.split("#", 1)[0].strip()
+        if not line or ("==" not in line and ">=" not in line):
+            continue
+        op = "==" if "==" in line else ">="
+        name, _, ver = line.partition(op)
+        for sep in ("[", " "):
+            name = name.split(sep, 1)[0]
+        want.append((name.strip(), op, ver.strip()))
+    if not want:
+        return []
+    probe = ("import sys\n"
+             "from importlib import metadata as m\n"
+             "for n in sys.argv[1:]:\n"
+             "    try:\n"
+             "        print(n + '=' + m.version(n))\n"
+             "    except Exception:\n"
+             "        pass\n")
+    r = subprocess.run([py, "-c", probe] + [n for n, _, _ in want],
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=120)
+    if r.returncode != 0:
+        return []                                 # a probe we cannot run must not speak
+    have = {}
+    for ln in (r.stdout or "").splitlines():
+        if "=" in ln:
+            k, _, v = ln.strip().partition("=")
+            have[k] = v
+
+    def _tup(s):
+        out = []
+        for p in s.split("."):
+            if p == "*" or not p.isdigit():
+                break
+            out.append(int(p))
+        return tuple(out)
+
+    drift = []
+    for name, op, ver in want:
+        got = have.get(name)
+        if not got:
+            continue                              # absent is ensure_app_requirements()'s business
+        if op == "==":
+            prefix = ver[:-1] if ver.endswith("*") else None
+            ok = got.startswith(prefix) if prefix else (got == ver)
+        else:
+            ok = _tup(got) >= _tup(ver)
+        if not ok:
+            drift.append((name, got, op + ver))
+    if drift:
+        print("  [!] this Python does NOT hold the declared stack - %d package(s) differ, so a "
+              "green suite here is not evidence about the image:" % len(drift))
+        for name, got, spec in drift:
+            print("      %-18s installed %-12s declared %s" % (name, got, spec))
+        print("      The CI gate installs requirements.txt from a clean base and is authoritative.")
+    return drift
+
+
+ENGINE_FILES =["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
                 "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py",
                 "scripts/enrich_parallel.py", "scripts/attribution.py",
@@ -475,8 +557,23 @@ def do_tests():
     say("1/5  TESTS — nothing ships if these fail")
     engine = os.path.join(HERE, "hermes-skills", "shodan-assessment", "scripts")
 
-    # a) compile every engine + root script: catches truncation and syntax breakage early
-    bad = []
+    # a) compile every engine + root script: catches truncation and syntax breakage early.
+    #
+    #    IN-PROCESS `compile()`, NOT `python -m py_compile` (2026-10-15). py_compile WRITES the
+    #    .pyc into __pycache__ beside the source, so it needs the SOURCE DIRECTORY to be writable.
+    #    The CI gate runs this image as `--user 10001:10001` over a mounted /src, which it is not:
+    #    every one of the 124 files returned rc 1 with "[Errno 13] Permission denied:
+    #    '__pycache__'", the check swallowed that output, and the gate reported "124 file(s)
+    #    broken" - a permissions fact presented as a syntax verdict, with no reason printed.
+    #    Defect class 1 (a check reporting its own blindness as a finding about the system) and
+    #    class 26 (it never named its subject). MEASURED: a file containing `x = 1` fails exactly
+    #    the same way in a read-only directory.
+    #
+    #    compile() raises SyntaxError on precisely what this gate exists to catch - truncation and
+    #    broken syntax - writes nothing, needs no subprocess, and cannot be defeated by a mount.
+    #    Bytes, not text: compile() honours the encoding cookie and the BOM itself, and reading as
+    #    text would apply universal newlines and silently repair the input (defect class 21).
+    bad, unreadable = [], []
     for root in (engine, HERE, os.path.join(HERE, "webapp", "backend", "app")):
         if not os.path.isdir(root):
             continue
@@ -484,15 +581,34 @@ def do_tests():
             if not fn.endswith(".py") or fn.startswith("linkedin_verifier_old"):
                 continue
             p = os.path.join(root, fn)
-            if subprocess.run([sys.executable, "-m", "py_compile", p],
-                              capture_output=True).returncode != 0:
-                bad.append(os.path.relpath(p, HERE))
+            rel = os.path.relpath(p, HERE)
+            try:
+                with open(p, "rb") as fh:
+                    src = fh.read()
+            except OSError as e:          # a CRASH, not a FINDING (defect class 10)
+                unreadable.append("%s (%s)" % (rel, e))
+                continue
+            try:
+                compile(src, p, "exec")
+            except (SyntaxError, ValueError) as e:
+                bad.append("%s  %s" % (rel, str(e).splitlines()[0] if str(e) else type(e).__name__))
     print("  compile check: %d file(s) broken" % len(bad))
+    if unreadable:
+        # Never counted as "broken": not being able to READ a file is a statement about this
+        # machine, which is the exact confusion that produced the 124.
+        print("  [X] compile check could not READ %d file(s) - it did not inspect them, and this "
+              "is NOT a verdict on their contents:" % len(unreadable))
+        for u in unreadable:
+            print("      " + u)
+        sys.exit("[X] the compile gate could not see its subject, so it has no answer")
 
     # BEFORE any test runs. The suite imports the FastAPI app, so a dependency declared in
     # requirements.txt but absent from THIS interpreter fails with a message that looks like a code
     # defect. Installing it here is the same remedy ship.py already applies to ruff.
     ensure_app_requirements()
+    # WIRED INTO THE ORCHESTRATOR, not a second command the operator has to remember. Silent unless
+    # the declared stack and the installed one actually disagree.
+    report_requirement_drift()
     if bad:
         for b in bad:
             print("    [X] " + b)
@@ -2038,6 +2154,9 @@ def main():
     ap.add_argument("--fast-stage", action="store_true",
                     help="validate on staging but SKIP the reboot test (faster, weaker — the "
                          "reboot is the test that would have caught the 2026-08-07 outage)")
+    ap.add_argument("--pr", action="store_true",
+                    help="reach main through a gated pull request instead of pushing to it "
+                         "directly, then let pipeline.yml deploy (set SHIP_FLOW=pr to default)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
     ap.add_argument("--fix-ci-key", action="store_true",
                     help="prove the deploy key works and set the DROPLET_SSH_KEY secret from it "
@@ -2147,6 +2266,54 @@ def main():
         do_tests()
     if a.test:
         print("\n--test: tests only. Nothing deployed.")
+        return
+
+    # ---- HOW THE CODE REACHES main --------------------------------------------------------
+    # PR FLOW (the two-developer path, and now the default once SHIP_FLOW=pr is set):
+    #   branch -> push -> PR -> WAIT for quality-and-secrets -> merge. main then only ever
+    #   receives commits a green gate has already seen, for everybody, with no admin bypass.
+    #
+    #   This is not a preference. GitHub's rules reference says a required status check must pass
+    #   "before collaborators can make changes to a branch", and a fresh commit has no check runs
+    #   yet - so a required check can NEVER be satisfied by a direct push. That is the
+    #   `Bypassed rule violations` line on every ship, and it is why a collaborator's push would
+    #   be rejected AFTER the staging gate and before the safe-point.
+    #
+    #   MERGING IS THE DEPLOY. pipeline.yml fires on push to main and is the one automatic path to
+    #   production. So in PR mode ship.py STOPS after the merge: deploying here as well would
+    #   re-create the two-paths-one-droplet defect that pipeline.yml exists to remove (measured
+    #   2026-10-15: the laptop shipped colt-web at 11:52Z, CI shipped the bots at 11:58Z).
+    _flow_pr = a.pr or os.environ.get("SHIP_FLOW", "").lower() == "pr"
+    if _flow_pr and not DRY:
+        import shipflow
+        say("2/5  PULL REQUEST — main is reached only through a green gate")
+        _clear_stale_git_locks()
+        # deploying=FALSE, and that is the point rather than a loophole. The wrong-branch guard is
+        # fatal only when this script is about to deploy, because main is what deploys. In PR mode
+        # the laptop deploys NOTHING - pipeline.yml does, after the merge - and being on a ship/
+        # branch is the normal mid-flow state, not a mistake. Calling it with deploying=True made
+        # the flow refuse to resume its own branch after a red gate, which is exactly the state a
+        # red gate is supposed to leave behind. The stale-tree guard and the "what am I about to
+        # commit" printout still run, because those matter more with two people, not less.
+        collaboration_guards(deploying=False)
+        _ok, _info = shipflow.run(a.message or "ship: engine + web update")
+        if not _ok:
+            print("\n[X] %s" % _info.get("error", "the PR flow did not complete"))
+            if _info.get("url"):
+                print("    The work is pushed and the PR is open: %s" % _info["url"])
+                print("    Fix what the gate named, then re-run: python ship.py")
+            sys.exit(2)
+        if _info.get("noop"):
+            print("  nothing to ship.")
+            return
+        print("")
+        print("=" * 74)
+        print("  MERGED. pipeline.yml is now the thing deploying, not this script.")
+        print("    gate   -> build once -> scan -> staging (+reboot) -> production (approval)")
+        print("    watch:   gh run watch --repo %s" % shipflow.REPO)
+        print("    approve: the production environment asks for a reviewer before it touches")
+        print("             64.225.108.200")
+        print("=" * 74)
         return
 
     do_git(a.message or "ship: engine + web update")

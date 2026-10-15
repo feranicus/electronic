@@ -73,12 +73,59 @@ def test_the_baseline_is_a_median_so_one_prior_spike_cannot_hide_the_next(env):
 
 
 def test_a_silent_day_counts_as_zero_and_does_not_raise_the_baseline(env):
-    """Skipping days with no calls would quietly raise the baseline and hide a return to spending."""
+    """Skipping days with no calls would quietly raise the baseline and hide a return to spending.
+
+    REWRITTEN 2026-10-15 (defect class 17), and the old reasoning is kept because it is the whole
+    lesson. It asserted `med == 0.0` on two spending days and called them "the eight silent days".
+    There were never eight: `baseline()` truncates to `max(len(days), MIN_BASELINE_DAYS)`, which is
+    4 here, so the window is [0.4, 0.4, 0, 0] and the median is 0.20.
+
+    It passed anyway - on the operator's machine only - because `baseline()` parsed the newest day
+    with local-time mktime and formatted with UTC gmtime. In CEST that shifted the window a day,
+    turning it into [0.4, 0, 0, 0] and the median into exactly the 0.0 the assertion demanded. The
+    test and the bug agreed with each other, so neither was visible until CI ran in UTC.
+
+    So this now asserts the property the docstring was really about: silence DRAGS THE BASELINE
+    DOWN rather than being skipped. Both halves are checked - a short window, and a long one where
+    the silent days genuinely reach the median.
+    """
     today = time.strftime("%Y-%m-%d", time.gmtime())
     per_day = [{"day": time.strftime("%Y-%m-%d", time.gmtime(time.time() - i * 86400)), "usd": 0.4}
                for i in (1, 2)]
     med, _ = SW.baseline(per_day, today)
-    assert med == pytest.approx(0.0), "the eight silent days must pull the median to zero"
+    assert med == pytest.approx(0.2), (
+        "two spending days inside a 4-day floor must give the median of [0.4, 0.4, 0, 0]")
+    assert med < 0.4, "the silent days did not pull the baseline below the days that spent"
+
+    # And with a full window of observed days, the silent majority IS the baseline.
+    long_run = [{"day": time.strftime("%Y-%m-%d", time.gmtime(time.time() - i * 86400)),
+                 "usd": (0.4 if i in (1, 2) else 0.0)} for i in range(1, 11)]
+    med10, n10 = SW.baseline(long_run, today)
+    assert n10 == 10
+    assert med10 == pytest.approx(0.0), "eight genuinely silent days must pull the median to zero"
+
+
+def test_the_baseline_window_is_the_same_in_every_timezone(env, monkeypatch):
+    """SIMULATE THE PLATFORM (defect class 20). The droplet runs UTC and the operator's box does
+    not, and that difference silently removed a day of history from the window - a production
+    defect that only a non-UTC machine could produce and only a UTC machine could detect.
+
+    `time.tzset` is POSIX-only, so this skips on Windows rather than pretending (class 22); CI and
+    the droplet are Linux, which is where the two timezones can actually be compared.
+    """
+    if not hasattr(time, "tzset"):
+        pytest.skip("time.tzset is POSIX-only; CI and the droplet cover this")
+    per_day = [{"day": "2026-10-14", "usd": 0.4}, {"day": "2026-10-13", "usd": 0.4}]
+    seen = {}
+    for tz in ("UTC", "Europe/Berlin", "America/Los_Angeles", "Asia/Tokyo"):
+        monkeypatch.setenv("TZ", tz)
+        time.tzset()
+        seen[tz] = SW.baseline(per_day, "2026-10-15")[0]
+    monkeypatch.delenv("TZ", raising=False)
+    time.tzset()
+    assert len(set(seen.values())) == 1, (
+        "the baseline window depends on the machine's timezone, so the same spending reads "
+        "differently on the droplet and on a developer's laptop: %s" % seen)
 
 
 def test_today_is_excluded_from_its_own_baseline(env):

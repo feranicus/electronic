@@ -721,13 +721,35 @@ def test_the_operator_can_override_the_default_in_either_direction(tmp_path, mon
 
 def test_the_real_distributed_copies_land_on_the_right_side_of_that_rule():
     """WIRING, measured against the actual repository rather than against the rule's own logic:
-    colt-web has a shield.py beside its copy and jobhuntwow does not, so one defers and one arms."""
+    colt-web has a shield.py beside its copy and jobhuntwow does not, so one defers and one arms.
+
+    SPLIT 2026-10-15. This used to assert both halves unconditionally and failed in CI, because
+    `jobhuntwow-app/` is in .gitignore - zero files of it are tracked, so it exists on the
+    operator's disk and in NO checkout. A check that cannot see its subject must not answer
+    (defect class 1); asserting os.path.exists on a path that is structurally absent was reporting
+    "the wiring is wrong" when the truth was "the sibling project is not here".
+
+    The in-repo half is asserted always. The sibling is asserted when it is present - which is the
+    operator's machine, where it is real - and reported as unavailable otherwise. That is not a
+    coverage hole: the RULE itself (shield beside the copy -> defer, no shield -> arm) is proved
+    against synthetic directories by the two tests above, which run everywhere. What only the
+    sibling can add is confirmation that the real jobhuntwow copy still has no shield.py beside
+    it, and this repository genuinely cannot know that.
+    """
     beside_shield = os.path.join(ROOT, "webapp", "backend", "app")
-    no_shield = os.path.join(ROOT, "jobhuntwow-app", "backend", "app")
     assert os.path.exists(os.path.join(beside_shield, "perseus_client.py"))
     assert os.path.exists(os.path.join(beside_shield, "shield.py"))
-    assert os.path.exists(os.path.join(no_shield, "perseus_client.py"))
-    assert not os.path.exists(os.path.join(no_shield, "shield.py"))
+
+    no_shield = os.path.join(ROOT, "jobhuntwow-app", "backend", "app")
+    if not os.path.isdir(no_shield):
+        pytest.skip("jobhuntwow-app/ is gitignored and absent from this checkout; the defer/arm "
+                    "rule itself is covered by the synthetic-copy tests above")
+    assert os.path.exists(os.path.join(no_shield, "perseus_client.py")), (
+        "the jobhuntwow checkout is here but has no perseus_client.py - the fleet rollout missed "
+        "it, and nothing else in this suite would say so")
+    assert not os.path.exists(os.path.join(no_shield, "shield.py")), (
+        "jobhuntwow now has a shield.py beside its copy, so that copy will DEFER instead of "
+        "arming - the opposite of what this deployment intends")
 
 
 # =============================================================================================

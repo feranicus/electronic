@@ -49,6 +49,36 @@ def multipart(fields, files):
     return out, "multipart/form-data; boundary=" + BOUNDARY
 
 
+def _receive_for(body):
+    """An ASGI `receive` that delivers the body ONCE and then reports a disconnect.
+
+    THE 2026-10-15 CI FAILURE. This used to be two lines inside req() that returned
+    `{"type": "http.request", ...}` to every call, forever. Starlette's
+    `Response.listen_for_disconnect` is `while True: message = await receive()` until it sees
+    http.disconnect, so an endlessly repeating http.request either spins or - behind
+    BaseHTTPMiddleware, which wraps receive and rejects a second body message - raises
+    `RuntimeError: Unexpected message received: http.request` inside a TaskGroup. Both logo tests
+    died that way in CI and passed on the operator's machine, because WHICH responses poll for a
+    disconnect changed between starlette releases and his interpreter held an older one. The
+    version is pinned now (webapp/backend/requirements.txt), but the harness was wrong on any
+    version: this is simply what the ASGI spec says a client does.
+
+    REPRODUCED before fixing: a StreamingResponse behind BaseHTTPMiddleware raises that same
+    ExceptionGroup with the old receive and returns its body with this one. Lifted to module level
+    so the contract test below measures the function req() ACTUALLY uses (defect class 4), not a
+    second copy of it that could drift.
+    """
+    sent = {"body": False}
+
+    async def receive():
+        if sent["body"]:
+            return {"type": "http.disconnect"}
+        sent["body"] = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return receive
+
+
 def req(path, method="GET", email=None, body=b"", ctype="application/json", query=b""):
     from app import main
     from app.auth import make_session
@@ -62,8 +92,7 @@ def req(path, method="GET", email=None, body=b"", ctype="application/json", quer
              "client": ("127.0.0.1", 1), "server": ("testserver", 80)}
     got = {"status": 0, "body": b"", "headers": {}}
 
-    async def receive():
-        return {"type": "http.request", "body": body, "more_body": False}
+    receive = _receive_for(body)
 
     async def send(msg):
         if msg.get("type") == "http.response.start":
@@ -78,6 +107,34 @@ def req(path, method="GET", email=None, body=b"", ctype="application/json", quer
     except Exception:
         got["json"] = {}
     return got
+
+
+def test_the_harness_speaks_asgi_one_body_then_disconnect():
+    """THE HARNESS IS THE SUBJECT (defect class 9 - behaviour AND wiring, here applied to a fixture).
+
+    The two logo tests below exercise `req()` but cannot pin this: whether a response polls
+    `receive()` a second time depends on the starlette release, so on some versions a harness that
+    answers `http.request` forever passes anyway. It did here, and failed in CI, and the difference
+    was invisible because the versions were not pinned. Asserting the CONTRACT directly means the
+    regression fails on every machine instead of only the unlucky one.
+
+    ASGI: the client sends the request body, then the only thing left to report is a disconnect.
+    An endless `http.request` makes `Response.listen_for_disconnect` - `while True: await
+    receive()` - spin, or raises inside BaseHTTPMiddleware's wrapped receive.
+    """
+    seen = []
+
+    async def drain():
+        scope_receive = _receive_for(b"payload")
+        for _ in range(4):
+            seen.append((await scope_receive())["type"])
+
+    asyncio.run(drain())
+    assert seen[0] == "http.request", "the body is never delivered"
+    assert set(seen[1:]) == {"http.disconnect"}, (
+        "req()'s receive() repeats http.request instead of reporting a disconnect; starlette will "
+        "either spin in listen_for_disconnect or raise 'Unexpected message received'. Got %s"
+        % seen)
 
 
 ME = "feranicus@s4biz.io"

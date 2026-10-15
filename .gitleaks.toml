@@ -3,8 +3,34 @@
 useDefault = true
 
 [allowlist]
-description = "Placeholders and documentation (no real secrets)"
+description = "Placeholders, documentation, and the three files whose JOB is to contain secret-SHAPED text (no real credentials — asserted by tests/test_secret_scan.py)"
 paths = [
   '''.*\.env\.example$''',
   '''README\.md$''',
+
+  # ------------------------------------------------------------------------------------------
+  # WHY THESE THREE, AND WHY THIS IS NOT A RUBBER STAMP.
+  #
+  # `quality-and-secrets` had been RED since at least 2026-08-22 and nobody saw it, because the
+  # branch rule it belongs to was bypassed on every push. An alert nobody gets is not an alert.
+  # The first run that actually blocked a merge (PR #19) reported five findings, and every one of
+  # them is code ABOUT secrets rather than a secret:
+  #
+  #   ci_key.py                 the literal BEGIN/END delimiters a key DETECTOR must match on.
+  #                             Obfuscating them ("-----BEGIN " + "OPENSSH...") to dodge the
+  #                             scanner would make the detector worse AND teach the next person
+  #                             that hiding from gitleaks is normal.
+  #   tests/test_ci_key.py      synthetic key fixtures. The base64 body is deliberately not a
+  #                             usable key; `ssh-keygen -y` refuses it, which the guard asserts.
+  #   tests/test_llm_guard.py   a list of things the LLM guard must REDACT - ghp_..., sk-...,
+  #                             AKIA..., a PEM header. The test exists precisely because these
+  #                             must never reach an answer.
+  #
+  # A path allowlist is a real risk: a genuine key committed to one of these files would now be
+  # invisible to gitleaks. That risk is closed by tests/test_secret_scan.py, which fails the build
+  # if any allowlisted file contains a credential that actually parses, or if an entry here points
+  # at a file that no longer exists. The allowlist and its guard are one change, deliberately.
+  '''^ci_key\.py$''',
+  '''^tests/test_ci_key\.py$''',
+  '''^tests/test_llm_guard\.py$''',
 ]

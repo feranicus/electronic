@@ -103,7 +103,39 @@ free gate phase is what makes it safe for a runner to execute on every pull requ
   bytes, prints the installed key's **fingerprint** (public information), and refuses with a named
   cause before any deploy step if OpenSSH cannot derive its public half.
 
-## The open decision: the ruleset, and a second developer
+## Decided: the PR flow (`shipflow.py`)
+
+`python ship.py --pr` (or `SHIP_FLOW=pr` to make it the default) replaces the direct push with:
+
+```
+branch ship/<user>-<stamp>-<slug>
+  -> push
+  -> open PR          (reuses an existing one, so a re-run resumes)
+  -> WAIT for quality-and-secrets on that SHA
+  -> squash merge + delete the branch
+  -> pipeline.yml deploys
+```
+
+`main` then only ever receives commits a green gate has already seen — for everybody, with no
+admin bypass and no `Bypassed rule violations` line.
+
+**The merge is the deploy, and ship.py stops there.** `pipeline.yml` fires on push to `main`. If
+PR mode also deployed from the laptop, one commit would again produce two deploys to one droplet —
+the defect measured at the top of this document. A test asserts the PR branch of `main()` calls
+none of `do_web`, `do_bots`, `do_verify`, `tag_known_good`.
+
+**Nothing merges on an unknown state.** `check_state()` returns `pass` only for a completed check
+whose conclusion is `success`. Pending, missing, cancelled, timed out, `action_required`, a null
+conclusion, an unreachable API and a non-JSON response are all "not green". `skipped` is the one
+that matters most: a `paths:` filter or a cancelled workflow produces it, and a gate that did not
+run is not a gate that passed. Nine mutations were run against these guards, including "treat
+skipped as green", "bad JSON reads as pass" and "timeout returns ok"; all nine fail the suite.
+
+**Failure is recoverable.** A red gate leaves the branch and the PR in place — they are the only
+artefact that says what failed — and the timeout message says the work is pushed and the command
+is resumable.
+
+## The ruleset setting that still needs your hand
 
 From GitHub's own rules reference:
 
@@ -116,15 +148,32 @@ you bypass it; a collaborator cannot, so their first `python ship.py` would run 
 deploy to staging, and then be **rejected at the push** — after the staging gate, before the
 safe-point.
 
-Two ways out, and this is a decision rather than a defect:
+The PR flow above removes that wall: a PR's head commit **does** get check runs, so the rule is
+satisfiable the normal way and nothing needs bypassing. Two settings still have to be changed by
+hand, because only the repo owner can:
 
-- **Keep direct push.** Drop the required-status-check rule and add the collaborator to the bypass
-  list. `ship.py` stays exactly as it is. Protection becomes detect-after-push: `pipeline.yml` still
-  gates the deploy, so nothing unverified reaches production — only `main` can briefly hold a commit
-  that fails the gate.
-- **Move to pull requests.** `ship.py` pushes a branch and opens a PR, CI gates run on the PR, merge
-  triggers the pipeline. Stricter, and still one command if `ship.py` drives it end to end. This is
-  the usual modern answer and the one I would pick for two or more developers.
+1. **Add the collaborator** with **write** access (not admin). Write is enough to open a PR, push a
+   branch and merge a green one. Admin would let them edit rulesets and bypass the gate, which is
+   the thing the gate exists to prevent.
+2. **Turn on "Require a pull request before merging"** for `main`, and take yourself off the bypass
+   list. Until you do, the direct path still works for you — which is convenient and is also how
+   `main` ends up holding a commit the gate never saw. The flow is already written and tested;
+   this setting is what makes it the *only* way in.
+
+Keep `ship.py --direct` for the day the pipeline itself is what is broken. That is a deliberate
+override by an informed operator, which is different from a bypass nobody decided on.
+
+### Residual risks, named rather than papered over
+
+- **The deploy key is root on a shared droplet.** `colt_ci` lives in `DROPLET_SSH_KEY`, and that
+  box also runs Amnezia VPN, VideoDead, joplin and six public domains. Write access to this repo is
+  therefore effectively root on production, via any workflow that can read the secret. The
+  `production` environment's required reviewer is what stands between a merged PR and that key.
+- **Squash merge creates a new commit** that was never gated in that exact form, so `ci.yml` runs
+  again on `main` and `pipeline.yml` waits for it. That is correct, not redundant.
+- **The gate image is unproven until the first CI run.** `Dockerfile.ci` has not been built
+  anywhere yet; `ship.py --test` was verified to run headlessly offline on Linux, but the container
+  build itself has never executed.
 
 Also still unexplained, from `caddyguard`: `jobhw.org` and `www.jobhw.org` are served by the shared
 proxy but are not on the committed roster.
