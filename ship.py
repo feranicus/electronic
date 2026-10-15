@@ -2038,6 +2038,9 @@ def main():
     ap.add_argument("--fast-stage", action="store_true",
                     help="validate on staging but SKIP the reboot test (faster, weaker — the "
                          "reboot is the test that would have caught the 2026-08-07 outage)")
+    ap.add_argument("--pr", action="store_true",
+                    help="reach main through a gated pull request instead of pushing to it "
+                         "directly, then let pipeline.yml deploy (set SHIP_FLOW=pr to default)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
     ap.add_argument("--fix-ci-key", action="store_true",
                     help="prove the deploy key works and set the DROPLET_SSH_KEY secret from it "
@@ -2147,6 +2150,47 @@ def main():
         do_tests()
     if a.test:
         print("\n--test: tests only. Nothing deployed.")
+        return
+
+    # ---- HOW THE CODE REACHES main --------------------------------------------------------
+    # PR FLOW (the two-developer path, and now the default once SHIP_FLOW=pr is set):
+    #   branch -> push -> PR -> WAIT for quality-and-secrets -> merge. main then only ever
+    #   receives commits a green gate has already seen, for everybody, with no admin bypass.
+    #
+    #   This is not a preference. GitHub's rules reference says a required status check must pass
+    #   "before collaborators can make changes to a branch", and a fresh commit has no check runs
+    #   yet - so a required check can NEVER be satisfied by a direct push. That is the
+    #   `Bypassed rule violations` line on every ship, and it is why a collaborator's push would
+    #   be rejected AFTER the staging gate and before the safe-point.
+    #
+    #   MERGING IS THE DEPLOY. pipeline.yml fires on push to main and is the one automatic path to
+    #   production. So in PR mode ship.py STOPS after the merge: deploying here as well would
+    #   re-create the two-paths-one-droplet defect that pipeline.yml exists to remove (measured
+    #   2026-10-15: the laptop shipped colt-web at 11:52Z, CI shipped the bots at 11:58Z).
+    _flow_pr = a.pr or os.environ.get("SHIP_FLOW", "").lower() == "pr"
+    if _flow_pr and not DRY:
+        import shipflow
+        say("2/5  PULL REQUEST — main is reached only through a green gate")
+        _clear_stale_git_locks()
+        collaboration_guards(deploying=True)
+        _ok, _info = shipflow.run(a.message or "ship: engine + web update")
+        if not _ok:
+            print("\n[X] %s" % _info.get("error", "the PR flow did not complete"))
+            if _info.get("url"):
+                print("    The work is pushed and the PR is open: %s" % _info["url"])
+                print("    Fix what the gate named, then re-run: python ship.py")
+            sys.exit(2)
+        if _info.get("noop"):
+            print("  nothing to ship.")
+            return
+        print("")
+        print("=" * 74)
+        print("  MERGED. pipeline.yml is now the thing deploying, not this script.")
+        print("    gate   -> build once -> scan -> staging (+reboot) -> production (approval)")
+        print("    watch:   gh run watch --repo %s" % shipflow.REPO)
+        print("    approve: the production environment asks for a reviewer before it touches")
+        print("             64.225.108.200")
+        print("=" * 74)
         return
 
     do_git(a.message or "ship: engine + web update")

@@ -148,10 +148,20 @@ the build path is byte-identical and untouched, asserted), and `WEB_TAG` makes s
 SAME bytes. CI calls the repo's scripts — stagegate.py, deploy*.py, caddyguard.py — never inline ssh.
 
 **A REQUIRED STATUS CHECK CANNOT BE SATISFIED BY A DIRECT PUSH** (GitHub: checks must pass "before
-collaborators can make changes to a branch"; a new commit has no check runs yet). That is why every
-ship prints `Bypassed rule violations`, and why a COLLABORATOR's push would be rejected after the
-staging gate. Decide: drop the rule + bypass list (keeps direct push), or move ship.py to a PR flow.
-`tests/test_pipeline_architecture.py` · `docs/decisions/2026-10-pipeline-architecture.md`
+collaborators can make changes to a branch"; a new commit has no check runs yet). That is the
+`Bypassed rule violations` line on every ship, and why a COLLABORATOR's push would be rejected
+AFTER the staging gate. **`shipflow.py` is the answer**: `python ship.py --pr` (or `SHIP_FLOW=pr`)
+does branch -> push -> PR -> WAIT for the gate -> squash-merge, so main only receives commits a
+green gate has seen, with no bypass. A PR's head commit DOES get check runs, which is what makes
+the rule satisfiable. **The merge IS the deploy** — pipeline.yml fires on push to main, so PR mode
+STOPS there (asserted: the branch calls no do_web/do_bots/do_verify/tag_known_good) or one commit
+would deploy twice again. Nothing merges on an UNKNOWN state: pending/missing/cancelled/timed_out/
+action_required/null/dead-API/non-JSON are all not-green, and **`skipped` especially** — a gate that
+did not run is not a gate that passed. `--direct` stays for the day the pipeline is what is broken.
+Two settings only the owner can change: add the collaborator with **write** (never admin), and turn
+on "Require a pull request before merging" with yourself OFF the bypass list.
+`tests/test_shipflow.py` · `tests/test_pipeline_architecture.py` ·
+`docs/decisions/2026-10-pipeline-architecture.md`
 
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
