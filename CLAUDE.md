@@ -234,6 +234,27 @@ COMMENT explaining them (class 4, the sixth time), and the node_error tests neve
 SITE (class 9). All four mutations now fail.
 [2026-10-15] `tests/test_gate_diagnostics.py`
 
+**HIS GREEN SUITE WAS TESTING A STACK THAT DOES NOT SHIP.** Four tests passed on his PC and failed
+in CI, one root cause each, all the same shape — the laptop is not the runner.
+**(a) A FLOOR IS NOT A PIN.** `starlette>=1.3.1` let the image and his box land on different
+releases; which responses poll for a client disconnect changed between them, so the white-label
+harness — which answered `http.request` FOREVER, wrong on every version — raised `Unexpected
+message received` only there. ASGI says one body then `http.disconnect`; `_receive_for()` is the
+ONE HOME and a contract test pins it, because on a tolerant starlette the endpoint tests pass
+anyway. Pinned `starlette==1.7.0`; a test forbids a floor on anything serving HTTP.
+**(b) `ensure_app_requirements()` INSTALLS MISSING, NEVER UPGRADES** (still right), but its
+docstring claimed drift "is answered by the image build" — it is not: he held fastapi 0.115 /
+starlette 0.46 against a declared 0.141/1.7. `report_requirement_drift()` is wired into ship.py,
+NAMES each mismatch, is silent when they agree, and never blocks.
+**(c) A TZ-MIXED DATE IS A PRODUCTION BUG.** `spend_watch.baseline()` parsed with local `mktime`
+and formatted with UTC `gmtime`, dropping a real day off the window east of Greenwich (MEASURED:
+UTC [0.4,0.4,0,0]=0.20, Berlin [0.4,0,0,0]=0.00). The droplet is UTC so the alert was never wrong
+there; his test asserted the buggy 0.00 and CI was the first to disagree. `calendar.timegm`, plus
+a four-timezone test.
+**(d) `jobhuntwow-app/` IS GITIGNORED** — zero tracked files, so asserting its paths answered
+"wiring is wrong" when the truth was "not in this checkout" (class 1). In-repo half always
+asserted; sibling half runs on his box, skips with a reason elsewhere. [2026-10-15]
+
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
 After finishing ANY piece of work the user must trigger, end the reply with the exact command,

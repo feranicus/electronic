@@ -10,7 +10,16 @@
 # than assumed — and the whole suite was then run against the new stack, because a green
 # import is not a green app. fastapi 0.141 no longer caps starlette at all.
 fastapi==0.141.*
-starlette>=1.3.1
+# EXACT PIN, 2026-10-15 - for the reason this file already argues two paragraphs below, which
+# starlette was simply never held to. `starlette>=1.3.1` is a FLOOR, so every image build resolves
+# whatever is newest at that moment and the layer cache freezes an unknown one. The CI gate and
+# this developer machine ended up on different starlette releases, and the two white-label tests
+# failed in CI and passed locally because WHICH RESPONSES POLL FOR A CLIENT DISCONNECT changed
+# between them: the test harness replied `http.request` forever, which the newer code turns into
+# `RuntimeError: Unexpected message received` inside BaseHTTPMiddleware. The harness was wrong
+# either way and is fixed, but a floor meant nobody could say what had actually been tested.
+# 1.7.0 verified here against the full suite. Clears all three CVEs listed above (>= 1.3.1).
+starlette==1.7.0
 uvicorn[standard]==0.30.*
 itsdangerous==2.*
 requests==2.*

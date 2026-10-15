@@ -45,6 +45,7 @@ DESIGN DECISIONS THAT ARE NOT ARBITRARY:
 
 It never raises and it never blocks anything. Enforcement is llm_meter.allow(); this is observation.
 """
+import calendar
 import json
 import os
 import statistics
@@ -132,7 +133,18 @@ def baseline(per_day, today):
     # Fill the calendar so silent days count. Anchored on the newest day we hold, so a gap at the
     # start of the window does not invent history we never had.
     newest = max(days)
-    t_end = time.mktime(time.strptime(newest, "%Y-%m-%d"))
+    # UTC END TO END (fixed 2026-10-15). This was `time.mktime(...)`, which interprets the parsed
+    # date in LOCAL time, while every date below is formatted with `time.gmtime` - UTC. East of
+    # Greenwich that mixture shifts the whole window back by a day: the newest day's own entry is
+    # looked up under yesterday's date, silently dropping one real day of history off the end and
+    # replacing it with a zero.
+    #
+    # MEASURED, same two days of data: TZ=UTC gives window [0.4, 0.4, 0.0, 0.0] (median 0.20);
+    # TZ=Europe/Berlin gives [0.4, 0.0, 0.0, 0.0] (median 0.00). Production runs UTC so the alert
+    # was never wrong on the droplet, which is exactly why nothing caught it - and the operator's
+    # box is CEST, so his copy of the test agreed with the bug and CI was the first thing to
+    # disagree. calendar.timegm is the UTC counterpart of mktime and has no local-time opinion.
+    t_end = calendar.timegm(time.strptime(newest, "%Y-%m-%d"))
     seq = []
     for i in range(BASELINE_DAYS):
         d = time.strftime("%Y-%m-%d", time.gmtime(t_end - i * 86400))

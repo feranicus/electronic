@@ -309,7 +309,89 @@ def ensure_app_requirements(py=None):
         print("    installed %s" % spec)
 
 
-ENGINE_FILES = ["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
+def report_requirement_drift(py=None):
+    """Say so when the testing interpreter holds a DIFFERENT version than requirements.txt declares.
+
+    ensure_app_requirements() installs only what is missing and never upgrades, for a good reason
+    that still stands: a blanket upgrade can move fastapi or starlette underneath everything else
+    in a developer's interpreter. It concluded that version drift "is answered by the image build".
+
+    IT IS NOT, and 2026-10-15 measured the cost. The operator's Python held fastapi 0.115 /
+    starlette 0.46 while requirements.txt declares fastapi 0.141 and the image resolved a 1.x
+    starlette. Two white-label tests passed locally and failed in CI, because which responses poll
+    for a client disconnect changed between those releases. The local suite was green about a stack
+    that is not the one that ships, which is defect class 19 wearing a different hat: green on his
+    box was never evidence about the runner.
+
+    So this does not upgrade anything - it NAMES the drift. Edge-triggered by construction: silent
+    when the versions agree, so it can never become the warning that fires every run and trains the
+    operator to read past it. It is a finding, not a failure: the image is authoritative, and
+    refusing to ship because a laptop is behind would be a manual step dressed up as a gate.
+    """
+    py = py or sys.executable
+    req = os.path.join(HERE, "webapp", "backend", "requirements.txt")
+    if not os.path.exists(req):
+        return []
+    want = []
+    for raw in open(req, encoding="utf-8"):
+        line = raw.split("#", 1)[0].strip()
+        if not line or ("==" not in line and ">=" not in line):
+            continue
+        op = "==" if "==" in line else ">="
+        name, _, ver = line.partition(op)
+        for sep in ("[", " "):
+            name = name.split(sep, 1)[0]
+        want.append((name.strip(), op, ver.strip()))
+    if not want:
+        return []
+    probe = ("import sys\n"
+             "from importlib import metadata as m\n"
+             "for n in sys.argv[1:]:\n"
+             "    try:\n"
+             "        print(n + '=' + m.version(n))\n"
+             "    except Exception:\n"
+             "        pass\n")
+    r = subprocess.run([py, "-c", probe] + [n for n, _, _ in want],
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=120)
+    if r.returncode != 0:
+        return []                                 # a probe we cannot run must not speak
+    have = {}
+    for ln in (r.stdout or "").splitlines():
+        if "=" in ln:
+            k, _, v = ln.strip().partition("=")
+            have[k] = v
+
+    def _tup(s):
+        out = []
+        for p in s.split("."):
+            if p == "*" or not p.isdigit():
+                break
+            out.append(int(p))
+        return tuple(out)
+
+    drift = []
+    for name, op, ver in want:
+        got = have.get(name)
+        if not got:
+            continue                              # absent is ensure_app_requirements()'s business
+        if op == "==":
+            prefix = ver[:-1] if ver.endswith("*") else None
+            ok = got.startswith(prefix) if prefix else (got == ver)
+        else:
+            ok = _tup(got) >= _tup(ver)
+        if not ok:
+            drift.append((name, got, op + ver))
+    if drift:
+        print("  [!] this Python does NOT hold the declared stack - %d package(s) differ, so a "
+              "green suite here is not evidence about the image:" % len(drift))
+        for name, got, spec in drift:
+            print("      %-18s installed %-12s declared %s" % (name, got, spec))
+        print("      The CI gate installs requirements.txt from a clean base and is authoritative.")
+    return drift
+
+
+ENGINE_FILES =["scripts/shodan_recon.py", "scripts/run_assessment.py", "scripts/enrich.py",
                 "scripts/compliance_assess.py", "scripts/compliance_enrich.py",
                 "scripts/creed.js", "scripts/group_discovery.py", "scripts/engine_config.py",
                 "scripts/enrich_parallel.py", "scripts/attribution.py",
@@ -524,6 +606,9 @@ def do_tests():
     # requirements.txt but absent from THIS interpreter fails with a message that looks like a code
     # defect. Installing it here is the same remedy ship.py already applies to ruff.
     ensure_app_requirements()
+    # WIRED INTO THE ORCHESTRATOR, not a second command the operator has to remember. Silent unless
+    # the declared stack and the installed one actually disagree.
+    report_requirement_drift()
     if bad:
         for b in bad:
             print("    [X] " + b)

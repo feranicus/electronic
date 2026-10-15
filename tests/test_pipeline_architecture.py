@@ -218,6 +218,36 @@ def test_the_gate_image_installs_the_node_dependencies_the_gates_actually_import
     assert deps, "the dependency scan found nothing at all - it is reading the wrong tree"
 
 
+def test_the_web_stack_is_pinned_not_floored():
+    """A FLOOR MEANS NOBODY CAN SAY WHAT WAS TESTED.
+
+    requirements.txt already argues this at length for python-multipart - "a floor defeats the
+    immutability guarantee", because pip resolves independently in every build. starlette was
+    never held to it: `starlette>=1.3.1` let the CI image and the operator's machine land on
+    different releases, and two white-label tests then failed in CI and passed locally because
+    which responses poll for a client disconnect had changed between them.
+
+    Only the packages that actually serve requests are required to be exact. A floor on a library
+    that cannot change request handling is a different, smaller question, and a guard that
+    demanded exactness everywhere would be noise.
+    """
+    req = os.path.join(ROOT, "webapp", "backend", "requirements.txt")
+    serves_traffic = {"fastapi", "starlette", "uvicorn", "python-multipart"}
+    floored = []
+    for raw in open(req, encoding="utf-8"):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name = line
+        for sep in ("[", "<", ">", "=", "!", "~", ";", " "):
+            name = name.split(sep, 1)[0]
+        if name.strip().lower() in serves_traffic and "==" not in line:
+            floored.append(line)
+    assert not floored, (
+        "these serve HTTP and are declared with a floor, so every image build may resolve a "
+        "different release than the one the suite ran against: %s" % floored)
+
+
 def test_the_image_installs_from_the_lockfile_and_node_can_find_it():
     """`npm ci` not `npm install`, so the image gets exactly what the committed lockfile pins and
     cannot drift. NODE_PATH because the gate runs against a COPY of the checkout, and a checkout
