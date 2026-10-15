@@ -87,6 +87,14 @@ if os.path.exists(KEY):
     SSH += ["-i", KEY]
 
 DRY = False
+
+# THE GATE PHASE IS SIDE-EFFECT FREE, AND THAT IS WHAT LETS CI RUN IT.
+# do_tests() makes zero ssh calls (measured by AST, 2026-10-15) except one branch that installs
+# DO_API_TOKEN onto the droplet. Dockerfile.ci sets SHIP_GATES_OFFLINE=1 so that branch refuses
+# OUT LOUD. The flag never weakens a gate; it only forbids WRITING, which is why CI can run the
+# operator's own `python ship.py --test` instead of keeping a second copy of the gate list in YAML
+# (ONE HOME, defect class 32).
+GATES_OFFLINE = os.environ.get("SHIP_GATES_OFFLINE", "").strip() == "1"
 T0 = time.time()
 
 
@@ -703,6 +711,15 @@ def do_tests():
                        for l in open(_lenv, encoding='utf-8').read().splitlines())
         if _has:
             print('  DO_API_TOKEN: already in assess-bot/.env - account-wide spend watch is armed')
+        elif _tok and GATES_OFFLINE:
+            # THE GATE PHASE MUST HAVE NO SIDE EFFECTS. This is the ONE branch in do_tests() that
+            # can write to the droplet (set_secret upserts the remote .env over ssh), and CI runs
+            # this same function. Relying on "CI just won't have DO_API_TOKEN set" is a feature
+            # guarded by a derived thing, which fails silently by construction (defect class 37),
+            # so the refusal is explicit and it SAYS SO rather than looking like a pass.
+            print('  DO_API_TOKEN: present, but SHIP_GATES_OFFLINE=1 - not writing to the droplet')
+            print('    (the gate phase is side-effect free so CI can run it; install it from a'
+                  ' laptop ship)')
         elif _tok:
             import set_secret as _ss
             _ss.run('DO_API_TOKEN', _tok)     # value on stdin only, never argv

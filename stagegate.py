@@ -737,10 +737,22 @@ def deploy_to_staging(say):
         return False
     say((sections(out).get("PROVISION") or "").replace("\n", "\n  "))
 
-    say("building colt-web on staging (same sources, same Dockerfile, no proxy wiring)...")
+    # SAME SOURCES, or - when CI has already built them - THE SAME BYTES.
+    #
+    # From a laptop there is no artifact yet, so staging builds from the packed commit exactly as
+    # before. In the pipeline, CI has already built and scanned the image, and WEB_TAG names it:
+    # staging then PULLS that image. That is what makes staging a rehearsal rather than a
+    # lookalike - the twin exercises, reboots and re-verifies the identical artifact production
+    # will run, instead of a second build that merely came from the same source.
+    _tag = os.environ.get("WEB_TAG", "").strip()
+    _args = [sys.executable, os.path.join(HERE, "deploy_web_direct.py"), "--no-proxy"]
+    if _tag:
+        _args += ["--ghcr", _tag]
+        say("staging will PULL the CI-built image %s (the exact artifact production gets)..." % _tag)
+    else:
+        say("building colt-web on staging (same sources, same Dockerfile, no proxy wiring)...")
     env = dict(os.environ, DROPLET_HOST=STAGING)
-    r = subprocess.run([sys.executable, os.path.join(HERE, "deploy_web_direct.py"), "--no-proxy"],
-                       env=env, cwd=HERE)
+    r = subprocess.run(_args, env=env, cwd=HERE)
     if r.returncode != 0:
         say("  [!] staging build failed (exit %s)" % r.returncode)
         return False

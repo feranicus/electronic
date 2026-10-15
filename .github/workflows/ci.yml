@@ -1,44 +1,97 @@
 name: CI
+
+# THE GATE OF RECORD.
+#
+# `quality-and-secrets` is the job name the branch ruleset requires, so this file decides what
+# "main is protected" actually MEANS. Until 2026-10-15 it meant very little, and that was the real
+# defect:
+#
+#   ruff check . || true          a check that cannot FAIL is not a check  (defect class 3)
+#   node --check *.js             PARSE is not RUN                          (defect class 48)
+#   python -m compileall <list>   a hand-written subset that drifts         (defect class 35)
+#   pytest tests -q               the unit suite ONLY - none of the 37 engine gates
+#
+# So a commit the operator's own `python ship.py` would refuse could still turn this check green.
+# A required status check that is weaker than the laptop gate is worse than no check, because it
+# converts "somebody looked" into "a robot approved".
+#
+# THE FIX IS NOT A LONGER YAML FILE. Re-listing ship.py's gates here would create a second home for
+# "what must pass before we ship" (defect class 32), and the newer one always loses. Instead this
+# job RUNS THE ORCHESTRATOR'S OWN TEST PHASE - `python ship.py --test` - inside the toolchain image
+# the repo pins. One home, two callers: the operator's laptop and this runner.
+#
+# MEASURED before relying on it (2026-10-15, by AST): do_tests() makes ZERO ssh calls, and the one
+# branch that could write to the droplet is refused by SHIP_GATES_OFFLINE=1, out loud. The gate
+# phase is side-effect free, which is what makes it safe to run here on a pull request.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
+
+# LEAST PRIVILEGE BY DEFAULT. Nothing in this workflow writes to the repository, publishes a
+# package or touches a droplet, so it gets read access and nothing else. A job that needs more
+# asks for it explicitly, in that job.
+permissions:
+  contents: read
+
+concurrency:
+  # Per ref, so a second push supersedes the first. This is NOT the production-droplet group: no
+  # job here touches a droplet, so serialising it against deploys would only slow the gate down.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality-and-secrets:
+    name: quality-and-secrets
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0          # gitleaks reads history, not just the working tree
 
-      - name: Secret scan (gitleaks, working-tree)
+      # SECRETS FIRST, and on the working tree, because a leaked credential in a commit that never
+      # merges is still a leaked credential the moment the branch is pushed.
+      - name: Secret scan (gitleaks)
         run: |
           VER=8.24.3
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
             | tar -xz -C /usr/local/bin gitleaks
           gitleaks detect --no-git --source=. --config=.gitleaks.toml --redact --verbose
 
-      - uses: actions/setup-python@v5
+      - uses: docker/setup-buildx-action@v3
+
+      # The toolchain is a committed artifact, not a list of setup- actions, so the gates run
+      # against the same python, node and pins on this runner and on a developer's machine.
+      # Cached by the Dockerfile's own layers; a source-only change does not reinstall anything.
+      - name: Build the gate toolchain (Dockerfile.ci)
+        uses: docker/build-push-action@v6
         with:
-          python-version: '3.12'
+          context: .
+          file: Dockerfile.ci
+          tags: colt-gates:ci
+          load: true
+          cache-from: type=gha,scope=gates
+          cache-to: type=gha,scope=gates,mode=max
 
-      - name: Python compile + ruff
+      # THE GATE ITSELF. Not a copy of ship.py's list - ship.py's own entry point.
+      #
+      # --network none is deliberate and it is a CHECK, not a convenience: the suite stubs its own
+      # HTTP (defect class 18), so if a gate ever starts reaching the live internet it fails here
+      # instead of quietly measuring the real world and passing for the wrong reason.
+      #
+      # NO SECRETS ARE PASSED TO THIS STEP. The gate phase must not be able to change anything,
+      # and the surest way to guarantee that is to give it nothing to change anything with.
+      - name: Gates (python ship.py --test)
         run: |
-          pip install --quiet ruff
-          python -m compileall -q colt_auth.py assess-bot cassandra-bot hermes-skills/shodan-assessment/scripts *.py
-          ruff check . || true
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Node --check deck builders
-        run: |
-          for f in hermes-skills/shodan-assessment/scripts/*.js; do echo "check $f"; node --check "$f"; done
-
-      - name: Tests (pytest)
-        run: |
-          pip install --quiet pytest
-          python -m pytest tests -q
+          docker run --rm \
+            --network none \
+            --user 10001:10001 \
+            -v "$PWD:/src" -w /src \
+            -e SHIP_GATES_OFFLINE=1 \
+            -e PYTHONIOENCODING=utf-8 \
+            colt-gates:ci \
+            python ship.py --test

@@ -1,7 +1,13 @@
 name: Build, scan & deploy
+# SUPERSEDED BY pipeline.yml (2026-10-15) - kept as a MANUAL fallback only.
+#
+# Its `push:` trigger is removed deliberately. With this file and pipeline.yml both firing on a
+# push to main, one commit produced TWO deploys to the same droplet (measured 2026-10-15: the
+# laptop shipped colt-web at 11:52Z, CI shipped the bots at 11:58Z) and nothing but timing kept
+# them apart. ONE automatic path to production; this one stays reachable by hand for the day the
+# new pipeline is the thing that is broken.
+
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       tag:

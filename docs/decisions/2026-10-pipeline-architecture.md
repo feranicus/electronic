@@ -1,0 +1,130 @@
+# The deploy architecture, 2026-10-15
+
+## What was actually wrong
+
+Not an opinion — one real ship, measured from both logs:
+
+| Container | Shipped by | When |
+|---|---|---|
+| `colt-web` | the **laptop**, built **on the production host** | 11:52:00Z |
+| `colt-assessbot`, `colt-cassandra` | **GitHub Actions**, GHCR images `69617a3d561c` | 11:58:28Z |
+
+Two owners, one droplet, six minutes apart. `teamlock` did not stop it because the laptop released
+the lock at ~11:53 and CI started at 11:58. Nothing but timing kept them apart.
+
+Three defects sat underneath that:
+
+**1. The required check was weaker than the laptop gate.** The branch ruleset requires
+`quality-and-secrets`. That job ran:
+
+```
+ruff check . || true          # a check that cannot FAIL is not a check   (defect class 3)
+node --check *.js             # PARSE is not RUN                          (defect class 48)
+python -m compileall <list>   # a hand-written subset that drifts         (defect class 35)
+python -m pytest tests -q     # the unit suite only - none of the 37 engine gates
+```
+
+A commit `python ship.py` would refuse could turn that check green. A required status check weaker
+than the local gate is worse than no check: it converts "somebody looked" into "a robot approved".
+
+**2. The one internet-facing image was the one image CI never saw.** `colt-web` was compiled on the
+production host at deploy time. `deploy_web_direct.py` already said so in a comment and mitigated it
+by running Trivy on the droplet after the build. Scanning after the fact on production is not the
+same as never putting an unscanned artifact there.
+
+**3. Deploy logic had two homes.** `web-deploy.yml` carried inline `ssh`/`scp`/`docker compose`
+doing what `deploy_web_direct.py` does. Two writers for the shared Caddyfile is how six domains go
+down together.
+
+## The architecture
+
+```
+ push to main
+     │
+     ▼
+ ci.yml :: quality-and-secrets          ← THE GATE OF RECORD (the name the ruleset requires)
+     │   docker build -f Dockerfile.ci          pinned toolchain, committed
+     │   docker run --network none ... python ship.py --test
+     │       └─ the operator's OWN test phase: 37 engine gates + 1069 unit tests
+     │          no secrets, no network, SHIP_GATES_OFFLINE=1 forbids the one droplet write
+     ▼
+ pipeline.yml
+     ├─ gate        waits for quality-and-secrets to be green on this SHA
+     ├─ build       colt-web + colttechbot + cassandra, ONCE, tagged <sha12>
+     │              SBOM + SLSA provenance attestation, pushed by digest
+     ├─ scan        Trivy (pinned, checksum-verified) per image; CRITICAL stops the promotion
+     ├─ staging     environment: staging · teamlock-grouped
+     │              stagegate.py → deploy twin → health → REBOOT → re-verify → 4-model panel
+     │              WEB_TAG makes the twin PULL the same artifact production will run
+     └─ production  environment: production (required reviewer)
+                    teamlock.py --acquire
+                    deploy_web_direct.py --ghcr <sha12>     pulls, never builds
+                    deploy.py --ghcr <sha12>                same commit, same artifacts
+                    caddyguard.py                           shared proxy still healthy
+                    teamlock.py --release  (if: always())
+```
+
+### The four properties, each asserted in `tests/test_pipeline_architecture.py`
+
+1. **One gate.** CI runs `ship.py --test`, it does not re-list its gates. One home, two callers.
+2. **One automatic path to production.** `deploy.yml` and `web-deploy.yml` are now
+   `workflow_dispatch` only — a manual fallback, not a second robot.
+3. **One artifact.** Staging and production run the same bytes CI built and Trivy scanned.
+   Promotion selects a tag; it never rebuilds.
+4. **One deploy at a time.** Both droplet jobs share the `production-droplet` concurrency group
+   *and* take `teamlock`, because a concurrency group cannot see a laptop.
+
+Fifteen mutations were run against those tests. Three escaped on the first attempt because the
+assertions matched a step **name** ("Gates (python ship.py --test)") or an explanatory **comment**
+("# --network none is deliberate") instead of the command — defect class 4, in the very file
+written to prevent it. The tests now read `run:` only.
+
+## Why CI does not re-list the gates
+
+`do_tests()` is ~1000 lines invoking 37 gate scripts, each written because something reached a
+customer. Copying that inventory into YAML creates two homes for "what must pass before we ship"
+(defect class 32), and the newer one always loses. Measured by AST before relying on it: `do_tests()`
+makes **zero** ssh calls, and the single branch that could write to the droplet (installing
+`DO_API_TOKEN` via `set_secret`) now refuses out loud under `SHIP_GATES_OFFLINE=1`. A side-effect
+free gate phase is what makes it safe for a runner to execute on every pull request.
+
+## Secure by design, concretely
+
+- **Least privilege.** `permissions: contents: read` at workflow level; `packages: write` /
+  `id-token: write` / `attestations: write` only in the build job.
+- **The gate holds no credential.** No secret is passed to the job that executes repository code,
+  and it runs `--network none` as a non-root user. It cannot change anything because it has nothing
+  to change anything with.
+- **Provenance.** SLSA attestation per image, pushed to the registry, verifiable with
+  `gh attestation verify oci://… --repo feranicus/electronic`.
+- **The scanner is a dependency too.** Trivy is version-pinned and checksum-verified, in CI and on
+  the droplet, because this scanner was compromised in Feb/Mar 2026.
+- **The key install has one home.** `.github/actions/ssh-key` writes the secret from an env var as
+  bytes, prints the installed key's **fingerprint** (public information), and refuses with a named
+  cause before any deploy step if OpenSSH cannot derive its public half.
+
+## The open decision: the ruleset, and a second developer
+
+From GitHub's own rules reference:
+
+> "Required status checks ensure that all required CI tests are passing **before collaborators can
+> make changes to a branch** targeted by your ruleset."
+
+A freshly pushed commit has no check runs yet, so a required status check can never be satisfied by
+a **direct push**. That is why every `ship.py` push prints `Bypassed rule violations`. As repo admin
+you bypass it; a collaborator cannot, so their first `python ship.py` would run all 1069 tests,
+deploy to staging, and then be **rejected at the push** — after the staging gate, before the
+safe-point.
+
+Two ways out, and this is a decision rather than a defect:
+
+- **Keep direct push.** Drop the required-status-check rule and add the collaborator to the bypass
+  list. `ship.py` stays exactly as it is. Protection becomes detect-after-push: `pipeline.yml` still
+  gates the deploy, so nothing unverified reaches production — only `main` can briefly hold a commit
+  that fails the gate.
+- **Move to pull requests.** `ship.py` pushes a branch and opens a PR, CI gates run on the PR, merge
+  triggers the pipeline. Stricter, and still one command if `ship.py` drives it end to end. This is
+  the usual modern answer and the one I would pick for two or more developers.
+
+Also still unexplained, from `caddyguard`: `jobhw.org` and `www.jobhw.org` are served by the shared
+proxy but are not on the committed roster.

@@ -128,6 +128,31 @@ stdout, so a failed ssh made `sshout()` return ssh's own error text as the probe
 production. `sshout` now appends a sentinel only a shell that really ran can echo, and exits
 otherwise. [2026-10-14, GitHub Actions, malformed DROPLET_SSH_KEY] `tests/test_probe_fail_closed.py`
 
+## THE PIPELINE (2026-10-15) — CI runs the orchestrator, it does not re-implement it
+
+**ONE GATE.** `ci.yml::quality-and-secrets` is the name the ruleset requires, so it decides what
+"main is protected" MEANS — and it used to mean `ruff check . || true` (a check that cannot fail),
+`node --check` (PARSE is not RUN) and the unit suite ONLY, so a commit ship.py refuses could turn it
+green. It now builds `Dockerfile.ci` (the pinned toolchain) and runs **`python ship.py --test`** —
+the operator's own phase, never a YAML copy of its 37 gates (ONE HOME). Safe to run on every PR
+because `do_tests()` makes ZERO ssh calls (measured by AST) and the one droplet-writing branch
+refuses out loud under `SHIP_GATES_OFFLINE=1`. The gate gets **no secrets** and `--network none`.
+
+**ONE AUTOMATIC PATH.** `pipeline.yml` = gate -> build once -> scan -> staging (reboot gate) ->
+production (`environment: production` approval + teamlock). `deploy.yml` / `web-deploy.yml` are
+`workflow_dispatch` ONLY now: one push used to produce TWO deploys to one droplet six minutes apart.
+
+**ONE ARTIFACT.** colt-web was COMPILED ON PRODUCTION, so the only internet-facing image was the one
+CI never saw. `deploy_web_direct.py --ghcr TAG` pulls the built, scanned image (`remote_ghcr()`;
+the build path is byte-identical and untouched, asserted), and `WEB_TAG` makes staging rehearse the
+SAME bytes. CI calls the repo's scripts — stagegate.py, deploy*.py, caddyguard.py — never inline ssh.
+
+**A REQUIRED STATUS CHECK CANNOT BE SATISFIED BY A DIRECT PUSH** (GitHub: checks must pass "before
+collaborators can make changes to a branch"; a new commit has no check runs yet). That is why every
+ship prints `Bypassed rule violations`, and why a COLLABORATOR's push would be rejected after the
+staging gate. Decide: drop the rule + bypass list (keeps direct push), or move ship.py to a PR flow.
+`tests/test_pipeline_architecture.py` · `docs/decisions/2026-10-pipeline-architecture.md`
+
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
 After finishing ANY piece of work the user must trigger, end the reply with the exact command,

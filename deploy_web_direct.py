@@ -164,58 +164,27 @@ def pack(include=None, extra=()):
                 tar.add(p, arcname=item, filter=_filter)
     return tf.name
 
-def remote(proxy=True):
-    """The droplet-side script. `proxy=False` builds and starts colt-web but does NOT touch any
-    reverse proxy — that is the STAGING shape: the twin has no videodead-caddy to wire into, and
-    the whole point of staging is to exercise the app and the reboot, not to publish a domain."""
-    steps = [
-    "set -e",
-    "cd /opt/colt-stack",
-    "[ -f .env ] || printf 'LOKI_URL=http://videodead-loki-1:3100/loki/api/v1/push\\nLOKI_NETWORK=videodead_appnet\\n' > .env",
-    # docker-compose.web.yml joins videodead_appnet as an EXTERNAL network. On production that
-    # network already exists; on a fresh staging box it does not, and compose fails before it
-    # builds anything. Creating it if absent is idempotent and touches nothing on production.
-    "docker network inspect videodead_appnet >/dev/null 2>&1 || docker network create videodead_appnet",
-    "echo '== build + (re)start colt-web (single network, force-recreate) =='",
-    "docker compose -p colt-stack -f docker-compose.web.yml up -d --build --force-recreate",
-    # ---- SCAN THE IMAGE THAT NOBODY WAS SCANNING -------------------------------------------
-    # Trivy runs in deploy.yml against colttechbot and cassandra. colt-web is built HERE, on the
-    # droplet, and therefore never went through CI at all - so the only INTERNET-FACING image in
-    # the stack was the one image the scanner had never seen. Scan it where it is built.
-    # Trivy is pinned and checksum-verified for the same reason it is in CI: the scanner is a
-    # supply-chain dependency, and this one was compromised in Feb/Mar 2026.
-    "echo '== scan colt-web (CRITICAL fails the deploy, HIGH reports) =='",
-    "TRIVY_VERSION=0.69.3",
-    "if ! command -v trivy >/dev/null 2>&1; then"
-    "  cd /tmp && B=https://github.com/aquasecurity/trivy/releases/download/v$TRIVY_VERSION &&"
-    "  curl -sfLO $B/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz &&"
-    "  curl -sfLO $B/trivy_${TRIVY_VERSION}_checksums.txt &&"
-    "  grep \" trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz$\" trivy_${TRIVY_VERSION}_checksums.txt"
-    " | sha256sum -c - &&"
-    "  tar xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz trivy &&"
-    "  install -m 0755 trivy /usr/local/bin/trivy && cd - >/dev/null; fi",
-    # --skip-version-check: the "a newer Trivy is available" banner printed TWICE per deploy and
-    # is pure noise. The version we run is PINNED and checksum-verified on purpose (the Feb-Mar
-    # 2026 supply-chain compromise), so an upgrade is a deliberate, reviewed change to
-    # TRIVY_VERSION - never something to be nudged into by a banner. The vulnerability DATABASE
-    # updates independently of the binary, so the findings are current either way.
-    "trivy image --scanners vuln --severity HIGH --ignore-unfixed --exit-code 0"
-    " --skip-version-check --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25 || true",
-    "trivy image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1"
-    " --skip-version-check --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25"
-    " || { echo 'TRIVY_CRITICAL_FAIL'; }",
-    ]
-    if not proxy:
-        steps += [
+def _staging_tail():
+    """The twin has no shared proxy to publish into, so staging stops at "the app is up".
+    ONE HOME: both the build path and the pull path end here when proxy=False."""
+    return [
             "echo '== staging: no shared proxy on this box — skipping the caddy wiring =='",
             "echo -n 'colt-web image : '; docker inspect colt-web -f '{{.Config.Image}}'",
             "sleep 4",
             "curl -s -o /dev/null -w 'local colt-web /api/me = %{http_code}  (401 = LIVE)\\n' "
             "--max-time 15 http://127.0.0.1:8090/api/me || true",
             "",
-        ]
-        return "\n".join(steps)
-    return "\n".join(steps + [
+    ]
+
+
+def _proxy_tail():
+    """Wire cybergod.ai into the SHARED Caddy, then prove it took.
+
+    EXTRACTED VERBATIM 2026-10-15 so the pull-by-tag path reuses it instead of growing a second
+    copy (defect class 32). Every line here was paid for by an outage - the marker-scoped delete,
+    the in-place truncate that keeps the inode, the size floor, the forced admin load. A second
+    copy of this block is a second chance to take six domains down, so there is exactly one."""
+    return [
     "echo '== wire cybergod.ai into the shared caddy from the committed snippet =='",
     "CADDY_CT=\"$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)\"",
     "CF=\"$(docker inspect \"$CADDY_CT\" --format '{{range .Mounts}}{{if eq .Destination \"/etc/caddy/Caddyfile\"}}{{.Source}}{{end}}{{end}}')\"",
@@ -280,7 +249,90 @@ def remote(proxy=True):
     "docker exec colt-web python3 -c 'import sys;from app import fleet;d=fleet.status();n=len(d.get(\"projects\") or []);print(\"fleet.status(): %d project(s), error=%s\" % (n, d.get(\"error\")));sys.exit(1 if (d.get(\"error\") or n == 0) else 0)'",
     "curl -sk --resolve cybergod.ai:443:127.0.0.1 https://cybergod.ai/api/me -o /dev/null -w 'public via caddy = %{http_code}  (401 = LIVE)\\n'",
     "",
-    ])
+    ]
+
+def remote_ghcr(tag, proxy=True):
+    """PULL a pre-built, already-scanned colt-web image instead of building one on the droplet.
+
+    WHY THIS EXISTS, and why it is a separate function rather than a flag threaded through
+    remote(). The comment in remote() says it plainly: colt-web is built ON THE DROPLET, so the
+    only internet-facing image in the stack is the one image CI never saw. Scanning it after the
+    build on production is a sound mitigation and it stays; it is not the same thing as never
+    putting an unscanned artifact on production in the first place.
+
+    This path is the supply-chain shape instead: CI builds the image once, Trivy scans THAT image,
+    GHCR holds it, and production runs the exact bytes that were scanned - selected by an immutable
+    tag, so "the thing we tested" and "the thing that is running" cannot drift apart. It is
+    additive on purpose: the laptop path through remote() is untouched, because a deploy script is
+    not where you want a clever refactor.
+    """
+    steps = [
+        "set -e",
+        "cd /opt/colt-stack",
+        "[ -f .env ] || printf 'LOKI_URL=http://videodead-loki-1:3100/loki/api/v1/push\\nLOKI_NETWORK=videodead_appnet\\n' > .env",
+        "docker network inspect videodead_appnet >/dev/null 2>&1 || docker network create videodead_appnet",
+        "echo '== pull the CI-built, CI-scanned colt-web (no build on this box) =='",
+        "export WEB_TAG='%s'" % tag,
+        # Fail if the tag is not there, rather than silently falling back to :latest - a deploy
+        # that quietly ships a different image than the one named is the whole class of bug this
+        # path exists to close.
+        "docker compose -p colt-stack -f docker-compose.web.yml pull web",
+        "docker compose -p colt-stack -f docker-compose.web.yml up -d --no-build --force-recreate",
+        # NAME WHAT IS ACTUALLY RUNNING (defect class 26). The tag asked for and the digest that
+        # answered are different facts, and only the second one is evidence.
+        "echo '== running image =='",
+        "docker inspect colt-web --format 'image: {{.Config.Image}}' || true",
+        "docker inspect colt-web --format 'digest: {{index .Image}}' || true",
+    ]
+    steps += _proxy_tail() if proxy else _staging_tail()
+    return "\n".join(steps)
+
+
+def remote(proxy=True):
+    """The droplet-side script. `proxy=False` builds and starts colt-web but does NOT touch any
+    reverse proxy — that is the STAGING shape: the twin has no videodead-caddy to wire into, and
+    the whole point of staging is to exercise the app and the reboot, not to publish a domain."""
+    steps = [
+    "set -e",
+    "cd /opt/colt-stack",
+    "[ -f .env ] || printf 'LOKI_URL=http://videodead-loki-1:3100/loki/api/v1/push\\nLOKI_NETWORK=videodead_appnet\\n' > .env",
+    # docker-compose.web.yml joins videodead_appnet as an EXTERNAL network. On production that
+    # network already exists; on a fresh staging box it does not, and compose fails before it
+    # builds anything. Creating it if absent is idempotent and touches nothing on production.
+    "docker network inspect videodead_appnet >/dev/null 2>&1 || docker network create videodead_appnet",
+    "echo '== build + (re)start colt-web (single network, force-recreate) =='",
+    "docker compose -p colt-stack -f docker-compose.web.yml up -d --build --force-recreate",
+    # ---- SCAN THE IMAGE THAT NOBODY WAS SCANNING -------------------------------------------
+    # Trivy runs in deploy.yml against colttechbot and cassandra. colt-web is built HERE, on the
+    # droplet, and therefore never went through CI at all - so the only INTERNET-FACING image in
+    # the stack was the one image the scanner had never seen. Scan it where it is built.
+    # Trivy is pinned and checksum-verified for the same reason it is in CI: the scanner is a
+    # supply-chain dependency, and this one was compromised in Feb/Mar 2026.
+    "echo '== scan colt-web (CRITICAL fails the deploy, HIGH reports) =='",
+    "TRIVY_VERSION=0.69.3",
+    "if ! command -v trivy >/dev/null 2>&1; then"
+    "  cd /tmp && B=https://github.com/aquasecurity/trivy/releases/download/v$TRIVY_VERSION &&"
+    "  curl -sfLO $B/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz &&"
+    "  curl -sfLO $B/trivy_${TRIVY_VERSION}_checksums.txt &&"
+    "  grep \" trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz$\" trivy_${TRIVY_VERSION}_checksums.txt"
+    " | sha256sum -c - &&"
+    "  tar xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz trivy &&"
+    "  install -m 0755 trivy /usr/local/bin/trivy && cd - >/dev/null; fi",
+    # --skip-version-check: the "a newer Trivy is available" banner printed TWICE per deploy and
+    # is pure noise. The version we run is PINNED and checksum-verified on purpose (the Feb-Mar
+    # 2026 supply-chain compromise), so an upgrade is a deliberate, reviewed change to
+    # TRIVY_VERSION - never something to be nudged into by a banner. The vulnerability DATABASE
+    # updates independently of the binary, so the findings are current either way.
+    "trivy image --scanners vuln --severity HIGH --ignore-unfixed --exit-code 0"
+    " --skip-version-check --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25 || true",
+    "trivy image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1"
+    " --skip-version-check --timeout 8m ghcr.io/feranicus/colt-web:latest 2>&1 | tail -25"
+    " || { echo 'TRIVY_CRITICAL_FAIL'; }",
+    ]
+    if not proxy:
+        return "\n".join(steps + _staging_tail())
+    return "\n".join(steps + _proxy_tail())
+
 
 
 REMOTE = remote(True)      # kept so existing callers/readers see the production script unchanged
@@ -335,9 +387,35 @@ def main():
     # only the publishing step differs, because the twin has no shared proxy to publish into.
     proxy = "--no-proxy" not in sys.argv
     tgt = "%s@%s" % (USER, HOST)
+
+    # --ghcr TAG: run the image CI already built and Trivy already scanned, instead of building a
+    # fresh one on the droplet. Same wiring, same verification, no compiler on production.
+    ghcr = None
+    if "--ghcr" in sys.argv:
+        k = sys.argv.index("--ghcr")
+        if k + 1 >= len(sys.argv):
+            sys.exit("[X] --ghcr needs a TAG, e.g. --ghcr 69617a3d561c")
+        ghcr = sys.argv[k + 1]
+
     if not proxy:
         print("== STAGING MODE: build + start colt-web only, no proxy wiring ==", flush=True)
     preflight(tgt)
+
+    if ghcr:
+        # NOTHING IS PACKED. The sources do not travel, because the artifact is the image and the
+        # image already exists. This is the whole point: what was scanned is what runs.
+        print("== pull CI image %s (no source upload, no build on the droplet) ==" % ghcr, flush=True)
+        payload = "\n".join(["set -e", "mkdir -p /opt/colt-stack", remote_ghcr(ghcr, proxy), ""])
+        r = subprocess.run(SSH_BASE + [tgt, "bash -s"],
+                           input=payload.encode("utf-8"), capture_output=True, timeout=900)
+        out = (r.stdout or b"").decode("utf-8", "replace") + (r.stderr or b"").decode("utf-8", "replace")
+        print(out, flush=True)
+        if "TRIVY_CRITICAL_FAIL" in out:
+            sys.exit("[X] the image carries CRITICAL, fixable vulnerabilities - not promoting it")
+        if r.returncode != 0:
+            sys.exit("[X] the GHCR deploy failed (rc=%d). Compose is idempotent; re-run." % r.returncode)
+        return
+
     print("== pack sources ==", flush=True)
     tgz = pack()
     blob = base64.b64encode(open(tgz, "rb").read()).decode("ascii")

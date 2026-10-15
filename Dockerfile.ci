@@ -1,0 +1,52 @@
+# Dockerfile.ci — the TOOLCHAIN the gates run in, so "it passed on my machine" and "it passed in
+# CI" mean the same thing.
+#
+# WHY THIS EXISTS. ship.py's do_tests() runs 37 gate scripts across python, node, ruff and pytest.
+# Every one of them was written because something reached a customer. If CI re-listed those gates
+# in YAML there would be TWO HOMES for "what must pass before we ship" (defect class 32), the newer
+# one would always lose, and the drift would be invisible until a deploy. So CI does not re-list
+# them: CI runs `python ship.py --test`, the same entry point the operator runs, inside this image.
+#
+# This repo has paid for eight ships to the rule "green in a Linux sandbox is not evidence about
+# his Windows box" (defect class 19). The honest consequence is NOT to test less, it is to pin the
+# toolchain somewhere both machines can agree on - which is this file.
+#
+# MEASURED, not assumed (2026-10-15): do_tests() makes ZERO ssh calls and needs
+# python + node + ruff + pytest + py_compile. The node gate tools import only node builtins
+# (node:fs, node:path, node:url, node:child_process), so no node_modules are needed to RUN the
+# gates - only to build the frontend, which happens in webapp/Dockerfile, not here.
+FROM python:3.12-slim
+
+# Node 20 from the distro's own packaging. nodejs+npm only; no build toolchain, because nothing
+# here compiles native modules and every extra package is extra attack surface in a container that
+# will execute repository code.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git nodejs npm \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Dependencies first, so the layer cache survives a source-only change. requirements.txt is the ONE
+# HOME for the app's python dependencies (ship.py's ensure_app_requirements reads the same file);
+# this never re-pins anything, it installs exactly what that file says.
+COPY webapp/backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+ && pip install --no-cache-dir ruff pytest \
+ && pip install --no-cache-dir shodan mmh3 google-auth requests
+
+# The gates execute repository code, so they run as a NON-ROOT user. A gate is allowed to read the
+# tree and write temp files; it is never allowed to be the most privileged thing in the pipeline.
+RUN useradd --create-home --uid 10001 gates
+USER gates
+
+# TESTS MUST NOT REACH THE INTERNET (defect class 18). The suite stubs its own HTTP, and this is
+# the belt to that brace: a gate that tries to resolve a name through a proxy that is not there
+# fails loudly instead of quietly measuring the live world.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=utf-8 \
+    SHIP_GATES_OFFLINE=1
+
+# No ENTRYPOINT on purpose. The caller names the command, and the only command CI should ever name
+# is the orchestrator's own test phase:
+#     docker run --rm -v "$PWD:/src" <image> python ship.py --test

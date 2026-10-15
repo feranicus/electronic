@@ -1,0 +1,52 @@
+name: Install the droplet deploy key
+description: >
+  Write DROPLET_SSH_KEY to the runner, NAME the key it installed, and refuse before any deploy
+  step if it is not one. ONE HOME for the five workflows that used to copy these four lines.
+
+inputs:
+  key:
+    description: The DROPLET_SSH_KEY secret
+    required: true
+  path:
+    description: Where to write it
+    required: false
+    default: /home/runner/.ssh/deploy_key
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        DEPLOY_KEY: ${{ inputs.key }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$(dirname '${{ inputs.path }}')" && chmod 700 "$(dirname '${{ inputs.path }}')"
+
+        # BYTES, NOT A TEMPLATE EXPANSION INTO A COMMAND LINE. The secret travels as an environment
+        # variable and printf writes it verbatim with a trailing newline. A private key is a
+        # byte-exact artifact: on 2026-10-15 a CRLF-mangled upload cost a day, because Linux
+        # OpenSSH answers a stray CR with "error in libcrypto" while Windows OpenSSH reads the same
+        # bytes happily - so the mangled key looked healthy everywhere it was checked.
+        printf '%s\n' "$DEPLOY_KEY" > '${{ inputs.path }}'
+        chmod 600 '${{ inputs.path }}'
+
+        # NAME THE SUBJECT (defect class 26). A fingerprint is PUBLIC - it is already in
+        # authorized_keys on the droplet - and printing it is the difference between "the secret is
+        # wrong" and "the secret is THIS key, and here is the one the box expects". Without this
+        # line, which scope of the secret won was unknowable from the log.
+        ssh-keygen -l -f '${{ inputs.path }}' 2>/dev/null || echo "(no fingerprint: not a key)"
+
+        # A CHECK THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER. ssh-keygen -y is OpenSSH's own
+        # verdict, from the same implementation the deploy will use moments later; -P "" and a
+        # closed stdin keep it from prompting on a runner that has no keyboard.
+        if ! ssh-keygen -y -f '${{ inputs.path }}' -P "" >/dev/null 2>&1 </dev/null; then
+          echo "::error::DROPLET_SSH_KEY is not a usable OpenSSH private key. OpenSSH itself"
+          echo "::error::cannot derive its public half ('error in libcrypto'). Common causes: a"
+          echo "::error::PuTTY .ppk, the .pub half, a passphrase-protected key (a runner has no"
+          echo "::error::keyboard), or CRLF line endings. Fix it from a key PROVEN to work:"
+          echo "::error::    python ship.py --fix-ci-key"
+          exit 1
+        fi
+
+        ssh-keyscan -H "${DROPLET_HOST:-64.225.108.200}" >> /home/runner/.ssh/known_hosts 2>/dev/null || true
+        ssh-keyscan -H "${STAGING_HOST:-165.245.244.174}" >> /home/runner/.ssh/known_hosts 2>/dev/null || true

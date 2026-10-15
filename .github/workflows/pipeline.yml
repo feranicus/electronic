@@ -1,0 +1,279 @@
+name: pipeline
+
+# ONE PIPELINE: gate -> build once -> scan the artifact -> staging -> production.
+#
+# WHAT WAS WRONG WITH THE SHAPE IT REPLACES, measured from a real ship (2026-10-15 11:51-11:58):
+#
+#   colt-web                    shipped by the LAPTOP, built ON PRODUCTION          11:52:00Z
+#   colt-assessbot, cassandra   shipped by CI from GHCR images                      11:58:28Z
+#
+# Two owners, one droplet, six minutes apart, and the only thing that kept them from colliding was
+# the order they happened to run in. Worse, the one INTERNET-FACING image was the one image CI
+# never saw: colt-web was compiled on the production host at deploy time, so "the thing we tested"
+# and "the thing that is running" were never the same bytes.
+#
+# THE ARCHITECTURE HERE:
+#   * ONE artifact. Every image is built once, in CI, and addressed by the commit SHA. Staging and
+#     production run the SAME bytes; promotion selects a tag, it never rebuilds.
+#   * The SCANNER SEES WHAT SHIPS. Trivy runs against the built image before anything is promoted,
+#     so a CRITICAL finding stops the artifact rather than being discovered on the host.
+#   * CI ORCHESTRATES, THE REPO'S SCRIPTS DO THE WORK. Every deploy step shells out to the same
+#     python the operator runs - deploy_web_direct.py, deploy.py, stagegate.py. Re-implementing a
+#     deploy in YAML is how the shared Caddyfile ends up with two writers (defect class 32).
+#   * STAGING IS A GATE, NOT A COURTESY. stagegate.py deploys the twin, REBOOTS it and re-runs
+#     every check - the one test production can never run - and production waits on its verdict.
+#   * PRODUCTION NEEDS A HUMAN. `environment: production` carries the required reviewer.
+#   * ONE DROPLET, ONE DEPLOY. Every droplet-touching job joins the production-droplet concurrency
+#     group AND takes teamlock, because a concurrency group cannot see a laptop.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to deploy (a commit SHA, for rollback). Blank = this commit."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_OWNER: ghcr.io/${{ github.repository }}
+  DROPLET_HOST: ${{ vars.DROPLET_HOST || '64.225.108.200' }}
+  STAGING_HOST: ${{ vars.STAGING_HOST || '165.245.244.174' }}
+
+jobs:
+  # ---------------------------------------------------------------- 1. the gate
+  # Not duplicated here. ci.yml owns `quality-and-secrets`, which runs `python ship.py --test` in
+  # the pinned toolchain image. This job only refuses to continue until that one is green, so
+  # "what must pass before we ship" keeps exactly one home.
+  gate:
+    name: gate (quality-and-secrets must be green)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for the gate of record
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.sha;
+            const deadline = Date.now() + 25 * 60 * 1000;
+            while (Date.now() < deadline) {
+              const { data } = await github.rest.checks.listForRef({
+                ...context.repo, ref: sha, check_name: 'quality-and-secrets', per_page: 1 });
+              const run = data.check_runs[0];
+              if (!run)                       { core.info('no check run yet...'); }
+              else if (run.status !== 'completed') { core.info(`gate ${run.status}...`); }
+              else if (run.conclusion === 'success') { core.info('gate green'); return; }
+              else { core.setFailed(`quality-and-secrets concluded ${run.conclusion}`); return; }
+              await new Promise(r => setTimeout(r, 15000));
+            }
+            core.setFailed('timed out waiting for quality-and-secrets');
+
+  # ---------------------------------------------------------------- 2. build ONCE
+  build:
+    name: build + sign the artifacts
+    needs: [gate]
+    if: ${{ github.event.inputs.tag == '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write          # keyless signing via Sigstore
+      attestations: write      # provenance stored beside the image
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      # colt-web is the INTERNET-FACING image and the one that used to be built on production.
+      # It is built here, once, like everything else.
+      - name: Build colt-web
+        id: web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: webapp/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_OWNER }}/colt-web:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Build colttechbot
+        id: bot
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: assess-bot/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_OWNER }}/colttechbot:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=bot
+          cache-to: type=gha,scope=bot,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Build cassandra
+        id: cass
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: cassandra-bot/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_OWNER }}/cassandra:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=cass
+          cache-to: type=gha,scope=cass,mode=max
+          provenance: true
+          sbom: true
+
+      # SLSA provenance by DIGEST. A partner (or we) can verify the running image was built from
+      # this repository by this workflow, which is the direct answer to a scanner being swapped
+      # for a look-alike - the exact supply-chain class this pipeline already hardened against.
+      - uses: actions/attest-build-provenance@v1
+        with: { subject-name: "${{ env.IMAGE_OWNER }}/colt-web",     subject-digest: "${{ steps.web.outputs.digest }}",  push-to-registry: true }
+      - uses: actions/attest-build-provenance@v1
+        with: { subject-name: "${{ env.IMAGE_OWNER }}/colttechbot",  subject-digest: "${{ steps.bot.outputs.digest }}",  push-to-registry: true }
+      - uses: actions/attest-build-provenance@v1
+        with: { subject-name: "${{ env.IMAGE_OWNER }}/cassandra",    subject-digest: "${{ steps.cass.outputs.digest }}", push-to-registry: true }
+
+  # ---------------------------------------------------------------- 3. scan the ARTIFACT
+  scan:
+    name: scan the artifacts (CRITICAL stops the promotion)
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions: { contents: read, packages: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [colt-web, colttechbot, cassandra]
+    steps:
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      # PINNED AND CHECKSUM-VERIFIED, for the same reason deploy_web_direct.py pins it: the
+      # scanner is itself a supply-chain dependency, and this one was compromised in Feb/Mar 2026.
+      - name: Trivy (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          V=0.69.3
+          B="https://github.com/aquasecurity/trivy/releases/download/v${V}"
+          curl -sfLO "$B/trivy_${V}_Linux-64bit.tar.gz"
+          curl -sfLO "$B/trivy_${V}_checksums.txt"
+          grep " trivy_${V}_Linux-64bit.tar.gz\$" "trivy_${V}_checksums.txt" | sha256sum -c -
+          tar xzf "trivy_${V}_Linux-64bit.tar.gz" trivy && sudo install -m0755 trivy /usr/local/bin/trivy
+          IMG="${{ env.IMAGE_OWNER }}/${{ matrix.image }}:${{ needs.build.outputs.tag }}"
+          trivy image --scanners vuln --severity HIGH     --ignore-unfixed --exit-code 0 \
+                --skip-version-check --timeout 10m "$IMG" | tail -40
+          trivy image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 \
+                --skip-version-check --timeout 10m "$IMG"
+
+  # ---------------------------------------------------------------- 4. staging, and the REBOOT
+  staging:
+    name: staging + reboot gate
+    needs: [build, scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    concurrency: { group: production-droplet, cancel-in-progress: false }
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: ./.github/actions/ssh-key
+        with: { key: "${{ secrets.DROPLET_SSH_KEY }}" }
+
+      # stagegate.py IS the gate: it deploys the twin, health-checks it, REBOOTS it and re-runs
+      # every check. The reboot is the one test production can never run, and it is what caught
+      # the 2026-08-07 outage class. CI does not reimplement it; CI runs it.
+      - name: Staging gate (deploy twin, reboot, re-verify)
+        env:
+          SSH_KEY: /home/runner/.ssh/deploy_key
+          DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+          STAGING_HOST: ${{ env.STAGING_HOST }}
+          DROPLET_HOST: ${{ env.DROPLET_HOST }}
+          WEB_TAG: ${{ needs.build.outputs.tag }}
+        run: python stagegate.py
+
+  # ---------------------------------------------------------------- 5. production, with a human
+  production:
+    name: production (approval + teamlock)
+    needs: [build, scan, staging]
+    if: ${{ always() && (needs.staging.result == 'success' || github.event.inputs.tag != '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production          # required reviewer lives here
+    concurrency: { group: production-droplet, cancel-in-progress: false }
+    permissions: { contents: read, packages: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: ./.github/actions/ssh-key
+        with: { key: "${{ secrets.DROPLET_SSH_KEY }}" }
+
+      - id: tag
+        run: |
+          T="${{ github.event.inputs.tag }}"
+          [ -n "$T" ] || T="${{ needs.build.outputs.tag }}"
+          echo "value=$T" >> "$GITHUB_OUTPUT"
+          echo "deploying tag $T"
+
+      # ONE DEPLOY AT A TIME, ACROSS RUNNERS AND LAPTOPS. The concurrency group above serialises
+      # CI against CI; it cannot see `python ship.py` on somebody's PC. teamlock locks the droplet.
+      - name: Take the deploy lock
+        env:
+          SSH_KEY: /home/runner/.ssh/deploy_key
+          DROPLET_HOST: ${{ env.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+        run: python3 teamlock.py --acquire
+
+      - name: Deploy colt-web (the scanned image, pulled - never built here)
+        env:
+          SSH_KEY: /home/runner/.ssh/deploy_key
+          DROPLET_HOST: ${{ env.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+        run: python deploy_web_direct.py --ghcr "${{ steps.tag.outputs.value }}"
+
+      - name: Deploy the bots (same commit, same artifacts)
+        env:
+          SSH_KEY: /home/runner/.ssh/deploy_key
+          DROPLET_HOST: ${{ env.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          LOKI_URL: http://videodead-loki-1:3100/loki/api/v1/push
+          LOKI_NETWORK: videodead_appnet
+        run: python deploy.py --ghcr "${{ steps.tag.outputs.value }}" --image-owner "${{ env.IMAGE_OWNER }}" --yes
+
+      # The proxy owns :443 for every domain, so its health is checked after every deploy by the
+      # same agent the 10-minute watchdog runs. A deploy that leaves the shared config damaged is
+      # a total outage for six sites and never an application fault.
+      - name: Shared proxy must still be healthy
+        env:
+          SSH_KEY: /home/runner/.ssh/deploy_key
+          DROPLET_HOST: ${{ env.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+        run: python caddyguard.py
+
+      - name: Release the deploy lock
+        if: always()
+        env:
+          SSH_KEY: /home/runner/.ssh/deploy_key
+          DROPLET_HOST: ${{ env.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+        run: python3 teamlock.py --release
