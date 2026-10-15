@@ -255,6 +255,20 @@ a four-timezone test.
 "wiring is wrong" when the truth was "not in this checkout" (class 1). In-repo half always
 asserted; sibling half runs on his box, skips with a reason elsewhere. [2026-10-15]
 
+**A KEY AUTHORIZED ON HALF THE ESTATE.** PR #19 merged, the pipeline ran gate -> build -> three
+scans green -> and died on `staging unreachable: Permission denied (publickey)`. `provision()`
+minted the CI key and called `authorize()` with its DEFAULT host, production; nothing ever put it
+on the twin. `deploy_hosts()` now DERIVES the list — production from `ci_key.HOST`, staging from
+`stagegate.STAGING`, neither address retyped (a test forbids the literal in ci_key.py) — and says
+so out loud if staging cannot be derived rather than silently returning one host (class 37).
+`authorize_everywhere()` writes to all of them, `check()` PROVES all of them, and an UNKNOWN on
+any host still blocks `--push`. **The repair must fit the fault**: once check() covered staging
+the good key failed it, and the old path answered that by MINTING — rotating a working credential
+over one missing authorized_keys line. `ensure_usable()` authorizes first and mints only when
+OpenSSH refuses the key. Mutations caught: the original single-host provision, single-host check,
+a hardcoded staging address, UNKNOWN-counts-as-pass, and ship.py stopping instead of repairing.
+[2026-10-15] `tests/test_ci_key.py`
+
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
 After finishing ANY piece of work the user must trigger, end the reply with the exact command,

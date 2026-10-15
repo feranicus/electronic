@@ -769,7 +769,14 @@ def test_ship_py_repairs_the_key_instead_of_stopping():
     assert len(blk) == 1, "--fix-ci-key has %d homes in main()" % len(blk)
     body = ast.unparse(blk[0])
     assert "ci_key.check" in body, "it does not prove the key"
-    assert "ci_key.provision" in body, (
+    # REWRITTEN 2026-10-15 (defect class 17); the old reasoning stands and is kept. It read
+    # `assert "ci_key.provision" in body`, because at the time the only repair was to MINT. Once
+    # check() began proving the staging twin as well, the ordinary failure became "the existing
+    # good key is not in staging's authorized_keys", and minting a replacement for that would
+    # rotate a working credential over one missing line. ensure_usable() is the repair now: it
+    # authorizes first and still mints when OpenSSH refuses the key. The property the test is
+    # really about is unchanged - ship.py REPAIRS rather than telling the operator to go and do it.
+    assert "ci_key.ensure_usable" in body, (
         "it does not repair an unusable key - it tells the operator to go and do it")
     # `"ci_key.push" in body` was the first version of this line and it is a SUBSTRING of
     # push_everywhere, so reverting ship.py to the repo-only write passed (defect class 4 again).
@@ -832,3 +839,131 @@ def test_setup_github_cicd_no_longer_uploads_an_unproven_key():
         assert any(isinstance(c, ast.Call) and ast.unparse(c).startswith("sys.exit")
                    for c in ast.walk(node)), (
             "a failed proof does not stop the upload: if %s" % ast.unparse(node.test))
+
+
+# =============================================================================================
+# THE KEY MUST REACH EVERY DROPLET THE PIPELINE DEPLOYS TO, not just production.
+#
+# 2026-10-15. The dedicated CI key was minted and authorized on the default host - production.
+# Nothing put it on the staging twin, so the first real pipeline run passed the gate, built and
+# signed three images, scanned all three, and then died on the staging hop with
+# "Permission denied (publickey)". Production was untouched, which is the gate behaving; it just
+# cost a full pipeline to find one missing line in one authorized_keys file.
+# =============================================================================================
+
+def test_the_host_list_is_derived_from_each_hosts_own_home():
+    """ONE HOME (defect class 32). Production lives in ci_key.HOST, staging in stagegate.STAGING.
+    If either address were copied into ci_key.py there would be two homes, and the copy is the one
+    that goes stale when a droplet is replaced."""
+    import stagegate
+    hosts = ci_key.deploy_hosts()
+    addrs = [h for _u, h, _l in hosts]
+    labels = [l for _u, _h, l in hosts]
+    assert ci_key.HOST in addrs, "production is missing from the deploy host list"
+    assert stagegate.STAGING in addrs, (
+        "the staging twin is not in the list, so provisioning will skip it exactly as it did "
+        "before: %s" % hosts)
+    assert labels == ["production", "staging"], (
+        "every host must be LABELLED - an unlabelled address in a failure line is what made this "
+        "take a whole pipeline run to read: %s" % hosts)
+
+    src = open(os.path.join(ROOT, "ci_key.py"), encoding="utf-8").read()
+    assert stagegate.STAGING not in src, (
+        "the staging address is written into ci_key.py; it has a home in stagegate.py and a "
+        "second copy always drifts")
+
+
+def test_stagegate_is_safe_to_import_for_its_constant():
+    """deploy_hosts() imports stagegate to read one constant. That is only acceptable while
+    stagegate's top level does nothing - no ssh, no deploy, no side effect."""
+    import ast
+    tree = ast.parse(open(os.path.join(ROOT, "stagegate.py"), encoding="utf-8").read())
+    for node in tree.body:
+        assert isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.ClassDef,
+                                 ast.Assign, ast.AnnAssign, ast.Expr, ast.If)), (
+            "stagegate.py now executes %s at import time, so reading its STAGING constant would "
+            "run it" % type(node).__name__)
+
+
+def test_provisioning_and_proving_both_walk_every_host():
+    """ANCHOR ON THE CALL SITE (defect class 4). The bug was not in authorize() - that function
+    always took a host argument. It was that provision() called it once, with the default. So the
+    property is that both the writer and the prover ITERATE."""
+    import ast
+    tree = ast.parse(open(os.path.join(ROOT, "ci_key.py"), encoding="utf-8").read())
+    fns = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    for name in ("authorize_everywhere", "check"):
+        assert name in fns, "%s is gone; this guard is no longer reading what provisions" % name
+        src = ast.unparse(fns[name])
+        assert "deploy_hosts()" in src, (
+            "%s does not walk deploy_hosts(), so it can authorize or prove production only - "
+            "which is the 2026-10-15 staging failure" % name)
+    prov = ast.unparse(fns["provision"])
+    assert "authorize_everywhere" in prov, (
+        "provision() authorizes a single host again; staging will be left without the key")
+
+
+def test_an_unknown_on_any_host_is_not_a_pass(monkeypatch):
+    """A credential nobody can read back must be PROVEN before it is written, and this file's own
+    rule is that an UNKNOWN is not a pass. Staging being unreachable must block --push rather than
+    quietly uploading a key that only half the estate accepts."""
+    monkeypatch.setattr(ci_key, "key_shape", lambda _t: (True, "ok"))
+    monkeypatch.setattr(ci_key, "read_key", lambda _p: "x")
+    monkeypatch.setattr(ci_key, "parses", lambda _p: (True, "ok"))
+    monkeypatch.setattr(ci_key, "deploy_hosts",
+                        lambda: [("root", "1.2.3.4", "production"),
+                                 ("root", "5.6.7.8", "staging")])
+
+    answers = {"1.2.3.4": (True, "authenticated"), "5.6.7.8": (None, "timed out")}
+    monkeypatch.setattr(ci_key, "authenticates",
+                        lambda path, user=None, host=None, **kw: answers[host])
+    assert ci_key.check("irrelevant") is False, (
+        "an UNKNOWN on staging counted as a pass; --push would upload a key the staging job "
+        "cannot use, which is precisely how this reached a live pipeline")
+
+    answers["5.6.7.8"] = (False, "permission denied")
+    assert ci_key.check("irrelevant") is False, "a REJECTION on staging counted as a pass"
+    answers["5.6.7.8"] = (True, "authenticated")
+    assert ci_key.check("irrelevant") is True, (
+        "both hosts authenticate and the check still refuses - it can no longer pass at all")
+
+
+def test_a_missing_authorized_keys_line_does_not_rotate_a_working_key(monkeypatch):
+    """THE REPAIR MUST FIT THE FAULT. Once check() started proving staging too, the existing good
+    CI key failed it for one reason: its public half was not in staging's authorized_keys. If that
+    path mints a new key, a working credential is rotated - and re-pushed to every secret scope -
+    to fix a missing line. ensure_usable() authorizes first and mints only when OpenSSH refuses."""
+    calls = {"authorized": 0, "minted": 0}
+    state = {"ok": False}
+
+    monkeypatch.setattr(ci_key, "find_key", lambda: "/tmp/existing")
+    monkeypatch.setattr(ci_key, "parses", lambda _p: (True, "ok"))
+
+    def fake_authorize_everywhere(path=None):
+        calls["authorized"] += 1
+        state["ok"] = True                       # the line is appended; now it works
+        return True, [("production", "1.2.3.4", True, "ok"), ("staging", "5.6.7.8", True, "ok")]
+
+    monkeypatch.setattr(ci_key, "authorize_everywhere", fake_authorize_everywhere)
+    monkeypatch.setattr(ci_key, "check", lambda _p: state["ok"])
+    monkeypatch.setattr(ci_key, "provision",
+                        lambda path=None: (calls.__setitem__("minted", calls["minted"] + 1),
+                                           (True, "/tmp/minted"))[1])
+
+    ok, path = ci_key.ensure_usable()
+    assert ok and path == "/tmp/existing", (ok, path)
+    assert calls["authorized"] == 1, "it never tried the small repair"
+    assert calls["minted"] == 0, (
+        "a working key was ROTATED because one host was missing an authorized_keys line")
+
+
+def test_a_key_openssh_refuses_still_gets_a_freshly_minted_one(monkeypatch):
+    """The other direction (defect class 13 - defeat the guard, not just confirm it). A key with a
+    passphrase cannot be repaired by authorizing it anywhere, and that is the case minting exists
+    for; it must still happen."""
+    monkeypatch.setattr(ci_key, "find_key", lambda: "/tmp/passphrased")
+    monkeypatch.setattr(ci_key, "parses", lambda _p: (False, "incorrect passphrase"))
+    monkeypatch.setattr(ci_key, "authorize_everywhere",
+                        lambda path=None: pytest.fail("authorized a key OpenSSH cannot read"))
+    monkeypatch.setattr(ci_key, "provision", lambda path=None: (True, "/tmp/minted"))
+    assert ci_key.ensure_usable() == (True, "/tmp/minted")

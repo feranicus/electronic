@@ -230,6 +230,56 @@ def authenticates(path, user=USER, host=HOST, timeout=40):
 CI_KEY = os.path.join(os.path.expanduser("~"), ".ssh", "colt_ci")
 
 
+def deploy_hosts():
+    """Every droplet a CI deploy touches: [(user, host, label)] - DERIVED, never retyped here.
+
+    THE 2026-10-15 STAGING FAILURE. `provision()` minted the dedicated CI key and authorized it on
+    the default host, which is production. Nothing ever put it on the staging twin. So the first
+    run of the real pipeline sailed through gate, build and three image scans and then died at
+    `staging unreachable: Permission denied (publickey)` - the one hop nobody
+    had authorized. Production was never touched, which is the gate working correctly; it just
+    took the whole pipeline to discover a missing line in one authorized_keys file.
+
+    ONE HOME (defect class 32): production is ci_key.HOST, staging is stagegate.STAGING, and each
+    stays the single home of its own address. Writing either address into this file - even in a
+    comment - creates the second home that always drifts, so neither appears here and a test
+    asserts that. `stagegate` is import-safe: its top level is nothing but constants and defs,
+    also asserted by test.
+
+    If staging cannot be derived the list SAYS SO rather than quietly returning production alone
+    (defect class 37): a key silently authorized on half the estate is exactly this incident.
+    """
+    hosts = [(USER, HOST, "production")]
+    staging, why = "", ""
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import stagegate                                   # constants + defs only
+        staging = (getattr(stagegate, "STAGING", "") or "").strip()
+        if not staging:
+            why = "stagegate.STAGING is empty"
+    except Exception as e:                                 # noqa: BLE001 - reported, never silent
+        why = "could not import stagegate (%s)" % type(e).__name__
+    if staging and staging != HOST:
+        hosts.append((USER, staging, "staging"))
+    elif staging == HOST:
+        why = "stagegate.STAGING equals production, so there is no separate twin"
+    if why:
+        print("  [!] staging host could not be derived (%s). The CI key will be proven on "
+              "production ONLY, and pipeline.yml's staging job will fail on publickey." % why)
+    return hosts
+
+
+def authorize_everywhere(path=CI_KEY):
+    """Append the public half on EVERY deploy host. (all_ok, [(label, host, ok, detail)])."""
+    rows = []
+    for user, host, label in deploy_hosts():
+        ok, detail = authorize(path, user=user, host=host)
+        rows.append((label, host, ok, detail))
+    return all(r[2] for r in rows), rows
+
+
 def mint(path=CI_KEY):
     """Create a DEDICATED passphrase-less key for CI. (ok, detail).
 
@@ -455,10 +505,19 @@ def check(path):
                               detail))
     if ok_parse is not True:
         return False
-    ok_auth, detail = authenticates(path)
-    print("  %s auth : %s" % ("[ok]" if ok_auth else "[X] " if ok_auth is False else "[?] ",
-                              detail))
-    return ok_auth is True
+    # EVERY HOST THE PIPELINE DEPLOYS TO, not just production. Proving one and pushing the secret
+    # is what let `staging unreachable: Permission denied (publickey)` reach a live pipeline run
+    # after the gate, the build and three scans had already passed. An UNKNOWN is not a pass here
+    # either - this file's own rule - because --push must never upload a credential on the
+    # strength of a check that did not run.
+    every = True
+    for user, host, label in deploy_hosts():
+        ok_auth, detail = authenticates(path, user=user, host=host)
+        print("  %s auth : %-10s %s" % ("[ok]" if ok_auth else "[X] " if ok_auth is False
+                                        else "[?] ", label, detail))
+        if ok_auth is not True:
+            every = False
+    return every
 
 
 def provision(path=CI_KEY):
@@ -473,12 +532,40 @@ def provision(path=CI_KEY):
     print("  %s mint : %s" % ("[ok]" if ok else "[X] ", detail))
     if not ok:
         return False, path
-    ok, detail = authorize(path)
-    print("  %s authz: %s" % ("[ok]" if ok else "[X] ", detail))
+    ok, rows = authorize_everywhere(path)
+    for label, host, row_ok, detail in rows:
+        print("  %s authz: %-10s %s" % ("[ok]" if row_ok else "[X] ", label, detail))
     if not ok:
         return False, path
     print("")
     return check(path), path
+
+
+def ensure_usable(path=None):
+    """Make the CI key usable on EVERY deploy host, by the least destructive repair that works.
+
+    ORDER MATTERS, and it is why this is a function rather than a line in ship.py. Once `check()`
+    started proving staging as well as production, the existing and perfectly good CI key began
+    failing the check - it simply was not in staging's authorized_keys yet - and the old flow
+    answered that by MINTING A NEW KEY. Rotating a working credential to fix a missing line in one
+    authorized_keys file is a far bigger act than the problem warrants, and it would have to be
+    re-pushed to every secret scope.
+
+    So: a key that PARSES is authorized on every host first (idempotent - `grep -qxF` makes a
+    re-run a no-op) and re-proved. Minting is reserved for the case the repair cannot reach: no
+    key at all, or one OpenSSH refuses - which on this PC means the passphrase.
+    """
+    path = path or find_key()
+    if path and parses(path)[0] is True:
+        print("\n  authorizing the existing CI key on every deploy host "
+              "(idempotent; your own key is not read, copied or changed)")
+        _ok, rows = authorize_everywhere(path)
+        for label, host, row_ok, detail in rows:
+            print("  %s authz: %-10s %s" % ("[ok]" if row_ok else "[X] ", label, detail))
+        if check(path):
+            return True, path
+        print("  the existing key still cannot reach every host; minting a dedicated one")
+    return provision()
 
 
 def main():

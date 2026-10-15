@@ -2189,7 +2189,13 @@ def main():
             # the automated repair, not an operator step, and it leaves his own key untouched.
             if not _kp:
                 print("  no private key found in %s" % ", ".join(ci_key.CANDIDATES))
-            _ok_key, _kp = ci_key.provision()
+            # AUTHORIZE BEFORE MINTING. check() now proves staging as well as production, so the
+            # ordinary reason to land here is no longer "the key is unusable" but "the key is not
+            # in the staging twin's authorized_keys yet" - the 2026-10-15 pipeline failure.
+            # Rotating a working credential to repair one missing line would be a much larger act
+            # than the fault; ensure_usable() tries the small fix first and mints only when
+            # OpenSSH itself refuses the key.
+            _ok_key, _kp = ci_key.ensure_usable(_kp)
         if not _ok_key:
             print("\n  [X] no key could be made usable by GitHub Actions. The secret was NOT")
             print("      touched and nothing was shipped. Fix what is named above and re-run.")
