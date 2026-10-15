@@ -387,6 +387,122 @@ def test_authorizing_twice_really_leaves_one_line(tmp_path, monkeypatch):
         "the script reported success while the key was NOT in authorized_keys")
 
 
+# ------------------------------------------- SCOPE: a secret set correctly, into the wrong level
+# GitHub Actions reference, "Naming your secrets", quoted verbatim:
+#   "If a secret with the same name exists at multiple levels, the secret at the lowest level takes
+#    precedence. ... if an organization, repository, and environment all have a secret with the
+#    same name, the environment-level secret takes precedence."
+#   https://docs.github.com/en/actions/reference/security/secrets
+# deploy.yml's deploy job declares `environment: production`, which setup_github_cicd.py created.
+# So `gh secret set --repo <r>` writes a scope that job never reads, the workflow keeps installing
+# the old key, and the log looks exactly like "the fix did not work". ONE HOME (defect class 32),
+# violated by GitHub's own resolution order rather than by our code.
+#
+# The same page also documents a SECOND, independent mechanism, kept here because it is a different
+# failure with the same symptom: "Organization and repository secrets are read when a workflow run
+# is queued, and environment secrets are read when a job referencing the environment starts."
+
+def _fake_api(repo_secrets=(), environments=(), env_secrets=None):
+    env_secrets = env_secrets or {}
+
+    def api(args):
+        import json as _json
+        path = args[1] if len(args) > 1 else ""
+        if path.endswith("/actions/secrets") and path.startswith("repos/"):
+            return 0, _json.dumps({"secrets": [{"name": n} for n in repo_secrets]})
+        if path.endswith("/environments"):
+            return 0, _json.dumps({"environments": [{"name": e} for e in environments]})
+        for e, names in env_secrets.items():
+            if path.endswith("/environments/%s/secrets" % e):
+                return 0, _json.dumps({"secrets": [{"name": n} for n in names]})
+        return 1, ""
+    return api
+
+
+def test_the_environment_scope_is_reported_last_because_it_wins():
+    """Order is the whole point: the caller prints the LAST entry as the one that decides."""
+    api = _fake_api(repo_secrets=["DROPLET_SSH_KEY"], environments=["production"],
+                    env_secrets={"production": ["DROPLET_SSH_KEY"]})
+    got = ci_key.scopes("feranicus/electronic", api)
+    assert [s for s, _ in got] == ["repository", "environment:production"], got
+
+
+def test_a_repo_only_secret_reports_only_the_repository():
+    api = _fake_api(repo_secrets=["DROPLET_SSH_KEY"], environments=["production"],
+                    env_secrets={"production": ["SOMETHING_ELSE"]})
+    assert [s for s, _ in ci_key.scopes("feranicus/electronic", api)] == ["repository"]
+
+
+def test_unreadable_scopes_are_not_reported_as_proof_of_absence():
+    """Defect class 1. gh missing, not authenticated, or no admin rights all look like 'nothing
+    found', and 'nothing found' must never be printed as 'the secret is only in one place'."""
+    assert ci_key.scopes("feranicus/electronic", lambda args: (1, "")) == []
+
+
+def test_the_environments_are_derived_from_the_workflows_not_guessed():
+    """DERIVE N FROM SOMETHING AUTHORITATIVE (defect class 35). The workflow files say which
+    environment a deploy job runs in; counting by hand is how the one that matters gets missed."""
+    envs = ci_key.environments_used_by_workflows(ROOT)
+    assert "production" in envs, (
+        "deploy.yml declares `environment: production` and uses DROPLET_SSH_KEY, but the deriver "
+        "did not find it: %s" % envs)
+
+
+def test_push_everywhere_writes_the_repository_and_every_declared_environment():
+    sent = []
+
+    def runner(cmd, stdin_text):
+        sent.append(cmd)
+        return 0, "ok"
+
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix="key", delete=False, encoding="utf-8") as fh:
+        fh.write(GOOD)
+        p = fh.name
+    try:
+        ok, details = ci_key.push_everywhere(p, "feranicus/electronic", runner,
+                                             api=lambda args: (1, ""))
+    finally:
+        os.unlink(p)
+    assert ok, details
+    envs = [c[c.index("--env") + 1] for c in sent if "--env" in c]
+    assert "production" in envs, (
+        "the environment the deploy job actually reads was never written: %s" % sent)
+    assert any("--env" not in c for c in sent), "the repository scope was skipped"
+    for c in sent:
+        assert "BEGIN OPENSSH" not in " ".join(c), "the key reached argv"
+
+
+def test_push_everywhere_fails_if_any_scope_fails():
+    """A partial write leaves the scopes DISAGREEING, which is the bug, not a lesser version of
+    the fix. Anything short of all of them is a failure."""
+    def runner(cmd, stdin_text):
+        return (1, "denied") if "--env" in cmd else (0, "ok")
+
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix="key", delete=False, encoding="utf-8") as fh:
+        fh.write(GOOD)
+        p = fh.name
+    try:
+        ok, details = ci_key.push_everywhere(p, "feranicus/electronic", runner,
+                                             api=lambda args: (1, ""))
+    finally:
+        os.unlink(p)
+    assert ok is False, "a refused environment write was reported as success: %s" % (details,)
+
+
+def test_every_workflow_prints_the_fingerprint_of_the_key_it_installed():
+    """A fingerprint is PUBLIC (it is in authorized_keys) and it is the difference between 'the
+    secret is wrong' and 'the secret is THIS key'. Without it, which scope won is unknowable from
+    the log, which is how this cost a day (defect class 26)."""
+    for name in ("deploy.yml", "web-deploy.yml", "provision-patchwatch.yml"):
+        s = _wf(name)
+        assert "ssh-keygen -l -f ~/.ssh/deploy_key" in s, (
+            "%s never names the key it installed" % name)
+        assert s.index("ssh-keygen -l -f") < s.index("ssh-keygen -y -f"), (
+            "%s only names the key AFTER the refusal, so a failed run says nothing" % name)
+
+
 # ---------------------------------------------------------------- wiring (defect class 9)
 def _wf(name):
     return open(os.path.join(ROOT, ".github", "workflows", name),
@@ -433,7 +549,11 @@ def test_ship_py_repairs_the_key_instead_of_stopping():
     assert "ci_key.check" in body, "it does not prove the key"
     assert "ci_key.provision" in body, (
         "it does not repair an unusable key - it tells the operator to go and do it")
-    assert "ci_key.push" in body, "it never sets the secret"
+    # `"ci_key.push" in body` was the first version of this line and it is a SUBSTRING of
+    # push_everywhere, so reverting ship.py to the repo-only write passed (defect class 4 again).
+    assert "ci_key.push_everywhere" in body, (
+        "ship.py writes only one scope; an environment secret of the same name would keep winning")
+    assert "ci_key.scopes" in body, "it does not report which scope actually decides"
     assert body.count("sys.exit(2)") >= 2, "a refusal path does not stop the run"
     # and it must FALL THROUGH on success, or the operator needs a second command
     assert "return" not in body.split("ci_key.push")[-1], (

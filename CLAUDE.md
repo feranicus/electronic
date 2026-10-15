@@ -99,7 +99,15 @@ copied or changed. Every workflow that installs the key validates it first. A PO
 harness uses `shell_harness_allowed()` (ONE HOME, in test_teamwork.py) — `shutil.which("bash")` is
 NOT that gate: on this operator's box `bash` is WSL's bash.exe and a stripped `env=` makes WSL
 itself fail in UTF-16. Inherit `os.environ`, override only what the test needs.
-[2026-10-14] `tests/test_ci_key.py`
+**A SECRET HAS SEVERAL HOMES AND GITHUB PICKS, NOT YOU.** Per GitHub's own reference, "the secret at
+the lowest level takes precedence … the environment-level secret takes precedence", and org/repo
+secrets are read when a run is QUEUED while environment secrets are read when the JOB STARTS.
+deploy.yml's deploy job declares `environment: production`, so a correct `gh secret set --repo`
+can be written into a scope that job never reads, and the log looks identical to "the fix failed".
+`ci_key.scopes()` MEASURES where it is defined, `environments_used_by_workflows()` derives the
+targets from the workflow files, and `push_everywhere()` writes all of them (partial = failure).
+Every workflow prints the installed key's FINGERPRINT (public) before validating it.
+[2026-10-14/15] `tests/test_ci_key.py`
 
 **A PROBE THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER.** `deploy.run()` folds stderr into
 stdout, so a failed ssh made `sshout()` return ssh's own error text as the probe's ANSWER:

@@ -146,6 +146,12 @@ jobs:
           # 2026-10-14 every deploy died at the first ssh with "error in libcrypto" and the next
           # step concluded the DROPLET was missing docker. ssh-keygen -y writes the PUBLIC half,
           # discarded, so no key material can reach this log.
+          # NAME THE SUBJECT (defect class 26). A fingerprint is PUBLIC information - it is in
+          # authorized_keys on the droplet - and printing it is the difference between "the secret
+          # is wrong" and "the secret is THIS key, and here is the one the droplet expects". On
+          # 2026-10-15 a correct `gh secret set --repo` kept losing to an ENVIRONMENT secret of the
+          # same name, and nothing in the log said which key had been installed.
+          ssh-keygen -l -f ~/.ssh/deploy_key 2>/dev/null || echo "(no fingerprint: not a key)"
           if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
             echo "::error::DROPLET_SSH_KEY is not a usable OpenSSH private key. OpenSSH itself"
             echo "::error::cannot derive its public half ('error in libcrypto'). Common causes: a"

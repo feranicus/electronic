@@ -267,8 +267,86 @@ def authorize(path=CI_KEY, user=USER, host=HOST, timeout=60):
                    % ((out.strip().splitlines() or ["ssh exited %d" % r.returncode])[-1]))
 
 
-def push(path, repo=REPO, runner=None):
-    """gh secret set, VALUE ON STDIN. Returns (ok, detail)."""
+def _gh_json(args, runner=None):
+    """`gh api ...` -> parsed JSON, or None if it could not be read. Never raises."""
+    if runner is not None:
+        rc, out = runner(args)
+    else:
+        if not shutil.which("gh"):
+            return None
+        try:
+            r = subprocess.run(["gh"] + args, capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        rc, out = r.returncode, (r.stdout or "")
+    if rc != 0:
+        return None
+    try:
+        import json as _json
+        return _json.loads(out or "null")
+    except ValueError:
+        return None
+
+
+def scopes(repo=REPO, runner=None):
+    """Every place DROPLET_SSH_KEY is defined, in the order GitHub resolves them.
+
+    WHY THIS EXISTS. `gh secret set --repo <r>` writes the REPOSITORY secret. But deploy.yml's
+    deploy job declares `environment: production`, and an ENVIRONMENT secret of the same name
+    OVERRIDES the repository one. setup_github_cicd.py created that environment months ago. So the
+    secret was set, correctly, into a scope the job never reads - the workflow kept installing the
+    old passphrase-protected key and kept failing with the same message, which looks exactly like
+    "the fix did not work" and is in fact ONE HOME violated by GitHub's own resolution order
+    (defect class 32: a value with several homes drifts, and the newer one always loses).
+
+    Returns a list of (scope_label, where) ordered LEAST to MOST specific, so the last entry is the
+    one that actually wins. An empty list means nothing could be read, which is not the same as
+    "the secret is only in one place" - the caller must not treat it as proof.
+    """
+    owner, _, name = repo.partition("/")
+    found = []
+    org = _gh_json(["api", "orgs/%s/actions/secrets" % owner, "--jq", ".secrets[].name"],
+                   runner) if runner else None
+    if org and SECRET in org:
+        found.append(("organisation", "orgs/%s" % owner))
+    rs = _gh_json(["api", "repos/%s/actions/secrets" % repo], runner)
+    if rs and any(s.get("name") == SECRET for s in (rs.get("secrets") or [])):
+        found.append(("repository", repo))
+    envs = _gh_json(["api", "repos/%s/environments" % repo], runner)
+    for e in ((envs or {}).get("environments") or []):
+        en = e.get("name")
+        if not en:
+            continue
+        es = _gh_json(["api", "repos/%s/environments/%s/secrets" % (repo, en)], runner)
+        if es and any(s.get("name") == SECRET for s in (es.get("secrets") or [])):
+            found.append(("environment:%s" % en, en))
+    return found
+
+
+def environments_used_by_workflows(root=None):
+    """Which environments the DEPLOY jobs actually declare, read from the workflows themselves.
+
+    DERIVE N FROM SOMETHING AUTHORITATIVE (defect class 35). Counting the scopes by hand is how the
+    one that matters gets missed; the workflow files are the authority on which environment a
+    deploy job runs in, so they are what gets read.
+    """
+    import glob
+    import re as _re
+    root = root or os.path.dirname(os.path.abspath(__file__))
+    out = []
+    for f in sorted(glob.glob(os.path.join(root, ".github", "workflows", "*.yml"))):
+        src = open(f, encoding="utf-8", errors="replace").read()
+        if "DROPLET_SSH_KEY" not in src:
+            continue
+        for m in _re.finditer(r"^\s{4}environment:\s*([A-Za-z0-9._-]+)\s*$", src, _re.M):
+            if m.group(1) not in out:
+                out.append(m.group(1))
+    return out
+
+
+def push(path, repo=REPO, runner=None, env=None):
+    """gh secret set, VALUE ON STDIN. Returns (ok, detail). `env` targets one environment."""
     if runner is None:
         if not shutil.which("gh"):
             return False, ("the GitHub CLI 'gh' is not installed, so the secret cannot be set from "
@@ -285,10 +363,36 @@ def push(path, repo=REPO, runner=None):
     text = read_key(path)
     if text is None:
         return False, "the key file disappeared between the check and the upload"
-    rc, out = runner(["gh", "secret", "set", SECRET, "--repo", repo], text)
+    cmd = ["gh", "secret", "set", SECRET, "--repo", repo]
+    if env:
+        cmd += ["--env", env]
+    rc, out = runner(cmd, text)
     if rc != 0:
         return False, (out or "gh exited %d" % rc).strip()[:300]
-    return True, "%s set on %s from %s" % (SECRET, repo, path)
+    return True, "%s set on %s%s" % (SECRET, repo, " (environment: %s)" % env if env else "")
+
+
+def push_everywhere(path, repo=REPO, runner=None, api=None):
+    """Set the secret in EVERY scope the deploy jobs can read. (ok, [detail, ...]).
+
+    The repository scope is always written. Every environment a DROPLET_SSH_KEY-using workflow
+    declares is ALSO written, because an environment secret silently overrides the repository one
+    and that is exactly how a correct fix kept failing. Writing the same proven key into each scope
+    makes them agree, which is the only way to have one effective value when GitHub insists on
+    several homes.
+    """
+    details = []
+    ok_all, detail = push(path, repo, runner)
+    details.append(("repository", ok_all, detail))
+    targets = list(environments_used_by_workflows())
+    for label, where in scopes(repo, api):
+        if label.startswith("environment:") and where not in targets:
+            targets.append(where)
+    for e in targets:
+        ok, d = push(path, repo, runner, env=e)
+        details.append(("environment:%s" % e, ok, d))
+        ok_all = ok_all and ok
+    return ok_all, details
 
 
 def find_key(explicit=None):

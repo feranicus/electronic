@@ -2058,8 +2058,22 @@ def main():
             print("\n  [X] no key could be made usable by GitHub Actions. The secret was NOT")
             print("      touched and nothing was shipped. Fix what is named above and re-run.")
             sys.exit(2)
-        _ok_push, _detail = ci_key.push(_kp)
-        print("  %s %s" % ("[ok]" if _ok_push else "[X] ", _detail))
+        # WHICH SCOPE ACTUALLY WINS. GitHub's own reference: "If a secret with the same name
+        # exists at multiple levels, the secret at the lowest level takes precedence... the
+        # environment-level secret takes precedence." deploy.yml's deploy job declares
+        # `environment: production`, so a repo-level `gh secret set` can be written correctly and
+        # still never be read. Measure the scopes, print them, then write the proven key into
+        # every one of them so they cannot disagree.
+        _scopes = ci_key.scopes()
+        if _scopes:
+            print("  %s is defined in: %s" % (ci_key.SECRET,
+                                              ", ".join(s for s, _ in _scopes)))
+            print("  (GitHub: the LOWEST level wins -> %s)" % _scopes[-1][0])
+        else:
+            print("  scopes could not be read from GitHub - writing every scope the workflows use")
+        _ok_push, _details = ci_key.push_everywhere(_kp)
+        for _label, _ok, _d in _details:
+            print("  %s %-22s %s" % ("[ok]" if _ok else "[X] ", _label, _d))
         if not _ok_push:
             sys.exit(2)
         print("  continuing with the normal ship.")
