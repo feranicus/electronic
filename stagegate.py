@@ -43,6 +43,135 @@ STAGING = os.environ.get("STAGING_HOST", "165.245.244.174")
 PROD = os.environ.get("DROPLET_HOST", "64.225.108.200")
 
 
+#: GitHub Actions renders a few directives specially. They are inert anywhere else, which is why
+#: this lives in the script rather than in YAML: the gate keeps ONE home and the operator's console
+#: output is unchanged (defect class 32).
+IN_ACTIONS = os.environ.get("GITHUB_ACTIONS", "") == "true"
+
+
+def ci_error(msg):
+    """Put a failure in the run's Annotations panel, not only in line 19 of a collapsed log.
+
+    The 2026-10-15 staging failure WAS annotated - as a generic "Process completed with exit code
+    1", which names nothing. An alert that cannot say what broke is the same problem as a check
+    that cannot say what it measured."""
+    if IN_ACTIONS:
+        print("::error title=Staging gate::%s" % str(msg).replace("\n", " ")[:400], flush=True)
+
+
+def ci_summary(markdown):
+    """Write to the run's Summary page, which survives log truncation and needs no scrolling.
+
+    Appended, never overwritten: other steps write here too, and clobbering their section to show
+    ours would be the same class of mistake as a second home for a value."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(markdown.rstrip() + "\n\n")
+    except OSError as e:                                     # noqa: BLE001 - never fatal
+        print("  [!] could not write the CI summary (%s)" % type(e).__name__)
+
+
+def summarise_for_ci(gate, digest, checks=None, reboot=None):
+    """The gate's verdict as a table on the Summary page. Same numbers as the console, one source.
+
+    WHY A TABLE AND NOT THE RAW LOG. The staging job prints several hundred lines on a good run -
+    the docker build, 42 checks, the reboot, the panel - and GitHub collapses all of it. When it
+    fails you get the tail, which is where the LEAST informative lines live. The summary shows the
+    verdict, the failed checks first, and the reboot result, so the question "what happened" is
+    answered before anyone opens a log.
+    """
+    rows = ["## Staging gate: **%s**" % gate, "", "`%s` (twin of `%s`)" % (STAGING, PROD), ""]
+    checks = checks or []
+    if checks:
+        bad = [c for c in checks if not c.get("ok")]
+        rows.append("%d of %d deterministic checks passed." % (len(checks) - len(bad), len(checks)))
+        rows += ["", "| | check | detail |", "|---|---|---|"]
+        # FAILURES FIRST. A reader scanning a table reads the top of it.
+        for c in sorted(checks, key=lambda c: bool(c.get("ok"))):
+            detail = str(c.get("detail", "")).replace("\n", " ").replace("|", "\\|")[:180]
+            rows.append("| %s | `%s` | %s |" % ("❌" if not c.get("ok") else "✅",
+                                                c.get("name", "?"), detail))
+    else:
+        rows.append("_No checks ran - the gate stopped before it could measure anything._")
+    if reboot:
+        rows += ["", "**Reboot test:** %s" % str(reboot).replace("\n", " ")[:300]]
+    if digest:
+        rows += ["", "<details><summary>Panel digest</summary>", "",
+                 "```", str(digest)[:6000], "```", "</details>"]
+    ci_summary("\n".join(rows))
+
+
+def unreachable_report(host, err):
+    """Say WHY the twin could not be reached, measured, instead of one truncated line.
+
+    THE 2026-10-15 PIPELINE RUN. The staging job failed with exactly four lines, of which the only
+    evidence was `staging unreachable: ***@165.245.244.174: Permission denied (publickey).` - and
+    the operator's user name is a masked secret, so even the account was unreadable. From that you
+    cannot tell whether the droplet was down, the port was shut, the key was missing, the key was
+    the wrong one, or the key was fine and simply not authorized on THAT host. It was the last,
+    and it took reading provision() to find out. Defect class 26: a diagnostic that does not name
+    its subject sends the next investigation down the wrong road.
+
+    Every line below is MEASURED here and now, and the two questions are deliberately separate:
+    can we open a TCP connection at all (network), and did the identity we offered get accepted
+    (authorisation). Only PUBLIC material is ever printed - a fingerprint, never a key.
+    """
+    out = ["  the staging twin could not be reached. What was measured, just now:"]
+    text = (err or "").strip()
+
+    # 1. NETWORK. A closed port and a rejected key look identical in a one-line summary and have
+    #    nothing to do with each other.
+    try:
+        import socket
+        s = socket.socket(); s.settimeout(5)
+        rc = s.connect_ex((host, 22)); s.close()
+        out.append("    tcp/22        %s" % ("OPEN - the droplet is up and sshd answered"
+                                             if rc == 0 else
+                                             "CLOSED/filtered (errno %d) - this is a network or "
+                                             "droplet-state problem, not a key problem" % rc))
+    except Exception as e:                                   # noqa: BLE001 - reported, not silent
+        out.append("    tcp/22        could not test (%s) - nothing concluded"
+                   % type(e).__name__)
+
+    # 2. THE IDENTITY WE OFFERED. The fingerprint is public and is the one value that lets you
+    #    compare what this runner presented against what the host actually authorises.
+    key = os.environ.get("SSH_KEY", "").strip()
+    if not key:
+        out.append("    identity      no SSH_KEY in the environment - ssh fell back to whatever "
+                   "default identity exists here")
+    elif not os.path.exists(key):
+        out.append("    identity      SSH_KEY points at %s, which does not exist" % key)
+    else:
+        try:
+            r = subprocess.run(["ssh-keygen", "-l", "-f", key], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=20)
+            out.append("    identity      %s" % ((r.stdout or r.stderr or "").strip()
+                                                 or "ssh-keygen said nothing"))
+        except Exception as e:                               # noqa: BLE001
+            out.append("    identity      could not read a fingerprint (%s)" % type(e).__name__)
+
+    # 3. WHAT SSH ITSELF SAID - in full. The old code sliced this to 200 characters.
+    for ln in [l for l in text.splitlines() if l.strip()][-6:]:
+        out.append("    ssh           %s" % ln.strip())
+
+    # 4. THE READING. Only stated when the evidence supports it (defect class 1).
+    if "permission denied" in text.lower():
+        out.append("    => the host ANSWERED and REFUSED the key: its public half is not in that "
+                   "droplet's authorized_keys.")
+        out.append("       The key is per-HOST. Being authorized on production says nothing about "
+                   "the twin - that is this exact incident.")
+        out.append("       Repair, from the operator's PC:  python ship.py --fix-ci-key")
+    elif "timed out" in text.lower() or "no route" in text.lower() or "refused" in text.lower():
+        out.append("    => the droplet did not answer. Nothing is concluded about the key.")
+    else:
+        out.append("    => ssh failed for a reason not in the known set above; the lines it "
+                   "printed are shown in full so they can be read rather than guessed at.")
+    return "\n".join(out)
+
+
 def ssh_script(script, host=STAGING, timeout=900, retries=2):
     """One session, LF bytes over stdin, explicit UTF-8 out, and BACK OFF when sshd says no.
 
@@ -733,7 +862,8 @@ def deploy_to_staging(say):
         setup += "\necho '[!] production env unreadable - engine checks will fail honestly'\n"
     out, err, rc = ssh_script(setup, timeout=600)
     if rc != 0 and not out:
-        say("  staging unreachable: %s" % (err or "")[:200])
+        say(unreachable_report(STAGING, err))
+        ci_error("staging twin %s unreachable - see the diagnosis in the log" % STAGING)
         return False
     say((sections(out).get("PROVISION") or "").replace("\n", "\n  "))
 
@@ -899,6 +1029,9 @@ def run(reboot_test=True, quiet=False):
 
     evidence = {"host": STAGING, "role": "staging twin of %s" % PROD,
                 "checks": checks, "reboot": reboot, "ts": time.time()}
+    # ONE HOME for what the run measured. main() renders the CI summary from THIS, so the table on
+    # the Summary page and the console output cannot disagree about how many checks passed.
+    globals()["_LAST_EVIDENCE"] = evidence
 
     say("asking 2 soldiers + 2 auditors for a written verdict...")
     ev = json.dumps(evidence)
@@ -927,6 +1060,11 @@ def main():
     gate, digest = run(reboot_test=not a.no_reboot)
     print("\n" + digest)
     print("\nGATE: %s" % gate)
+    # The same verdict, rendered where a CI reader will actually find it. Inert off Actions.
+    ev = last_evidence()
+    summarise_for_ci(gate, digest, ev.get("checks"), ev.get("reboot"))
+    if gate != "GO":
+        ci_error("GATE: NO-GO on %s - production was not touched" % STAGING)
     print(notify("cybergod staging validation: %s" % gate, digest))
     return 0 if gate == "GO" else 1
 
@@ -936,6 +1074,13 @@ if __name__ == "__main__":
 
 
 _LAST_VERDICT = {}
+_LAST_EVIDENCE = {}
+
+
+def last_evidence():
+    """What the most recent run() MEASURED - the checks and the reboot result. Read by main() to
+    render the CI summary, so the table and the console cannot drift apart."""
+    return _LAST_EVIDENCE
 
 
 def last_verdict():

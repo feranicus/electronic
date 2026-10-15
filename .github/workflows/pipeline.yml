@@ -207,7 +207,26 @@ jobs:
           STAGING_HOST: ${{ env.STAGING_HOST }}
           DROPLET_HOST: ${{ env.DROPLET_HOST }}
           WEB_TAG: ${{ needs.build.outputs.tag }}
-        run: python stagegate.py
+        # TEE, and keep the pipeline's exit status. A good run prints several hundred lines (the
+        # docker build, 42 checks, the reboot, the panel) and GitHub truncates the middle of a long
+        # step, which is where the evidence is - the tail it keeps is the least informative part.
+        # PIPESTATUS, not `$?`, because through a pipe `$?` is tee's status and would turn every
+        # failure green (defect class 42: never judge success through a pipe).
+        run: |
+          set -o pipefail
+          python stagegate.py 2>&1 | tee stagegate.log
+
+      # ALWAYS, especially on failure - that is the run you need the full log for. The summary
+      # table and the annotation come from stagegate.py itself; this is the raw evidence behind
+      # them, downloadable from the run page even when the step log was cut.
+      - name: Staging gate log (full, untruncated)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stagegate-log
+          path: stagegate.log
+          retention-days: 14
+          if-no-files-found: warn
 
   # ---------------------------------------------------------------- 5. production, with a human
   production:

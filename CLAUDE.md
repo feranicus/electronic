@@ -269,6 +269,20 @@ OpenSSH refuses the key. Mutations caught: the original single-host provision, s
 a hardcoded staging address, UNKNOWN-counts-as-pass, and ship.py stopping instead of repairing.
 [2026-10-15] `tests/test_ci_key.py`
 
+**FOUR LINES IS NOT A FAILURE REPORT.** That staging job printed `staging unreachable: ***@…:
+Permission denied (publickey).` and stopped — a 200-char SLICE of stderr, with the account masked
+because DROPLET_USER is a secret. Dead droplet, shut port, missing key, wrong key and unauthorized
+key all look identical in that line. `unreachable_report()` MEASURES instead: tcp/22 open or not
+(network vs auth, which share no cause), the FINGERPRINT of the identity offered (public — never
+key material, this repo is public), ssh's own lines in FULL, then a reading only where the evidence
+supports one, naming the repair. **Plus GitHub-native output, emitted BY stagegate.py so the gate
+keeps one home and the console is unchanged off Actions**: `::error::` so the annotation names the
+gate instead of "exit code 1", a `$GITHUB_STEP_SUMMARY` table rendered from `last_evidence()` —
+same numbers as the console, failures sorted to the top, appended never clobbered — and the full
+log tee'd to an artifact (`set -o pipefail`, class 42) because a good run prints hundreds of lines
+and GitHub truncates the middle, which is where the evidence is. Seven mutations caught, including
+one that dumped the private key into a public log. [2026-10-15] `tests/test_gate_diagnostics.py`
+
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
 After finishing ANY piece of work the user must trigger, end the reply with the exact command,
@@ -516,7 +530,12 @@ writing a check, a fixture or a diagnostic.
    a finding about the system. (logship shipped an empty archive for a week and exited 0; whodunit
    read a dead Loki query as innocence; the coverage metric graded its own homework.)
 2. **A check that cannot RUN is not a check.** "skipping", "catalog unavailable", "not installed"
-   printed on every run means it has never once executed.
+   printed on every run means it has never once executed. And a branch nobody executes is a branch
+   nobody has checked: a skip guard written as `subprocess.run([tool...]); if rc != 0: skip` never
+   reaches that `if` — subprocess RAISES FileNotFoundError when the tool is absent, so the machine
+   it exists for CRASHES instead of skipping. Gate on `shutil.which()` and catch OSError. [2026-10-15,
+   found by removing ssh-keygen from PATH, which also exposed an undefined `pytest` the F821 gate
+   had just caught in the same dead branch]
 3. **A check that cannot FAIL is not a check.** If the denominator is produced by the thing being
    measured, it is not a measurement. Prove a gate by breaking the thing it guards.
 4. **Assert the PROPERTY, never a string the error text also contains, and never a position.**
