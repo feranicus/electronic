@@ -650,6 +650,12 @@ writing a check, a fixture or a diagnostic.
     property", never "does the first one".
 48. **PARSE is not RUN.** An undefined identifier and an invalid colour are legal JavaScript until
     they execute. Render the page, execute the loop, read the artifact.
+    **IMPORT is not RUN either, and MODULE ORDER IS EXECUTION ORDER.** `if __name__ == "__main__"`
+    fires where it APPEARS, so a def below it does not exist when that module's own main() runs —
+    invisible to an importer, fatal to `python <script>.py`. ship.py imports stagegate and calls
+    run(), so only CI could see `NameError: last_evidence`; ruff F821 cannot, the name IS defined,
+    merely later. The guard must be the LAST statement in the file (asserted across every root
+    script), and a script path is verified by RUNNING it as a script. [2026-10-15]
 49. **READ THE DELIVERED ARTIFACT.** Rich finding text is not a good deck. Two slides of one deck
     disagreed; a raw enum reached a customer slide; 46 text boxes were truncated; a partner's deck
     kept our teal. Every one was invisible in the logs and obvious in the file.

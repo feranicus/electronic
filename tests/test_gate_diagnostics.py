@@ -241,3 +241,78 @@ def test_a_gate_with_no_checks_says_so_rather_than_implying_success(tmp_path, mo
     sg.summarise_for_ci("NO-GO", "", [], None)
     text = path.read_text(encoding="utf-8")
     assert "stopped before it could measure anything" in text, text
+
+
+# =============================================================================================
+# MODULE ORDER IS EXECUTION ORDER.
+#
+# 2026-10-15. stagegate.main() began calling last_evidence(), which was defined BELOW
+# `if __name__ == "__main__": sys.exit(main())`. An importer runs the whole module first, so
+# ship.py (which imports stagegate and calls run()) never noticed. CI runs `python stagegate.py`,
+# and died with NameError AFTER the gate had done its work. ruff F821 cannot catch it - the name
+# IS defined at module level, just too late - so only executing the script finds it.
+#
+# The property is simple and general: the __main__ guard must be the LAST statement in the file.
+# Derived across every root script that has one (defect class 35), not a list naming stagegate.
+# =============================================================================================
+
+def _root_scripts_with_a_main_guard():
+    import ast
+    out = []
+    for fn in sorted(os.listdir(ROOT)):
+        if not fn.endswith(".py"):
+            continue
+        path = os.path.join(ROOT, fn)
+        try:
+            tree = ast.parse(open(path, encoding="utf-8").read())
+        except (OSError, SyntaxError):
+            continue
+        guards = [n for n in tree.body
+                  if isinstance(n, ast.If) and "__main__" in ast.unparse(n.test)]
+        if guards:
+            out.append((fn, tree, guards[-1]))
+    return out
+
+
+def test_nothing_is_defined_after_the_main_guard():
+    """A def or assignment below the guard does not exist yet when the guard runs. It is invisible
+    to an importer (which executes the whole module before calling anything) and fatal to the
+    script path - the asymmetry is exactly why this reached CI."""
+    import ast
+    scripts = _root_scripts_with_a_main_guard()
+    assert scripts, "no root script has a __main__ guard; this guard is reading the wrong tree"
+    offenders = {}
+    for fn, tree, guard in scripts:
+        late = [n for n in tree.body
+                if n.lineno > guard.lineno
+                and isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                                   ast.Assign, ast.AnnAssign))]
+        if late:
+            offenders[fn] = [getattr(n, "name", None)
+                             or ast.unparse(getattr(n, "targets", [n])[0])
+                             for n in late]
+    assert not offenders, (
+        "defined AFTER `if __name__ == \"__main__\"`, so it does not exist when the script runs "
+        "its own main(): %s" % offenders)
+
+
+def test_stagegate_main_only_calls_names_that_exist_by_then():
+    """The specific failure, anchored on the CALL SITE (defect class 4). The general rule above is
+    what prevents it; this says out loud which function broke and why, so a future reader does not
+    have to rediscover that `main()` runs before the bottom of the file."""
+    import ast
+    tree = ast.parse(open(STAGEGATE, encoding="utf-8").read())
+    guard = [n for n in tree.body if isinstance(n, ast.If) and "__main__" in ast.unparse(n.test)][-1]
+    defined_before = {n.name: n.lineno for n in tree.body
+                      if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                      and n.lineno < guard.lineno}
+    main = [n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "main"][0]
+    called = {c.func.id for c in ast.walk(main)
+              if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+    module_level = {n.name for n in ast.walk(tree)
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    too_late = sorted(n for n in called & module_level if n not in defined_before)
+    assert not too_late, (
+        "stagegate.main() calls %s, which this module defines only AFTER the __main__ guard - "
+        "`python stagegate.py` raises NameError, while importing it hides that" % too_late)

@@ -153,6 +153,20 @@ def unreachable_report(host, err):
         except Exception as e:                               # noqa: BLE001
             out.append("    identity      could not read a fingerprint (%s)" % type(e).__name__)
 
+    # 2b. WHICH ACCOUNT. The username is a SECRET, so Actions masks it to *** and the failure line
+    #     reads `***@<host>` - which hides the one thing that distinguishes "the key is in the
+    #     wrong user's authorized_keys" from "the key is wrong". The VALUE stays hidden; its
+    #     PROVENANCE does not have to. ci_key authorizes into `USER@host` resolved the same way,
+    #     so when one side is defaulted and the other is supplied, this line is the discrepancy.
+    if os.environ.get("DROPLET_USER"):
+        out.append("    account       DROPLET_USER was SUPPLIED by the environment (value hidden). "
+                   "`--fix-ci-key` authorizes whatever DROPLET_USER resolves to ON THE MACHINE IT "
+                   "RUNS ON - if that was unset there, the key went into root's authorized_keys "
+                   "and this login is a different account.")
+    else:
+        out.append("    account       DROPLET_USER is not set here, so this login is root@ - "
+                   "the same account `--fix-ci-key` authorizes by default.")
+
     # 3. WHAT SSH ITSELF SAID - in full. The old code sliced this to 200 characters.
     for ln in [l for l in text.splitlines() if l.strip()][-6:]:
         out.append("    ssh           %s" % ln.strip())
@@ -161,8 +175,10 @@ def unreachable_report(host, err):
     if "permission denied" in text.lower():
         out.append("    => the host ANSWERED and REFUSED the key: its public half is not in that "
                    "droplet's authorized_keys.")
-        out.append("       The key is per-HOST. Being authorized on production says nothing about "
-                   "the twin - that is this exact incident.")
+        out.append("       The key is per-HOST **and per-ACCOUNT**. Being authorized on production "
+                   "says nothing about the twin, and being authorized for root@ says nothing "
+                   "about any other user - check the `account` line above against the one "
+                   "`--fix-ci-key` reported authorizing.")
         out.append("       Repair, from the operator's PC:  python ship.py --fix-ci-key")
     elif "timed out" in text.lower() or "no route" in text.lower() or "refused" in text.lower():
         out.append("    => the droplet did not answer. Nothing is concluded about the key.")
@@ -1069,10 +1085,17 @@ def main():
     return 0 if gate == "GO" else 1
 
 
-if __name__ == "__main__":
-    sys.exit(main())
-
-
+#: MODULE ORDER IS EXECUTION ORDER, and `if __name__ == "__main__"` runs at the point it appears -
+#: not at the end of the file. These four statements used to sit BELOW the guard, which was
+#: harmless while only govern.py read last_verdict() (an importer runs the whole module first).
+#: Then main() started calling last_evidence(), and `python stagegate.py` died on
+#: `NameError: name 'last_evidence' is not defined` after the gate had already done its work.
+#:
+#: ship.py IMPORTS stagegate and calls run(), so main() is never exercised from this PC - CI runs
+#: it as a script, and was the only thing that could see it. ruff F821 cannot: the name IS defined
+#: at module level, merely later. Nothing but execution finds an ordering fault, which is the same
+#: lesson as the previous commit, one turn later. Anything main() touches is defined ABOVE the
+#: guard now, and a test asserts the guard is the last statement in the file.
 _LAST_VERDICT = {}
 _LAST_EVIDENCE = {}
 
@@ -1087,3 +1110,7 @@ def last_verdict():
     """The full panel output from the most recent run() — read by govern.py so the governance
     loop shows the SAME diagnoses the digest did, rather than asking the models a second time."""
     return _LAST_VERDICT
+
+
+if __name__ == "__main__":
+    sys.exit(main())
