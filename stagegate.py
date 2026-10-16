@@ -136,8 +136,27 @@ def unreachable_report(host, err):
         out.append("    tcp/22        could not test (%s) - nothing concluded"
                    % type(e).__name__)
 
-    # 2. THE IDENTITY WE OFFERED. The fingerprint is public and is the one value that lets you
-    #    compare what this runner presented against what the host actually authorises.
+    # 2. THE IDENTITY WE OFFERED - which is the one ssh was TOLD to use, not merely one lying on
+    #    disk. The first version of this read $SSH_KEY and printed its fingerprint. That was the
+    #    defect that hid the cause for four pipeline runs: recover.SSH built its command from
+    #    DROPLET_KEY, which nothing sets, so `-i` was dropped and ssh offered NOTHING while this
+    #    report cheerfully fingerprinted a perfectly good file. Ask the resolver (class 1: look at
+    #    the invocation, not the artifact).
+    try:
+        from recover import KEY_FROM, ssh_identity
+        _k, _why = ssh_identity()
+        out.append("    offering      %s" % (
+            "%s (from %s)" % (_k, _why) if _k else
+            "NOTHING - no identity is named, so ssh picks for itself and under BatchMode that "
+            "usually means no key at all. THIS is a 'Permission denied (publickey)' with an "
+            "innocent-looking key file sitting right there."))
+        _env_key = (os.environ.get("SSH_KEY") or "").strip()
+        if _env_key and _k != _env_key:
+            out.append("    MISMATCH      SSH_KEY=%s is set but ssh is being given %r (%s)"
+                       % (_env_key, _k, _why))
+    except Exception as e:                                   # noqa: BLE001 - reported, not silent
+        out.append("    offering      could not ask recover.ssh_identity (%s)" % type(e).__name__)
+
     key = os.environ.get("SSH_KEY", "").strip()
     if not key:
         out.append("    identity      no SSH_KEY in the environment - ssh fell back to whatever "

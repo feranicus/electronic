@@ -46,12 +46,53 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.environ.get("DROPLET_HOST", "64.225.108.200")
 USER = os.environ.get("DROPLET_USER", "root")
-KEY = os.environ.get("DROPLET_KEY", os.path.expanduser("~/.ssh/id_rsa"))
+#: ONE HOME for "which private key do we tell ssh to offer". The workflows export SSH_KEY and
+#: deploy.py reads SSH_KEY; this module read DROPLET_KEY, which NOTHING sets.
+IDENTITY_ENV = ("SSH_KEY", "DROPLET_KEY")
+
+
+def ssh_identity(env=None, exists=None):
+    """(path, provenance). Empty path means "ssh picks for itself" - and SAYS so.
+
+    THE STAGING FAILURE, 2026-10-14 to 2026-10-16, four pipeline runs. This read
+    `DROPLET_KEY` with a `~/.ssh/id_rsa` default and then did:
+
+        if os.path.exists(KEY):
+            SSH += ["-i", KEY]
+
+    Every workflow exports **SSH_KEY**. Nothing exports DROPLET_KEY. So on a runner the default
+    path does not exist, the `if` is False, and `-i` IS SILENTLY DROPPED: ssh offers no identity
+    under BatchMode and the droplet answers `Permission denied (publickey)`. deploy.py reads
+    SSH_KEY and therefore worked, which is why CI could deploy PRODUCTION and never staging -
+    stagegate imports its ssh command from here. Two homes for one value, and the newer one lost
+    (class 32); a feature behind `if <derived thing>` that fails silently (class 37).
+
+    It survived four rounds of diagnosis because every check examined the FILE: the composite
+    action validates it with `ssh-keygen -y`, and `unreachable_report()` printed its fingerprint.
+    All true, all about a key ssh was never told to use. A check that looks at the artifact
+    instead of the INVOCATION cannot see this (class 1).
+    """
+    env = env if env is not None else os.environ
+    exists = exists if exists is not None else os.path.exists
+    for name in IDENTITY_ENV:
+        v = (env.get(name) or "").strip()
+        if v:
+            return v, "env:" + name
+    d = os.path.expanduser("~/.ssh/id_rsa")
+    return (d, "default:~/.ssh/id_rsa") if exists(d) else ("", "none (ssh will choose)")
+
+
+KEY, KEY_FROM = ssh_identity()
 
 SSH = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR",
        "-o", "ConnectTimeout=10", "-o", "BatchMode=yes",
        "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4"]
-if os.path.exists(KEY):
+if KEY:
+    # NAMED means OFFERED. If an env var names a key, pass it even when the path is missing, so
+    # ssh's own error names the file instead of this module quietly deciding not to try.
+    if not os.path.exists(KEY):
+        print("  [!] %s names %s, which does not exist - ssh will say so rather than this "
+              "silently offering nothing" % (KEY_FROM, KEY))
     SSH += ["-i", KEY]
 
 # The public names this box serves. Used only to verify recovery from the outside.

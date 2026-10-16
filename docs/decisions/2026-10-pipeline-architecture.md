@@ -276,3 +276,74 @@ Closing it means pulling `_base`, `polara__klima` and `s4biz__site` into `deploy
 needs a read of the droplet, and a careful one: Caddy fragments can carry basicauth hashes and
 header tokens, so they go through gitleaks and a human read before they are committed, never a
 blind `scp` into git.
+
+---
+
+## 2026-10-16 — the cause: `-i` was never passed, because two files disagreed on the variable name
+
+Four pipeline runs died on `***@165.245.244.174: Permission denied (publickey)`. Every check said
+the key was fine, and every check was right — about the wrong thing.
+
+`recover.py`, which `stagegate.py` imports its ssh command from, built it like this:
+
+    KEY = os.environ.get("DROPLET_KEY", os.path.expanduser("~/.ssh/id_rsa"))
+    SSH = ["ssh", ...]
+    if os.path.exists(KEY):
+        SSH += ["-i", KEY]
+
+`deploy.py` — the production path — reads a DIFFERENT variable:
+
+    SSH_KEY = os.environ.get("SSH_KEY", "")
+    SSH_OPTS = (["-i", SSH_KEY] if SSH_KEY else []) + [...]
+
+Every workflow exports `SSH_KEY`. **Nothing in the repository exports `DROPLET_KEY`.** So on a
+runner, `KEY` fell back to `~/.ssh/id_rsa`, which does not exist there, the `if` was False, and
+`-i` was silently dropped. Under `BatchMode=yes` with no agent, ssh then offered no identity at
+all and the droplet answered exactly what it should: `Permission denied (publickey)`.
+
+That is why CI could deploy PRODUCTION and never STAGING. The two paths were never using the same
+ssh command.
+
+### Why four rounds of diagnosis missed it
+
+Every piece of evidence examined the **artifact** and none examined the **invocation**:
+
+* the composite action wrote the key, `chmod 600`, and proved it with `ssh-keygen -y` — true;
+* `unreachable_report()` printed its fingerprint, `SHA256:7uwyj5g…` — true;
+* `--fix-ci-key` confirmed the public half was present in `root@165.245.244.174`'s
+  `authorized_keys`, and that this laptop could authenticate with it — true.
+
+All three describe a key that ssh was never told to use. Defect class 1, in the diagnostic itself:
+a probe that cannot see its subject must not answer, and "the key file is good" is not an answer to
+"which identity did ssh offer".
+
+Two classes caused it and one hid it:
+
+* **32 (ONE HOME)** — "which private key" had two homes, `SSH_KEY` and `DROPLET_KEY`, and the
+  newer one lost.
+* **37** — `if os.path.exists(KEY)` is a feature behind a derived condition that fails silently.
+* **1** — every check looked at the file.
+
+### The fix
+
+`recover.ssh_identity()` is the one home: precedence `SSH_KEY` → `DROPLET_KEY` (kept so nothing
+that set it breaks) → `~/.ssh/id_rsa` if it exists → `("", "none (ssh will choose)")`. A NAMED key
+is always passed with `-i`, even when the path is missing, so OpenSSH's own error names the file
+instead of this module quietly offering nothing. The empty case reports itself as empty.
+
+`unreachable_report()` now prints an `offering` line — the identity ssh is actually given and
+where it came from — above the fingerprint, and flags a mismatch when `SSH_KEY` is set but
+something else is being passed. With no identity named it says so in as many words.
+
+### Guards
+
+`tests/test_ssh_identity.py`, with the workflow pairing DERIVED rather than hand-listed: a
+workflow that INSTALLS the deploy key must NAME a variable the resolver reads. Mutations caught:
+reading `DROPLET_KEY` only, re-gating `-i` on the file existing, making "no identity" look like a
+path, and stripping the `SSH_KEY` lines from `pipeline.yml`.
+
+Two of my own guards were wrong first, both class 4. One looked for `'"-i"'` in `ast.unparse`
+output, which normalises quotes to single. The other scoped workflows by grepping for
+`python <script>.py` and flagged `uptime.yml` — whose only match is the advisory text of its own
+alert, "Run: python recover.py --fix-caddy". That workflow probes from outside the droplet
+deliberately and rightly has no key.

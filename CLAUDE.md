@@ -255,19 +255,13 @@ a four-timezone test.
 "wiring is wrong" when the truth was "not in this checkout" (class 1). In-repo half always
 asserted; sibling half runs on his box, skips with a reason elsewhere. [2026-10-15]
 
-**A KEY AUTHORIZED ON HALF THE ESTATE.** PR #19 merged, the pipeline ran gate -> build -> three
-scans green -> and died on `staging unreachable: Permission denied (publickey)`. `provision()`
-minted the CI key and called `authorize()` with its DEFAULT host, production; nothing ever put it
-on the twin. `deploy_hosts()` now DERIVES the list — production from `ci_key.HOST`, staging from
-`stagegate.STAGING`, neither address retyped (a test forbids the literal in ci_key.py) — and says
-so out loud if staging cannot be derived rather than silently returning one host (class 37).
-`authorize_everywhere()` writes to all of them, `check()` PROVES all of them, and an UNKNOWN on
-any host still blocks `--push`. **The repair must fit the fault**: once check() covered staging
-the good key failed it, and the old path answered that by MINTING — rotating a working credential
-over one missing authorized_keys line. `ensure_usable()` authorizes first and mints only when
-OpenSSH refuses the key. Mutations caught: the original single-host provision, single-host check,
-a hardcoded staging address, UNKNOWN-counts-as-pass, and ship.py stopping instead of repairing.
-[2026-10-15] `tests/test_ci_key.py`
+**A CREDENTIAL IS PER-HOST AND PER-ACCOUNT.** `provision()` authorized the CI key on its DEFAULT
+host only, so the twin never had it. `deploy_hosts()` DERIVES the list (production from
+`ci_key.HOST`, staging from `stagegate.STAGING`, neither address retyped) and says so aloud if
+staging cannot be derived (class 37); `authorize_everywhere()` writes all, `check()` proves all,
+an UNKNOWN on any still blocks `--push`. **The repair must fit the fault** — `ensure_usable()`
+authorizes first and mints only when OpenSSH refuses the key, instead of rotating a working
+credential over one missing line. [2026-10-15] `tests/test_ci_key.py`
 
 **FOUR LINES IS NOT A FAILURE REPORT.** That staging job printed `staging unreachable: ***@…:
 Permission denied (publickey).` and stopped — a 200-char SLICE of stderr, with the account masked
@@ -286,6 +280,14 @@ one that dumped the private key into a public log. [2026-10-15] `tests/test_gate
 **ASSERT THE REMOTE STATE, NEVER DEDUCE IT FROM A DOOR THAT OPENS FOR YOU.** `--fix-ci-key`
 re-authorizes BEFORE `check()`, which only proves THIS machine can log in; asserted on source
 ORDER. [2026-10-16] `tests/test_ci_key.py`
+
+**`-i` WAS NEVER PASSED — "which key" had TWO HOMES.** deploy.py read `SSH_KEY`; recover.py (whose
+SSH stagegate imports) read `DROPLET_KEY`, which nothing exports, then dropped `-i` when the
+`~/.ssh/id_rsa` default was absent. CI deployed production and never staging for four runs, while
+`ssh-keygen -y`, the fingerprint and the authorized_keys proof were all TRUE and all about a key
+ssh was never told to use — CHECK THE INVOCATION, NOT THE ARTIFACT (class 1).
+`recover.ssh_identity()` is the one home; a NAMED key is always offered.
+[2026-10-16] `tests/test_ssh_identity.py`
 
 **AN UNEXPECTED VHOST NAMES ITS FRAGMENT** (`_declared_in()`), or says NO fragment declares it —
 written around the guard, and the next assemble drops it. MEASURED: 2 of 5 fragments have a
