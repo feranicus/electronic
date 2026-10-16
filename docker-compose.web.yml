@@ -4,7 +4,11 @@
 # can reach it as http://colt-web:8000. Does NOT touch VideoDead / Amnezia / joplin.
 services:
   web:
-    image: ghcr.io/feranicus/colt-web:${WEB_TAG:-latest}
+    # ONE HOME (ghcr.py). The REPOSITORY half must be passed in, not hardcoded: CI pushes to
+    # ghcr.io/<owner>/<repo>/colt-web and this file used to pull ghcr.io/feranicus/colt-web,
+    # which is a DIFFERENT package. GHCR answers that with 'not found', so the two names
+    # disagreed for a whole pipeline run without anything saying so. [2026-10-16]
+    image: ${WEB_IMAGE:-ghcr.io/feranicus/colt-web}:${WEB_TAG:-latest}
     build: {context: ., dockerfile: webapp/Dockerfile}   # direct deploys build here; CI pulls the image
     container_name: colt-web
     env_file:

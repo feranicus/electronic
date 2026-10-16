@@ -104,6 +104,75 @@ def summarise_for_ci(gate, digest, checks=None, reboot=None):
     ci_summary("\n".join(rows))
 
 
+def offered_identities(host, user=None, ssh_cmd=None, runner=None, timeout=25):
+    """What ssh ACTUALLY PUT ON THE WIRE, read from ssh's own -v trace.
+
+    The `offering` line in unreachable_report() says which key ssh was TOLD to use. That is the
+    INVOCATION, and reading it instead of the key file is what finally named the four-run staging
+    failure - but it is still our side of the story. `ssh -v` is ssh's own account of what it did,
+    and it separates the two cases that are indistinguishable in `Permission denied (publickey)`:
+
+        no "Offering public key" line  -> we presented NOTHING. The identity was never passed
+                                          (the dropped `-i`), the file was unreadable, or the
+                                          agent was empty. The host never got a chance to refuse.
+        "Offering" then denied         -> we presented THAT key and the host refused it: its
+                                          public half is not in that ACCOUNT's authorized_keys on
+                                          THAT host. A different repair entirely.
+
+    Everything printed is PUBLIC - a path, a key type, a fingerprint, and the server's own
+    `Authentications that can continue` list. ssh -v never writes private key bytes to stderr,
+    which matters because this repo is public and these logs are too.
+
+    Costs ONE extra ssh session and runs on the failure path only, after the gate has already
+    stopped (class 43: session count is the only lever on Windows, so this must never be wired
+    into a healthy run). Fails OPEN - a probe that cannot run says so and concludes nothing
+    (class 1), it never turns its own blindness into a verdict about the key.
+    """
+    base = list(SSH if ssh_cmd is None else ssh_cmd)
+    if not base:
+        return [], ["there is no ssh command to probe with - nothing concluded"]
+    # recover.SSH carries `-o LogLevel=ERROR` so a healthy run stays quiet. That option would
+    # silence the very trace this function exists to read, and -o beats -v, so drop it and ask
+    # for DEBUG1 explicitly. MEASURED, not assumed: the test asserts the probe's LogLevel.
+    cmd, i = [base[0], "-v"], 1
+    while i < len(base):
+        if base[i] == "-o" and i + 1 < len(base):
+            if not base[i + 1].lower().startswith("loglevel"):
+                cmd += ["-o", base[i + 1]]
+            i += 2
+            continue
+        cmd.append(base[i])
+        i += 1
+    cmd += ["-o", "LogLevel=DEBUG1"]
+    if not any(t.lower().startswith("batchmode") for t in cmd):
+        cmd += ["-o", "BatchMode=yes"]   # never block on a prompt; a probe must not hang the gate
+    cmd += ["%s@%s" % (user or USER, host), "true"]
+
+    def _default(c):
+        return subprocess.run(c, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=timeout)
+
+    try:
+        r = (runner or _default)(cmd)
+    except Exception as e:                                   # noqa: BLE001 - reported, not silent
+        return [], ["could not run `ssh -v` (%s) - nothing concluded" % type(e).__name__]
+    blob = "\n".join(filter(None, [getattr(r, "stderr", "") or "", getattr(r, "stdout", "") or ""]))
+    if not blob.strip():
+        return [], ["`ssh -v` produced no trace - nothing concluded"]
+    offered, notes = [], []
+    for ln in blob.splitlines():
+        s = ln.strip()
+        low = s.lower()
+        if "offering public key" in low or "offering ssh-" in low:
+            offered.append(s)
+        elif ("authentications that can continue" in low
+              or "no mutual signature algorithm" in low
+              or "we did not send a packet, disable method" in low
+              or ("identity file" in low and "type -1" in low)):
+            notes.append(s)
+    return offered, notes
+
+
 def unreachable_report(host, err):
     """Say WHY the twin could not be reached, measured, instead of one truncated line.
 
@@ -156,6 +225,34 @@ def unreachable_report(host, err):
                        % (_env_key, _k, _why))
     except Exception as e:                                   # noqa: BLE001 - reported, not silent
         out.append("    offering      could not ask recover.ssh_identity (%s)" % type(e).__name__)
+
+    # 2a. WHAT SSH ITSELF PRESENTED. The line above is the invocation we built; this is ssh's own
+    #     -v trace of what reached the wire - the only evidence that tells "we offered nothing"
+    #     apart from "we offered this and it was refused". Those have different repairs and they
+    #     print the identical single-line error.
+    #
+    #     ONLY on an authentication failure. A timeout or a closed port never reaches the auth
+    #     stage, so probing there would cost a second ssh session (class 43) to report an absence
+    #     that means nothing - and reporting "no key was offered" about a dead droplet is exactly
+    #     the class-1 error this whole function exists to stop.
+    if "permission denied" in text.lower():
+        try:
+            _offered, _notes = offered_identities(host)
+            if _offered:
+                for _ln in _offered[:4]:
+                    out.append("    offered       %s" % _ln)
+                out.append("    => a key WAS presented and the host still refused it, so this is "
+                           "authorisation on THIS host and account, not the invocation.")
+            else:
+                out.append("    offered       NO public key reached the wire - ssh presented "
+                           "nothing, so the host never refused a key: it was never shown one. "
+                           "The fault is the invocation (`offering` above) or the key file "
+                           "itself, not what the host permits.")
+            for _ln in _notes[:4]:
+                out.append("    ssh -v        %s" % _ln)
+        except Exception as e:                               # noqa: BLE001 - reported, not silent
+            out.append("    offered       could not read an ssh -v trace (%s) - nothing concluded"
+                       % type(e).__name__)
 
     key = os.environ.get("SSH_KEY", "").strip()
     if not key:

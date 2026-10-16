@@ -125,11 +125,45 @@ import subprocess as _sp
 STAGEGATE = os.path.join(ROOT, "stagegate.py")
 
 
-def _sg():
+def _no_probe(*_a, **_kw):
+    """TESTS MUST NOT OPEN SSH SESSIONS (defect class 18), and a 25-second timeout per call would
+    make this file a coin flip (class 15). The ssh -v probe is exercised directly below with an
+    injected runner; here it is replaced so the REPORT can be read on its own."""
+    return [], []
+
+
+def _sg(probe=_no_probe):
     spec = importlib.util.spec_from_file_location("_sg_for_test", STAGEGATE)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    if probe is not None:
+        mod.offered_identities = probe
     return mod
+
+
+class _R:
+    """A fake completed process. ssh writes its -v trace to STDERR."""
+
+    def __init__(self, stderr="", stdout=""):
+        self.stderr, self.stdout, self.returncode = stderr, stdout, 255
+
+
+# VERBATIM shapes from OpenSSH 9.x. The two traces below are the whole point of the probe: they
+# produce the SAME `Permission denied (publickey)` and need opposite repairs.
+TRACE_OFFERED = """debug1: Connecting to 165.245.244.174 [165.245.244.174] port 22.
+debug1: Will attempt key: /home/runner/.ssh/deploy_key ED25519 SHA256:7uwyj5gAAAA explicit
+debug1: Offering public key: /home/runner/.ssh/deploy_key ED25519 SHA256:7uwyj5gAAAA explicit
+debug1: Authentications that can continue: publickey
+debug1: No more authentication methods to try.
+root@165.245.244.174: Permission denied (publickey).
+"""
+
+TRACE_NOTHING = """debug1: Connecting to 165.245.244.174 [165.245.244.174] port 22.
+debug1: identity file /root/.ssh/id_rsa type -1
+debug1: Authentications that can continue: publickey
+debug1: No more authentication methods to try.
+root@165.245.244.174: Permission denied (publickey).
+"""
 
 
 def test_the_unreachable_path_diagnoses_instead_of_slicing_the_error():
@@ -316,3 +350,139 @@ def test_stagegate_main_only_calls_names_that_exist_by_then():
     assert not too_late, (
         "stagegate.main() calls %s, which this module defines only AFTER the __main__ guard - "
         "`python stagegate.py` raises NameError, while importing it hides that" % too_late)
+
+
+# ---------------------------------------------------------------------------------------------
+# THE ssh -v PROBE, 2026-10-16.
+#
+# The operator asked whether stagegate.log held more detail than the step log. It does not: the
+# workflow runs `python stagegate.py 2>&1 | tee stagegate.log`, so the artifact is the same
+# stream, and the four failing runs died ~35 lines in with nothing truncated. The real gap was
+# not log VOLUME, it was that nothing measured what ssh put on the wire. `offering` says which
+# key we NAMED; only ssh's own -v trace says which key, if any, was PRESENTED.
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_key_that_was_offered_and_refused_points_at_authorisation():
+    sg = _sg(probe=None)
+    offered, _notes = sg.offered_identities("1.2.3.4", user="root",
+                                            runner=lambda c: _R(stderr=TRACE_OFFERED))
+    assert len(offered) == 1 and "deploy_key" in offered[0], offered
+    assert "SHA256:" in offered[0], "no fingerprint, so the reader cannot compare it to the host"
+
+
+def test_a_key_that_was_never_offered_is_reported_as_an_ABSENCE():
+    """THE 2026-10-16 FAILURE. `-i` was dropped, so ssh presented nothing - and every check at
+    the time was examining the key FILE, which was perfect. This trace has no Offering line."""
+    sg = _sg(probe=None)
+    offered, notes = sg.offered_identities("1.2.3.4", user="root",
+                                           runner=lambda c: _R(stderr=TRACE_NOTHING))
+    assert offered == [], "an Offering line was invented from a trace that has none: %s" % offered
+    assert any("type -1" in n for n in notes), (
+        "the trace says the only identity file could not be loaded (type -1) and the probe "
+        "dropped that line - it is the evidence: %s" % notes)
+
+
+def test_the_report_tells_the_two_apart_in_its_own_words():
+    """BEHAVIOUR AND WIRING (class 9). The probe being right is worth nothing if the report reads
+    both traces the same way. These two strings are what a reader at 3am actually sees."""
+    denied = "root@x: Permission denied (publickey)."
+
+    nothing = _sg(probe=lambda *a, **k: ([], ["debug1: identity file /root/.ssh/id_rsa type -1"]))
+    out = nothing.unreachable_report("127.0.0.1", denied)
+    assert "NO public key reached the wire" in out, out
+    assert "not what the host permits" in out, (
+        "it offered nothing and the report still sends the reader to authorized_keys: %s" % out)
+
+    was = _sg(probe=lambda *a, **k: (["debug1: Offering public key: /k ED25519 SHA256:zz"], []))
+    out2 = was.unreachable_report("127.0.0.1", denied)
+    assert "a key WAS presented" in out2, out2
+    assert "NO public key reached the wire" not in out2, out2
+
+
+def test_the_probe_is_only_run_on_an_AUTH_failure():
+    """A timeout never reaches the auth stage. Probing there spends a second ssh session (class
+    43) to report an absence that means nothing, and "no key was offered" about a DEAD droplet is
+    the class-1 error the whole function exists to prevent."""
+    calls = []
+
+    def _spy(*a, **k):
+        calls.append(a)
+        return [], []
+
+    sg = _sg(probe=_spy)
+    sg.unreachable_report("127.0.0.1", "ssh: connect to host x port 22: Connection timed out")
+    assert calls == [], "the probe ran on a network failure: %s" % (calls,)
+    sg.unreachable_report("127.0.0.1", "root@x: Permission denied (publickey).")
+    assert calls, "the probe did NOT run on an authentication failure - it is wired to nothing"
+
+
+def test_the_probe_asks_for_a_trace_instead_of_silencing_itself():
+    """recover.SSH carries `-o LogLevel=ERROR` so a healthy run stays quiet, and -o beats -v. A
+    probe that inherits it reads an empty trace and concludes 'nothing was offered' about every
+    failure on earth. MEASURE the command (class 4: anchor on what is actually built)."""
+    sg = _sg(probe=None)
+    seen = {}
+
+    def _capture(cmd):
+        seen["cmd"] = cmd
+        return _R(stderr=TRACE_OFFERED)
+
+    sg.offered_identities("1.2.3.4", user="root",
+                          ssh_cmd=["ssh", "-o", "LogLevel=ERROR", "-o", "BatchMode=yes",
+                                   "-i", "/home/runner/.ssh/deploy_key"],
+                          runner=_capture)
+    cmd = seen["cmd"]
+    levels = [cmd[i + 1] for i, t in enumerate(cmd)
+              if t == "-o" and i + 1 < len(cmd) and cmd[i + 1].lower().startswith("loglevel")]
+    assert levels == ["LogLevel=DEBUG1"], (
+        "the probe would run at %s, which prints no debug1 lines at all: %s" % (levels, cmd))
+    assert "-v" in cmd, cmd
+    # THE IDENTITY MUST SURVIVE. A probe that drops -i reproduces the very bug it diagnoses and
+    # would report "nothing offered" for a perfectly wired run.
+    assert "-i" in cmd and cmd[cmd.index("-i") + 1] == "/home/runner/.ssh/deploy_key", cmd
+
+
+def test_the_probe_uses_the_SAME_command_the_gate_uses():
+    """ONE HOME (class 32). If the probe assembles its own ssh invocation it stops being evidence
+    about the real one - which is the entire reason it exists."""
+    import ast
+    src = open(STAGEGATE, encoding="utf-8").read()
+    fn = next(n for n in ast.walk(ast.parse(src))
+              if isinstance(n, ast.FunctionDef) and n.name == "offered_identities")
+    body = ast.unparse(fn)
+    assert "SSH" in body, "the probe does not start from recover.SSH, so it proves nothing"
+    assert "'ssh'" not in body.replace("'ssh -v'", ""), (
+        "the probe hand-rolls an ssh command instead of reusing the gate's: %s" % body[:300])
+
+
+def test_the_probe_fails_OPEN_and_concludes_nothing():
+    """A probe that cannot see its subject must not answer (class 1), and a crash in a DIAGNOSTIC
+    must never replace the failure it was called to explain (class 10)."""
+    sg = _sg(probe=None)
+
+    def _boom(_cmd):
+        raise OSError("ssh is not on PATH")
+
+    offered, notes = sg.offered_identities("1.2.3.4", user="root", runner=_boom)
+    assert offered == [] and notes and "nothing concluded" in notes[0].lower(), notes
+
+    offered, notes = sg.offered_identities("1.2.3.4", user="root", runner=lambda c: _R(stderr=""))
+    assert offered == [] and any("nothing concluded" in n.lower() for n in notes), (
+        "an EMPTY trace was read as proof that no key was offered: %s" % notes)
+
+
+def test_the_trace_can_never_carry_private_key_material():
+    """This repository is PUBLIC and so are its CI logs. ssh -v does not print private bytes, but
+    the probe must not relay them even if something upstream does."""
+    sg = _sg(probe=None)
+    poisoned = (TRACE_OFFERED
+                + "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+                + "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gt\n"
+                + "-----END OPENSSH PRIVATE KEY-----\n")
+    offered, notes = sg.offered_identities("1.2.3.4", user="root",
+                                           runner=lambda c: _R(stderr=poisoned))
+    blob = "\n".join(offered + notes)
+    assert "PRIVATE KEY" not in blob, "the probe relayed private key armour into a public log"
+    assert "b3BlbnNzaC1rZXktdjEA" not in blob, "the probe relayed private key bytes"
+    assert offered, "the real evidence was thrown away along with the noise"

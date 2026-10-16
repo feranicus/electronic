@@ -251,7 +251,7 @@ def _proxy_tail():
     "",
     ]
 
-def remote_ghcr(tag, proxy=True):
+def remote_ghcr(tag, proxy=True, image=None):
     """PULL a pre-built, already-scanned colt-web image instead of building one on the droplet.
 
     WHY THIS EXISTS, and why it is a separate function rather than a flag threaded through
@@ -266,13 +266,34 @@ def remote_ghcr(tag, proxy=True):
     additive on purpose: the laptop path through remote() is untouched, because a deploy script is
     not where you want a clever refactor.
     """
+    import ghcr
+    image = image or os.environ.get("WEB_IMAGE") or ghcr.ref(ghcr.WEB_IMAGE, "x").rsplit(":", 1)[0]
+    _tok = (os.environ.get("GHCR_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
     steps = [
         "set -e",
         "cd /opt/colt-stack",
         "[ -f .env ] || printf 'LOKI_URL=http://videodead-loki-1:3100/loki/api/v1/push\\nLOKI_NETWORK=videodead_appnet\\n' > .env",
         "docker network inspect videodead_appnet >/dev/null 2>&1 || docker network create videodead_appnet",
         "echo '== pull the CI-built, CI-scanned colt-web (no build on this box) =='",
+        # BOTH HALVES OF THE NAME, never just the tag. Passing WEB_TAG alone left the repository
+        # to a default inside compose, and that default was a DIFFERENT package than the one CI
+        # pushes to - GHCR says "not found" for both a missing tag and a package you may not see,
+        # so the mismatch cost a full pipeline run to find. ghcr.py is the one home. [2026-10-16]
+        "export WEB_IMAGE='%s'" % image,
         "export WEB_TAG='%s'" % tag,
+        "echo \"   pulling: $WEB_IMAGE:$WEB_TAG\"",
+        # AUTHENTICATE, OR SAY THAT WE DID NOT. A private package answers an anonymous pull with
+        # 404, identical to a tag that does not exist, so an unreported skip here is a diagnosis
+        # nobody can make (class 37: a feature behind `if <derived thing>` fails silently).
+        # The token travels in this script over STDIN, never in argv, and is never echoed.
+        # NOT "%%s": this string is CONCATENATED, not %-formatted, so %% would reach the shell
+        # literally and printf would pipe the two characters "%s" as the password (class 44 - the
+        # doubling rule has a precondition). Found by reading the generated script, not the source.
+        (("printf '%s' '" + _tok + "' | docker login ghcr.io -u x --password-stdin >/dev/null "
+          "&& echo '   ghcr: logged in' || echo '   [!] ghcr: login FAILED - a private package "
+          "will answer 404, which looks exactly like a missing tag'") if _tok else
+         "echo '   [!] ghcr: NO token on this run - pulling anonymously. If the package is "
+         "private this fails as \"not found\", which is indistinguishable from a missing tag.'"),
         # Fail if the tag is not there, rather than silently falling back to :latest - a deploy
         # that quietly ships a different image than the one named is the whole class of bug this
         # path exists to close.
@@ -413,6 +434,22 @@ def main():
         if "TRIVY_CRITICAL_FAIL" in out:
             sys.exit("[X] the image carries CRITICAL, fixable vulnerabilities - not promoting it")
         if r.returncode != 0:
+            # NAME THE SUBJECT (defect class 26). "the GHCR deploy failed (rc=1)" is the message
+            # that cost a whole pipeline run on 2026-10-16: docker had already said "not found",
+            # which covers BOTH a tag that was never pushed and a package we may not see. Ask the
+            # registry itself, both ways, and print the difference - that is the diagnosis.
+            low = out.lower()
+            if "not found" in low or "failed to resolve reference" in low or "denied" in low:
+                try:
+                    import ghcr as _ghcr
+                    wanted = "%s:%s" % (os.environ.get("WEB_IMAGE")
+                                        or _ghcr.ref(_ghcr.WEB_IMAGE, "x").rsplit(":", 1)[0],
+                                        ghcr)
+                    print(_ghcr.report(wanted, token=os.environ.get("GHCR_TOKEN")
+                                       or os.environ.get("GITHUB_TOKEN")), flush=True)
+                except Exception as e:                   # noqa: BLE001 - a diagnostic must never
+                    # replace the failure it was called to explain (class 10).
+                    print("  (the GHCR check could not run: %s)" % type(e).__name__, flush=True)
             sys.exit("[X] the GHCR deploy failed (rc=%d). Compose is idempotent; re-run." % r.returncode)
         return
 

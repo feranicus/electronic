@@ -347,3 +347,156 @@ output, which normalises quotes to single. The other scoped workflows by greppin
 `python <script>.py` and flagged `uptime.yml` — whose only match is the advisory text of its own
 alert, "Run: python recover.py --fix-caddy". That workflow probes from outside the droplet
 deliberately and rightly has no key.
+
+---
+
+## 2026-10-16 — "not found" from GHCR means two unrelated things
+
+### What happened
+
+The `-i` fix from earlier the same day worked. The staging job's own log proves it:
+
+```
+19 == preflight: ssh ***@165.245.244.174 (hard 25s timeout, 3 tries) ==
+20   ssh OK — containers: staging-caddy, colt-web, s4biz-promtail, s4biz-web
+```
+
+Then it died four lines later on something else entirely:
+
+```
+23  Image ghcr.io/feranicus/colt-web:c6d051e729cc Pulling
+24  failed to resolve reference "ghcr.io/feranicus/colt-web:c6d051e729cc": not found
+28 [X] the GHCR deploy failed (rc=1). Compose is idempotent; re-run.
+37    [!] staging build failed (exit 1)
+41 GATE: NO-GO
+```
+
+The operator's reaction was the correct one: *"it's clear that we are walking in circles."* Three
+failures in a row, three different causes, and each log named the symptom rather than the subject.
+
+### The cause
+
+`pipeline.yml` sets `IMAGE_OWNER: ghcr.io/${{ github.repository }}`. `github.repository` is
+`feranicus/electronic`, so the build job pushes:
+
+    ghcr.io/feranicus/electronic/colt-web:<sha>
+
+The pull came from `docker-compose.web.yml`, which hardcoded:
+
+    ghcr.io/feranicus/colt-web:${WEB_TAG:-latest}
+
+Two different GHCR packages. The pipeline threaded `WEB_TAG` from the build job to the droplet and
+nothing else — the **repository** half of the name was written out independently in three files
+(`docker-compose.web.yml`, `.github/workflows/web-deploy.yml`, `deploy_web_direct.py`), none of
+which the new pipeline updated. Defect class 32, and the newer home lost as it always does.
+
+### Why it cost a whole run instead of one line
+
+**GHCR answers an unauthenticated request for a private package with 404, not 401.** That is
+deliberate — otherwise anyone could enumerate private packages by probing for 403s. The
+consequence is that docker's `not found` covers two faults with nothing in common:
+
+| what is actually true | what docker prints | correct repair |
+|---|---|---|
+| the tag was never pushed under this name | `not found` | fix the name / the build |
+| the tag is there, we may not see it | `not found` | log in, or make the package public |
+
+Nothing in the pipeline could tell them apart, so the one error message was equally consistent
+with "the build is broken", "the droplet has no credentials", and "the package is private". That
+ambiguity, not the missing log volume, is what produced the circling.
+
+### What was built
+
+**`ghcr.py` — one home for the name and for the diagnosis.**
+
+* `ref()` / `split()` assemble and parse the reference in one place. `split()` handles a repository
+  of any depth, because `feranicus/colt-web` and `feranicus/electronic/colt-web` differing only by
+  a path segment is exactly what made the two names look interchangeable.
+* `report()` asks the registry the same question twice — anonymously and with a token — and makes
+  **the difference between the two answers** the diagnosis. It also lists the tags that *do* exist,
+  which on its own would have ended this run in one step. Where it has no evidence (no token, dead
+  registry) it says so and concludes nothing, rather than guessing a cause (class 1).
+
+**The actual fix.** `docker-compose.web.yml` now reads `${WEB_IMAGE:-…}:${WEB_TAG:-latest}`;
+`remote_ghcr()` exports both halves and echoes the full reference before pulling; `pipeline.yml`
+passes `WEB_IMAGE: ${{ env.IMAGE_OWNER }}/colt-web` — derived from the same variable the build job
+pushes to, so the two cannot drift.
+
+**Authentication, and saying when there is none.** `remote_ghcr()` now runs `docker login ghcr.io`
+with the token on **stdin** (never argv) when one is present, and prints an explicit warning when
+one is not — because an anonymous pull of a private package fails as "not found", and a silent
+skip there is a diagnosis nobody can make (class 37). The staging job also gained
+`packages: read`: without it the token is valid and still 404s, which is the same dead end by
+another route.
+
+### The guard, and the bug inside the fix
+
+`tests/test_image_ref.py` derives both spellings out of `pipeline.yml` and fails if they differ —
+it does not restate either (class 35). Twelve mutations were run; all twelve fail the suite,
+including reverting the original bug.
+
+Two of those mutations found defects in my own work:
+
+1. **The permissions guard sliced the file at `"staging:"` and `"\n  production"`.** The second
+   anchor did not match, so the slice kept the rest of the file — including the *production* job's
+   `packages: read`. Removing the permission from the staging job passed. Replaced with a real
+   YAML parse of `jobs["staging"]["permissions"]`. A guard reading the wrong region is measuring
+   something, just not its subject (classes 1 and 4).
+
+2. **`printf '%%s'` in a concatenated string.** Written out of habit, but that string is assembled
+   with `+`, not `%`-formatted, so the doubling never collapses: the shell would have received
+   `printf '%%s'` and piped the two characters `%s` to `docker login` as the password. The login
+   fails, a private package then answers 404, and the deploy reports **a missing tag** — the exact
+   dead end this entire change exists to remove, reintroduced by the fix for it.
+
+   Defect class 44 already says a literal `%` must be `%%` *only in a %-formatted string*. The
+   precondition is the whole rule and I dropped it. Nothing in the Python source looked wrong;
+   only the generated artifact did (class 49). Two tests now read the generated script: one
+   asserts the token reaches the login line, one runs `bash -n` over the whole thing.
+
+### Still open
+
+* 138 of 189 lines (73%) of the shared proxy config exist only on the droplet — 2 of 5 fragments
+  have a committed source. `jhw__jobhuntwow.caddy` declares `jobhw.org` and reports as matching its
+  committed block, while `deploy/caddy/jobhuntwow.caddy` contains no such hostname. That
+  contradiction means the "matches the committed block" comparison may not measure what it claims.
+  Closing this needs a careful read of the droplet: fragments can carry basicauth hashes and header
+  tokens, so gitleaks and a human review come before anything is committed — never a blind `scp`
+  into git.
+
+### Postscript: the gate caught two more defects, both mine, both in the guard
+
+The first real `python ship.py` after the change above failed on my own new test:
+
+```
+FAILED tests/test_image_ref.py::test_the_generated_script_is_valid_shell
+  AssertionError: the droplet would get invalid shell:
+    /bin/bash: C:UsersferanAppDataLocalTemptmpm4jo1z39.sh: No such file or directory
+  assert 127 == 0
+```
+
+Two separate mistakes, both already written down as rules I had just re-read:
+
+1. **I gated on `shutil.which("bash")`.** CLAUDE.md says, in the TWO DEVELOPERS section: *"A
+   POSIX-shell test harness uses `shell_harness_allowed()` (ONE HOME, test_teamwork.py), never
+   `shutil.which("bash")`: here `bash` is WSL's bash.exe."* On this operator's box `which` answers
+   yes, so the harness ran under WSL — testing the emulation layer, which is the thing that rule
+   exists to prevent.
+
+2. **I handed `bash -n` a Windows path.** `tempfile.mkstemp()` returns `C:\Users\...`; WSL stripped
+   the backslashes and could not open it. Defect class 22 names this exact case ("a Windows path
+   passed to `bash -n`"). rc 127 is a *missing file*, and the assertion rendered it as **"the
+   droplet would get invalid shell"** — the diagnostic blaming its subject for its own blindness,
+   which is class 1, in the very change whose whole purpose was to stop that happening.
+
+The repair is not a skip. The script now goes to `bash -n` on **stdin as bytes**, so there is no
+path to translate and no newline for the platform to rewrite (classes 21 and 43), and the module
+gate is `shell_harness_allowed()`. CI parses the script for real; Windows skips with a reason.
+
+Coverage was checked rather than assumed: the `printf '%%s'` mutation is still caught on a machine
+with no usable bash, because the test that reads the generated login line is pure Python. Only the
+syntax parse is CI-only.
+
+Worth stating plainly, because it is the argument for the whole pipeline: three of the defects in
+this document were found by the operator's own gate running on his own machine, not by review and
+not by me. A gate that can fail is the only thing that has reliably caught my work.

@@ -50,11 +50,10 @@ the size budget, because a rule that is only written down goes stale, and this o
    and prose. They never decide whether to run `apt`, push, deploy, reboot, block an address or
    promote a release — those are deterministic code paths.
 6. **Deliver operations as scripts + document — NO command blobs.** Never hand the user long ad-hoc
-   shell/heredoc command sequences to paste ("talmud commands"). Every operational step (build,
-   run, deploy, diagnose, fix) must be a re-runnable **Python script** committed to the repo,
-   invoked as `python <script> ...`, and any change (deps, Dockerfile, flags, config, architecture)
-   must update the relevant **README.md** in the SAME change. KISS + full automation. (Applies to
-   all projects.)
+   shell/heredoc sequences to paste ("talmud commands"). Every operational step (build, run,
+   deploy, diagnose, fix) is a re-runnable **Python script** committed here, invoked as
+   `python <script> ...`, and any change (deps, Dockerfile, flags, config, architecture) updates
+   the relevant **README.md** in the SAME change. KISS + full automation. (All projects.)
 7. **ONE ORCHESTRATOR. ONE COMMAND. ALWAYS.** ← the rule I keep breaking; stop breaking it.
    The user must NEVER be told to run two scripts. Not "run the test then deploy", not "run X then
    Y to verify" — **one** command, every time, in every project. All other scripts are BUILDING
@@ -76,57 +75,55 @@ the size budget, because a rule that is only written down goes stale, and this o
 `teamlock.py` is the ONE deploy lock, a `mkdir` on the droplet itself (`/opt/colt-stack/.deploy.lock`),
 because the droplet is the only thing every deploy path touches. It covers the staging gate AND both
 production deploys, fails OPEN if the droplet is unreachable, and clears by STALENESS (45 min), never
-by trusting a `finally`. Both CI workflows now share ONE concurrency group, `production-droplet`.
-`ship.py` refuses to deploy off `main` (`SHIP_ALLOW_BRANCH=1`), refuses to commit on a tree behind
-origin (`SHIP_ALLOW_BEHIND=1`), prints every path `git add -A` is about to take grouped by area, and
-refuses `--rollback last-known-good` when that pointer is another developer's deploy
-(`SHIP_ALLOW_OTHERS_ROLLBACK=1`). Proved by `tests/test_teamwork.py`.
-The CI deploy job takes the SAME lock (`teamlock.py --acquire` / `--release if: always()`),
-because a concurrency group cannot see a laptop.
+by trusting a `finally`. Both CI workflows share ONE concurrency group, `production-droplet`, and
+the CI deploy job takes the SAME lock (`--acquire` / `--release if: always()`) because a
+concurrency group cannot see a laptop. `ship.py` refuses to deploy off `main`
+(`SHIP_ALLOW_BRANCH=1`), refuses to commit on a tree behind origin (`SHIP_ALLOW_BEHIND=1`), prints
+every path `git add -A` will take grouped by area, and refuses `--rollback last-known-good` when
+that pointer is another developer's deploy (`SHIP_ALLOW_OTHERS_ROLLBACK=1`).
+`tests/test_teamwork.py`
 
 **A CREDENTIAL NOBODY CAN READ BACK MUST BE PROVEN BEFORE IT IS WRITTEN.** `setup_github_cicd.py`
 uploaded `DROPLET_SSH_KEY` from a file it never parsed, so every CI deploy for weeks died at the
 first ssh ("error in libcrypto") while the next step blamed the droplet. `ci_key.py` is the ONE home
 for "is this a key": shape -> `ssh-keygen -y -P "" </dev/null` -> one real ssh -> only then
 `gh secret set` with the value on **stdin**. An UNKNOWN at any step is not a pass.
-**The actual cause was a PASSPHRASE**, and a modern OpenSSH key hides that: there is no `ENCRYPTED`
-header, the cipher name is in the clear inside the base64 (`openssh_cipher()`, "none" = usable), so
-a header-only check passes it to a runner that has no keyboard. **A check must never prompt** —
-asking the operator for the passphrase turned his correct one into "incorrect passphrase supplied"
-and read as a corrupt key. `--fix-ci-key` MINTS a dedicated passphrase-less key, authorizes it
+**The actual cause was a PASSPHRASE**, which a modern OpenSSH key hides: no `ENCRYPTED` header, the
+cipher name in the clear inside the base64 (`openssh_cipher()`, "none" = usable), so a header-only
+check passes it to a runner with no keyboard. **A check must never prompt** — asking for the
+passphrase turned his correct one into "incorrect passphrase supplied", reading as a corrupt key. `--fix-ci-key` MINTS a dedicated passphrase-less key, authorizes it
 (public half only, `grep -qxF ... ||`, verified on the box) and ships; his own key is never read,
 copied or changed. Every workflow that installs the key validates it first. A POSIX-shell test
-harness uses `shell_harness_allowed()` (ONE HOME, in test_teamwork.py) — `shutil.which("bash")` is
-NOT that gate: on this operator's box `bash` is WSL's bash.exe and a stripped `env=` makes WSL
-itself fail in UTF-16. Inherit `os.environ`, override only what the test needs.
-**A SECRET HAS SEVERAL HOMES AND GITHUB PICKS, NOT YOU.** Per GitHub's own reference, "the secret at
-the lowest level takes precedence … the environment-level secret takes precedence", and org/repo
-secrets are read when a run is QUEUED while environment secrets are read when the JOB STARTS.
-deploy.yml's deploy job declares `environment: production`, so a correct `gh secret set --repo`
-can be written into a scope that job never reads, and the log looks identical to "the fix failed".
-`ci_key.scopes()` MEASURES where it is defined (it was repository-only, so precedence was NOT the
-cause — the measurement is why that was not built on), `environments_used_by_workflows()` derives
-the targets, `push_everywhere()` writes all of them. Every workflow prints the installed key's
-FINGERPRINT (public) before validating it, and that line is what finally named the real cause.
+harness uses `shell_harness_allowed()` (ONE HOME, test_teamwork.py), never `shutil.which("bash")`:
+here `bash` is WSL's bash.exe and a stripped `env=` makes WSL fail in UTF-16 — inherit
+`os.environ`, override only what the test needs.
+**A SECRET HAS SEVERAL HOMES AND GITHUB PICKS, NOT YOU.** Per GitHub's reference the lowest-level
+secret wins, and org/repo secrets are read when a run is QUEUED while environment secrets are read
+when the JOB STARTS. deploy.yml's deploy job declares `environment: production`, so a correct
+`gh secret set --repo` can land in a scope that job never reads, and the log looks identical to
+"the fix failed". `ci_key.scopes()` MEASURES where it is defined (it was repository-only, so
+precedence was NOT the cause — the measurement is why that was not built on),
+`environments_used_by_workflows()` derives the targets, `push_everywhere()` writes all of them.
+Every workflow prints the installed key's FINGERPRINT (public) first; that line named the cause.
 **A PRIVATE KEY IS BYTES.** `subprocess.run(input=<str>, text=True)` wraps stdin in a TextIOWrapper
-with newline=None, which rewrites every `\n` as `os.linesep` — `\r\n` on Windows — so every upload
-from this PC mangled the key. `setup_github_cicd.py` had the same shape from day one.
-`read_key_bytes()` + bytes on stdin; text-mode READ is equally banned (universal newlines silently
-repair the input). **THE TWO OpenSSH BUILDS DISAGREE, and that is why this was invisible** (MEASURED
-2026-10-15, same bytes): **Linux** OpenSSH, which the runner uses, gives rc 255 "error in libcrypto";
-**Win32** OpenSSH gives rc 0 and prints the public key. So `ssh-keygen` on this box can NEVER catch
-this class — `key_shape()` rejects any `\r` itself, carrying the RUNNER's rule, and the CRLF
-experiment skips where the local OpenSSH is tolerant (detected, not `sys.platform`). Defect class 21
-both directions, and it applies to FIXTURES: `Path.write_text` translates too (an AST test forbids
-it there now). On Windows `os.chmod(0o600)` does NOT make a private ACL, so ssh-keygen refuses on
-"Bad permissions" before reading a byte: let ssh-keygen CREATE the file, rewrite only its content,
-run the control first. [2026-10-14/15] `tests/test_ci_key.py`
+with newline=None, rewriting every `\n` as `os.linesep` — `\r\n` on Windows — so every upload from
+this PC mangled the key. `setup_github_cicd.py` had the same shape from day one. `read_key_bytes()`
++ bytes on stdin; text-mode READ is equally banned (universal newlines silently repair the input).
+**THE TWO OpenSSH BUILDS DISAGREE, which is why this was invisible** (MEASURED 2026-10-15, same
+bytes): **Linux** OpenSSH, which the runner uses, gives rc 255 "error in libcrypto"; **Win32**
+gives rc 0 and prints the public key. So `ssh-keygen` here can NEVER catch this class —
+`key_shape()` rejects any `\r` itself, carrying the RUNNER's rule, and the CRLF experiment skips
+where the local OpenSSH is tolerant (detected, not `sys.platform`). Class 21 both directions, and
+it applies to FIXTURES: `Path.write_text` translates too (an AST test forbids it). On Windows
+`os.chmod(0o600)` does NOT make a private ACL, so ssh-keygen refuses on "Bad permissions" before
+reading a byte: let it CREATE the file, rewrite only the content, run the control first.
+[2026-10-14/15] `tests/test_ci_key.py`
 
-**A PROBE THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER.** `deploy.run()` folds stderr into
-stdout, so a failed ssh made `sshout()` return ssh's own error text as the probe's ANSWER:
-`ensure_docker()` read it as "docker is missing" and ran `apt-get install docker-ce` against
-production. `sshout` now appends a sentinel only a shell that really ran can echo, and exits
-otherwise. [2026-10-14, GitHub Actions, malformed DROPLET_SSH_KEY] `tests/test_probe_fail_closed.py`
+**A PROBE THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER.** `deploy.run()` folds stderr into stdout,
+so a failed ssh made `sshout()` return ssh's own error text as the probe's ANSWER: `ensure_docker()`
+read it as "docker is missing" and ran `apt-get install docker-ce` against production. `sshout` now
+appends a sentinel only a shell that really ran can echo, and exits otherwise.
+[2026-10-14] `tests/test_probe_fail_closed.py`
 
 ## THE PIPELINE (2026-10-15) — CI runs the orchestrator, it does not re-implement it
 
@@ -134,9 +131,9 @@ otherwise. [2026-10-14, GitHub Actions, malformed DROPLET_SSH_KEY] `tests/test_p
 "main is protected" MEANS — and it used to mean `ruff check . || true` (a check that cannot fail),
 `node --check` (PARSE is not RUN) and the unit suite ONLY, so a commit ship.py refuses could turn it
 green. It now builds `Dockerfile.ci` (the pinned toolchain) and runs **`python ship.py --test`** —
-the operator's own phase, never a YAML copy of its 37 gates (ONE HOME). Safe to run on every PR
-because `do_tests()` makes ZERO ssh calls (measured by AST) and the one droplet-writing branch
-refuses out loud under `SHIP_GATES_OFFLINE=1`. The gate gets **no secrets** and `--network none`.
+the operator's own phase, never a YAML copy of its 37 gates (ONE HOME). Safe on every PR because
+`do_tests()` makes ZERO ssh calls (measured by AST) and the one droplet-writing branch refuses out
+loud under `SHIP_GATES_OFFLINE=1`. The gate gets **no secrets** and `--network none`.
 
 **ONE AUTOMATIC PATH.** `pipeline.yml` = gate -> build once -> scan -> staging (reboot gate) ->
 production (`environment: production` approval + teamlock). `deploy.yml` / `web-deploy.yml` are
@@ -144,8 +141,9 @@ production (`environment: production` approval + teamlock). `deploy.yml` / `web-
 
 **ONE ARTIFACT.** colt-web was COMPILED ON PRODUCTION, so the only internet-facing image was the one
 CI never saw. `deploy_web_direct.py --ghcr TAG` pulls the built, scanned image (`remote_ghcr()`;
-the build path is byte-identical and untouched, asserted), and `WEB_TAG` makes staging rehearse the
-SAME bytes. CI calls the repo's scripts — stagegate.py, deploy*.py, caddyguard.py — never inline ssh.
+the build path is byte-identical and untouched, asserted), and `WEB_IMAGE`+`WEB_TAG` make staging
+rehearse the SAME bytes. CI calls the repo's scripts — stagegate.py, deploy*.py, caddyguard.py —
+never inline ssh.
 
 **A REQUIRED STATUS CHECK CANNOT BE SATISFIED BY A DIRECT PUSH** (GitHub: checks must pass "before
 collaborators can make changes to a branch"; a new commit has no check runs yet). That is the
@@ -155,127 +153,121 @@ does branch -> push -> PR -> WAIT for the gate -> squash-merge, so main only rec
 green gate has seen, with no bypass. A PR's head commit DOES get check runs, which is what makes
 the rule satisfiable. **The merge IS the deploy** — pipeline.yml fires on push to main, so PR mode
 STOPS there (asserted: the branch calls no do_web/do_bots/do_verify/tag_known_good) or one commit
-would deploy twice again. Nothing merges on an UNKNOWN state: pending/missing/cancelled/timed_out/
-action_required/null/dead-API/non-JSON are all not-green, and **`skipped` especially** — a gate that
+deploys twice. Nothing merges on an UNKNOWN state: pending/missing/cancelled/timed_out/
+action_required/null/dead-API/non-JSON are all not-green, **`skipped` especially** — a gate that
 did not run is not a gate that passed. `--direct` stays for the day the pipeline is what is broken.
-Two settings only the owner can change: add the collaborator with **write** (never admin), and turn
-on "Require a pull request before merging" with yourself OFF the bypass list.
-**A RED GATE LEAVES YOU ON THE BRANCH, SO THE NEXT RUN MUST RESUME IT.** PR #19 failed its gate,
-which correctly left the branch and PR standing as the evidence — and the next `ship.py --pr` then
-hit his OWN guard: "refusing to deploy from 'ship/…'". Two defects: PR mode called
-`collaboration_guards(deploying=True)`, which is fatal off main because MAIN IS WHAT DEPLOYS (in PR
-mode the laptop deploys nothing, so it is `deploying=False`); and shipflow would have cut a SECOND
-ship/ branch off the first, orphaning the open PR. "Resumable by construction" was a docstring
-claim with nothing asserting it. Standing on a `ship/` branch now MEANS resume — same branch, same
-PR — proved against a real throwaway git repo, and all four mutations (including re-introducing
-each exact bug) fail the suite.
+Owner-only: add the collaborator with **write** (never admin), and require a PR before merging with
+yourself OFF the bypass list.
+**A RED GATE LEAVES YOU ON THE BRANCH, SO THE NEXT RUN MUST RESUME IT.** PR #19's gate failed,
+correctly leaving the branch and PR standing — and the next `ship.py --pr` hit his OWN guard,
+"refusing to deploy from 'ship/…'". Two defects: PR mode called `collaboration_guards(
+deploying=True)`, fatal off main because MAIN IS WHAT DEPLOYS (in PR mode the laptop deploys
+nothing, so `deploying=False`); and shipflow would have cut a SECOND ship/ branch off the first,
+orphaning the open PR. "Resumable by construction" was a docstring claim with nothing asserting it.
+Standing on a `ship/` branch now MEANS resume — same branch, same PR — proved against a real
+throwaway git repo, all four mutations caught.
 `tests/test_shipflow.py` · `tests/test_pipeline_architecture.py` ·
 `docs/decisions/2026-10-pipeline-architecture.md`
 
 **THE SECRET SCANNER HAD BEEN RED FOR TWO MONTHS AND NOBODY SAW IT.** The first run that actually
-blocked a merge (PR #19) reported 5 gitleaks findings; the oldest, `tests/test_llm_guard.py`, has
-been in the tree since 2026-08-22. The bypass made a failing scanner invisible — "an alert nobody
-gets is not an alert", proven on this repo. All 5 are code ABOUT secrets (the BEGIN/END delimiters
-`ci_key.py` matches on, synthetic key fixtures, the token list the LLM guard must redact), so they
+blocked a merge (PR #19) reported 5 gitleaks findings; the oldest has been in the tree since
+2026-08-22. The bypass made a failing scanner invisible — "an alert nobody gets is not an alert",
+proven on this repo. All 5 are code ABOUT secrets (the BEGIN/END delimiters `ci_key.py` matches
+on, synthetic key fixtures, the token list the LLM guard must redact), so they
 are PATH-allowlisted in `.gitleaks.toml` — never obfuscated, because hiding from the scanner
 teaches the next person to do it too. **An allowlist is a new hole, so it ships with its own
-guard**: `tests/test_secret_scan.py` extracts every PEM block from each allowlisted file and hands
-it to `ssh-keygen -y` — OpenSSH decides, not a regex — and fails if one PARSES, if an undocumented
-token appears, if an entry is stale, or if the list grows. Two of my own versions of that guard
-could not fail: a greedy `.*?` returned ONE 25 KB "block" of source (class 13), and re-wrapping
-every body in OPENSSH armour made a real RSA PEM unparseable for the WRONG reason. Keep the armour
-label; handle the one-line escaped form, which is how a service-account JSON stores a key.
-**AND THE GUARD ITSELF MUST STAY UNDER THE SCANNER** — twice gitleaks flagged `test_secret_scan.py`:
-first the synthetic PAT written out literally, then a complete BEGIN/END armour pair inside a
-COMMENT (the rule spans everything between them). Both times allowlisting the guard was the
-tempting fix and the wrong one — who guards the guard. Pin the token as `SYNTHETIC_SHA256`, describe
-armour in prose, and `test_this_file_is_not_itself_a_finding` asserts it against gitleaks' OWN two
-regexes so it fails locally, not in CI. All four mutations caught.
+guard**: `tests/test_secret_scan.py` hands every PEM block in each allowlisted file to
+`ssh-keygen -y` — OpenSSH decides, not a regex — and fails if one PARSES, if an undocumented token
+appears, if an entry is stale, or if the list grows. Two of my own versions could not fail: a
+greedy `.*?` returned ONE 25 KB "block" (class 13), and re-wrapping every body in OPENSSH armour
+made a real RSA PEM unparseable for the WRONG reason. Keep the armour label; handle the one-line
+escaped form a service-account JSON uses. **AND THE GUARD ITSELF STAYS UNDER THE SCANNER** — twice
+gitleaks flagged it (the synthetic PAT written literally; a BEGIN/END pair inside a COMMENT, since
+the rule spans everything between). Allowlisting the guard was the tempting fix and the wrong one:
+who guards the guard. Pin the token as `SYNTHETIC_SHA256`, describe armour in prose, and
+`test_this_file_is_not_itself_a_finding` asserts it against gitleaks' OWN regexes so it fails
+locally, not in CI. All four mutations caught.
 The repo is **PUBLIC**; `gmail_sa.json` / `colt-bots-*.json` hold REAL keys, are gitignored and
 have never been committed (verified, and now asserted — via `git ls-files -z`, because tracked paths
 here contain spaces and `.split()` shreds them). [2026-10-15] `tests/test_secret_scan.py`
 
 **A TEST THAT CANNOT RUN ANYWHERE HAS NO BASELINE, AND NOBODY NOTICES.** `test_caddy_wiring.py`
-pins the 2026-08-14 "LIVE shared config is DAMAGED" incident, but the wiring later grew the two
+pins the 2026-08-14 "LIVE shared config is DAMAGED" incident, but the wiring later grew the
 `docker ps` / `docker inspect` lines that ASK the container where its Caddyfile is: the extracted
-segment then re-assigned `$CF` over the fixture's temp file, and with no docker binary the sequence
-died `rc 127` under `set -e`. Skipped on Windows, never reached in CI (gitleaks failed first), so
-two red tests sat unseen. **SIMULATE docker, do not trim the segment** (class 20): a stub answers
-`ps`/`inspect` with the fixture's own path, and the test asserts the stub WAS consulted — so going
-back to an assumed path fails instead of passing. The module gate is now `shell_harness_allowed()`
-(ONE HOME), never `shutil.which("bash")`. Mutations caught: the bare-word range delete, the assumed
-path, and `sed -i` restoring the inode swap. [2026-10-15] `tests/test_caddy_wiring.py`
+segment re-assigned `$CF` over the fixture's temp file and, with no docker binary, died `rc 127`
+under `set -e`. Skipped on Windows, never reached in CI (gitleaks failed first), so two red tests
+sat unseen. **SIMULATE docker, do not trim the segment** (class 20): a stub answers `ps`/`inspect`
+with the fixture's own path, and the test asserts the stub WAS consulted. The module gate is
+`shell_harness_allowed()` (ONE HOME), never `shutil.which("bash")`. Mutations caught: the bare-word
+range delete, the assumed path, `sed -i` restoring the inode swap.
+[2026-10-15] `tests/test_caddy_wiring.py`
 
-**124 FILES "BROKEN", NONE OF THEM BROKEN.** The first gate run to get past gitleaks failed the
-compile check on EVERY python file: `py_compile` writes the .pyc beside the source, the checkout
-belongs to the runner, the container is uid 10001 — EACCES on `__pycache__`, swallowed, rendered as
-a syntax verdict with no reason printed (classes 1 and 26; the image even sets
-`PYTHONDONTWRITEBYTECODE=1`, which py_compile ignores by design). MEASURED: a file holding `x = 1`
-fails identically in a read-only directory. Compile IN-PROCESS from BYTES — no write, no
-subprocess, no mount, and `compile()` raises on exactly what the gate is for. `do_tests()` also
-refreshes the git index and regenerates a stale SBOM, so one writer at a time was never the fix:
-CI now mounts the checkout **`:ro`** and the gate runs against a copy it owns (`GATE_WORKDIR`),
-which makes "the gate phase is side-effect free" a mount option rather than a comment.
+**124 FILES "BROKEN", NONE OF THEM BROKEN.** The first gate run past gitleaks failed the compile
+check on EVERY python file: `py_compile` writes the .pyc beside the source, the checkout belongs to
+the runner, the container is uid 10001 — EACCES on `__pycache__`, swallowed, rendered as a syntax
+verdict with no reason printed (classes 1 and 26; the image even sets `PYTHONDONTWRITEBYTECODE=1`,
+which py_compile ignores by design). MEASURED: a file holding `x = 1` fails identically in a
+read-only directory. Compile IN-PROCESS from BYTES — no write, no subprocess, and `compile()`
+raises on exactly what the gate is for. `do_tests()` also refreshes the git index and regenerates a
+stale SBOM, so CI mounts the checkout **`:ro`** and the gate runs against a copy it owns
+(`GATE_WORKDIR`) — side-effect freedom as a mount option, not a comment.
 [2026-10-15] `tests/test_pipeline_architecture.py`
 
 **"NO node_modules ARE NEEDED" WAS MEASURED OVER ONE DIRECTORY.** True of
 `webapp/frontend/tools/*.mjs` (builtins only), false of the engine's five deck builders, which all
-`require("pptxgenjs")` — so the gate died `MODULE_NOT_FOUND` on the first deck. His box hides it:
-`hermes-skills/shodan-assessment/node_modules` is gitignored, so only a fresh checkout can show it.
-Dockerfile.ci now runs **`npm ci`** from the COMMITTED lockfile (the ONE HOME, pptxgenjs 4.0.1) and
-sets `NODE_PATH`, because the gate runs against a COPY and a checkout has no node_modules
-(MEASURED both ways). The guard DERIVES the dependency set from every `require`/`import` in
-gate-run JS and fails if one is undeclared — class 35.
+`require("pptxgenjs")` — the gate died `MODULE_NOT_FOUND` on the first deck. His box hides it:
+`hermes-skills/shodan-assessment/node_modules` is gitignored, so only a fresh checkout shows it.
+Dockerfile.ci runs **`npm ci`** from the COMMITTED lockfile (ONE HOME, pptxgenjs 4.0.1) and sets
+`NODE_PATH`, because the gate runs against a COPY with no node_modules (MEASURED both ways). The
+guard DERIVES the dependency set from every `require`/`import` in gate-run JS — class 35.
 **AND THE GATE MUST SAY WHAT BROKE**: `build()` returned `stderr[-300:]`, but node puts the cause
 on the FIRST line, so nine failures reported `e._load` / `odule._load` / `ule._load` — one string
 cut at three offsets, reading as three faults. `node_error()` finds the error vocabulary, then the
-frame inside this repo. Two of my own guards could not fail: the Dockerfile assertions matched the
-COMMENT explaining them (class 4, the sixth time), and the node_error tests never touched the CALL
-SITE (class 9). All four mutations now fail.
+frame in this repo. Two of my guards could not fail: the Dockerfile assertions matched the COMMENT
+explaining them (class 4, sixth time), and the node_error tests never touched the CALL SITE
+(class 9). All four mutations now fail.
 [2026-10-15] `tests/test_gate_diagnostics.py`
 
 **HIS GREEN SUITE WAS TESTING A STACK THAT DOES NOT SHIP.** Four tests passed on his PC and failed
 in CI, one root cause each, all the same shape — the laptop is not the runner.
-**(a) A FLOOR IS NOT A PIN.** `starlette>=1.3.1` let the image and his box land on different
-releases; which responses poll for a client disconnect changed between them, so the white-label
-harness — which answered `http.request` FOREVER, wrong on every version — raised `Unexpected
-message received` only there. ASGI says one body then `http.disconnect`; `_receive_for()` is the
-ONE HOME and a contract test pins it, because on a tolerant starlette the endpoint tests pass
-anyway. Pinned `starlette==1.7.0`; a test forbids a floor on anything serving HTTP.
+**(a) A FLOOR IS NOT A PIN.** `starlette>=1.3.1` let image and laptop land on different releases;
+which responses poll for a client disconnect changed between them, so the white-label harness —
+which answered `http.request` FOREVER, wrong on every version — raised `Unexpected message
+received` only in CI. ASGI says one body then `http.disconnect`; `_receive_for()` is the ONE HOME
+and a contract test pins it, because a tolerant starlette passes the endpoint tests anyway. Pinned
+`starlette==1.7.0`; a test forbids a floor on anything serving HTTP.
 **(b) `ensure_app_requirements()` INSTALLS MISSING, NEVER UPGRADES** (still right), but its
-docstring claimed drift "is answered by the image build" — it is not: he held fastapi 0.115 /
-starlette 0.46 against a declared 0.141/1.7. `report_requirement_drift()` is wired into ship.py,
-NAMES each mismatch, is silent when they agree, and never blocks.
+docstring claimed drift "is answered by the image build" — it is not.
+`report_requirement_drift()` is wired into ship.py, NAMES each mismatch, silent when they agree,
+never blocks.
 **(c) A TZ-MIXED DATE IS A PRODUCTION BUG.** `spend_watch.baseline()` parsed with local `mktime`
-and formatted with UTC `gmtime`, dropping a real day off the window east of Greenwich (MEASURED:
-UTC [0.4,0.4,0,0]=0.20, Berlin [0.4,0,0,0]=0.00). The droplet is UTC so the alert was never wrong
-there; his test asserted the buggy 0.00 and CI was the first to disagree. `calendar.timegm`, plus
-a four-timezone test.
+and formatted with UTC `gmtime`, dropping a real day east of Greenwich (MEASURED: UTC 0.20, Berlin
+0.00). The droplet is UTC so the alert was never wrong there; his test asserted the buggy 0.00.
+`calendar.timegm`, plus a four-timezone test.
 **(d) `jobhuntwow-app/` IS GITIGNORED** — zero tracked files, so asserting its paths answered
 "wiring is wrong" when the truth was "not in this checkout" (class 1). In-repo half always
-asserted; sibling half runs on his box, skips with a reason elsewhere. [2026-10-15]
+asserted; sibling half skips with a reason. [2026-10-15]
 
 **A CREDENTIAL IS PER-HOST AND PER-ACCOUNT.** `provision()` authorized the CI key on its DEFAULT
 host only, so the twin never had it. `deploy_hosts()` DERIVES the list (production from
-`ci_key.HOST`, staging from `stagegate.STAGING`, neither address retyped) and says so aloud if
-staging cannot be derived (class 37); `authorize_everywhere()` writes all, `check()` proves all,
-an UNKNOWN on any still blocks `--push`. **The repair must fit the fault** — `ensure_usable()`
-authorizes first and mints only when OpenSSH refuses the key, instead of rotating a working
-credential over one missing line. [2026-10-15] `tests/test_ci_key.py`
+`ci_key.HOST`, staging from `stagegate.STAGING`, neither retyped) and says so aloud if staging
+cannot be derived (class 37); `authorize_everywhere()` writes all, `check()` proves all, an UNKNOWN
+on any blocks `--push`. **The repair must fit the fault** — `ensure_usable()` authorizes first and
+mints only when OpenSSH refuses the key, never rotating a working credential over a missing line.
+[2026-10-15] `tests/test_ci_key.py`
 
 **FOUR LINES IS NOT A FAILURE REPORT.** That staging job printed `staging unreachable: ***@…:
-Permission denied (publickey).` and stopped — a 200-char SLICE of stderr, with the account masked
-because DROPLET_USER is a secret. Dead droplet, shut port, missing key, wrong key and unauthorized
+Permission denied (publickey).` and stopped — a 200-char SLICE of stderr with the account masked,
+since DROPLET_USER is a secret. Dead droplet, shut port, missing key, wrong key and unauthorized
 key all look identical in that line. `unreachable_report()` MEASURES instead: tcp/22 open or not
 (network vs auth, which share no cause), the FINGERPRINT of the identity offered (public — never
 key material, this repo is public), ssh's own lines in FULL, then a reading only where the evidence
 supports one, naming the repair. **Plus GitHub-native output, emitted BY stagegate.py so the gate
-keeps one home and the console is unchanged off Actions**: `::error::` so the annotation names the
-gate instead of "exit code 1", a `$GITHUB_STEP_SUMMARY` table rendered from `last_evidence()` —
-same numbers as the console, failures sorted to the top, appended never clobbered — and the full
-log tee'd to an artifact (`set -o pipefail`, class 42) because a good run prints hundreds of lines
-and GitHub truncates the middle, which is where the evidence is. Seven mutations caught, including
-one that dumped the private key into a public log. [2026-10-15] `tests/test_gate_diagnostics.py`
+keeps one home and the console is unchanged off Actions**: `::error::` naming the gate, a
+`$GITHUB_STEP_SUMMARY` table from `last_evidence()` (same numbers, failures first, appended never
+clobbered), and the log tee'd to an artifact (`set -o pipefail`, class 42) because GitHub truncates
+the middle of a long run. Seven mutations caught, one of which dumped the private key into a public
+log. [2026-10-15] `tests/test_gate_diagnostics.py`
 
 **ASSERT THE REMOTE STATE, NEVER DEDUCE IT FROM A DOOR THAT OPENS FOR YOU.** `--fix-ci-key`
 re-authorizes BEFORE `check()`, which only proves THIS machine can log in; asserted on source
@@ -286,13 +278,32 @@ SSH stagegate imports) read `DROPLET_KEY`, which nothing exports, then dropped `
 `~/.ssh/id_rsa` default was absent. CI deployed production and never staging for four runs, while
 `ssh-keygen -y`, the fingerprint and the authorized_keys proof were all TRUE and all about a key
 ssh was never told to use — CHECK THE INVOCATION, NOT THE ARTIFACT (class 1).
-`recover.ssh_identity()` is the one home; a NAMED key is always offered.
-[2026-10-16] `tests/test_ssh_identity.py`
+`recover.ssh_identity()` is the one home; a NAMED key is always offered. **Then read ssh's OWN
+account**: `offered_identities()` parses `ssh -v`, on an auth failure only (a timeout never reaches
+auth), because "offered nothing" and "offered this, refused" print the identical line and need
+opposite repairs; it must drop the inherited `-o LogLevel=ERROR` (or it silences its own trace) and
+keep `-i` (or it reproduces the bug). Log VOLUME was never the gap: `stagegate.log` is a `tee` of
+the step log. [2026-10-16] `tests/test_ssh_identity.py` · `tests/test_gate_diagnostics.py`
 
-**AN UNEXPECTED VHOST NAMES ITS FRAGMENT** (`_declared_in()`), or says NO fragment declares it —
-written around the guard, and the next assemble drops it. MEASURED: 2 of 5 fragments have a
-committed source; 138 lines of the shared proxy live only on the droplet.
-[2026-10-16] `tests/test_vhost_attribution.py`
+**"not found" FROM GHCR MEANS TWO UNRELATED THINGS.** Staging died pulling
+`ghcr.io/feranicus/colt-web:<sha>`: CI pushes to `${{ github.repository }}/colt-web`
+(`…/electronic/colt-web`), and only `WEB_TAG` was threaded — the REPOSITORY half was hardcoded in
+three files (class 32). GHCR answers an unauthorised request for a PRIVATE package with **404, not
+401**, so a wrong name and a missing login are ONE message with opposite repairs. `ghcr.py` is the
+one home for the ref and for `report()`, which asks anonymously AND with a token and makes the
+DIFFERENCE the diagnosis, naming the tags that do exist. Pass BOTH halves, give staging
+`packages: read`, log in with the token on **stdin**, and SAY SO when pulling anonymously (class
+37). 12 mutations caught — including my own `printf '%%s'` in a CONCATENATED string (class 44 has a
+precondition), which pipes `%s` as the password and then reads as a missing tag. **And his gate
+then caught two more of mine in the guard itself**: I gated a POSIX harness on
+`shutil.which("bash")` (forbidden above — WSL's bash.exe answers yes) and handed `bash -n` a
+`C:\…` path, so rc 127 rendered as "the droplet would get invalid shell" (classes 22 and 1).
+Script to bash on **stdin as bytes**: no path to translate, no newline to rewrite.
+[2026-10-16] `tests/test_image_ref.py`
+
+**AN UNEXPECTED VHOST NAMES ITS FRAGMENT** (`_declared_in()`), or says NO fragment declares it.
+MEASURED: 2 of 5 fragments have a committed source; 138 lines of the shared proxy live only on the
+droplet. [2026-10-16] `tests/test_vhost_attribution.py`
 
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 

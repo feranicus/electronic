@@ -189,7 +189,10 @@ jobs:
     timeout-minutes: 45
     environment: staging
     concurrency: { group: production-droplet, cancel-in-progress: false }
-    permissions: { contents: read }
+    # packages: read so the droplet's pull token - and the GHCR diagnosis - can actually see the
+    # package. Without it the token is valid and still gets a 404, which reads exactly like a
+    # missing tag. [2026-10-16]
+    permissions: { contents: read, packages: read }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -206,7 +209,14 @@ jobs:
           DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
           STAGING_HOST: ${{ env.STAGING_HOST }}
           DROPLET_HOST: ${{ env.DROPLET_HOST }}
+          # BOTH HALVES OF THE IMAGE NAME. WEB_TAG alone left the repository to a default inside
+          # docker-compose.web.yml, and that default named a different package than this pipeline
+          # pushes to - the 2026-10-16 "not found". [ONE HOME: ghcr.py]
+          WEB_IMAGE: ${{ env.IMAGE_OWNER }}/colt-web
           WEB_TAG: ${{ needs.build.outputs.tag }}
+          # So the DIAGNOSIS can tell "never pushed" from "private" when a pull fails. GHCR
+          # returns 404 for both, which is why one wrong name survived a whole run.
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # TEE, and keep the pipeline's exit status. A good run prints several hundred lines (the
         # docker build, 42 checks, the reboot, the panel) and GitHub truncates the middle of a long
         # step, which is where the evidence is - the tail it keeps is the least informative part.
