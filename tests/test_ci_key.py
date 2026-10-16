@@ -967,3 +967,44 @@ def test_a_key_openssh_refuses_still_gets_a_freshly_minted_one(monkeypatch):
                         lambda path=None: pytest.fail("authorized a key OpenSSH cannot read"))
     monkeypatch.setattr(ci_key, "provision", lambda path=None: (True, "/tmp/minted"))
     assert ci_key.ensure_usable() == (True, "/tmp/minted")
+
+
+def test_fix_ci_key_asserts_the_droplet_state_instead_of_deducing_it():
+    """--fix-ci-key must ALWAYS re-authorize, not only when its own login fails.
+
+    2026-10-16. `check()` proves THIS MACHINE can log in. That is not evidence about the runner:
+    CI kept failing `Permission denied (publickey)` on the staging twin while a re-run of
+    --fix-ci-key reported everything healthy and changed nothing, because the operator's own key
+    opened the door and the question - is the CI key's public half still in that droplet's
+    authorized_keys? - was never asked. Authorizing is idempotent (`grep -qxF ... ||`), so there
+    is no cost to asserting it every time, and asserting is what the flag is for.
+    """
+    import ast
+    tree = ast.parse(open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read())
+    main = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "main"][0]
+    blk = [n for n in ast.walk(main) if isinstance(n, ast.If) and "fix_ci_key" in ast.unparse(n.test)]
+    assert len(blk) == 1, "--fix-ci-key has %d homes in main()" % len(blk)
+    body = ast.unparse(blk[0])
+
+    assert "ci_key.authorize_everywhere" in body, (
+        "--fix-ci-key no longer re-authorizes; it can only report that THIS machine can log in, "
+        "which is the state that hid the staging failure")
+
+    # AND IT MUST NOT BE GATED ON check(). ORDER IS THE PROPERTY: authorize, THEN prove.
+    #
+    # The first version of this assertion looked for the string "check" in an enclosing `if` test
+    # and the obvious mutation walked straight past it - the reverted code reads
+    # `_ok_key = ci_key.check(_kp)` followed by `if not _ok_key:`, so the branch's test contains
+    # no "check" at all. Defect class 4, mine, caught by mutation: assert the PROPERTY, never a
+    # string the source happens to contain. Source order is the property, and it is unambiguous.
+    authz = [n.lineno for n in ast.walk(blk[0])
+             if isinstance(n, ast.Call) and "authorize_everywhere" in ast.unparse(n.func)]
+    proves = [n.lineno for n in ast.walk(blk[0])
+              if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("ci_key.check")]
+    assert authz, "no authorize_everywhere call to locate"
+    assert proves, "nothing proves the key any more"
+    assert min(authz) < min(proves), (
+        "the key is PROVED (line %d) before it is AUTHORIZED (line %d), so a laptop that can "
+        "already log in never re-asserts the droplet's authorized_keys - exactly the state that "
+        "left the staging twin refusing the runner while --fix-ci-key reported it healthy"
+        % (min(proves), min(authz)))

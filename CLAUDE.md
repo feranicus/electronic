@@ -283,6 +283,15 @@ log tee'd to an artifact (`set -o pipefail`, class 42) because a good run prints
 and GitHub truncates the middle, which is where the evidence is. Seven mutations caught, including
 one that dumped the private key into a public log. [2026-10-15] `tests/test_gate_diagnostics.py`
 
+**ASSERT THE REMOTE STATE, NEVER DEDUCE IT FROM A DOOR THAT OPENS FOR YOU.** `--fix-ci-key`
+re-authorizes BEFORE `check()`, which only proves THIS machine can log in; asserted on source
+ORDER. [2026-10-16] `tests/test_ci_key.py`
+
+**AN UNEXPECTED VHOST NAMES ITS FRAGMENT** (`_declared_in()`), or says NO fragment declares it —
+written around the guard, and the next assemble drops it. MEASURED: 2 of 5 fragments have a
+committed source; 138 lines of the shared proxy live only on the droplet.
+[2026-10-16] `tests/test_vhost_attribution.py`
+
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
 After finishing ANY piece of work the user must trigger, end the reply with the exact command,

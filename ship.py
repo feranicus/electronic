@@ -2182,6 +2182,21 @@ def main():
         print("  CI DEPLOY KEY — prove it, then set the secret from it")
         print("-" * 74)
         _kp = ci_key.find_key()
+        # ALWAYS RE-AUTHORIZE, never infer the droplet's state from this laptop's own login.
+        #
+        # 2026-10-16. The flag means "make the CI key work". It was reading `check(_kp)` first and
+        # doing nothing when that passed - but check() proves THIS MACHINE can log in, which says
+        # nothing about whether the runner's public half is still in the droplet's
+        # authorized_keys. CI was failing `Permission denied (publickey)` on staging while a
+        # re-run of --fix-ci-key reported everything healthy and changed nothing, because the
+        # laptop's own key opened the door and the question was never asked.
+        #
+        # It is idempotent by construction (`grep -qxF ... ||`), costs one ssh per host, and is
+        # the entire point of the flag: ASSERT the state rather than deduce it.
+        if _kp and ci_key.parses(_kp)[0] is True:
+            _ok_authz, _rows = ci_key.authorize_everywhere(_kp)
+            for _label, _host, _row_ok, _detail in _rows:
+                print("  %s authz: %-10s %s" % ("[ok]" if _row_ok else "[X] ", _label, _detail))
         _ok_key = bool(_kp) and ci_key.check(_kp)
         if not _ok_key:
             # The usual reason, measured on this PC on 2026-10-14: the only deploy key here has a

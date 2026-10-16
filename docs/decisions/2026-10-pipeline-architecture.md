@@ -177,3 +177,102 @@ override by an informed operator, which is different from a bypass nobody decide
 
 Also still unexplained, from `caddyguard`: `jobhw.org` and `www.jobhw.org` are served by the shared
 proxy but are not on the committed roster.
+
+---
+
+## 2026-10-16 — the laptop's own login is not evidence about the runner
+
+`python ship.py --fix-ci-key` ran `ci_key.check(_kp)` first and did nothing when it passed. That
+reads as reasonable and is wrong: `check()` proves THIS MACHINE can open an ssh session to each
+droplet. It says nothing about whether the CI key's public half is still in that droplet's
+`authorized_keys`, because the operator's own identity is what opened the door.
+
+The consequence, on four consecutive pipeline runs: the staging job failed
+`***@165.245.244.174: Permission denied (publickey)`, and every re-run of `--fix-ci-key` reported
+the key healthy on both hosts and changed nothing.
+
+### What the new diagnosis eliminated, by measurement
+
+`stagegate.unreachable_report()` printed enough to kill three hypotheses outright:
+
+* **the account** — the report's own sentence contained the literal word `root`, and GitHub
+  rendered it `***`. Actions masks secret VALUES, so the redaction itself proved
+  `secrets.DROPLET_USER == "root"`. Both sides use the same account.
+* **the key identity** — the runner's fingerprint, `SHA256:7uwyj5g…
+  github-actions-deploy-cybergod (ED25519)`, is byte-for-byte the one the laptop authenticated
+  with.
+* **the key file** — `.github/actions/ssh-key` writes it with `printf '%s\n'` from an env var,
+  `chmod 600`s it, and refuses the job unless `ssh-keygen -y -P ""` derives its public half. So
+  it is neither mangled nor unreadable nor too-permissive.
+
+`tcp/22` was `OPEN`. What remains is the one thing none of those can see: the public half is not
+in `root@165.245.244.174:~/.ssh/authorized_keys` at the moment CI runs.
+
+### The fix
+
+`--fix-ci-key` now calls `ci_key.authorize_everywhere()` BEFORE `check()`, unconditionally. It is
+idempotent by construction (`grep -qxF … ||`) and costs one ssh per host. The rule: **assert the
+remote state, never deduce it from a door that opens for you.**
+
+### A mutation escaped first
+
+The guard asserted that no enclosing `if` whose test contains the string `"check"` wraps the
+authorize call. The obvious revert walks straight past it, because the reverted code reads
+
+    _ok_key = bool(_kp) and ci_key.check(_kp)
+    if not _ok_key:
+        _ok_authz, _rows = ci_key.authorize_everywhere(_kp)
+
+and `not _ok_key` contains no `"check"` at all. Defect class 4, committed by me while writing a
+guard against defect class 4. SOURCE ORDER is the property and is unambiguous: the first
+`authorize_everywhere` line number must precede the first `ci_key.check` line number. The same
+mutation now fails.
+
+---
+
+## 2026-10-16 — an unexpected vhost must name its source, and 73% of the proxy is unversioned
+
+caddyguard's roster check reported, on four consecutive ships:
+
+    [!] 2 host(s) served that are NOT on the committed roster: jobhw.org, www.jobhw.org
+        On a shared proxy an unexpected vhost claims traffic and certificates for a name nobody
+        committed. Add it to the roster, or find out who wrote it.
+
+Nobody ever found out who wrote it. The check was telling the operator to go looking for a fact it
+already held: the guard ASSEMBLES the live file from the fragments in `FRAG`, so whichever
+fragment declares that hostname was one `os.listdir` away. Four runs of an unactionable warning is
+precisely the benign-every-time alert CLAUDE.md names as the enemy — it teaches the operator to
+read past the line that matters.
+
+`_declared_in()` answers it, and separates two cases with opposite remedies:
+
+* **declared in a fragment** — that fragment is on the droplet; if it has no committed source,
+  part of the shared config is unversioned (operating principle 2).
+* **declared by NO fragment** — something wrote around the guard, and the next `assemble` silently
+  drops the vhost. Reporting that as "declared in X" would be a lie with an outage attached.
+
+It refuses to answer when it cannot read `FRAG` (class 1), and matches site HEADERS rather than
+substrings, so a hostname in a comment or in an `upstream` is not mistaken for a declaration.
+
+### The larger finding, measured while fixing it
+
+The proxy assembles from five fragments. Only TWO have a committed source in `deploy/caddy/`:
+
+| fragment on the droplet | lines | committed source |
+|---|---|---|
+| `_base`            | 95 | **no** |
+| `colt__cybergod`   |  7 | yes — `deploy/caddy/cybergod.caddy` |
+| `jhw__jobhuntwow`  | 44 | yes — `deploy/caddy/jobhuntwow.caddy` |
+| `polara__klima`    | 16 | **no** |
+| `s4biz__site`      | 27 | **no** |
+
+138 of 189 lines — 73% — of the shared reverse proxy's configuration exist only on the droplet.
+The RESTORE step compares exactly two fragments against committed blocks, which is why its output
+only ever mentions `jhw` and `colt`. CLAUDE.md's claim that "the fragment is also compared to the
+committed block" is true for two projects out of five, and `jobhw.org` is simply the first symptom
+of the gap that is visible from outside.
+
+Closing it means pulling `_base`, `polara__klima` and `s4biz__site` into `deploy/caddy/` — which
+needs a read of the droplet, and a careful one: Caddy fragments can carry basicauth hashes and
+header tokens, so they go through gitleaks and a human read before they are committed, never a
+blind `scp` into git.

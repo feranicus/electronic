@@ -833,9 +833,49 @@ def cmd_roster():
     if extra:
         print("   [!] %d host(s) served that are NOT on the committed roster: %s"
               % (len(extra), ", ".join(extra[:8])))
+        # NAME THE SOURCE, do not tell the operator to go and find it (defect class 26).
+        # "Add it to the roster, or find out who wrote it" fired on four consecutive ships and
+        # nobody could act on it, because the one fact needed to act - WHICH FRAGMENT declares
+        # this name - was sitting in FRAG the whole time and this check never looked.
+        # A warning that repeats without becoming actionable is the benign-every-time alert
+        # CLAUDE.md warns about: it trains the operator to read past the one that matters.
+        for h in extra[:8]:
+            print("       %-24s %s" % (h, _declared_in(h)))
         print("       On a shared proxy an unexpected vhost claims traffic and certificates for a "
-              "name nobody committed. Add it to the roster, or find out who wrote it.")
+              "name nobody committed. Commit the fragment it comes from, or retire the vhost "
+              "(python decommission.py).")
     return 0
+
+
+def _declared_in(host):
+    """Which fragment declares this hostname? (a sentence, never a bare path).
+
+    The guard ASSEMBLES the live file from FRAG, so any surviving vhost is declared by one of
+    those fragments - and knowing which one turns "somebody wrote this" into either "a project
+    wrote outside the guard" or "it is in a fragment nobody has committed". Those two have
+    completely different remedies, and the old message could not tell them apart.
+    """
+    try:
+        names = sorted(f for f in os.listdir(FRAG) if f.endswith(".caddy"))
+    except OSError as e:                                     # noqa: BLE001 - reported, not silent
+        return "could not read %s (%s) - source not determined" % (FRAG, type(e).__name__)
+    hits = []
+    for f in names:
+        try:
+            with open(os.path.join(FRAG, f), encoding="utf-8", errors="replace") as fh:
+                body = fh.read()
+        except OSError:
+            continue
+        # A site header is the hostname at the start of a line, before the opening brace.
+        for line in body.splitlines():
+            head = line.split("{", 1)[0]
+            if host in [p.strip().rstrip(",") for p in head.split(",")]:
+                hits.append(f)
+                break
+    if not hits:
+        return ("declared by NO fragment in %s - it is in the running config but not in anything "
+                "the guard assembles, so a reload would drop it" % FRAG)
+    return "declared in %s" % ", ".join(hits)
 
 
 def cmd_drift():
