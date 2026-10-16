@@ -172,24 +172,28 @@ throwaway git repo, all four mutations caught.
 **THE SECRET SCANNER HAD BEEN RED FOR TWO MONTHS AND NOBODY SAW IT.** The first run that actually
 blocked a merge (PR #19) reported 5 gitleaks findings; the oldest has been in the tree since
 2026-08-22. The bypass made a failing scanner invisible — "an alert nobody gets is not an alert",
-proven on this repo. All 5 are code ABOUT secrets (the BEGIN/END delimiters `ci_key.py` matches
-on, synthetic key fixtures, the token list the LLM guard must redact), so they
-are PATH-allowlisted in `.gitleaks.toml` — never obfuscated, because hiding from the scanner
-teaches the next person to do it too. **An allowlist is a new hole, so it ships with its own
-guard**: `tests/test_secret_scan.py` hands every PEM block in each allowlisted file to
-`ssh-keygen -y` — OpenSSH decides, not a regex — and fails if one PARSES, if an undocumented token
-appears, if an entry is stale, or if the list grows. Two of my own versions could not fail: a
-greedy `.*?` returned ONE 25 KB "block" (class 13), and re-wrapping every body in OPENSSH armour
-made a real RSA PEM unparseable for the WRONG reason. Keep the armour label; handle the one-line
-escaped form a service-account JSON uses. **AND THE GUARD ITSELF STAYS UNDER THE SCANNER** — twice
-gitleaks flagged it (the synthetic PAT written literally; a BEGIN/END pair inside a COMMENT, since
-the rule spans everything between). Allowlisting the guard was the tempting fix and the wrong one:
-who guards the guard. Pin the token as `SYNTHETIC_SHA256`, describe armour in prose, and
+proven on this repo. All 5 are code ABOUT secrets (the delimiters `ci_key.py` matches on, synthetic key fixtures, the
+token list the LLM guard must redact), so they are PATH-allowlisted in `.gitleaks.toml` — never
+obfuscated, because hiding from the scanner teaches the next person to do it too. **An allowlist
+is a new hole, so it ships with its own guard**: `tests/test_secret_scan.py` hands every PEM block
+in each allowlisted file to `ssh-keygen -y` — OpenSSH decides, not a regex — and fails if one
+PARSES, if a token is undocumented, if an entry is stale, or if the list grows. Two of my versions
+could not fail: a greedy `.*?` returned ONE 25 KB "block" (class 13), and re-wrapping every body
+in OPENSSH armour made a real RSA PEM unparseable for the WRONG reason. Keep the armour label;
+handle the one-line escaped form a service-account JSON uses. **AND THE GUARD ITSELF STAYS UNDER THE SCANNER** — twice gitleaks
+flagged it (the synthetic PAT written literally; a BEGIN/END pair in a COMMENT, since the rule
+spans everything between). Allowlisting the guard was the tempting fix and the wrong one: who
+guards the guard. Pin the token as `SYNTHETIC_SHA256`, describe armour in prose, and
 `test_this_file_is_not_itself_a_finding` asserts it against gitleaks' OWN regexes so it fails
-locally, not in CI. All four mutations caught.
+locally, not in CI. All four mutations caught. **BUT IT READ ONE FILE — ITS OWN**, so when I wrote
+an armour pair into test_gate_diagnostics.py the laptop saw nothing (`ship.py --test` runs no
+gitleaks) and run #8 died at the gate, skipping build/scan/staging/production behind it. A rule
+enforced on one file is an exception. The sweep now covers every TRACKED file, allowlist derived
+from the config, no binary needed — proved by re-introducing the verbatim run-#8 armour.
+[2026-10-16]
 The repo is **PUBLIC**; `gmail_sa.json` / `colt-bots-*.json` hold REAL keys, are gitignored and
-have never been committed (verified, and now asserted — via `git ls-files -z`, because tracked paths
-here contain spaces and `.split()` shreds them). [2026-10-15] `tests/test_secret_scan.py`
+never committed (asserted via `git ls-files -z` — tracked paths here contain spaces and `.split()`
+shreds them). `tests/test_secret_scan.py`
 
 **A TEST THAT CANNOT RUN ANYWHERE HAS NO BASELINE, AND NOBODY NOTICES.** `test_caddy_wiring.py`
 pins the 2026-08-14 "LIVE shared config is DAMAGED" incident, but the wiring later grew the
@@ -222,7 +226,7 @@ Dockerfile.ci runs **`npm ci`** from the COMMITTED lockfile (ONE HOME, pptxgenjs
 guard DERIVES the dependency set from every `require`/`import` in gate-run JS — class 35.
 **AND THE GATE MUST SAY WHAT BROKE**: `build()` returned `stderr[-300:]`, but node puts the cause
 on the FIRST line, so nine failures reported `e._load` / `odule._load` / `ule._load` — one string
-cut at three offsets, reading as three faults. `node_error()` finds the error vocabulary, then the
+cut at three offsets, read as three faults. `node_error()` finds the error vocabulary, then the
 frame in this repo. Two of my guards could not fail: the Dockerfile assertions matched the COMMENT
 explaining them (class 4, sixth time), and the node_error tests never touched the CALL SITE
 (class 9). All four mutations now fail.

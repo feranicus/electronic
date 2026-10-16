@@ -500,3 +500,56 @@ syntax parse is CI-only.
 Worth stating plainly, because it is the argument for the whole pipeline: three of the defects in
 this document were found by the operator's own gate running on his own machine, not by review and
 not by me. A gate that can fail is the only thing that has reliably caught my work.
+
+### Run #8: the gate caught a leak I wrote into the leak test
+
+`quality-and-secrets` failed in 8 seconds:
+
+```
+Finding:     + "REDACTED\n")
+RuleID:      private-key
+File:        tests/test_gate_diagnostics.py
+Line:        480
+leaks found: 1
+```
+
+Build, scan, staging and production were **skipped**, not failed — the gate is `needs:` for all of
+them. Nothing in the pipeline regressed; it stopped exactly where it is designed to stop.
+
+The finding is `test_the_trace_can_never_carry_private_key_material`, the test asserting the ssh -v
+probe never relays key material. To have something to filter, it built a payload containing a
+complete BEGIN/END armour pair. gitleaks' `private-key` rule spans everything between those two
+delimiters, so the fixture *is* the finding. CLAUDE.md already carried this exact lesson from
+2026-10-15 ("a BEGIN/END pair inside a COMMENT, since the rule spans everything between"); I wrote
+one anyway, in code rather than a comment.
+
+The armour is now assembled at runtime (`"-" * 5 + "%s OPENSSH PRIVATE KEY" + "-" * 5`), so the
+literal `-----BEGIN` never appears in source while the string handed to the probe is byte-identical
+to real armour. That distinction matters: `ci_key.py`, whose job is to *match* these delimiters,
+keeps them literal and is path-allowlisted for that reason. A fixture has no such need, and
+allowlisting a third test file would have been the tempting, wrong fix.
+
+Rebuilding the payload also made the next assertion vacuous — it still named the old base64 body,
+which the payload no longer contained, so it could never fail again (class 3). Fixed in the same
+change.
+
+#### The actual gap
+
+`test_this_file_is_not_itself_a_finding` has carried gitleaks' real regexes since the allowlist was
+written, and it only ever read **one file: its own**. `ship.py --test` runs no gitleaks (the binary
+is a CI step), so a leak in any other file was invisible on the laptop until CI said so — and by
+then it costs a full pipeline run.
+
+A rule enforced on one file is not a rule, it is an exception. `test_NO_tracked_file_trips_the_
+scanner_unless_it_is_allowlisted` now sweeps every tracked file with the same two regexes, skipping
+only what `.gitleaks.toml` genuinely exempts (derived from the config, never retyped). It needs no
+gitleaks binary, so it runs identically on the laptop and in CI.
+
+It is deliberately not a replacement for gitleaks — two rules against roughly 150. It is the early
+warning, so a leak is reported by a local test rather than by a red pipeline.
+
+Proven the only way that counts: re-introducing the verbatim run-#8 armour makes it fail, naming
+`tests/test_gate_diagnostics.py:496  rule=private-key`; a planted PAT in `recover.py` fails as
+`recover.py:695  rule=github-pat`. The first mutation I tried was invalid — it replaced the armour
+with a `%s` form that never contains the literal `-----BEGIN`, so it violated no property and
+"escaped" meaninglessly (class 13). The faithful mutation is the one above.

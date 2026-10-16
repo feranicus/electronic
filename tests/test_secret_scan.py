@@ -239,3 +239,59 @@ def test_the_service_account_keys_are_not_in_the_repository():
     leaked = [f for f in tracked
               if f.endswith("_sa.json") or re.match(r"colt-bots-[0-9a-f]+\.json$", f)]
     assert not leaked, "a service-account key is TRACKED in a public repository: %s" % leaked
+
+
+def test_NO_tracked_file_trips_the_scanner_unless_it_is_allowlisted():
+    """THE GAP THAT LET RUN #8 FAIL, 2026-10-16.
+
+    `test_this_file_is_not_itself_a_finding` carries gitleaks' real regexes and has done since the
+    allowlist was written - but it only ever read ONE file, its own. So when a BEGIN/END armour
+    pair was written into `tests/test_gate_diagnostics.py`, nothing on the operator's machine
+    looked at it: `ship.py --test` does not run gitleaks (the binary is a CI step), the unit suite
+    was green, and the first thing to notice was `quality-and-secrets` in CI, which fails the gate
+    and skips the build, the scan, staging and production behind it.
+
+    A rule that is enforced on one file is not a rule, it is an exception. This sweeps every
+    TRACKED file with the same two regexes, skipping only what `.gitleaks.toml` genuinely exempts
+    (derived from the config, never retyped - class 32). It needs no gitleaks binary, so it runs
+    on the laptop and in CI identically, which is the whole point: the operator should never learn
+    about a leak from a red pipeline when a local test could have said it first.
+
+    Deliberately NOT a replacement for gitleaks. gitleaks has ~150 rules; this has the two that
+    have actually fired on this repository. It is the cheap early warning, not the scanner.
+    """
+    r = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, timeout=120)
+    if r.returncode != 0:
+        pytest.skip("git not available here; CI runs the real gitleaks regardless")
+    tracked = [p for p in r.stdout.decode("utf-8", "replace").split("\0") if p]
+    assert len(tracked) > 100, (
+        "only %d tracked files - this sweep is reading the wrong tree and would pass on an empty "
+        "set (defect class 12: prove the fixture)" % len(tracked))
+
+    exempt = set(allowlisted_paths())
+    findings = []
+    for rel in tracked:
+        if rel in exempt:
+            continue
+        path = os.path.join(ROOT, rel.replace("/", os.sep))
+        try:
+            with open(path, "rb") as fh:
+                blob = fh.read(2_000_000)
+        except OSError:
+            continue                      # submodule, or deleted-but-staged; not a finding
+        if b"\0" in blob[:8000]:
+            continue                      # binary: decks, images, fonts
+        text = blob.decode("utf-8", "replace")
+        for name, rx in (("private-key", _GITLEAKS_PRIVATE_KEY),
+                         ("github-pat", _GITLEAKS_GITHUB_PAT)):
+            m = rx.search(text)
+            if m is not None:
+                findings.append("%s:%d  rule=%s" % (rel, text[:m.start()].count("\n") + 1, name))
+
+    assert not findings, (
+        "these TRACKED files would fail the `quality-and-secrets` gate, which runs BEFORE the "
+        "build and skips staging and production behind it:\n  %s\n"
+        "Fix the content - assemble the delimiters at runtime, or describe the shape in prose. "
+        "Adding a path to .gitleaks.toml is the tempting fix and the wrong one: every entry is a "
+        "place a real credential could hide, and the allowlist guard above caps the list at four."
+        % "\n  ".join(findings))
