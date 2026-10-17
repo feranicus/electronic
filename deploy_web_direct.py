@@ -292,8 +292,17 @@ def remote_ghcr(tag, proxy=True, image=None):
         (("printf '%s' '" + _tok + "' | docker login ghcr.io -u x --password-stdin >/dev/null "
           "&& echo '   ghcr: logged in' || echo '   [!] ghcr: login FAILED - a private package "
           "will answer 404, which looks exactly like a missing tag'") if _tok else
-         "echo '   [!] ghcr: NO token on this run - pulling anonymously. If the package is "
-         "private this fails as \"not found\", which is indistinguishable from a missing tag.'"),
+         # A STALE CREDENTIAL IS WORSE THAN NO CREDENTIAL. docker sends whatever is in the host's
+         # ~/.docker/config.json for ghcr.io, so an expired login (this droplet still carried one
+         # from the retired web-deploy.yml) makes even a PUBLIC image answer `denied` instead of
+         # falling back to anonymous. The error names the registry, the fault is on the host, and
+         # the two read identically. Logging out first makes the anonymous path actually anonymous.
+         # `|| true` because logging out when not logged in is not a failure. [2026-10-17]
+         # ONE list element, not two: these steps are joined with "\n", so a tuple here would be
+         # written into the script as a Python repr and the droplet would get `('docker logout...`.
+         "docker logout ghcr.io >/dev/null 2>&1 || true\n"
+         "echo '   [!] ghcr: NO token on this run - pulling anonymously (cleared any stale "
+         "ghcr.io login first; a leftover credential makes even a public image answer denied).'"),
         # Fail if the tag is not there, rather than silently falling back to :latest - a deploy
         # that quietly ships a different image than the one named is the whole class of bug this
         # path exists to close.

@@ -553,3 +553,71 @@ Proven the only way that counts: re-introducing the verbatim run-#8 armour makes
 `recover.py:695  rule=github-pat`. The first mutation I tried was invalid — it replaced the armour
 with a `%s` form that never contains the literal `-----BEGIN`, so it violated no property and
 "escaped" meaninglessly (class 13). The faithful mutation is the one above.
+
+### Run #10: the token reached four jobs out of five
+
+The first fully green run, #9, was followed by #10, which got all the way to the last job and
+failed there in 22 seconds:
+
+```
+pulling: ghcr.io/feranicus/electronic/colt-web:88daa4a2c6f8
+[!] ghcr: NO token on this run - pulling anonymously.
+web Warning Head "https://ghcr.io/v2/feranicus/electronic/colt-web/manifests/88daa4a2c6f8": denied: denied
+Error response from daemon: ... denied: denied
+```
+
+The diagnosis built the day before then printed this, and it is the reason the cause took one
+reading rather than another four runs:
+
+```
+GHCR could not serve ghcr.io/feranicus/electronic/colt-web:88daa4a2c6f8. What was measured, just now:
+  repository    feranicus/electronic/colt-web
+  tag           88daa4a2c6f8
+  anonymous     HTTP 200
+  with token    NOT TESTED - no token was given to this check
+  tags present  2eb654794198, 7b71415ea60b, 8494a4b69b59, ... (16 total)
+  => the image IS pullable with the credentials tested here, so the failure is on the PULLING
+     host: it is not logged in to ghcr.io.
+```
+
+Every line there is a measurement, and together they eliminate the three causes that `denied`
+normally implies. The tag exists; it is in a list of sixteen. The repository name is right. The
+package serves an anonymous HTTP 200 from the runner, so it is not private. The registry is not
+the problem, and the report says where the problem is instead.
+
+#### Two faults, one line apart
+
+**The token reached the staging job and not the production one.** When `GHCR_TOKEN` was added the
+day before, it went into `staging`, which is where the failure of the day was. The production job's
+`Deploy colt-web` step was left as it was. Its sibling step, `Deploy the bots`, already had
+`GHCR_TOKEN` and `GHCR_USER`, which is what makes this an omission rather than a design choice:
+the convention was sitting one step below.
+
+**A stale credential is worse than no credential.** This is the part worth keeping. The image is
+publicly pullable, so an anonymous pull should have worked. It did not, because docker sends
+whatever `~/.docker/config.json` holds for a registry rather than falling back to anonymous, and
+this droplet still carried a ghcr.io login written by the retired `web-deploy.yml`. That token
+expired long ago. Docker offered it, GHCR refused it, and the error named the registry while the
+fault sat on the host.
+
+So the anonymous path now runs `docker logout ghcr.io` before pulling, and says it did. An
+anonymous pull that is not actually anonymous is the kind of thing that only shows up on one
+machine, months later, as a permissions error about something that has no permissions problem.
+
+#### The guards
+
+`test_every_step_that_pulls_from_GHCR_is_given_a_token` derives the set of steps that pull, by
+looking for `--ghcr` or `deploy.py` in each step's `run`, and fails if any of them lacks
+`GHCR_TOKEN`. Hand-listing the steps is how the fourth one gets missed, which is exactly what
+happened here. `test_the_anonymous_path_clears_a_stale_login_first` asserts the logout exists and
+that it precedes the pull.
+
+A third guard exists because of a defect introduced while fixing this one. Adding the logout as a
+second element of the steps list made the else-branch a Python tuple, and those steps are joined
+with `"\n"`, so the droplet would have received the literal text `('docker logout ghcr.io...` and
+`set -e` would have killed the deploy on its first line. Nothing about the source looked wrong.
+`test_the_no_token_branch_is_one_shell_script_not_a_python_tuple` reads the generated script for a
+tuple or list repr, and both paths are now run through `bash -n`.
+
+Both mutations fail the suite: removing `GHCR_TOKEN` from the production step, and removing the
+logout.

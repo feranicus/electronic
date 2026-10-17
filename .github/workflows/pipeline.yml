@@ -276,6 +276,14 @@ jobs:
           SSH_KEY: /home/runner/.ssh/deploy_key
           DROPLET_HOST: ${{ env.DROPLET_HOST }}
           DROPLET_USER: ${{ secrets.DROPLET_USER || 'root' }}
+          # BOTH OF THESE, AND THE STEP BELOW ALREADY HAD THEM. Run #10 failed here because this
+          # step did not: the droplet pulled anonymously, hit its own STALE ghcr.io credential
+          # left by the old web-deploy.yml, and docker answered `denied` for an image that the
+          # diagnosis then proved was pullable. The staging job had the token and passed, which is
+          # how one missing line produced a failure that looked like a registry problem.
+          # [2026-10-17]
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WEB_IMAGE: ${{ env.IMAGE_OWNER }}/colt-web
         run: python deploy_web_direct.py --ghcr "${{ steps.tag.outputs.value }}"
 
       - name: Deploy the bots (same commit, same artifacts)

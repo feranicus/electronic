@@ -301,3 +301,59 @@ def test_the_generated_script_is_valid_shell():
     r = subprocess.run(["bash", "-n"], input=payload, capture_output=True, timeout=60)
     assert r.returncode == 0, (
         "the droplet would get invalid shell:\n%s" % r.stderr.decode("utf-8", "replace"))
+
+
+def test_every_step_that_pulls_from_GHCR_is_given_a_token():
+    """RUN #10, 2026-10-17. The production job's `Deploy colt-web` step was the only GHCR-pulling
+    step in the pipeline without `GHCR_TOKEN`, so the droplet pulled anonymously, met its own
+    STALE ghcr.io credential from the retired web-deploy.yml, and docker answered `denied` for an
+    image the diagnosis then proved was pullable (`anonymous HTTP 200`).
+
+    The staging job had the token and passed. That is the shape worth guarding: one missing line
+    in one job out of five, presenting as a registry fault.
+
+    DERIVE the set of steps that pull (class 35). Hand-listing them is how the fourth one is
+    missed, which is exactly what happened.
+    """
+    yaml = pytest.importorskip("yaml")
+    doc = yaml.safe_load(_read(PIPELINE))
+    offenders = []
+    for job_name, job in (doc.get("jobs") or {}).items():
+        for step in job.get("steps") or []:
+            run = step.get("run") or ""
+            pulls = "--ghcr" in run or "deploy.py" in run
+            if not pulls:
+                continue
+            env = step.get("env") or {}
+            if "GHCR_TOKEN" not in env:
+                offenders.append("%s :: %s" % (job_name, (step.get("name") or run)[:60]))
+    assert not offenders, (
+        "these steps pull an image from GHCR but are given no GHCR_TOKEN, so the droplet pulls "
+        "anonymously and any stale credential on it turns the pull into `denied`: %s" % offenders)
+
+
+def test_the_anonymous_path_clears_a_stale_login_first():
+    """A STALE CREDENTIAL IS WORSE THAN NO CREDENTIAL. docker sends whatever ~/.docker/config.json
+    holds for ghcr.io, so an expired login makes even a PUBLIC image answer `denied` rather than
+    falling back to anonymous. The message names the registry; the fault is on the host."""
+    import deploy_web_direct
+    for k in ("GHCR_TOKEN", "GITHUB_TOKEN"):
+        os.environ.pop(k, None)
+    script = deploy_web_direct.remote_ghcr("abc", proxy=False, image="ghcr.io/o/r/i")
+    assert "docker logout ghcr.io" in script, (
+        "the no-token path inherits whatever login the host already has: %s" % script[:500])
+    assert script.index("docker logout ghcr.io") < script.index("compose"), (
+        "the logout happens after the pull, which is too late to help it")
+
+
+def test_the_no_token_branch_is_one_shell_script_not_a_python_tuple():
+    """Caught in review, not in CI: adding the logout as a second list element made the else-branch
+    a TUPLE, and these steps are joined with "\\n", so the droplet would have received the literal
+    text `('docker logout ghcr.io...` and `set -e` would have killed the deploy on line one."""
+    import deploy_web_direct
+    for k in ("GHCR_TOKEN", "GITHUB_TOKEN"):
+        os.environ.pop(k, None)
+    script = deploy_web_direct.remote_ghcr("abc", proxy=False, image="ghcr.io/o/r/i")
+    assert "('" not in script and '", "' not in script, (
+        "a Python tuple or list repr reached the generated shell script: %s"
+        % [ln for ln in script.splitlines() if "('" in ln or '", "' in ln][:2])

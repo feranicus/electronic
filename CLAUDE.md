@@ -136,8 +136,8 @@ the operator's own phase, never a YAML copy of its 37 gates (ONE HOME). Safe on 
 loud under `SHIP_GATES_OFFLINE=1`. The gate gets **no secrets** and `--network none`.
 
 **ONE AUTOMATIC PATH.** `pipeline.yml` = gate -> build once -> scan -> staging (reboot gate) ->
-production (`environment: production` approval + teamlock). `deploy.yml` / `web-deploy.yml` are
-`workflow_dispatch` ONLY now: one push used to produce TWO deploys to one droplet six minutes apart.
+production (approval + teamlock). `deploy.yml` / `web-deploy.yml` are `workflow_dispatch` ONLY now:
+one push used to produce TWO deploys to one droplet six minutes apart.
 
 **ONE ARTIFACT.** colt-web was COMPILED ON PRODUCTION, so the only internet-facing image was the one
 CI never saw. `deploy_web_direct.py --ghcr TAG` pulls the built, scanned image (`remote_ghcr()`;
@@ -198,9 +198,8 @@ shreds them). `tests/test_secret_scan.py`
 **A TEST THAT CANNOT RUN ANYWHERE HAS NO BASELINE, AND NOBODY NOTICES.** `test_caddy_wiring.py`
 pins the 2026-08-14 "LIVE shared config is DAMAGED" incident, but the wiring later grew the
 `docker ps` / `docker inspect` lines that ASK the container where its Caddyfile is: the extracted
-segment re-assigned `$CF` over the fixture's temp file and, with no docker binary, died `rc 127`
-under `set -e`. Skipped on Windows, never reached in CI (gitleaks failed first), so two red tests
-sat unseen. **SIMULATE docker, do not trim the segment** (class 20): a stub answers `ps`/`inspect`
+segment re-assigned `$CF` over the fixture's temp file and, with no docker, died `rc 127` under
+`set -e`. Skipped on Windows, never reached in CI, so two red tests sat unseen. **SIMULATE docker, do not trim the segment** (class 20): a stub answers `ps`/`inspect`
 with the fixture's own path, and the test asserts the stub WAS consulted. The module gate is
 `shell_harness_allowed()` (ONE HOME), never `shutil.which("bash")`. Mutations caught: the bare-word
 range delete, the assumed path, `sed -i` restoring the inode swap.
@@ -253,12 +252,11 @@ and formatted with UTC `gmtime`, dropping a real day east of Greenwich (MEASURED
 asserted; sibling half skips with a reason. [2026-10-15]
 
 **A CREDENTIAL IS PER-HOST AND PER-ACCOUNT.** `provision()` authorized the CI key on its DEFAULT
-host only, so the twin never had it. `deploy_hosts()` DERIVES the list (production from
-`ci_key.HOST`, staging from `stagegate.STAGING`, neither retyped) and says so aloud if staging
-cannot be derived (class 37); `authorize_everywhere()` writes all, `check()` proves all, an UNKNOWN
-on any blocks `--push`. **The repair must fit the fault** — `ensure_usable()` authorizes first and
-mints only when OpenSSH refuses the key, never rotating a working credential over a missing line.
-[2026-10-15] `tests/test_ci_key.py`
+host only, so the twin never had it. `deploy_hosts()` DERIVES the list (production `ci_key.HOST`,
+staging `stagegate.STAGING`, neither retyped) and says so aloud if staging cannot be derived
+(class 37); `authorize_everywhere()` writes all, `check()` proves all, an UNKNOWN on any blocks
+`--push`. **The repair must fit the fault**: `ensure_usable()` authorizes first and mints only when
+OpenSSH refuses the key. [2026-10-15] `tests/test_ci_key.py`
 
 **FOUR LINES IS NOT A FAILURE REPORT.** That staging job printed `staging unreachable: ***@…:
 Permission denied (publickey).` and stopped — a 200-char SLICE of stderr with the account masked,
@@ -274,8 +272,8 @@ the middle of a long run. Seven mutations caught, one of which dumped the privat
 log. [2026-10-15] `tests/test_gate_diagnostics.py`
 
 **ASSERT THE REMOTE STATE, NEVER DEDUCE IT FROM A DOOR THAT OPENS FOR YOU.** `--fix-ci-key`
-re-authorizes BEFORE `check()`, which only proves THIS machine can log in; asserted on source
-ORDER. [2026-10-16] `tests/test_ci_key.py`
+re-authorizes BEFORE `check()`, which only proves THIS machine can log in; asserted on source ORDER.
+`tests/test_ci_key.py`
 
 **`-i` WAS NEVER PASSED — "which key" had TWO HOMES.** deploy.py read `SSH_KEY`; recover.py (whose
 SSH stagegate imports) read `DROPLET_KEY`, which nothing exports, then dropped `-i` when the
@@ -289,25 +287,27 @@ opposite repairs; it must drop the inherited `-o LogLevel=ERROR` (or it silences
 keep `-i` (or it reproduces the bug). Log VOLUME was never the gap: `stagegate.log` is a `tee` of
 the step log. [2026-10-16] `tests/test_ssh_identity.py` · `tests/test_gate_diagnostics.py`
 
-**"not found" FROM GHCR MEANS TWO UNRELATED THINGS.** Staging died pulling
-`ghcr.io/feranicus/colt-web:<sha>`: CI pushes to `${{ github.repository }}/colt-web`
-(`…/electronic/colt-web`), and only `WEB_TAG` was threaded — the REPOSITORY half was hardcoded in
-three files (class 32). GHCR answers an unauthorised request for a PRIVATE package with **404, not
-401**, so a wrong name and a missing login are ONE message with opposite repairs. `ghcr.py` is the
-one home for the ref and for `report()`, which asks anonymously AND with a token and makes the
-DIFFERENCE the diagnosis, naming the tags that do exist. Pass BOTH halves, give staging
-`packages: read`, log in with the token on **stdin**, and SAY SO when pulling anonymously (class
-37). 12 mutations caught — including my own `printf '%%s'` in a CONCATENATED string (class 44 has a
-precondition), which pipes `%s` as the password and then reads as a missing tag. **And his gate
-then caught two more of mine in the guard itself**: I gated a POSIX harness on
-`shutil.which("bash")` (forbidden above — WSL's bash.exe answers yes) and handed `bash -n` a
-`C:\…` path, so rc 127 rendered as "the droplet would get invalid shell" (classes 22 and 1).
-Script to bash on **stdin as bytes**: no path to translate, no newline to rewrite.
-[2026-10-16] `tests/test_image_ref.py`
+**"not found" FROM GHCR MEANS TWO UNRELATED THINGS, AND SO DOES "denied".** Staging died pulling
+`ghcr.io/feranicus/colt-web:<sha>`: CI pushes to `${{ github.repository }}/colt-web`, and only
+`WEB_TAG` was threaded - the REPOSITORY half was hardcoded in three files (class 32). GHCR answers
+an unauthorised request for a PRIVATE package with **404, not 401**, so a wrong name and a missing
+login are ONE message with opposite repairs. `ghcr.py` is the one home for the ref and for
+`report()`, which asks anonymously AND with a token and makes the DIFFERENCE the diagnosis, naming
+the tags that do exist. Pass BOTH halves, give the job `packages: read`, log in with the token on
+**stdin**, and SAY SO when pulling anonymously (class 37).
+**A STALE CREDENTIAL IS WORSE THAN NONE** [run #10]: `GHCR_TOKEN` reached the staging job only, so
+production pulled anonymously, met the droplet's expired ghcr login left by the retired
+web-deploy.yml, and docker said `denied` for an image the diagnosis proved pullable (`anonymous
+HTTP 200`). docker sends whatever `~/.docker/config.json` holds, so the anonymous path must
+`docker logout ghcr.io` FIRST. The guard DERIVES every GHCR-pulling step and demands a token.
+My own mutations caught: `printf '%%s'` in a CONCATENATED string (class 44 has a precondition),
+a POSIX harness gated on `shutil.which("bash")` (WSL answers yes), a `C:\` path handed to
+`bash -n` (classes 22 and 1), a tuple where the script wanted a string.
+`tests/test_image_ref.py`
 
-**AN UNEXPECTED VHOST NAMES ITS FRAGMENT** (`_declared_in()`), or says NO fragment declares it.
-MEASURED: 2 of 5 fragments have a committed source; 138 lines of the shared proxy live only on the
-droplet. [2026-10-16] `tests/test_vhost_attribution.py`
+**AN UNEXPECTED VHOST NAMES ITS FRAGMENT** (`_declared_in()`), or says none does. MEASURED: 2 of
+5 fragments have a committed source; 138 lines of the proxy live only on the droplet.
+[2026-10-16] `tests/test_vhost_attribution.py`
 
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 
