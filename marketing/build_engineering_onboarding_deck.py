@@ -174,11 +174,11 @@ d._text(s, 0.55, 0.30, 9.5, 0.26, "S4BIZ  ·  CYBERGOD.AI  ·  ENGINEERING ONBOA
 d._text(s, 0.55, 2.05, 8.6, 0.6, "> whoami  --role engineer", 11, VIOLET, MONO)
 d._text(s, 0.55, 2.45, 11.8, 1.9, ["THE STACK,", "END TO END."], 54, WHITE, HB)
 d._text(s, 0.55, 4.35, 10.4, 0.3,
-        "Two droplets · one orchestrator · 1,000+ automated checks · four models that never decide.",
+        "Two droplets · nine workflows · one orchestrator · 1,179 automated checks · four models that never decide.",
         13, BODY, BF)
 for i, (t, sub, c) in enumerate([
         ("A", "Estate\nTest DO + Prod DO", CYAN),
-        ("B", "Pipeline\npython ship.py", VIOLET),
+        ("B", "Pipeline\nship.py + 9 workflows", VIOLET),
         ("C", "Test scope\nwhat must pass", INDIGO),
         ("D", "4 LLMs\npropose, never decide", CYAN)]):
     x = 0.55 + i * 3.02
@@ -234,7 +234,8 @@ d.arrow_r(s, 2.95, 2.22, 0.5)
 d.node(s, 3.55, 1.90, 2.6, 0.78, "videodead-caddy-1", "shared reverse proxy\nowns :443 for 6 domains", RED)
 d.arrow_r(s, 6.28, 2.22, 0.5)
 d.node(s, 6.9, 1.90, 2.5, 0.78, "colt-web", "FastAPI + React\n127.0.0.1:8090 -> 8000", CYAN)
-d._text(s, 9.55, 1.95, 3.3, 0.7, ["network: videodead_appnet", "image: ghcr.io/feranicus/colt-web"],
+d._text(s, 9.55, 1.95, 3.3, 0.7, ["network: videodead_appnet",
+                                  "image: .../electronic/colt-web:<sha>"],
         8, MUTED, MONO)
 d.line(s, 8.1, 2.72, 0, 0.55, INDIGO)
 d.node(s, 3.55, 3.3, 2.5, 0.72, "colt-assessbot", "Telegram · /assess", VIOLET)
@@ -308,8 +309,8 @@ d._text(s, 6.55, 6.3, 5.1, 0.6,
          "It can never turn a NO-GO into a GO."], 8.4, MUTED, BF, italic=True)
 
 # -- 04 the pipeline (Visio flow) --------------------------------------------------------------------
-s, y = d.slide("B · THE PIPELINE", "One command. python ship.py.",
-               "Five numbered phases, a staging gate between 2 and 3, and a tail of infrastructure verbs that never block.")
+s, y = d.slide("B · THE PIPELINE  ·  1 of 2", "One command. python ship.py.",
+               "The DIRECT path. Since 2026-10 a push to main also starts the CI path - next slide.")
 cols = [("1/5", "TESTS", "nothing ships\nif these fail", CYAN),
         ("2/5", "COMMIT + PUSH", "git is the single\nsource of truth", CYAN),
         ("3/5", "DEPLOY WEB", "cybergod.ai\ncolt-web", VIOLET),
@@ -337,10 +338,268 @@ d.card(s, 6.05, 3.72, 6.73, 1.5, "After 5/5  ·  never blocking, always run", [
     "tag last-known-good + good-YYYYMMDD-HHMMSS, pushed to GitHub",
     "release_notes.py  four models write them, Telegram + Gmail API send them"], INDIGO, CARD, 10, 8.2)
 d.card(s, 0.55, 5.42, 12.23, 1.4, "Flags narrow it. They never split it.", [
-    "--test  run the gate battery only          --web / --bots  one target only          --no-stage  skip the twin",
-    "--fast-stage  gate without the reboot      --dry-run  print, change nothing          --no-preview  skip the UI stamp",
-    "--rollback [REF]  reset to last-known-good (or a dated tag) and redeploy. Bypasses tests, preview and the gate by design.",
-    "-m \"msg\"  commit message, also quoted in the release notes"], CYAN, CARD, 10, 8.4)
+    "--test  gate battery only        --web / --bots  one target        --no-stage  skip the twin        --dry-run  print only",
+    "--pr  branch -> PR -> WAIT for the gate -> squash-merge. The merge IS the deploy, so PR mode stops there and ships nothing itself.",
+    "--direct  the laptop deploys, for the day the pipeline is what is broken.    --rollback [REF]  reset and redeploy, bypassing the gate by design.",
+    "-m \"msg\"  commit message, also quoted in the release notes        --no-preview  skip the UI stamp"], CYAN, CARD, 10, 8.4)
+
+# =================================================================================================
+# THE GITHUB ACTIONS SECTION. Everything below is MEASURED from .github/workflows/*.yml on
+# 2026-10-16 - workflow names, triggers, cron expressions, job names, `needs:` edges, permissions
+# and step names are read out of the YAML, never retyped from memory. If a workflow is added or a
+# schedule changes, this section is wrong until somebody re-reads the files.
+# =================================================================================================
+
+# -- 04b why CI exists at all --------------------------------------------------------------------
+s, y = d.slide("B · WHY CI EXISTS", "The laptop was a single point of failure.",
+               "Until 2026-10 every deploy to cybergod.ai began on one Windows PC in one room.")
+d.card(s, 0.55, 1.78, 6.05, 2.18, "BEFORE  ·  the laptop was the pipeline", [
+    "python ship.py ran the tests, built the image ON THE",
+    "PRODUCTION DROPLET, deployed it and verified it.",
+    "",
+    "Three consequences nobody chose:",
+    "  the only internet-facing image was one CI never saw",
+    "  a second developer could not deploy without that PC",
+    "  'it passed on my machine' was the only evidence there was"],
+    RED, CARD, 10, 8.2)
+d.card(s, 6.73, 1.78, 6.05, 2.18, "AFTER  ·  GitHub Actions is the pipeline", [
+    "A push to main starts five workflows. One of them,",
+    "pipeline.yml, is the deploy: gate, build, scan, staging,",
+    "production.",
+    "",
+    "  the image is built ONCE, by CI, and scanned there",
+    "  staging and production pull THOSE bytes, by digest",
+    "  the laptop is now one way in, not the only way in"],
+    CYAN, CARD, 10, 8.2)
+d.card(s, 0.55, 4.16, 12.23, 1.24, "What did NOT change, deliberately", [
+    "CI does not re-implement the orchestrator. It calls the repository's own scripts as subprocesses - ship.py --test, stagegate.py,",
+    "deploy_web_direct.py, caddyguard.py - so there is exactly one definition of what a gate means and one definition of what a deploy does.",
+    "A YAML copy of those 37 gates would drift from ship.py within a week, and the drift would be invisible until it mattered."],
+    VIOLET, CARD, 10, 8.2)
+d.card(s, 0.55, 5.60, 12.23, 1.08, "python ship.py still works, and still does everything", [
+    "It is the DIRECT path, kept for the day the pipeline itself is what is broken (`--direct`), and it is what you run day to day.",
+    "`--pr` is the collaborator path: branch, PR, wait for the gate, squash-merge. The merge is a push to main, so the merge IS the deploy."],
+    GOLD, CARD, 10, 8.2)
+
+# -- 04c what one push starts ----------------------------------------------------------------------
+s, y = d.slide("B · WHAT ONE PUSH STARTS", "Five workflows, one commit.",
+               "Measured on commit e770e69. They run in parallel and answer different questions.")
+flows = [("pipeline.yml", "THE DEPLOY", "5 jobs, gate -> production\n~12 min", CYAN),
+         ("ci.yml", "THE GATE OF RECORD", "quality-and-secrets\ngitleaks + ship.py --test", VIOLET),
+         ("codeql.yml", "CODE SCANNING", "GitHub's own analysis\nalso weekly, Tue 06:00", INDIGO),
+         ("security.yml", "SUPPLY CHAIN", "Trivy FS + IaC, hadolint,\npip-audit. Also Mon 06:00", INDIGO),
+         ("import-dashboards.yml", "GRAFANA", "re-imports the dashboards\nwhen they change", GOLD)]
+for i, (fn, name, sub, c) in enumerate(flows):
+    x = 0.55 + i * 2.56
+    d._rect(s, x, 1.84, 2.3, 1.62, CARD, c, lw=1.25)
+    d._rect(s, x, 1.84, 2.3, 0.05, c)
+    d._text(s, x + 0.14, 1.98, 2.1, 0.22, fn, 7.6, c, MONO, True)
+    d._text(s, x + 0.14, 2.26, 2.1, 0.26, name, 9.5, WHITE, BF, True)
+    d._text(s, x + 0.14, 2.60, 2.1, 0.74, sub, 7.6, MUTED, BF)
+d.card(s, 0.55, 3.70, 6.05, 1.70, "Only ONE of them can deploy", [
+    "pipeline.yml is the single automatic path to the droplet.",
+    "",
+    "deploy.yml and web-deploy.yml still exist but are now",
+    "workflow_dispatch ONLY - a human presses the button.",
+    "",
+    "One push used to fire two of them, producing two deploys",
+    "to one droplet six minutes apart."],
+    VIOLET, CARD, 10, 8.2)
+d.card(s, 6.73, 3.70, 6.05, 1.70, "The gate of record, and why it is separate", [
+    "GitHub's branch ruleset names ONE required check:",
+    "quality-and-secrets, which lives in ci.yml.",
+    "",
+    "pipeline.yml's first job does not re-run it. It WAITS for",
+    "that exact check on that exact commit, then proceeds.",
+    "",
+    "Two definitions of 'green' would eventually disagree."],
+    CYAN, CARD, 10, 8.2)
+d.card(s, 0.55, 5.60, 12.23, 1.08, "A required check cannot be satisfied by a direct push", [
+    "GitHub's own rule: checks must pass BEFORE a collaborator changes the branch - and a brand-new commit has no check runs yet.",
+    "That is the `Bypassed rule violations` line on every direct ship. `python ship.py --pr` is the answer: a PR's head commit DOES get",
+    "check runs, so the gate can actually be satisfied. Nothing merges on an UNKNOWN state, and `skipped` especially is not a pass."],
+    GOLD, CARD, 10, 8.2)
+
+# -- 04d the pipeline, five jobs -----------------------------------------------------------------
+s, y = d.slide("B · THE PIPELINE  ·  five jobs", "Push to main is the deploy.",
+               "pipeline.yml. CI runs the operator's own phases as subprocesses, never a YAML copy of them.")
+jobs = [("1", "GATE", "quality-and-secrets\npython ship.py --test", CYAN),
+        ("2", "BUILD + SIGN", "3 images, once\nSigstore + SBOM", VIOLET),
+        ("3", "SCAN", "Trivy x3\nCRITICAL stops it", VIOLET),
+        ("4", "STAGING", "deploy twin,\nREBOOT, re-verify", INDIGO),
+        ("5", "PRODUCTION", "manual approval\n+ teamlock", GOLD)]
+for i, (num, name, sub, c) in enumerate(jobs):
+    x = 0.55 + i * 2.56
+    d._rect(s, x, 1.86, 2.3, 1.30, CARD, c, lw=1.25)
+    d._rect(s, x, 1.86, 2.3, 0.05, c)
+    d._text(s, x + 0.16, 2.00, 1.0, 0.24, num, 10, c, MONO, True)
+    d._text(s, x + 0.16, 2.26, 2.0, 0.26, name, 11, WHITE, BF, True)
+    d._text(s, x + 0.16, 2.56, 2.0, 0.52, sub, 7.8, MUTED, BF)
+    if i < 4:
+        d.arrow_r(s, x + 2.33, 2.44, 0.2, c)
+d.card(s, 0.55, 3.40, 6.05, 1.92, "ONE ARTIFACT  ·  what is scanned is what runs", [
+    "colt-web was COMPILED ON PRODUCTION: the one internet-facing",
+    "image was the one CI never saw.",
+    "CI builds it ONCE, pushes to GHCR, Trivy scans THAT image,",
+    "and staging and production both PULL it.",
+    "WEB_IMAGE + WEB_TAG carry BOTH halves of the name;",
+    "ghcr.py is their one home.",
+    "An immutable tag means what we tested and what runs",
+    "cannot drift apart."],
+    VIOLET, CARD, 10, 8.2)
+d.card(s, 6.73, 3.40, 6.05, 1.92, "ONE GATE  ·  and it can actually fail", [
+    "quality-and-secrets is the name the branch ruleset requires,",
+    "so it decides what 'main is protected' MEANS.",
+    "It used to mean `ruff check . || true`, a check that cannot fail.",
+    "It now runs python ship.py --test inside Dockerfile.ci, with NO",
+    "secrets, --network none, against a read-only checkout it copies.",
+    "gitleaks runs beside it: a leak stops the gate, and build, scan,",
+    "staging and production are SKIPPED behind it."],
+    CYAN, CARD, 10, 8.2)
+d.card(s, 0.55, 5.52, 12.23, 1.16, "Two people, one droplet", [
+    "teamlock.py is a mkdir ON THE DROPLET - the only thing every deploy path touches. It covers the staging gate and both production deploys.",
+    "It fails OPEN if the droplet is unreachable and clears by STALENESS (45 min), never by trusting a `finally`. CI takes the SAME lock, because",
+    "a GitHub concurrency group cannot see a laptop. Production also waits on a human approving the `production` environment."],
+    INDIGO, CARD, 10, 8.2)
+
+# -- 04e inside each job ---------------------------------------------------------------------------
+# Step names read from pipeline.yml / ci.yml. Permissions are the job's own `permissions:` block.
+s, y = d.slide("B · INSIDE EACH JOB", "What the five jobs actually do.",
+               "Step names and permissions are read out of the YAML. Least privilege is per job, not per workflow.")
+detail = [
+    (0.55, "1 · GATE", CYAN, "30 min  ·  no secrets", [
+        "checkout",
+        "WAIT for quality-and-secrets",
+        "  on THIS commit",
+        "",
+        "ci.yml does the work:",
+        "  gitleaks (secret scan)",
+        "  build Dockerfile.ci",
+        "  python ship.py --test",
+        "    --network none, :ro"]),
+    (3.08, "2 · BUILD + SIGN", VIOLET, "60 min  ·  packages: write", [
+        "checkout + buildx",
+        "login to ghcr.io",
+        "tag = first 12 of the SHA",
+        "build colt-web",
+        "build colttechbot",
+        "build cassandra",
+        "attest provenance x3",
+        "  (Sigstore, keyless)",
+        "SBOM per image"]),
+    (5.61, "3 · SCAN", VIOLET, "30 min  ·  matrix x3", [
+        "install Trivy, PINNED",
+        "  and checksum-verified",
+        "  (the scanner is itself",
+        "   a supply-chain risk)",
+        "",
+        "HIGH      -> reported",
+        "CRITICAL  -> job fails",
+        "",
+        "Nothing is promoted."]),
+    (8.14, "4 · STAGING", INDIGO, "45 min  ·  env: staging", [
+        "install the deploy key",
+        "python stagegate.py",
+        "  pull the SAME image",
+        "  42 checks",
+        "  REBOOT the twin",
+        "  re-run all 42",
+        "  4 models write a verdict",
+        "tee the full log to an",
+        "  artifact (14 days)"]),
+    (10.67, "5 · PRODUCTION", GOLD, "45 min  ·  env: production", [
+        "WAITS for a human to",
+        "  approve the environment",
+        "teamlock.py --acquire",
+        "deploy colt-web (pulled,",
+        "  never built here)",
+        "deploy the bots",
+        "caddyguard health check",
+        "teamlock --release",
+        "  (if: always())"]),
+]
+for x, title, c, meta, items in detail:
+    d._rect(s, x, 1.80, 2.33, 2.86, CARD, c, lw=1.0)
+    d._rect(s, x, 1.80, 0.055, 2.86, c)
+    d._text(s, x + 0.16, 1.92, 2.0, 0.24, title, 10, WHITE, BF, True)
+    d._text(s, x + 0.16, 2.18, 2.1, 0.22, meta, 7.0, c, MONO)
+    d._text(s, x + 0.16, 2.46, 2.05, 2.16, items, 7.6, BODY, BF)
+    if x < 10:
+        d.arrow_r(s, x + 2.36, 3.16, 0.14, c)
+d.card(s, 0.55, 4.90, 12.23, 1.02, "The property that makes this safe to run on every pull request", [
+    "do_tests() makes ZERO ssh calls - asserted by an AST test, not by a comment - so the gate can run on a fork's pull request",
+    "with no secrets at all. The one branch that would write to the droplet refuses OUT LOUD under SHIP_GATES_OFFLINE=1."],
+    MUTED, CARD, 10, 8.2)
+d.card(s, 0.55, 6.04, 12.23, 0.88, "Least privilege, measured per job", [
+    "Only `build` may write packages. `scan`, `staging` and `production` may only READ them. `gate` is given no secrets and no network.",
+    "A job that cannot reach the droplet cannot break it, and a token that cannot push an image cannot replace one."],
+    VIOLET, CARD, 10, 8.2)
+
+# -- 04f the nine workflows --------------------------------------------------------------------------
+s, y = d.slide("B · EVERY WORKFLOW", "Nine workflows. Three reach the droplet.",
+               "The whole of .github/workflows, with what starts each one.")
+rows = [
+    ("pipeline.yml", "push to main  ·  dispatch", "gate -> build -> scan -> staging -> production", "DEPLOYS", CYAN),
+    ("ci.yml", "push  ·  PR  ·  dispatch", "quality-and-secrets: gitleaks + ship.py --test", "THE GATE", CYAN),
+    ("codeql.yml", "push  ·  PR  ·  Tue 06:00", "GitHub code scanning, results in Security tab", "reports", INDIGO),
+    ("security.yml", "push  ·  PR  ·  Mon 06:00", "Trivy FS + IaC, hadolint, pip-audit (report-only)", "reports", INDIGO),
+    ("uptime.yml", "every 10 minutes", "probes every public endpoint FROM OUTSIDE, alerts Telegram", "watches", VIOLET),
+    ("import-dashboards.yml", "push to main  ·  dispatch", "re-imports the Grafana dashboards when they change", "config", GOLD),
+    ("deploy.yml", "dispatch ONLY", "the old bot/stack deploy. A human presses the button.", "DEPLOYS", RED),
+    ("web-deploy.yml", "dispatch ONLY", "the old colt-web deploy. A human presses the button.", "DEPLOYS", RED),
+    ("provision-patchwatch.yml", "dispatch ONLY", "installs the unattended-patch timer on the droplet", "provision", MUTED),
+]
+d._text(s, 0.62, 1.80, 2.6, 0.22, "WORKFLOW", 8, MUTED, MONO, True, space=1.4)
+d._text(s, 3.40, 1.80, 2.4, 0.22, "STARTED BY", 8, MUTED, MONO, True, space=1.4)
+d._text(s, 6.05, 1.80, 5.6, 0.22, "WHAT IT DOES", 8, MUTED, MONO, True, space=1.4)
+d._text(s, 11.85, 1.80, 1.0, 0.22, "CLASS", 8, MUTED, MONO, True, space=1.4)
+for i, (fn, trig, what, cls, c) in enumerate(rows):
+    yy = 2.06 + i * 0.44
+    d._rect(s, 0.55, yy, 12.23, 0.40, CARD if i % 2 == 0 else CARD2, None)
+    d._rect(s, 0.55, yy, 0.045, 0.40, c)
+    d._text(s, 0.68, yy + 0.09, 2.7, 0.24, fn, 8.4, WHITE, MONO, True)
+    d._text(s, 3.40, yy + 0.09, 2.6, 0.24, trig, 8.0, MUTED, BF)
+    d._text(s, 6.05, yy + 0.09, 5.7, 0.24, what, 8.0, BODY, BF)
+    d._text(s, 11.80, yy + 0.09, 1.3, 0.24, cls, 7.4, c, MONO, True)
+d.card(s, 0.55, 6.08, 12.23, 0.84, "Why three deploy workflows and not one", [
+    "deploy.yml and web-deploy.yml predate pipeline.yml and are kept as the manual escape hatch for the day the pipeline is what is broken.",
+    "Making them dispatch-only is what ended the double deploy: one push used to start two of them against one droplet, six minutes apart."],
+    MUTED, CARD, 10, 8.2)
+
+# -- 04g the clock -------------------------------------------------------------------------------
+s, y = d.slide("B · THE CLOCK", "What runs when nobody pushes anything.",
+               "Two schedulers: GitHub cron for anything that must survive the droplet, systemd for anything that needs to be on it.")
+d.card(s, 0.55, 1.80, 6.05, 2.46, "GITHUB CRON  ·  runs even if the droplet is dead", [
+    "*/10 * * * *   uptime.yml - probes every public endpoint",
+    "               FROM OUTSIDE and alerts Telegram.",
+    "               Off-box on purpose: a watchdog that lives",
+    "               on the thing it watches reports nothing",
+    "               when that thing is down.",
+    "",
+    "0 6 * * 1      security.yml - Trivy, hadolint, pip-audit",
+    "0 6 * * 2      codeql.yml - GitHub code scanning",
+    "               Dependabot raises its own PRs continuously."],
+    CYAN, CARD, 10, 8.0)
+d.card(s, 6.73, 1.80, 6.05, 2.46, "SYSTEMD ON THE DROPLET  ·  needs to be there", [
+    "every 10 min   caddyguard - validate the shared Caddy",
+    "               config, compare the three hops, self-heal",
+    "               from the committed fragments.",
+    "",
+    "daily 04:40    perseus --cycle   (propose detections)",
+    "Sun  05:20     perseus --weekly  (re-vet, retire stale)",
+    "every 10 min   perseus --watch   (4-vendor consensus)",
+    "nightly        patchwatch (refuses to reboot into an",
+    "               invalid config), dbbackup, logship"],
+    INDIGO, CARD, 10, 8.0)
+d.card(s, 0.55, 4.46, 12.23, 1.10, "The outage that put the watchdog on a ten-minute timer", [
+    "2026-08-14: a deploy truncated the shared Caddyfile at 16:15. Caddy reads its config only at START, so nothing failed for twelve hours -",
+    "until a 04:22 kernel reboot made it re-read the file and six domains went down together. caddyguard now runs every ten minutes,",
+    "patchwatch refuses to reboot into a config that does not validate, and the uptime probe runs OFF-BOX so it can still speak."],
+    RED, CARD, 10, 8.2)
+d.card(s, 0.55, 5.72, 12.23, 0.96, "Where to look when something fires", [
+    "Actions tab -> the run -> the failing job. Every gate writes a $GITHUB_STEP_SUMMARY table; the staging gate also tees its FULL log to an",
+    "artifact (14 days) because GitHub truncates the middle of a long step, which is exactly where the evidence is."],
+    MUTED, CARD, 10, 8.2)
 
 # -- 05 what ship.py touches -------------------------------------------------------------------------
 s, y = d.slide("B · THE ORCHESTRATOR'S REACH", "Everything ship.py calls.",
@@ -352,11 +611,12 @@ groups = [
         "8 node tools/*.mjs", "pytest tests/", "authz_audit.py --local",
         "demo_build.py · deck builds", "gen_sbom.py --check"]),
     (3.70, "DEPLOY", VIOLET, [
-        "stagegate.py (twin + gate)", "deploy_web_direct.py", "ship_web.py (--ci only)",
-        "deploy.py --reuse --yes", "import_dashboard.py", "govern.py (on NO-GO)"]),
+        "stagegate.py (twin + gate)", "deploy_web_direct.py --ghcr", "ghcr.py (image name + why 404)",
+        "teamlock.py (the droplet lock)", "shipflow.py (--pr)", "deploy.py --reuse --yes",
+        "import_dashboard.py", "govern.py (on NO-GO)"]),
     (6.85, "INFRASTRUCTURE", INDIGO, [
         "caddyguard.py", "dbbackup.py", "logship.py", "secaudit.py",
-        "perseus.py --install-only", "model_watch.py"]),
+        "perseus.py --install-only", "model_watch.py", "ci_key.py (--fix-ci-key)"]),
     (10.0, "RECORD", GOLD, [
         "git add / commit / push", "git tag last-known-good", "git tag good-<stamp>",
         "release_notes.py", "ui_preview_stamp.py"]),
@@ -406,8 +666,8 @@ d.card(s, 0.55, 5.85, 12.23, 1.02, "What a failure means", [
     "A gate that CRASHES is reported differently from a gate that FINDS something. Read the verdict line, not the stack."], RED, CARD, 10, 8.4)
 
 # -- 07 test scope: pytest ----------------------------------------------------------------------------
-s, y = d.slide("C · TEST SCOPE  ·  2 of 2", "The suite: 50 modules, 958 test functions.",
-               "Counted from tests/*.py. Grouped by what they defend, not by file name.")
+s, y = d.slide("C · TEST SCOPE  ·  2 of 2", "The suite: 59 modules, 1,138 test functions.",
+               "Counted from tests/*.py, 2026-10-16; parametrisation expands them to 1,179 cases at run time.")
 blocks = [
     (0.55, 1.75, "ACCESS + IDENTITY", CYAN, [
         "test_auth · test_admin_users · test_quota",
@@ -442,8 +702,9 @@ blocks = [
 ]
 for x, yy, title, c, items in blocks:
     d.card(s, x, yy, 3.9, 1.95, title, items, c, CARD, 10, 8.1)
-d.card(s, 0.55, 6.06, 12.23, 0.62, "Platform honesty", [
-    "Five modules need bash/sed and skip cleanly on Windows; CI and the droplet run them. No module requires a docker binary."],
+d.card(s, 0.55, 6.00, 12.23, 0.84, "Platform honesty", [
+    "Six modules need a POSIX shell and skip with a STATED REASON on Windows - shell_harness_allowed(), one home. CI runs them for real.",
+    "No module requires a docker binary, and none reaches the internet: a test that silently needs the network is a test of the network."],
     MUTED, CARD, 10, 8.4)
 
 # -- 08 the four models -------------------------------------------------------------------------------

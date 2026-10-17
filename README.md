@@ -1,4 +1,16 @@
-# electronic — Colt cyber pre-sales automation
+# electronic
+
+The platform behind **cybergod.ai**: an external attack-surface assessment engine, a web app, two
+Telegram bots, and the automation that ships all of it.
+
+You give it one input, a company name. It finds what that company exposes to the internet using
+public records only, grades the risk, writes the prose with four different vendors' models, and
+returns a set of decks. Not one packet is ever sent to the company being assessed.
+
+Everything lives in this repository. The droplets are provisioned from here, never configured by
+hand, and one command ships the lot.
+
+---
 
 ## The one command
 
@@ -7,325 +19,299 @@ cd "C:\Python SW\Linkedin Scraper"
 python ship.py
 ```
 
-`ship.py` is the ONLY script you run. It does, in order:
+That is the whole interface. `ship.py` runs five numbered phases in order:
 
-1. **Tests** — compile-checks every Python file, runs the CA-pivot regression
-   (`test_ca_pivot.py`, the bibeltv.de false-positive incident) and `pytest tests/`.
-   Nothing ships if any of it fails.
-2. **Commit + push** — GitHub stays the single source of truth.
-3. **Deploy** — web (`ship_web.py` -> GitHub Actions -> GHCR -> droplet -> Caddy) and
-   bots (`deploy.py --reuse --yes`).
-4. **Verify** — colt-* containers up, and `https://cybergod.ai/api/me` returns 401.
+| phase | what it does |
+|---|---|
+| 1/5 TESTS | compile every Python file, run the engine regressions, the node gates, and `pytest tests/`. Nothing ships if any of it fails. |
+| 2/5 COMMIT + PUSH | GitHub is the single source of truth, so the commit happens before anything is deployed. |
+| 3/5 DEPLOY WEB | cybergod.ai (`colt-web`). |
+| 4/5 DEPLOY BOTS | the assessment bot and Cassandra (`colt-stack`). |
+| 5/5 VERIFY | container hashes, `GET /api/me` returns 401, security headers present, bot gate behaving. |
 
-Flags narrow it, never split it:
+Between phase 2 and phase 3 sits the **staging gate**, described below. After phase 5 a tail of
+infrastructure verbs runs: the shared proxy is reassembled and validated, databases are backed up
+off-box, logs are archived, the kernel posture is checked, a safe point is tagged, and four models
+write the release notes, which are sent by Gmail API and Telegram.
+
+### Flags narrow it. They never split it.
 
 | flag | effect |
 |---|---|
-| `--test` | tests only, deploy nothing |
-| `--web` / `--bots` | deploy only that half |
-| `--direct` | straight to the droplet, bypassing GitHub CI |
+| `--test` | run the gate battery only, change nothing |
+| `--web` / `--bots` | deploy one half |
+| `--pr` | reach main through a gated pull request instead of pushing to it |
+| `--direct` | deploy straight to the droplet over SSH (this is the default) |
+| `--ci` | deploy through GitHub Actions instead of over SSH (slower) |
+| `--no-stage` | skip the staging validation and go straight to production |
+| `--fast-stage` | validate on staging but skip the reboot test (faster, and weaker) |
 | `--dry-run` | print the plan, touch nothing |
-| `-m "message"` | commit message |
+| `--no-preview` | ship a frontend change without previewing it locally first |
 | `--no-test` | skip the test gate (you had better have a reason) |
+| `--rollback [REF]` | restore a known-good state and redeploy it, default `last-known-good` |
+| `--fix-ci-key` | prove the deploy key works, then write it to the GitHub secret |
+| `-m "message"` | commit message, also quoted in the release notes |
 
-Every other script in this repo (`deploy.py`, `ship_web.py`, `deploy_web_direct.py`,
-`set_secret.py`, `cost_report.py`, `probe_models.py`, `compare_models.py`, `check_enrich.py`)
-is a building block. They remain runnable alone for debugging, but normal operation is
-`python ship.py` and nothing else. **If a change adds a step, wire it into ship.py in the same
-commit — a script the operator has to remember separately is a bug.**
-
-
-**Type a company name in Telegram, get four boardroom-ready cyber-risk decks in ~2 minutes.**
-So 30+ sales people can walk into any meeting prepared — even while the engineer who built it is on a beach.
-
-Everything is one repo (single source of truth), deployed to a DigitalOcean droplet, multi-cloud,
-observable, self-patching, and shipped with one command.
-
-> Interactive architecture: open **`colt_platform_architecture.html`** (hosted at `cybergod.ai`).
-> Motion version: `cyber_presales_architecture.gif` / `.mp4`.
+Every other script here is a building block that `ship.py` calls as a subprocess. They stay
+individually runnable for debugging, and in normal operation you should never need one. If a
+change adds a step, wire it into `ship.py` in the same commit. A script the operator has to
+remember separately is a bug.
 
 ---
 
-## In one breath
-1. **You ask** — `/assess Volkswagen AG` in Telegram. Nothing else.
-2. **It looks** — finds everything that company exposes on the internet (public records only).
-3. **It thinks** — scores the danger, prices it in €, names who'd attack them.
-4. **You get decks** — four PowerPoints land back in your chat.
+## How code reaches production
 
-The killer feature: **one input.** You never type an IP, ASN or network — the engine resolves the
-target's whole footprint itself (see *KISS rule* in `CLAUDE.md`).
+There are two paths, and since October 2026 the second one is the automatic one.
 
-## The two bots
-| Bot | What it is | Try |
-|-----|-----------|-----|
-| **colttechbot** (`assess-bot/`) | the assessor — recon → score → 4 decks | `/assess <company or domain>` |
-| **cassandra** (`cassandra-bot/`) | the AE assistant — live web research, MEDDPICC, outreach, help desk | `/research <topic>` |
+### Path A: the laptop
 
-## What happens inside `/assess`
-1. **Footprint** — company name → ASNs+prefixes (bgpview.io + RIPEstat), brand domains & subdomains
-   (crt.sh CT logs), cert-subject-O and favicon — all auto-resolved (`shodan_recon.autodiscover()`).
-2. **Exposure** — Shodan sweep with **30+ super-filters** incl. the live **internal-CA issuer pivot**
-   and the paid facets (`has_vuln`, `vuln:CVE`, `tag:ics`, `ssl.jarm`).
-3. **Score** — deterministic classifier (CRITICAL→LOW), CISA-KEV aware, edge-appliance mgmt = CRITICAL,
-   CDN/honeypot false-positives dropped.
-4. **Decks** — DeepSeek (DO serverless) writes the prose; `pptxgenjs` templates lock the structure & maths:
-   **Shodan Findings · C-BIQ (€ business impact) · GEOPOL (adversaries) · DELTAS (value bought back)**.
+`python ship.py` tests, commits, pushes, validates on the staging twin, deploys, verifies.
+This is the direct path. It is what you run day to day, and it is the escape hatch for the day
+the pipeline itself is what is broken.
 
-## Multi-cloud (each does its one best thing)
-- **GitHub** — source of truth + CI/CD.
-- **DigitalOcean** — droplet runtime (isolated `colt-stack`), serverless AI (**DeepSeek**), backups (**Spaces**).
-- **Google Cloud** — Gmail API delivers the 2FA one-time codes over HTTPS (droplet blocks SMTP).
-- **Tailscale** — private tunnel so CI can reach the firewalled droplet without opening a port.
+### Path B: GitHub Actions
 
-## Security (secure by design)
-- **Zero-trust auth** — `name.familyname@colt.net` + shared password **+ a one-time code emailed to that
-  mailbox** (`colt_auth.py`). Knowing the password isn't enough — you must own the inbox.
-- **Secrets never in git** — only on the droplet (`chmod 600 .env`) or as encrypted GitHub secrets;
-  `gitleaks` blocks accidental commits.
-- **Scanned before ship** — Trivy (deps+image), CodeQL SAST, ruff, pytest.
-- **Non-destructive** — isolated `colt-stack` (`-p colt-stack`, `colt-*` names); Amnezia VPN / VideoDead /
-  joplin and the firewall are never touched.
-
-## Observability
-Structured events → `events.log` → **promtail → Loki → your existing Grafana** (`godeyes.ai/observe`).
-Dashboards: per-bot activity, auth audit trail, **colt-web / cybergod.ai** (logins, assessments,
-assistant, live stream), and a **patchwatch deep-dive**. Import with
-`python import_dashboard.py --all` (or the `import-dashboards.yml` workflow).
-
-## Self-patching (`patchwatch/`)
-Backup-first, LLM-assisted auto-patcher on a 3-day systemd timer: snapshot to Spaces (+ optional DO
-droplet snapshot) → `apt` upgrade → DeepSeek risk digest (flags kernel/CVE items like GhostLock) →
-Telegram + Grafana → reboot in a 4am window if a kernel fix needs it. Zero-touch setup:
-`python patchwatch/provision_patchwatch.py` or the `provision-patchwatch.yml` workflow.
-
-## Deploy / ship
-```bash
-python ship.py            # BOTS: repair + commit + push + rebuild + redeploy + verify
-python ship_web.py        # WEB (cybergod.ai): release Pages + push + run CI + watch + verify
-python deploy.py --reuse --yes   # just rebuild/redeploy the stack locally
-git push origin main      # CI builds + Trivy-scans + pushes image to GHCR + deploys (via Tailscale)
-```
-
-## Web vector — cybergod.ai (browser app, no Telegram)
-A second front door: a React cabinet (**landing + zero-trust login + New-Assessment + Assistant +
-History**) served by `colt-web` (FastAPI + the same engine + `colt_auth`). Any Colt AE uses it at
-**https://cybergod.ai/login** — same auth as the bots (`@colt.net` + password + emailed 6-digit code).
-
-**How it ships (build in GitHub, run on the droplet):** push to `webapp/**` (or run `python ship_web.py`)
-→ `.github/workflows/web-deploy.yml` builds `webapp/Dockerfile`, pushes `ghcr.io/feranicus/colt-web`,
-Tailscale-SSHes the droplet, `docker compose -f docker-compose.web.yml pull && up -d`, appends the
-committed `deploy/caddy/cybergod.caddy` vhost into the shared `videodead-caddy` (idempotent, auto-TLS),
-reloads, and verifies `401`. Nothing is built on the droplet; nothing is hand-edited there.
-**Full runbook + one-time setup: [`webapp/DEPLOY.md`](webapp/DEPLOY.md).**
-
-- One host, one domain: DNS `A @/www → 64.225.108.200`; `videodead-caddy` owns `:443` and reverse-proxies
-  `cybergod.ai → colt-web:8000` over the shared `videodead_appnet`. VideoDead/Amnezia/joplin untouched.
-- **Do NOT run `publish_landing.py` for cybergod** — it re-adds the GitHub-Pages CNAME and re-claims the
-  domain (that was the 404/502 flip-flop). The landing is served by the droplet. `webapp/unpublish_pages.py`
-  releases the domain from Pages.
-
-## Public demo — "Trojan Empire" (`/demo`)
-
-A no-login showcase at **https://cybergod.ai/demo**. Anyone can open it and download the real
-deliverables — built by the real deck builders — for a **fictional** company on **fabricated** data.
-
-* **Pre-baked, not a live run.** `hermes-skills/shodan-assessment/scripts/demo_build.py` renders the
-  four artifacts once into `/data/demo` (persistent volume). No Shodan credits, no inference tokens,
-  no per-visit cost, nothing for a crawler to drain.
-* **Safe by construction.** Every fabricated IP is inside an RFC 5737 documentation range
-  (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24), which can never route to a real host.
-  `python ship.py` fails the deploy if a non-documentation address ever appears in the fixture.
-* **Labelled everywhere.** The page, the slides and the animated HTML all state that the data is
-  fabricated — the artifacts get forwarded, so the notice travels inside them.
-* **Hero.** A 10-second Cassandra film (`webapp/frontend/public/media/cassandra.mp4`, committed,
-  faststart) plays muted-and-looping above the creed, with a sound toggle. Replace it by dropping in
-  a new file of the same name; `python ship.py` verifies it exists and is faststart.
-* **Access.** Live assessments against a real estate stay restricted to Colt employees and Colt
-  Partners: contact **jevgenijs.vainsteins@colt.net**.
-
-Rebuild the artifacts by hand (rarely needed — the app builds them on boot):
-
-    python hermes-skills/shodan-assessment/scripts/demo_build.py --out /data/demo
-
-Note: `BOT_404=1` serves crawlers a 404 on page routes, so `/demo` is not indexed by search engines.
-Set `BOT_404_ALLOW="googlebot,bingbot"` if you want it discoverable.
-
-## Repo map
-| Path | Purpose |
-|------|---------|
-| `assess-bot/` · `cassandra-bot/` | the two Telegram bots + Dockerfiles |
-| `colt_auth.py` | shared zero-trust auth (email + password + Gmail-API OTP 2FA) |
-| `hermes-skills/shodan-assessment/scripts/` | the engine: `shodan_recon.py` (recon+filters+autodiscovery), `run_assessment.py` (orchestrator), `build_{findings,cbiq,geopol,deltas}_deck.js`, `enrich.py` |
-| `patchwatch/` | self-patcher (script, systemd units, zero-touch provisioner) |
-| `obs/` | promtail + Grafana dashboards (reuse mode) |
-| `tofu/` | OpenTofu IaC (DigitalOcean) |
-| `.github/workflows/` | `ci.yml`, `security.yml`, `codeql.yml`, `deploy.yml`, `web-deploy.yml`, `provision-patchwatch.yml`, `import-dashboards.yml`, `dependabot.yml` |
-| `deploy.py` · `ship.py` · `provision_patchwatch.py` · `setup_github_cicd.py` · `import_dashboard.py` | ops scripts |
-| `webapp/` | the web app: React cabinet (`frontend/`) + FastAPI (`backend/`), `Dockerfile`, `DEPLOY.md`, `provision_web.py`, `unpublish_pages.py` |
-| `deploy/caddy/cybergod.caddy` | committed reverse-proxy vhost for cybergod.ai (source of truth) |
-| `ship_web.py` | one command: ship cybergod.ai end-to-end through CI |
-| `docker-compose.reuse.yml` · `docker-compose.ghcr.yml` · `docker-compose.web.yml` | isolated `colt-stack` (bots build-local vs registry-image; web = CI image) |
-| `colt_platform_architecture.html` | this architecture, explained A→Z |
-
-## GitHub secrets (set once)
-`DROPLET_SSH_KEY`, `DROPLET_HOST`, `DROPLET_USER`, `DO_API_TOKEN`, `SPACES_KEY`, `SPACES_SECRET`,
-`GRAFANA_TOKEN`, `TS_AUTHKEY`, `PATCH_TG_CHAT` (optional). Repo variables: `SPACES_REGION`, `SPACES_BUCKET`,
-`GRAFANA_URL`, `TAILNET_HOST`. Runtime app secrets (bot tokens, Shodan/DO keys, `COLT_BOT_PASSWORD`,
-`GMAIL_SA_B64`) live **only** in the droplet's `.env` — never in git.
-
-## Cost tracking (per assessment / per day / all-time)
-Every completed assessment is appended to a persistent SQLite ledger on the droplet's shared
-`colt_events` volume (`/var/log/colt/cost_ledger.sqlite`) by
-`hermes-skills/shodan-assessment/scripts/cost_ledger.py`. Unlike Loki (which ages out with
-retention), the ledger is the books-of-record for spend.
+A push to `main` starts five workflows in parallel. One of them, `pipeline.yml`, is the deploy:
 
 ```
-python cost_report.py                 # lifetime + per-day + per-company (read-only over SSH)
-python cost_report.py --json          # machine-readable
-python cost_report.py --no-backfill   # skip seeding history from events.log
-python cost_report.py --local ledger.sqlite
+gate  ->  build + sign  ->  scan  ->  staging + reboot  ->  production
 ```
 
-Grafana ("Colt Bots Observability"):
-- **Cost** row — cost today (24h), cost over the selected range, avg/assessment, cost per day (bars),
-  cost per assessment by company (table). Bounded by Loki retention.
-- **Lifetime (persistent ledger)** row — true all-time cost/assessments/avg/tokens, from the ledger's
-  cumulative `cost_snapshot` event. Not bounded by retention.
-
-Cost covers AI inference (DeepSeek/QWEN, ~$0.0065 per assessment). The Shodan plan and the droplet
-are flat subscriptions and are intentionally out of scope.
-
-## Document language (English / Hoch-Deutsch)
-The same four decks (Findings · C-BIQ · GEOPOL · DELTAS) are produced in either language. The
-customer is asked; nothing else changes.
-
-```
-python hermes-skills/shodan-assessment/scripts/run_assessment.py --seed keb.de --lang de
-```
-
-- **Web** (cybergod.ai → New Assessment): a "Document language" dropdown next to the company field.
-- **Telegram**: `/assess keb.de` → tap **English** or **Deutsch**. Skip the prompt with
-  `/assess keb.de --lang de`.
-
-German decks are written with a `_DE` suffix (`ACME_C-BIQ_DE.pptx`) so both languages can coexist in
-one output folder. English output is unchanged, byte-for-byte.
-
-How it works (see `scripts/i18n/`): `deck_i18n.js` translates the deck chrome at the pptxgenjs
-boundary from the committed dictionary `de.json`; `enrich.py` asks the model to write the prose in
-German; `i18n.py` translates the engine's own deterministic strings before rendering. All three read
-the same `de.json`, so a term can never be translated two different ways. Missing translations fall
-back to English rather than failing.
-
-Audit which strings are not yet translated:
-```
-DECK_LANG=de DECK_I18N_AUDIT=1 DECK_I18N_AUDIT_OUT=/tmp/audit.json \
-  node hermes-skills/shodan-assessment/scripts/build_cbiq_deck.js cbiq.json /tmp/out.pptx
-```
-
-## Choosing the enrichment model (and surviving a 429)
-The LLM writes only the deck PROSE (JSON); the slides themselves are deterministic JS. So pick the
-model on: reachable on your DO tier, contract-valid JSON, German quality, latency, price.
-
-```
-python probe_models.py            # what your key can reach + which pass the real contract
-python probe_models.py --lang de  # also check the German output
-```
-
-It prints an `ENRICH_MODELS="a,b,c"` line — put it in `assess-bot/.env` on the droplet. enrich.py
-retries each model with backoff (honouring `Retry-After`), then fails over to the next, inside a
-230s budget.
-
-A `429` from DO serverless is an **account** RPM/TPM quota (Tier 1/2 = 120 RPM) or an empty prepaid
-balance — not a model fault. Tier 1/2 cannot use Anthropic/OpenAI models except `gpt-oss-*`.
-Check https://cloud.digitalocean.com/limits.
-
-## Which model should write the decks? (bake-off, not benchmarks)
-The LLM writes only the deck PROSE; the slides are deterministic JS. So the question is never "which
-model scores higher on MMLU" — it is "whose German loss-narrative would a CISO believe, and does it
-fill the contract fields". Two commands answer it with evidence:
-
-```
-python probe_models.py --list        # every model this DO key can see (1 API call)
-python probe_models.py --lang de     # which ones pass the REAL contract, how fast -> ENRICH_MODELS line
-python compare_models.py --lang de   # SAME findings.json through each model, prose side by side
-```
-
-`compare_models.py` imports the real `enrich.py` prompt (DELTAS bible + LANG_DE + strict JSON), so
-what you read is exactly what would land on slide 2. It reports latency, cost, whether the output is
-actually German, how many findings were rewritten, and — the one that matters — the `realComparable`
-dated public breach each model cites. A model returning 0 precedents leaves your C-BIQ slides
-templated; a model inventing one is worse.
-
-Measured on this account (2026-07): `deepseek-3.2` head (37B active, current knowledge),
-`llama-4-maverick` backup (17B active, ~4x faster, German is an officially supported language, but
-knowledge cutoff Aug-2024 -> cannot cite recent breaches), `openai-gpt-oss-120b` third (Apache-2.0,
-5.1B active, reasoning model -> shakiest on strict JSON). anthropic-*/openai-gpt-5* are http-403 on a
-DO Tier 1/2 key regardless of being visible in the catalog.
-
-## Mobile (Android + iPhone)
-One responsive PWA — no app store, no second codebase.
-
-**Install:** Android/Chrome shows an install prompt (or menu -> "Install app"). iPhone/Safari:
-Share -> "Add to Home Screen". Either way it launches standalone, no browser chrome, with the Colt
-chevron icon.
-
-**Assessments survive the phone:** the engine runs server-side and the SSE stream is only a viewer,
-so locking the screen, switching apps or refreshing no longer cancels a run — the client reconnects
-(`Last-Event-ID`) and catches up. `GET /api/assess/{id}/status` polls the same truth.
-
-## Secrets on the droplet (never in git)
-Runtime secrets live ONLY in the droplet's `assess-bot/.env` (chmod 600), which colt-web and the bots
-load via `env_file:`. Never in the repo, never in docker-compose (those are committed; gitleaks blocks
-secrets in CI).
-
-```
-python set_secret.py ABUSEIPDB_KEY     # prompts, hidden input, restarts colt-web, verifies
-python set_secret.py --list            # which secret NAMES exist (names only, never values)
-```
-The value is typed at a hidden prompt and piped over stdin — never an argv (visible in `ps` and your
-shell history), never echoed, never written locally.
-
-Get a free AbuseIPDB key: https://www.abuseipdb.com/account/api — without it, hostile IPs are still
-detected and reported to you in the daily digest; nothing is submitted to third parties.
-
-## Adding a language — ONE command
-
-```
-python add_language.py pt --name "Português"
-```
-
-Translates and writes ALL FIVE surfaces using the same DigitalOcean model chain the product already
-pays for, then runs the existing gates:
-
-| # | Surface | File it writes |
+| job | what it does | permissions |
 |---|---|---|
-| 1 | Deck chrome (620 labels + 66 sentence templates + units) | `hermes-skills/shodan-assessment/scripts/i18n/<code>.json` |
-| 2 | Deck PROSE instruction (what the model writes per customer) | `enrich.py::LANG_BLOCKS` |
-| 3 | Web UI + marketing site (201 keyed + 203 by-English) | `webapp/frontend/src/locales/<code>.js` (+ registered in `i18n.jsx` and the `legal.jsx` toggle) |
-| 4 | Animated GEOPOL report | `scripts/geopol_html/i18n/<code>.json` |
-| 5 | Compliance deck labels | `build_compliance_deck.js::LABELS` |
+| `gate` | waits for `quality-and-secrets` to pass on this exact commit | no secrets |
+| `build` | builds three images once, pushes to GHCR, attests provenance via Sigstore, emits an SBOM | `packages: write` |
+| `scan` | Trivy across all three images. HIGH is reported, CRITICAL fails the job and nothing is promoted | `packages: read` |
+| `staging` | deploys the twin, runs 42 checks, **reboots it**, runs all 42 again, four models write a verdict | `packages: read` |
+| `production` | waits for a human to approve the environment, takes the deploy lock, pulls the scanned image, releases the lock | `packages: read` |
 
-Useful flags:
+CI does not re-implement the orchestrator. It calls this repository's own scripts as subprocesses
+(`ship.py --test`, `stagegate.py`, `deploy_web_direct.py`, `caddyguard.py`), so there is exactly one
+definition of what a gate means and one definition of what a deploy does. A YAML copy of those
+gates would drift within a week, and the drift would stay invisible until it mattered.
 
-- `--dry-run` — translate and report, write nothing.
-- `--only decks web` — limit to certain surfaces.
-- `--model <id>` — override the chain head.
-- `--verify-only` — just re-run the gates for a code.
+### Why a pull request, and when
 
-**It is RESUMABLE.** Every batch is cached in `.add_language_cache/<code>/`, so a timeout or a
-rate-limit costs minutes, not the language. Rerun the same command to fill only what is missing.
+GitHub requires a status check to pass *before* a collaborator changes a protected branch, and a
+brand-new commit has no check runs yet. That is why a direct push logs `Bypassed rule violations`.
+`python ship.py --pr` solves it properly: branch, push, open a PR, wait for `quality-and-secrets`
+on the PR head, squash-merge. The merge is itself a push to main, so the merge is the deploy and
+PR mode stops there rather than deploying a second time. Nothing merges on an unknown state, and a
+`skipped` check is not a pass.
 
-**Guardrails built in**, because a translation model will otherwise quietly break things:
+---
 
-- A list of ~60 protected terms (NIS2, CRA, MITRE ATT&CK, CVE ids, SASE/ZTNA, protocol names, …) is
-  stated in the prompt AND re-checked on the way back — a batch that lost one is rejected and retried.
-- Sentence templates keep their `$1`/`$2` captures; a mismatch keeps the English rather than shipping
-  a broken sentence. The regex itself matches ENGLISH and is never touched.
-- `tab.*` labels are hard-capped at 8 characters (six share a 360px phone row); an over-long one falls
-  back to English rather than wrapping the tab bar.
+## The staging gate
 
-**What it does NOT do, deliberately:** the legal pages (`legal-locales/`). Privacy and Impressum copy
-is a compliance claim, not marketing text — German is the normative version and a machine translation
-of it should be read by a human before it ships. Everything else degrades safely to English.
+A real second droplet, same size, same image, same region as production, deliberately. It holds
+synthetic data only, built from committed fixtures using RFC 5737 addresses, so a compromise there
+leaks nothing about anyone.
 
-After it finishes: `python ship.py`.
+The gate is not "did the deploy succeed". It is:
+
+```
+deploy to the twin  ->  health  ->  REBOOT IT  ->  health again  ->  AI digest  ->  GO / NO-GO
+```
+
+The reboot is the point. On 2026-08-14 a deploy truncated the shared Caddy config at 16:15. Caddy
+reads its configuration only at start, so nothing failed for twelve hours, until a 04:22 kernel
+reboot made it re-read the file and six domains went down together. There was no environment in
+which that change could have been rebooted first. Now there is.
+
+A NO-GO stops the ship and production is never touched.
+
+---
+
+## One artifact
+
+`colt-web` used to be compiled on the production droplet, which meant the only internet-facing
+image in the stack was the one image CI never saw. Scanning it after the fact was a reasonable
+mitigation, and it stays, but it is a different thing from never putting an unscanned artifact in
+front of the internet.
+
+CI now builds the image once, Trivy scans that image, GHCR holds it, and staging and production
+both pull those exact bytes by immutable tag. Both halves of the image name travel together
+(`WEB_IMAGE` and `WEB_TAG`), because passing only the tag once left the repository half to a
+default that pointed at a different package. GHCR answers an unauthorised request for a private
+package with 404 rather than 401, so a wrong name and a missing login produce an identical error
+with opposite repairs. `ghcr.py` is the one home for the reference, and its `report()` asks the
+registry both anonymously and with a token so the difference between those answers becomes the
+diagnosis.
+
+---
+
+## Secrets
+
+Runtime secrets live only as encrypted GitHub Actions secrets and in the droplet's own env files
+(`chmod 600`). They never touch git. `.gitignore` blocks `*.env`, `*_sa.json`, `data/` and
+`*.sqlite`, and gitleaks runs in CI on every push and pull request.
+
+```
+python set_secret.py NAME        # value on STDIN, never on the command line
+```
+
+A value in `argv` is visible in `ps` to every user on the box, which is why the remote script
+travels in argv and the value travels on stdin. The two are mutually exclusive.
+
+Three files are allowlisted in `.gitleaks.toml` because their job is to contain secret-shaped text:
+the key detector, its synthetic fixtures, and the list of tokens the LLM guard must redact. An
+allowlist is a new hole, so it ships with its own guard: `tests/test_secret_scan.py` hands every PEM
+block in each allowlisted file to `ssh-keygen -y` and fails if one actually parses, and it sweeps
+every other tracked file with gitleaks' own two regexes so a leak is caught on the laptop rather
+than by a red pipeline.
+
+This repository is public. Treat every log, every fixture and every committed string accordingly.
+
+---
+
+## Tests
+
+```
+python ship.py --test
+```
+
+59 test modules, 1,138 test functions, which parametrisation expands to 1,179 cases at run time
+(counted 2026-10-16). Six modules need a POSIX shell and skip with a stated reason on Windows; CI
+runs them for real. No module requires a docker binary, and none reaches the internet.
+
+The gate battery also compiles every Python file in process from bytes, runs the engine's own
+regression suites, eight node tools covering layout, contrast, i18n and the shipped bundle, and
+`authz_audit.py --local`, which proves every non-public route refuses an anonymous caller.
+
+`do_tests()` makes zero SSH calls. That is asserted by an AST test rather than promised in a
+comment, which is what makes the gate safe to run on a fork's pull request with no secrets at all.
+
+---
+
+## Diagnostics
+
+All read-only, one SSH session each, run from the operator's PC.
+
+| command | question it answers |
+|---|---|
+| `python recover.py` | outage triage: ports, crash loops, Caddy validation, probes from outside |
+| `python fleet.py` | per project: is the code present, wired in, beating, taking traffic, under attack |
+| `python cost_report.py` | AI spend. `--trace` who can spend, `--whodunit` who did, `--correlate` |
+| `python agent_forensics.py` | is this actor a human, a script, or an agent |
+| `python authz_audit.py` | does every route refuse an anonymous caller |
+| `python incident_report.py` | assemble a forensics package for an exposure |
+| `python secaudit.py` | kernel, reboot and patch posture, plus staging-versus-production drift |
+| `python decommission.py` | retire a vhost from the shared proxy (dry run by default) |
+
+---
+
+## What runs on a schedule
+
+Two schedulers, chosen by what each thing needs to survive.
+
+GitHub cron, which keeps running even when the droplet does not:
+
+```
+*/10 * * * *   uptime.yml      probe every public endpoint from outside, alert Telegram
+0 6 * * 1      security.yml    Trivy filesystem and IaC, hadolint, pip-audit
+0 6 * * 2      codeql.yml      GitHub code scanning
+```
+
+systemd on the droplet, for the things that have to be there:
+
+```
+every 10 min   caddyguard      validate the shared proxy config, compare three hops, self-heal
+daily 04:40    perseus --cycle     propose detections
+Sun 05:20      perseus --weekly    re-vet live rules, retire what a month never matched
+every 10 min   perseus --watch     four-vendor consensus on one live incident
+nightly        patchwatch, dbbackup, logship
+```
+
+The uptime probe runs off-box on purpose. A watchdog that lives on the thing it watches reports
+nothing at all when that thing is down.
+
+---
+
+## Repository map
+
+```
+hermes-skills/shodan-assessment/scripts/   the engine: discovery, ownership gates, enrichment,
+                                           false-positive audit, deck and HTML builders, i18n
+webapp/backend/app/                        FastAPI: auth, telemetry, the shield, spend metering,
+                                           alerting, fleet status, white label
+webapp/frontend/src/                       React in six languages, with its own gates in tools/
+perseus/                                   the detection hub: ruleset, vetting, abuse reports
+deploy/                                    committed Caddy fragments and the sidecar agents
+tests/                                     the suite
+.github/workflows/                         nine workflows (see below)
+docs/decisions/                            the narrative history behind every rule in CLAUDE.md
+marketing/                                 deck builders; the .pptx files themselves are ignored
+```
+
+Root scripts worth knowing: `ship.py` (the orchestrator), `stagegate.py` (the twin and its gate),
+`deploy_web_direct.py`, `ghcr.py`, `teamlock.py`, `shipflow.py`, `ci_key.py`, `caddyguard.py`,
+`perseus.py`, `set_secret.py`.
+
+### The nine workflows
+
+| workflow | started by | what it does |
+|---|---|---|
+| `pipeline.yml` | push to main, dispatch | the deploy: gate, build, scan, staging, production |
+| `ci.yml` | push, PR, dispatch | `quality-and-secrets`: gitleaks plus `ship.py --test` in a pinned image |
+| `codeql.yml` | push, PR, Tuesdays 06:00 | GitHub code scanning |
+| `security.yml` | push, PR, Mondays 06:00 | Trivy, hadolint, pip-audit, report only |
+| `uptime.yml` | every 10 minutes | probes every public endpoint from outside |
+| `import-dashboards.yml` | push to main, dispatch | re-imports the Grafana dashboards |
+| `deploy.yml` | dispatch only | the older stack deploy, kept as a manual escape hatch |
+| `web-deploy.yml` | dispatch only | the older web deploy, same reason |
+| `provision-patchwatch.yml` | dispatch only | installs the unattended-patch timer |
+
+`deploy.yml` and `web-deploy.yml` became dispatch-only deliberately. One push used to start two of
+them against one droplet, six minutes apart.
+
+---
+
+## Two developers
+
+`teamlock.py` is the one deploy lock, and it is a `mkdir` on the droplet itself, because the
+droplet is the only thing every deploy path touches. It covers the staging gate and both
+production deploys, fails open if the droplet is unreachable, and clears by staleness after 45
+minutes rather than by trusting a `finally` block. CI takes the same lock, since a GitHub
+concurrency group cannot see a laptop.
+
+`ship.py` also refuses to deploy off `main`, refuses to commit on a tree behind origin, prints
+every path `git add -A` is about to take grouped by area, and refuses to roll back to a
+`last-known-good` pointer that belongs to the other developer. Each refusal names the environment
+variable that overrides it, because a guard an informed operator cannot override is its own bug.
+
+---
+
+## Operating rules
+
+These are not style preferences. Each one was paid for by an incident, and the full story for each
+is in `docs/decisions/`.
+
+- Full automation. If a task needs doing twice, it gets a script, not a sequence of commands to
+  paste.
+- One orchestrator, one command. Any new capability is wired into `ship.py` in the same change.
+- Secrets never touch git.
+- Nothing on the droplet disturbs the neighbouring stacks, and nothing touches the firewall.
+- The models write prose. They never decide a side effect: whether to deploy, reboot, block an
+  address or promote a release is always deterministic code.
+- Absence of evidence is never a finding. A failed lookup reports `UNKNOWN / data-unavailable` and
+  claims no gap.
+- A check that cannot fail is not a check, and a check that cannot see its subject must not answer.
+
+---
+
+## Honest limits
+
+Shodan cannot see a virtual host behind an SNI-only front end, so "shared hosting, not externally
+observable" is sometimes the correct and complete answer. No public API is authoritative across all
+five RIRs, which is why `clarify.py` always asks before claiming address space. DKIM is
+presence-only: a selector cannot be enumerated, so "not found" means not determinable. The five
+projects share one DigitalOcean model access key, so that vendor's own per-key usage cannot
+attribute the invoice, and scoped per-project keys remain a console job.
+
+---
+
+## Where the rest is written down
+
+`CLAUDE.md` carries the operating principles, the settled facts and the recurring defect classes,
+and it is size-capped by a test so that it stays readable. The evidence behind every rule in it,
+including what broke and what was measured, lives in `docs/decisions/`.
