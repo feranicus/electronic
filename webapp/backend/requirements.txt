@@ -19,7 +19,7 @@ fastapi==0.141.*
 # `RuntimeError: Unexpected message received` inside BaseHTTPMiddleware. The harness was wrong
 # either way and is fixed, but a floor meant nobody could say what had actually been tested.
 # 1.7.0 verified here against the full suite. Clears all three CVEs listed above (>= 1.3.1).
-starlette==1.7.0
+starlette==1.9.0
 uvicorn[standard]==0.30.*
 itsdangerous==2.*
 requests==2.*
