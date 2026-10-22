@@ -104,3 +104,55 @@ what any script here can reach:
   they fetched while the site was up.
 - **`jev.py deploy` would put the vhost back.** That project writes its own fragment. Retiring it
   here and deploying it there again are not the same decision.
+
+---
+
+## The script had never once run — 2026-10-22, later the same day
+
+The ship was green, the deploy verified, and then:
+
+```
+  DECOMMISSION — jev
+  droplet: 64.225.108.200
+  File "decommission.py", line 490, in main
+    d = sections(ssh_script(plan_script(sites or ["__none__"]), timeout=240))
+  File "recover.py", line 145, in sections
+    for line in (out or "").splitlines():
+AttributeError: 'tuple' object has no attribute 'splitlines'
+```
+
+`recover.ssh_script()` returns `(stdout, stderr, rc)`. All three call sites in decommission.py
+passed the tuple straight into `sections()`, so the script could never have completed — the plan
+is read-only, so nothing on the droplet was touched, but nothing was retired either.
+
+Defect class 36 names this helper explicitly: *"Seventeen times in this workstream I have called a
+helper that returns a different shape than I assumed (`run()` -> int, `ssh_script()` -> 3-tuple
+…)"*. It is eighteen. The trap is real and worth recording: **ship.py defines its own
+`ssh_script` that returns a string**, so the name alone does not tell you the shape — the module
+does. Two helpers, one name, two contracts (class 32).
+
+**The crash is the harmless half.** The return code was never read either. A refused ssh produces
+empty output, `sections()` produces `{}`, and the plan would have announced *"none of the target
+sites is served by a caddyguard fragment"* — a statement about the proxy, made by a probe that
+never reached it. That is the `sshout()` failure of 2026-10-14 repeated verbatim, in a script
+whose own docstring cites that incident.
+
+**Why the suite was green.** Every test covered a piece — the generated scripts under `bash -n`,
+the plan arithmetic, the splitter, the write — and not one executed `main()`. A script that cannot
+run is not a script (class 2), and behaviour without wiring is not a control (class 9).
+
+**The repair is the test, not the one-line unpack.** `run_remote()` is now the single place that
+knows the shape, checks the return code, and refuses out loud; `main()` runs end to end in the
+suite with the one boundary stubbed — ssh's actual 3-tuple — across the dry run, a refused ssh, an
+empty read, a clean apply, a part-way apply, and a failed undo. Nine mutations, all caught; two
+escaped on the first pass (apply and undo return codes) because the first version of the harness
+answered every call with the same tuple, so the apply path was never exercised with a plan that
+succeeded and a change that failed.
+
+A part-way apply now says so and names the stamp: `set -e` stops the remote script at the first
+failure, so a non-zero apply is a partial state, and letting `verify()` alone decide would pass
+whenever the surviving sites happen to be up.
+
+And the class is now guarded repo-wide, not just here: `tests/test_probe_fail_closed.py` derives
+every module that imports `recover.ssh_script` and fails if any call site uses the result without
+unpacking three values. Everything else in the repo already did.

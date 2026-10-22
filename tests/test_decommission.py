@@ -341,6 +341,136 @@ def test_the_survivors_are_derived_from_what_is_actually_served():
         assert floor in hosts, "the pinned floor must survive derivation"
 
 
+PLAN_OUT = ("#### FRAGMENTS\n"
+            "_base.caddy|godeyes.ai jev.best www.jev.best s4biz.io\n"
+            "#### CONTAINERS\njev-web|i|Up 3d|\n"
+            "#### UPSTREAMS\nreverse_proxy jev-web:3000\n"
+            "#### MATCHES\njev.best|_base.caddy\nwww.jev.best|_base.caddy\n"
+            "#### FRAGTEXT\n_base.caddy|" + _b64(BASE_FRAG) + "\n"
+            "#### DISK\n/dev/vda1  77G  19% /\n#### BACKUPS\n")
+
+
+def _run_main(monkeypatch, capsys, argv, ssh_result):
+    """main() end to end with the ONE boundary stubbed: what ssh actually returns.
+
+    `ssh_result` is one (stdout, stderr, rc) tuple, or a list of them answered in order, so the
+    apply path can be given a healthy plan followed by a failing change."""
+    calls = []
+    queue = list(ssh_result) if isinstance(ssh_result, list) else None
+
+    def fake(script, timeout=240):
+        calls.append(script)
+        if queue is None:
+            return ssh_result
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    monkeypatch.setattr(D, "ssh_script", fake)
+    monkeypatch.setattr(D, "probe", lambda url, **kw: (200, "ok"))
+    monkeypatch.setattr(sys, "argv", ["decommission.py"] + argv)
+    rc = D.main()
+    return rc, capsys.readouterr().out, calls
+
+
+def test_the_dry_run_actually_runs(monkeypatch, capsys):
+    """THE CRASH THIS PINS, 2026-10-22, the first end-to-end run of this script:
+
+        d = sections(ssh_script(plan_script(sites), timeout=240))
+        AttributeError: 'tuple' object has no attribute 'splitlines'
+
+    `ssh_script()` returns `(stdout, stderr, rc)` and all three call sites passed the tuple
+    straight into `sections()`. Every test above covered a PIECE - the generated scripts, the
+    plan arithmetic, the splitter - and not one of them executed main(), so a script that could
+    never run at all had a green suite (classes 2 and 9). The fix is this test, not the one-line
+    unpack: stub the boundary, run the whole path."""
+    rc, out, calls = _run_main(monkeypatch, capsys, ["--sites", "jev"], (PLAN_OUT, "", 0))
+    assert rc == 0, out
+    assert "DECOMMISSION PLAN" in out and "WILL EDIT FRAGMENTS" in out
+    assert "jev-web" in out, "the plan never reached the container discovery"
+    assert len(calls) == 1, "a dry run must open exactly one ssh session and change nothing"
+
+
+def test_a_failed_ssh_is_never_rendered_as_a_finding_about_the_proxy(monkeypatch, capsys):
+    """Class 1, and the same shape as `sshout()` on 2026-10-14. The return code was not read, so
+    a dead connection produced empty output, `sections()` produced {}, and the plan would have
+    announced 'none of the target sites is served by a caddyguard fragment' - a statement about
+    the proxy, derived from never having reached it."""
+    rc, out, _ = _run_main(monkeypatch, capsys, ["--sites", "jev"],
+                           ("", "ssh: connect to host port 22: Connection refused", 255))
+    assert rc == 1
+    assert "255" in out and "NOTHING is concluded" in out
+    assert "none of the target sites" not in out, \
+        "an unreachable droplet was reported as a fact about what the proxy serves"
+
+
+def test_an_empty_read_is_refused_rather_than_called_an_empty_proxy(monkeypatch, capsys):
+    """rc 0 with no fragments at all is a probe that cannot see its subject, not a proxy with
+    nothing on it. This droplet serves fifteen hostnames."""
+    rc, out, _ = _run_main(monkeypatch, capsys, ["--sites", "jev"], ("#### DISK\nx\n", "", 0))
+    assert rc == 1 and "not about the proxy" in out
+
+
+def test_a_change_that_stopped_part_way_says_so_and_names_the_way_back(monkeypatch, capsys):
+    """`set -e` stops the remote script at the FIRST failure, so a non-zero apply is a partial
+    state, not a no-op. Reporting it as a clean run - or letting verify() alone decide, which
+    passes whenever the survivors happen to be up - would leave a half-moved fragment with nobody
+    told which stamp holds the original."""
+    rc, out, calls = _run_main(
+        monkeypatch, capsys, ["--sites", "jev", "--apply"],
+        [(PLAN_OUT, "", 0),
+         ("#### BACKUP\nsaved before.tgz\n", "assemble: refusing, 0 site blocks", 1)])
+    assert rc == 1, out
+    assert "stopped part-way" in out and "--undo" in out
+    assert len(calls) == 2, "expected one plan session and one apply session"
+
+
+def test_a_clean_apply_reports_success(monkeypatch, capsys):
+    """The failure test above must not pass merely because this path always fails."""
+    rc, out, _ = _run_main(
+        monkeypatch, capsys, ["--sites", "jev", "--apply"],
+        [(PLAN_OUT, "", 0), ("#### REMAINING\ncolt-web|Up\n#### NOTE\nkept\n", "", 0)])
+    assert rc == 0, out
+    assert "stopped part-way" not in out
+    assert "all survivors answering" in out
+
+
+def test_a_failed_undo_does_not_report_a_restore_that_did_not_happen(monkeypatch, capsys):
+    """`--undo` is the thing you reach for when a decommission went wrong, so it is the last
+    place that may report success it did not achieve."""
+    rc, out, _ = _run_main(monkeypatch, capsys, ["--undo", "20260901-120000"],
+                           ("#### RESTORE_FRAGMENTS\n", "no such decommission", 1))
+    assert rc == 1
+    assert "did not complete" in out and "20260901-120000" in out
+    assert "all survivors answering" not in out, \
+        "a failed restore ran the survivor probe and reported it as the outcome"
+
+
+def test_no_call_site_hands_ssh_output_straight_to_the_parser():
+    """ANCHOR ON THE CALL SITE (class 4). The repair is worthless if the next edit re-inlines it.
+    ssh_script is reached through run_remote(), which unpacks the tuple AND checks the rc."""
+    import ast
+    src = open(os.path.join(ROOT, "decommission.py"), encoding="utf-8").read()
+    bad = []
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = getattr(node.func, "id", None)
+        if fn == "sections" and node.args:
+            inner = getattr(getattr(node.args[0], "func", None), "id", None)
+            if inner == "ssh_script":
+                bad.append(node.lineno)
+        if fn == "ssh_script":
+            bad.append(node.lineno) if not _inside_run_remote(src, node.lineno) else None
+    assert not bad, "ssh_script's 3-tuple is being used raw at line(s) %s" % bad
+
+
+def _inside_run_remote(src, lineno):
+    import ast
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.FunctionDef) and node.name == "run_remote":
+            return node.lineno <= lineno <= (node.end_lineno or node.lineno)
+    return False
+
+
 def _ship_src():
     """ship.py with comments and docstrings stripped. A guard has matched its own explanatory
     comment five separate times in this repository (class 4)."""

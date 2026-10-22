@@ -165,3 +165,58 @@ def test_every_sshout_caller_is_covered_by_the_sentinel(dep):
     callers = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
                and isinstance(n.func, ast.Name) and n.func.id == "sshout"]
     assert len(callers) >= 5, "expected the known read-only probes, found %d" % len(callers)
+
+
+# ---------------------------------------------------------------------------------------------
+# THE SAME DOCTRINE, ONE LAYER UP: recover.ssh_script returns (stdout, stderr, rc), and a caller
+# that uses the result without unpacking it is either crashing or - worse - reading a tuple's
+# truthiness as "the droplet answered".
+#
+# 2026-10-22: decommission.py did `sections(ssh_script(...))` at all three call sites and died
+# with `'tuple' object has no attribute 'splitlines'` the first time it was ever run end to end.
+# The crash is the harmless half. The half that matters is that nothing read the RETURN CODE, so
+# a refused ssh would have produced empty output, an empty section map, and a plan announcing
+# "none of the target sites is served by a caddyguard fragment" - a statement about the proxy,
+# made by a probe that never reached it.
+#
+# Defect class 36 lists `ssh_script() -> 3-tuple` by name. This asserts it instead of repeating it.
+# ship.py defines its OWN ssh_script that returns a string, which is why reading the name is not
+# enough: the module decides the shape, so the check is scoped per module to the recover import.
+
+def _modules_importing_recover_ssh_script():
+    import ast
+    import subprocess
+    out = subprocess.run(["git", "ls-files", "-z", "*.py"], cwd=ROOT,
+                         capture_output=True, timeout=120)
+    assert out.returncode == 0, out.stderr.decode("utf-8", "replace")
+    found = []
+    for rel in [p for p in out.stdout.decode("utf-8", "replace").split("\0") if p]:
+        try:
+            src = open(os.path.join(ROOT, rel), encoding="utf-8").read()
+            tree = ast.parse(src)
+        except (OSError, SyntaxError):
+            continue
+        if any(isinstance(n, ast.ImportFrom) and (n.module or "").endswith("recover")
+               and any(a.name == "ssh_script" for a in n.names) for n in ast.walk(tree)):
+            found.append((rel, tree))
+    assert found, "no module imports recover.ssh_script - this guard would measure nothing"
+    return found
+
+
+def test_nobody_uses_recover_ssh_scripts_tuple_without_unpacking_it():
+    import ast
+    offenders = []
+    for rel, tree in _modules_importing_recover_ssh_script():
+        unpacked = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) \
+                    and getattr(node.value.func, "id", None) == "ssh_script" \
+                    and any(isinstance(t, ast.Tuple) and len(t.elts) == 3 for t in node.targets):
+                unpacked.add(node.value.lineno)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "ssh_script" \
+                    and node.lineno not in unpacked:
+                offenders.append("%s:%d" % (rel, node.lineno))
+    assert not offenders, (
+        "recover.ssh_script returns (stdout, stderr, rc); these call sites use it whole, so "
+        "either they crash or they never read the return code:\n  " + "\n  ".join(offenders))

@@ -255,6 +255,36 @@ def _match_map(sec):
     return out
 
 
+def run_remote(script, timeout, what):
+    """(stdout, ok) — ONE place that knows what ssh_script actually returns.
+
+    THE CRASH, 2026-10-22, the first time this script was ever run end to end:
+
+        d = sections(ssh_script(plan_script(sites), timeout=240))
+        AttributeError: 'tuple' object has no attribute 'splitlines'
+
+    `recover.ssh_script()` returns `(stdout, stderr, rc)`. It has returned a 3-tuple since the
+    ssh-identity work, and CLAUDE.md's defect class 36 names this exact helper in its list of
+    signatures I have assumed wrong. All three call sites here passed the tuple straight into
+    `sections()`, so decommission.py could never have run at all: a script that cannot run is not
+    a script (class 2), and nothing executed `main()` to find out — every test covered the pieces
+    and none covered the plumbing (class 9).
+
+    The SECOND defect in the same line, and the worse one: the return code was never read. A
+    failed ssh would have produced empty output, `sections()` would have returned `{}`, and the
+    plan would have reported "none of the target sites is served" — a dead connection rendered as
+    a finding about the proxy. That is the `sshout()` failure of 2026-10-14 repeated verbatim: a
+    probe that cannot see its subject must not answer (class 1)."""
+    out, err, rc = ssh_script(script, timeout=timeout)
+    if rc != 0:
+        print("\n  [X] %s: ssh returned %s. NOTHING is concluded from this - an unreachable"
+              "\n      droplet and an empty proxy produce the same silence." % (what, rc))
+        for line in (err or out or "(no output at all)").strip().splitlines()[:12]:
+            print("      %s" % line)
+        return out, False
+    return out, True
+
+
 def _frag_text(sec):
     """{fragment name: text} from the base64 the plan collected."""
     out = {}
@@ -472,9 +502,13 @@ def main():
 
     print("  droplet: %s" % HOST)
     if a.undo:
-        out = ssh_script(undo_script(a.undo), timeout=300)
+        out, ok = run_remote(undo_script(a.undo), 300, "undo %s" % a.undo)
         for name, body in sections(out).items():
             print("\n#### %s\n%s" % (name, body.rstrip()))
+        if not ok:
+            print("  the restore did not complete. The archive is still at"
+                  "\n      %s/decommissioned/%s - nothing in it was deleted." % (GUARD, a.undo))
+            return 1
         return verify()
 
     sites = expand_sites(a.sites.split(","))
@@ -487,7 +521,16 @@ def main():
         print("      python decommission.py --list         # what is served right now")
         return 2
 
-    d = sections(ssh_script(plan_script(sites or ["__none__"]), timeout=240))
+    raw, ok = run_remote(plan_script(sites or ["__none__"]), 240, "reading the proxy")
+    if not ok:
+        return 1
+    d = sections(raw)
+    if not d.get("FRAGMENTS") and not d.get("FRAGTEXT"):
+        print("\n  [X] the droplet answered, but reported no caddyguard fragments at all."
+              "\n      That is a finding about this probe, not about the proxy: %s/blocks is"
+              "\n      where the fragments live, and an empty read is not an empty proxy."
+              % GUARD)
+        return 1
     if a.list:
         for name in ("FRAGMENTS", "CONTAINERS", "BACKUPS", "DISK"):
             print("\n#### %s\n%s" % (name, (d.get(name) or "").rstrip()))
@@ -504,9 +547,18 @@ def main():
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     print("\n  APPLYING (stamp %s)" % stamp)
     edits = {frag: kept for frag, (kept, _, _) in extract.items()}
-    out = ssh_script(apply_script(whole, containers, stamp, edits), timeout=420)
+    out, ok = run_remote(apply_script(whole, containers, stamp, edits), 420,
+                         "applying decommission %s" % stamp)
     for name, body in sections(out).items():
         print("\n#### %s\n%s" % (name, body.rstrip()))
+    if not ok:
+        # `set -e` stops the remote script at the first failure, so this is a PARTIAL state, not
+        # a no-op: say so and name the way back rather than letting verify() decide.
+        print("\n  [X] the change stopped part-way. Everything it had already moved is in"
+              "\n      %s/decommissioned/%s  ->  python decommission.py --undo %s"
+              % (GUARD, stamp, stamp))
+        verify(survivors)
+        return 1
     return verify(survivors)
 
 
