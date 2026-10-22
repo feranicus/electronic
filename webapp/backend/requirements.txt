@@ -27,7 +27,7 @@ pydantic==2.*
 # Gmail API OTP delivery (used by colt_auth when GMAIL_SENDER/GMAIL_SA_B64 are set)
 google-auth==2.*
 # GeoIP country lookup for the visitor log (DB-IP Lite .mmdb — MaxMind DB format, no licence key)
-maxminddb==2.*
+maxminddb==3.*
 # White Label uploads: FastAPI needs this to parse multipart/form-data, and there is no way to
 # accept a file without it. This package has a history that matters here - CVE-2024-24762 (ReDoS on
 # a crafted Content-Type, fixed 0.0.7) and CVE-2024-53981 (CPU exhaustion from many small parts,
