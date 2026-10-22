@@ -68,14 +68,50 @@ JHW_FALLBACK = os.path.join(HERE, "deploy", "caddy", "jobhuntwow.caddy")
 
 
 def jhw_snippet():
-    return JHW_APP if os.path.exists(JHW_APP) else JHW_FALLBACK
+    """(path, authoritative) for jobhuntwow's block, or (None, False) when we cannot see it.
+
+    THE 2026-10-16 OUTAGE, FOUND 2026-10-22. www.jobhw.org answered ERR_SSL_PROTOCOL_ERROR for six
+    days because this function silently fell back.
+
+    JHW_APP is the authority and it declares three hosts:
+        www.jobhuntwow.com, jobhw.org, www.jobhw.org { reverse_proxy jhw-web:8000 }
+    JHW_FALLBACK, the copy in THIS repo, declares only the two jobhuntwow.com names. It is stale,
+    and `jobhuntwow-app/` is gitignored here (zero tracked files, measured).
+
+    So on the operator's laptop the authority exists and the right block is pushed. On a GitHub
+    runner it does not exist, the fallback was chosen WITHOUT SAYING SO, and the RESTORE step
+    below copies the chosen block over the droplet's fragment. The moment production deploys moved
+    into CI, the first green run rewrote jobhuntwow's fragment without jobhw.org, no site block
+    matched that SNI, and the TLS handshake failed.
+
+    Defect class 37 exactly: a feature guarded by `if <derived thing>` fails silently by
+    construction. It is also class 19, a path that behaves differently depending on which machine
+    runs it, and class 1: an actor that cannot see its subject must not act on it.
+
+    FAIL CLOSED. If the authority is absent we return None and the caller SKIPS the jhw fragment
+    entirely. Not touching a fragment is always safe; overwriting one from a copy we know is stale
+    is how a domain disappears.
+    """
+    if os.path.exists(JHW_APP):
+        return JHW_APP, True
+    return None, False
 
 
 def build(restore, check_only):
     agent = _b64(os.path.join(GUARD, "agent.py"))
     svc = _b64(os.path.join(GUARD, "caddyguard.service"))
     tmr = _b64(os.path.join(GUARD, "caddyguard.timer"))
-    jhw = _b64(jhw_snippet())
+    jhw_path, jhw_ok = jhw_snippet()
+    # SAY WHICH SOURCE WAS CHOSEN, ALWAYS. The silent fallback cost www.jobhw.org six days.
+    if jhw_ok:
+        print("  jhw block: %s (authoritative)" % jhw_path)
+    else:
+        print("  [!] jhw block: the authoritative file is NOT on this machine\n"
+              "      (%s)\n"
+              "      jobhuntwow's fragment will be LEFT ALONE rather than overwritten from a\n"
+              "      stale copy. This is normal on a CI runner, where jobhuntwow-app/ is not\n"
+              "      checked out. Ship jobhuntwow from a machine that has it." % JHW_APP)
+    jhw = _b64(jhw_path) if jhw_ok else ""
     colt = _b64(os.path.join(HERE, "deploy", "caddy", "cybergod.caddy"))
     pw = _b64(os.path.join(HERE, "patchwatch", "patchwatch.py"))
     return r"""
@@ -113,14 +149,18 @@ if [ "%s" = "yes" ]; then
   # block is authoritative, exactly as it already is for colt:cybergod. Ship it, then let the
   # routing predicate decide whether the live fragment needs replacing.
   echo '%s' | base64 -d > /tmp/jhw.caddy
-  # COMPARE TO THE COMMITTED BLOCK, do not guess at its contents. The previous version asked
-  # "does it contain file_server" — which was both wrong (jobhuntwow is a reverse proxy) and the
-  # wrong SHAPE of question. The repo is authoritative; if the live fragment differs, replace it.
-  if ! cmp -s /tmp/jhw.caddy /opt/caddyguard/blocks/jhw__jobhuntwow.caddy 2>/dev/null; then
-    echo "jhw fragment differs from the committed block — installing the COMMITTED one"
+  # AN EMPTY PAYLOAD MEANS THE AUTHORITY WAS NOT VISIBLE TO THE SENDER, so there is nothing to
+  # compare against and nothing safe to install. Leaving the fragment untouched is the correct
+  # action: this exact overwrite, from a stale copy, removed jobhw.org and www.jobhw.org on
+  # 2026-10-16 and took six days to notice.
+  if [ ! -s /tmp/jhw.caddy ]; then
+    echo "jhw fragment: SKIPPED, no authoritative block was sent (left exactly as it is)"
+  elif ! cmp -s /tmp/jhw.caddy /opt/caddyguard/blocks/jhw__jobhuntwow.caddy 2>/dev/null; then
+    echo "jhw fragment differs from the authoritative block — installing the authoritative one"
+    diff /opt/caddyguard/blocks/jhw__jobhuntwow.caddy /tmp/jhw.caddy 2>/dev/null | head -12
     cp /tmp/jhw.caddy /opt/caddyguard/blocks/jhw__jobhuntwow.caddy
   else
-    echo "jhw fragment already matches the committed block"
+    echo "jhw fragment already matches the authoritative block"
   fi
   python3 /opt/caddyguard/agent.py restore jhw:jobhuntwow
 

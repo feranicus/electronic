@@ -52,6 +52,10 @@ FOOT = "S4BIZ GROUP · CYBERGOD LLC · PERSEUS SHIELD · INTERNAL SALES + PARTNE
 N_CLASSES, N_HONEY, N_BOUNDS, N_ACTIONS = 13, 5, 6, 6
 N_TESTS, N_CORPUS = 41, 42
 LOG_REQ, LOG_SRC, LOG_SCAN = "156,511", "2,253", "604"
+#: THE WEEKLY CYCLE OF 2026-10-18 05:20 UTC, read from the report it emailed itself.
+#: detecting 145 -> 84 and retired 333 -> 394 are the same 61 rules, which is why one number
+#: is quoted rather than two. Blocking did not move.
+WK_DATE, WK_BLOCK, WK_RETIRED, WK_TOTAL, WK_WORST = "2026-10-18", 28, 61, 394, 224
 
 # MEASURED ON THIS DECK'S OWN RENDER, not inherited from the consensus deck's comment.
 # I set this to 50 by copying that file's note ("49 fits, 53 wraps") and slide 11 shipped a
@@ -376,6 +380,39 @@ DE = {
     'template': 'template',
     'env_secrets': 'env_secrets',
     'backup_file': 'backup_file',
+    'SELF-CORRECTION': 'SELBSTKORREKTUR',
+    'One weekly cycle, 2026-10-18. These are the receipts from our own estate, and the cycle emails them whether or not anyone is reading.': 'Ein Wochenzyklus, 18.10.2026. Das sind die Belege aus unserem eigenen Bestand, und der Zyklus versendet sie per E-Mail, ob sie jemand liest oder nicht.',
+    'IT RETIRES': 'ES ZIEHT',
+    'ITS OWN RULES.': ' EIGENE REGELN ZURÜCK.',
+    'rules enforcing,\nbefore and after': 'Regeln aktiv,\nvorher und nachher',
+    'candidates retired\nin that one week': 'Kandidaten in dieser\neinen Woche verworfen',
+    'real paths the worst\none would have hit': 'echte Pfade, die die\nschlimmste getroffen hätte',
+    'retired in total,\nevidence kept': 'insgesamt verworfen,\nBelege bleiben erhalten',
+    'RETIRED THAT WEEK, WITH THE REASON GIVEN': 'IN DIESER WOCHE VERWORFEN, MIT BEGRÜNDUNG',
+    '\\.php($|/)': '\\.php($|/)',
+    'matches 224 paths we actually serve': 'trifft 224 Pfade, die wir tatsächlich ausliefern',
+    '\\.env[^/]*$': '\\.env[^/]*$',
+    'matches 97 paths we actually serve': 'trifft 97 Pfade, die wir tatsächlich ausliefern',
+    '^/[a-z]+\\.php$': '^/[a-z]+\\.php$',
+    'matches 118 paths we actually serve': 'trifft 118 Pfade, die wir tatsächlich ausliefern',
+    '^/(\\.env|config/database\\.php).*': '^/(\\.env|config/database\\.php).*',
+    'matches 41 paths we actually serve': 'trifft 41 Pfade, die wir tatsächlich ausliefern',
+    'wp-content/plugins/': 'wp-content/plugins/',
+    'matches 2 paths we actually serve': 'trifft 2 Pfade, die wir tatsächlich ausliefern',
+    'Pattern': 'Muster',
+    'Why it was retired': 'Grund für die Rücknahme',
+    'WHY THIS IS THE ARGUMENT': 'WARUM DAS DAS ARGUMENT IST',
+    'Every pattern on the left is one a competent engineer would have written by hand and shipped. Each was caught against real traffic before it could refuse anybody.\n\nA pattern watches for 24 hours and must match zero legitimate requests before it may refuse anything. These never got that far.\n\nEnforcement stayed at 28 while 61 candidates were thrown out. The set that blocks does not grow because the system is busy.': 'Jedes Muster links hätte eine fähige Fachkraft von Hand geschrieben und ausgeliefert. Jedes wurde am echten Verkehr erkannt, bevor es jemanden abweisen konnte.\n\nEin Muster beobachtet 24 Stunden und darf erst abweisen, wenn es null legitime Anfragen trifft. Diese kamen nie so weit.\n\nDie Durchsetzung blieb bei 28, während 61 Kandidaten verworfen wurden. Die blockierende Menge wächst nicht, nur weil das System beschäftigt ist.',
+    'BOUNDARIES': 'GRENZEN',
+    'The failure mode of an automated defence is not that it misses something. It is that it locks you out of your own business.': 'Der Fehlerfall einer automatisierten Abwehr ist nicht, dass sie etwas übersieht. Es ist, dass sie Sie aus Ihrem eigenen Geschäft aussperrt.',
+    'IT WILL NEVER TOUCH': 'ES FASST IHRE FIREWALL',
+    'YOUR FIREWALL.': ' NIEMALS AN.',
+    'NO FIREWALL RULES, EVER. Perseus writes no iptables, nft or ufw rule and touches no network device. Enforcement is HTTP-layer, inside its own container. A mistake cannot cut you off from your own infrastructure, and removing Perseus removes every effect it ever had.': 'NIEMALS FIREWALL-REGELN. Perseus schreibt keine iptables-, nft- oder ufw-Regel und fasst kein Netzwerkgerät an. Die Durchsetzung liegt auf HTTP-Ebene, im eigenen Container. Ein Fehler kann Sie nicht von Ihrer eigenen Infrastruktur abschneiden, und wer Perseus entfernt, entfernt jede Wirkung, die es je hatte.',
+    'AN AUTHENTICATED SESSION IS NEVER BLOCKED. Whoever is logged in stays logged in. A route we serve is slowed, never refused, because refusing a real page locks a real person out and the evidence is identical either way.': 'EINE ANGEMELDETE SITZUNG WIRD NIE BLOCKIERT. Wer angemeldet ist, bleibt angemeldet. Eine Route, die wir ausliefern, wird verlangsamt, nie verweigert: eine echte Seite zu verweigern sperrt einen echten Menschen aus, und die Beweislage ist in beiden Fällen dieselbe.',
+    'IT NEVER SCANS BACK. Detection and reporting scale. Retaliation is a criminal offence under StGB §202a-d, EU Directive 2013/40 and the US CFAA, and that includes building the tooling for it. The lawful route to a human is a provider complaint, which we draft and a person files.': 'ES SCANNT NIEMALS ZURÜCK. Erkennung und Meldung skalieren. Vergeltung ist strafbar nach StGB §202a-d, EU-Richtlinie 2013/40 und dem US-CFAA, einschließlich des Baus der Werkzeuge dafür. Der rechtmäßige Weg zu einem Menschen ist die Providerbeschwerde, die wir entwerfen und eine Person einreicht.',
+    'IT ANNOUNCES ITS OWN EXEMPTIONS. Anything excluded from enforcement stays under observation, and the exemption is written down rather than inferred from behaviour.': 'ES BENENNT SEINE AUSNAHMEN SELBST. Was von der Durchsetzung ausgenommen ist, bleibt unter Beobachtung, und die Ausnahme steht geschrieben, statt aus dem Verhalten erschlossen zu werden.',
+    'THE OBJECTION, STATED PLAINLY': 'DER EINWAND, KLAR BENANNT',
+    '“If you have something acting on a firewall policy, there is a real risk of lockout.”\n\nThat is the correct objection, and it is why enforcement never reaches a firewall.\n\nTelling a customer they are under attack and then denying everything leaves them not under attack and not trading either. The useful output is the specific thing to change, with the evidence attached, in language the person holding the console already uses.\n\nEvery internal error in the decision path resolves to ALLOW.': '„Wenn etwas an einer Firewall-Policy arbeitet, besteht ein echtes Aussperrungsrisiko.“\n\nDas ist der richtige Einwand, und genau deshalb erreicht die Durchsetzung nie eine Firewall.\n\nEinem Kunden zu sagen, er werde angegriffen, und dann alles zu sperren, lässt ihn weder angegriffen noch im Geschäft. Nützlich ist die konkrete Änderung, mit den Belegen daneben, in der Sprache der Person an der Konsole.\n\nJeder interne Fehler im Entscheidungspfad endet in ERLAUBEN.',
 }
 
 RU = {
@@ -651,6 +688,39 @@ RU = {
     'template': 'template',
     'env_secrets': 'env_secrets',
     'backup_file': 'backup_file',
+    'SELF-CORRECTION': 'САМОКОРРЕКЦИЯ',
+    'One weekly cycle, 2026-10-18. These are the receipts from our own estate, and the cycle emails them whether or not anyone is reading.': 'Один недельный цикл, 18.10.2026. Это подтверждения из нашей собственной инфраструктуры, и цикл отправляет их почтой независимо от того, читает ли их кто-нибудь.',
+    'IT RETIRES': 'ОНА ОТЗЫВАЕТ',
+    'ITS OWN RULES.': ' СОБСТВЕННЫЕ ПРАВИЛА.',
+    'rules enforcing,\nbefore and after': 'правил применяется,\nдо и после',
+    'candidates retired\nin that one week': 'кандидатов отозвано\nза одну неделю',
+    'real paths the worst\none would have hit': 'реальных путей задело\nбы худшее правило',
+    'retired in total,\nevidence kept': 'отозвано всего,\nдоказательства сохранены',
+    'RETIRED THAT WEEK, WITH THE REASON GIVEN': 'ОТОЗВАНО ЗА НЕДЕЛЮ, С УКАЗАНИЕМ ПРИЧИНЫ',
+    '\\.php($|/)': '\\.php($|/)',
+    'matches 224 paths we actually serve': 'совпадает с 224 путями, которые мы реально отдаём',
+    '\\.env[^/]*$': '\\.env[^/]*$',
+    'matches 97 paths we actually serve': 'совпадает с 97 путями, которые мы реально отдаём',
+    '^/[a-z]+\\.php$': '^/[a-z]+\\.php$',
+    'matches 118 paths we actually serve': 'совпадает со 118 путями, которые мы реально отдаём',
+    '^/(\\.env|config/database\\.php).*': '^/(\\.env|config/database\\.php).*',
+    'matches 41 paths we actually serve': 'совпадает с 41 путём, который мы реально отдаём',
+    'wp-content/plugins/': 'wp-content/plugins/',
+    'matches 2 paths we actually serve': 'совпадает с 2 путями, которые мы реально отдаём',
+    'Pattern': 'Шаблон',
+    'Why it was retired': 'Причина отзыва',
+    'WHY THIS IS THE ARGUMENT': 'ПОЧЕМУ ЭТО И ЕСТЬ АРГУМЕНТ',
+    'Every pattern on the left is one a competent engineer would have written by hand and shipped. Each was caught against real traffic before it could refuse anybody.\n\nA pattern watches for 24 hours and must match zero legitimate requests before it may refuse anything. These never got that far.\n\nEnforcement stayed at 28 while 61 candidates were thrown out. The set that blocks does not grow because the system is busy.': 'Любой шаблон слева грамотный инженер написал бы вручную и выпустил бы в работу. Каждый был пойман на реальном трафике прежде, чем смог кому-либо отказать.\n\nШаблон наблюдает 24 часа и может отказывать только при нуле легитимных совпадений. Эти до такого не дошли.\n\nБлокировка осталась на 28, пока 61 кандидат был отброшен. Блокирующий набор не растёт оттого, что система занята.',
+    'BOUNDARIES': 'ГРАНИЦЫ',
+    'The failure mode of an automated defence is not that it misses something. It is that it locks you out of your own business.': 'Отказ автоматизированной защиты опасен не тем, что она что-то пропустит. Он опасен тем, что она закроет вам доступ к вашему собственному бизнесу.',
+    'IT WILL NEVER TOUCH': 'ОНА НИКОГДА НЕ ТРОНЕТ',
+    'YOUR FIREWALL.': ' ВАШ ФАЕРВОЛ.',
+    'NO FIREWALL RULES, EVER. Perseus writes no iptables, nft or ufw rule and touches no network device. Enforcement is HTTP-layer, inside its own container. A mistake cannot cut you off from your own infrastructure, and removing Perseus removes every effect it ever had.': 'НИКАКИХ ПРАВИЛ МЕЖСЕТЕВОГО ЭКРАНА. Perseus не пишет правил iptables, nft или ufw и не трогает сетевое оборудование. Применение идёт на уровне HTTP, внутри собственного контейнера. Ошибка не может отрезать вас от вашей инфраструктуры, а удаление Perseus снимает всё, что он когда-либо делал.',
+    'AN AUTHENTICATED SESSION IS NEVER BLOCKED. Whoever is logged in stays logged in. A route we serve is slowed, never refused, because refusing a real page locks a real person out and the evidence is identical either way.': 'АУТЕНТИФИЦИРОВАННАЯ СЕССИЯ НИКОГДА НЕ БЛОКИРУЕТСЯ. Кто вошёл, тот остаётся. Маршрут, который мы отдаём, замедляется, но не отклоняется: отказ в реальной странице закрывает доступ реальному человеку, а доказательства в обоих случаях одни и те же.',
+    'IT NEVER SCANS BACK. Detection and reporting scale. Retaliation is a criminal offence under StGB §202a-d, EU Directive 2013/40 and the US CFAA, and that includes building the tooling for it. The lawful route to a human is a provider complaint, which we draft and a person files.': 'ОНА НИКОГДА НЕ СКАНИРУЕТ В ОТВЕТ. Обнаружение и уведомление масштабируются. Ответные действия уголовно наказуемы по StGB §202a-d, Директиве ЕС 2013/40 и US CFAA, включая создание инструментов для них. Законный путь к человеку — жалоба провайдеру, которую готовим мы, а подаёт человек.',
+    'IT ANNOUNCES ITS OWN EXEMPTIONS. Anything excluded from enforcement stays under observation, and the exemption is written down rather than inferred from behaviour.': 'ОНА САМА ОБЪЯВЛЯЕТ СВОИ ИСКЛЮЧЕНИЯ. Всё, что выведено из-под применения, остаётся под наблюдением, и исключение записано, а не выводится из поведения.',
+    'THE OBJECTION, STATED PLAINLY': 'ВОЗРАЖЕНИЕ, СКАЗАННОЕ ПРЯМО',
+    '“If you have something acting on a firewall policy, there is a real risk of lockout.”\n\nThat is the correct objection, and it is why enforcement never reaches a firewall.\n\nTelling a customer they are under attack and then denying everything leaves them not under attack and not trading either. The useful output is the specific thing to change, with the evidence attached, in language the person holding the console already uses.\n\nEvery internal error in the decision path resolves to ALLOW.': '«Если что-то меняет политику межсетевого экрана, есть реальный риск закрыть доступ самим себе.»\n\nЭто верное возражение, и именно поэтому применение никогда не доходит до межсетевого экрана.\n\nСказать клиенту, что его атакуют, и затем всё запретить — он перестанет быть и атакованным, и работающим. Полезен конкретный пункт для изменения, с доказательствами рядом, на языке того, кто сидит за консолью.\n\nЛюбая внутренняя ошибка в пути принятия решения завершается РАЗРЕШИТЬ.',
 }
 
 # One registry. Adding a language is a pack plus nothing else: the CLI, the audit and the
@@ -947,6 +1017,66 @@ def build(template, out, lang="en"):
         "were added, and the corpus is now pinned in the test suite so the gap cannot reopen. That "
         "loop, measure the log then close the gap, is the product." % LOG_SCAN,
         10.5, BODY, TEXT)
+
+    # ---------------------------------------------------------------- 10b. self-correction
+    # EVERY NUMBER HERE IS FROM ONE EMAIL: the weekly cycle report of 2026-10-18 05:20 UTC.
+    # Nothing is rounded up and nothing is inferred. The retirements are quoted verbatim, with
+    # the reason the vetting gave, because the reason is the part that sells.
+    s = d.slide("SELF-CORRECTION", "IT RETIRES", " ITS OWN RULES.",
+                "One weekly cycle, %s. These are the receipts from our own estate, and the cycle "
+                "emails them whether or not anyone is reading." % WK_DATE)
+    for i, (v, lab, col) in enumerate([(str(WK_BLOCK), "rules enforcing,\nbefore and after", CYAN),
+                                       (str(WK_RETIRED), "candidates retired\nin that one week", VIOLET),
+                                       (str(WK_WORST), "real paths the worst\none would have hit", AMBER),
+                                       (str(WK_TOTAL), "retired in total,\nevidence kept", INDIGO)]):
+        stat(s, 0.85 + i * 2.95, 2.30, 2.7, v, lab, col)
+    rows = [("\\.php($|/)", "matches 224 paths we actually serve"),
+            ("\\.env[^/]*$", "matches 97 paths we actually serve"),
+            ("^/[a-z]+\\.php$", "matches 118 paths we actually serve"),
+            ("^/(\\.env|config/database\\.php).*", "matches 41 paths we actually serve"),
+            ("wp-content/plugins/", "matches 2 paths we actually serve")]
+    _tb(s, 0.85, 3.95, 6.60, 0.30, "RETIRED THAT WEEK, WITH THE REASON GIVEN", 10, CYAN, MONO, True)
+    table(s, 0.85, 4.30, 6.60, ["Pattern", "Why it was retired"], rows, [0.42, 0.58],
+          rh=0.34, size=9.0)
+    _rect(s, 7.95, 3.95, 4.50, 2.70, fill=PANEL, line=LINE)
+    _tb(s, 8.20, 4.10, 4.00, 0.30, "WHY THIS IS THE ARGUMENT", 10, AMBER, MONO, True)
+    _tb(s, 8.20, 4.44, 4.00, 2.05,
+        "Every pattern on the left is one a competent engineer would have written by hand and "
+        "shipped. Each was caught against real traffic before it could refuse anybody.\n\n"
+        "A pattern watches for 24 hours and must match zero legitimate requests before it may "
+        "refuse anything. These never got that far.\n\n"
+        "Enforcement stayed at %d while %d candidates were thrown out. The set that blocks does "
+        "not grow because the system is busy." % (WK_BLOCK, WK_RETIRED), 10.5, BODY, TEXT)
+
+    # ---------------------------------------------------------------- 10c. boundaries
+    s = d.slide("BOUNDARIES", "IT WILL NEVER TOUCH", " YOUR FIREWALL.",
+                "The failure mode of an automated defence is not that it misses something. It is "
+                "that it locks you out of your own business.")
+    bullets(s, 0.85, 2.28, 6.05, [
+        "NO FIREWALL RULES, EVER. Perseus writes no iptables, nft or ufw rule and touches no "
+        "network device. Enforcement is HTTP-layer, inside its own container. A mistake cannot "
+        "cut you off from your own infrastructure, and removing Perseus removes every effect it "
+        "ever had.",
+        "AN AUTHENTICATED SESSION IS NEVER BLOCKED. Whoever is logged in stays logged in. A route "
+        "we serve is slowed, never refused, because refusing a real page locks a real person out "
+        "and the evidence is identical either way.",
+        "IT NEVER SCANS BACK. Detection and reporting scale. Retaliation is a criminal offence "
+        "under StGB \u00a7202a-d, EU Directive 2013/40 and the US CFAA, and that includes building "
+        "the tooling for it. The lawful route to a human is a provider complaint, which we draft "
+        "and a person files.",
+        "IT ANNOUNCES ITS OWN EXEMPTIONS. Anything excluded from enforcement stays under "
+        "observation, and the exemption is written down rather than inferred from behaviour.",
+    ], gap=1.12, size=10.5)
+    _rect(s, 7.30, 2.28, 5.15, 4.10, fill=PANEL, line=LINE)
+    _tb(s, 7.55, 2.44, 4.65, 0.30, "THE OBJECTION, STATED PLAINLY", 10, CYAN, MONO, True)
+    _tb(s, 7.55, 2.80, 4.65, 3.40,
+        "\u201cIf you have something acting on a firewall policy, there is a real risk of "
+        "lockout.\u201d\n\n"
+        "That is the correct objection, and it is why enforcement never reaches a firewall.\n\n"
+        "Telling a customer they are under attack and then denying everything leaves them not "
+        "under attack and not trading either. The useful output is the specific thing to change, "
+        "with the evidence attached, in language the person holding the console already uses.\n\n"
+        "Every internal error in the decision path resolves to ALLOW.", 10.5, BODY, TEXT)
 
     # ---------------------------------------------------------------- 11. standards
     s = d.slide("ASSURANCE", "MAPPED TO CONTROLS", " AUDITORS ASK FOR.",

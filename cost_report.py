@@ -721,7 +721,27 @@ LOKI_QUERIES = [
 ]
 
 
-def _loki_script(queries, start, end, step):
+#: HOW LONG THE REMOTE SIDE MAY SPEND, per section. [2026-10-20]
+#
+# `--whodunit --days 22` came back CANNOT DECIDE: `ssh failed (rc=124): TIMEOUT after 180s`. The
+# probe was right to refuse, and the 180 was the defect. This script issues 23 Loki range queries
+# plus four greps over the whole events.log, serially, and the only budget was one flat number on
+# the OUTER ssh. Two consequences, both of which cost the operator a run:
+#
+#   * the budget did not scale with --days, while the work does. The default 10 days fitted; 22
+#     did not, and nothing said which half was slow.
+#   * ONE slow section killed every other section. The file greps do not depend on the window at
+#     all, so a large events.log could eat the whole budget before Loki was ever asked.
+#
+# CLAUDE.md already carries the rule this breaks: never issue a request whose completion time
+# exceeds its own timeout. Each section now carries its own `timeout`, so a slow one is CUT and
+# SAYS SO while the rest still answer, and the outer budget is derived from the window below.
+FILE_BUDGET_S = 45           # the greps over events.log; independent of --days
+QUERY_BUDGET_S = 12          # one Loki range query
+SAMPLE_BUDGET_S = 10         # one Loki log-sample query
+
+
+def _loki_script(queries, start, end, step, hourly_step=3600):
     """One ssh session that asks Loki every question. Built as a bash script rather than a series of
     `ssh` calls because the Windows OpenSSH client has no ControlMaster multiplexing and sshd
     penalises rapid repeat connections -- the rule this repository already paid for twice."""
@@ -741,20 +761,36 @@ def _loki_script(queries, start, end, step):
             'F="${E:-/var/lib/docker/volumes/colt-stack_colt_events/_data}/events.log"',
             'if [ -f "$F" ]; then',
             '  echo "file=$F size=$(stat -c %s "$F")"',
-            '  echo "jhw_lines=$(grep -c -F \'"service": "jhw-web"\' "$F")"',
-            '  echo "jhw_first=$(grep -F \'"service": "jhw-web"\' "$F" | head -1 | cut -c1-240)"',
-            '  echo "jhw_last=$(grep -F \'"service": "jhw-web"\' "$F" | tail -1 | cut -c1-240)"',
-            '  grep -F "/v1/chat/completions" "$F" | grep -F \'"evt": "http"\' | tail -200 '
-            '| cut -c1-600 | sed "s/^/proxy=/"',
+            # FOUR FULL-FILE GREPS, UNDER ONE CLOCK. events.log grows without bound between
+            # rotations, and this section's cost has nothing to do with --days: on a large file
+            # it can spend the entire budget before Loki is asked a single question. Cut it as a
+            # unit and say so, rather than letting it starve the half that answers the question.
+            '  if timeout %d sh -c \'' % FILE_BUDGET_S +
+            'echo "jhw_lines=$(grep -c -F \'"\'"\'"service": "jhw-web"\'"\'"\' "$0")"; '
+            'echo "jhw_first=$(grep -F \'"\'"\'"service": "jhw-web"\'"\'"\' "$0" | head -1 '
+            '| cut -c1-240)"; '
+            'echo "jhw_last=$(grep -F \'"\'"\'"service": "jhw-web"\'"\'"\' "$0" | tail -1 '
+            '| cut -c1-240)"; '
+            'grep -F "/v1/chat/completions" "$0" | grep -F \'"\'"\'"evt": "http"\'"\'"\' '
+            '| tail -200 | cut -c1-600 | sed "s/^/proxy=/"\' "$F"; then :; else',
+            '    echo "file_cut=the events.log scan exceeded %ds and was cut; '
+            'the counts below are NOT measured"' % FILE_BUDGET_S,
+            '  fi',
             'else',
             '  echo "file=MISSING $F"',
             'fi',
             "L=$(docker ps --format '{{.Names}}' | grep -iE 'loki' | head -1)",
             'echo "#### LOKI"; echo "${L:-NONE}"',
             '[ -z "$L" ] && exit 0',
-            "q(){ docker exec \"$L\" wget -qO- --header='Content-Type: application/json' "
+            # EVERY QUERY CARRIES ITS OWN CLOCK. `timeout` exits 124 on expiry, and we echo a
+            # marker the parser can see, so a cut query reads as CUT rather than as an empty
+            # answer. An empty answer and a question nobody asked look identical otherwise, and
+            # this file already printed "proxy calls: 0" for a query that never ran.
+            "q(){ timeout %d docker exec \"$L\" wget -qO- "
+            "--header='Content-Type: application/json' "
             "\"http://127.0.0.1:3100/loki/api/v1/query_range?query=$1&start=%s&end=%s&step=%s\" "
-            "2>/dev/null; }" % (start, end, step)]
+            "2>/dev/null; [ $? -eq 124 ] && echo '__CUT__'; }"
+            % (QUERY_BUDGET_S, start, end, step)]
     for i, (title, q, _why) in enumerate(queries):
         # urlencode just enough: LogQL is full of characters wget would mangle in a query string.
         enc = (q % {"step": step + "s" if step.isdigit() else step})
@@ -764,12 +800,21 @@ def _loki_script(queries, start, end, step):
             enc = enc.replace(a, b)
         body.append('echo; echo "#### Q%d"; q "%s"' % (i, enc))
     # log-line samples: query_range with a LOG selector returns streams; limit + newest-first
-    body.append("s(){ docker exec \"$L\" wget -qO- \"http://127.0.0.1:3100/loki/api/v1/query_range"
-                "?query=$1&start=%s&end=%s&limit=$2&direction=backward\" 2>/dev/null; }" % (start, end))
+    body.append("s(){ timeout %d docker exec \"$L\" wget -qO- "
+                "\"http://127.0.0.1:3100/loki/api/v1/query_range"
+                "?query=$1&start=%s&end=%s&limit=$2&direction=backward\" 2>/dev/null; "
+                "[ $? -eq 124 ] && echo '__CUT__'; }" % (SAMPLE_BUDGET_S, start, end))
     for i, (_t, q, lim) in enumerate(LOKI_SAMPLES):
         body.append('echo; echo "#### S%d"; s "%s" %d' % (i, _enc(q), lim))
-    body.append("h(){ docker exec \"$L\" wget -qO- \"http://127.0.0.1:3100/loki/api/v1/query_range"
-                "?query=$1&start=%s&end=%s&step=3600\" 2>/dev/null; }" % (start, end))
+    # THE HOURLY STEP IS DERIVED, NOT PINNED. At a fixed 3600 a 22-day window asks Loki for 528
+    # points per query, four times over. The caller passes a step sized so the point count stays
+    # bounded whatever --days is given, which is what stops a long window costing more than a
+    # short one per query.
+    body.append("h(){ timeout %d docker exec \"$L\" wget -qO- "
+                "\"http://127.0.0.1:3100/loki/api/v1/query_range"
+                "?query=$1&start=%s&end=%s&step=%d\" 2>/dev/null; "
+                "[ $? -eq 124 ] && echo '__CUT__'; }"
+                % (QUERY_BUDGET_S, start, end, hourly_step))
     for i, (_t, q) in enumerate(LOKI_HOURLY):
         body.append('echo; echo "#### H%d"; h "%s"' % (i, _enc(q)))
     return "\n".join(body) + "\n"
@@ -791,10 +836,16 @@ def file_evidence(text, start_ts=0):
     shared file on Sep 5'), and every proxy hit with ip + status + day, aggregated per source.
     """
     fe = {"mount": "", "env": [], "file": "", "jhw_lines": 0, "jhw_first_ts": None,
-          "jhw_last_ts": None, "proxy": [], "per_ip": {}, "per_day": {}}
+          "jhw_last_ts": None, "proxy": [], "per_ip": {}, "per_day": {}, "cut": ""}
     for ln in (text or "").splitlines():
         ln = ln.rstrip()
-        if ln.startswith("jhw_mount="):
+        if ln.startswith("file_cut="):
+            # THE SECTION WAS CUT. Everything parsed below it is absent rather than zero, and the
+            # renderer must say UNKNOWN. This file previously printed "proxy calls: 0" for a query
+            # that never ran, which is defect class 7: a detail that renders identically whether
+            # or not anything was measured is templated output, not a measurement.
+            fe["cut"] = ln[len("file_cut="):].strip()
+        elif ln.startswith("jhw_mount="):
             fe["mount"] = ln[len("jhw_mount="):].strip()
         elif ln.startswith("jhw_env="):
             fe["env"].append(ln[len("jhw_env="):].strip())
@@ -827,8 +878,21 @@ def file_evidence(text, start_ts=0):
     return fe
 
 
-def loki_correlate(host, days=10, step_hours=6):
-    """Ask Loki what each project was doing, hour by hour, across the window."""
+def loki_correlate(host, days=10, step_hours=None):
+    """Ask Loki what each project was doing, hour by hour, across the window.
+
+    THE BUDGET AND THE RESOLUTION ARE DERIVED FROM `days`, not pinned. [2026-10-20]
+
+    `--whodunit --days 22` returned CANNOT DECIDE on `ssh failed (rc=124): TIMEOUT after 180s`.
+    The refusal was correct; the constant was the bug. Work here scales with the window (23 range
+    queries, and the hourly ones asked Loki for 528 points each at a fixed 3600s step) while the
+    budget did not move, so the default 10 days fitted and 22 could not. Holding the point count
+    roughly constant is what makes a long window cost about what a short one does per query.
+    """
+    import math
+    step_hours = step_hours or max(6, int(math.ceil(days * 24.0 / 120)))
+    hourly_step = max(3600, int(days * 86400 / 400))
+    ssh_budget = min(600, 150 + 12 * days)
     try:
         from recover import ssh_script, sections
     except Exception as e:
@@ -841,13 +905,16 @@ def loki_correlate(host, days=10, step_hours=6):
         start = end - days * 86400                                            # a copy of production.
         step = str(step_hours * 3600)
         # ssh_script returns (stdout, stderr, returncode). READ, not guessed.
-        out, err, rc = ssh_script(_loki_script(LOKI_QUERIES, start, end, step), timeout=180)
+        out, err, rc = ssh_script(_loki_script(LOKI_QUERIES, start, end, step, hourly_step),
+                                  timeout=ssh_budget)
     except Exception as e:
         return {"error": repr(e)[:160]}
     finally:
         _rc.HOST = prev
     if rc != 0 and not out:
-        return {"error": "ssh failed (rc=%s): %s" % (rc, (err or "")[:200])}
+        return {"error": "ssh failed (rc=%s) after %ds: %s. The window asked for %d day(s) at a "
+                         "%dh step; a shorter --days costs proportionally less."
+                         % (rc, ssh_budget, (err or "")[:160], days, step_hours)}
     sec = sections(out or "")
     fe = file_evidence(sec.get("FILE") or "", start)
     if (sec.get("LOKI") or "").strip() in ("", "NONE"):
@@ -977,9 +1044,16 @@ def whodunit(host, days=10):
     c = loki_correlate(host, days=days)
     fe = c.get("file") or {}
     out = {"loki": c.get("error") or c.get("loki"), "days": days, "file": fe,
-           "visible": {}, "proxy_hits": 0, "proxy_sources": [], "verdict": "", "action": "",
+           "visible": {}, "proxy_hits": 0, "proxy_sources": [], "measured": True,
+           "verdict": "", "action": "",
            "note": ""}
+    # A CUT SECTION IS NOT A ZERO. If the events.log scan was cut, the proxy count below is an
+    # absence of evidence, and the renderer must say so rather than print a number nobody measured.
+    if fe.get("cut"):
+        out["measured"] = False
+        out["note"] = fe["cut"]
     if c.get("error") and not fe:
+        out["measured"] = False
         out["verdict"] = "CANNOT DECIDE"
         out["action"] = ("the Loki query did not run (%s). That is not evidence about the window; "
                          "fix the query path and re-run." % c["error"])
@@ -1182,7 +1256,11 @@ def render_whodunit(w):
             pts = ["%s=%d" % (_dt(t), v) for t, v in r["points"]]
             print("      %-22s %s" % (r["who"][:22], " ".join(pts)[:200]))
     print()
-    print("  calls to the jobhuntwow LLM proxy: %d" % w.get("proxy_hits", 0))
+    if w.get("measured", True):
+        print("  calls to the jobhuntwow LLM proxy: %d" % w.get("proxy_hits", 0))
+    else:
+        print("  calls to the jobhuntwow LLM proxy: UNKNOWN - the scan that counts them was cut,")
+        print("      so this is an absence of evidence and not a zero.")
     for s in w.get("proxy_sources") or []:
         print("      %-40s %d" % (s["ip"], s["hits"]))
     if fe.get("proxy"):
