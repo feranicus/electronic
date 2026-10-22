@@ -38,10 +38,16 @@ OUT = os.path.join(ROOT, "webapp", "frontend", "public", ".well-known", "sbom.cd
 # The manifests that describe what the SHIPPED product depends on. Deliberately NOT the whole repo:
 # jobhuntwow and the MEDDPICC droplet are separate projects, and a bill of materials that lists
 # another product's dependencies is wrong, not thorough.
+#
+# These four are the manifests the images actually install (`-r`), which is what makes this list
+# checkable rather than aspirational. It used to name a root requirements.txt that no Dockerfile
+# installed, and an engine manifest that did not exist at all — so the engine's own dependencies
+# were absent from our SBOM while a file describing nothing was in it. [2026-10-22]
 PY_MANIFESTS = [
     "webapp/backend/requirements.txt",
-    "requirements.txt",
     "hermes-skills/shodan-assessment/requirements.txt",
+    "assess-bot/requirements.txt",
+    "cassandra-bot/requirements.txt",
 ]
 NPM_LOCKS = ["webapp/frontend/package-lock.json"]
 

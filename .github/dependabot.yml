@@ -1,7 +1,25 @@
 version: 2
+
+# A WATCHER POINTED AT A FILE NOBODY INSTALLS IS NOT A WATCHER (2026-10-22).
+#
+# Until today the pip entry watched "/" — the root requirements.txt — and no Dockerfile in this
+# repo ever installed that file. The images installed their packages by NAME on a RUN line, so the
+# only thing Dependabot could have bumped had no effect on any artifact, and the versions that
+# actually shipped were frozen by the GitHub Actions layer cache. certifi sat at 2026.7.22 inside
+# colttechbot for six weeks after the fix existed, and the pipeline's own Trivy gate is what
+# finally said so. Root requirements.txt has been retired; these are the manifests the images
+# really install, so a bump here is a bump that ships.
+#
+# The pip directories below are DERIVED from one rule: every path a Dockerfile `-r` installs.
+# tests/test_image_dependencies.py asserts that set and this list agree, because a fifth manifest
+# added without a fifth entry here is exactly the drift this entry was broken by (defect class 35).
 updates:
   - package-ecosystem: "pip"
-    directory: "/"
+    directories:
+      - "/webapp/backend"
+      - "/hermes-skills/shodan-assessment"
+      - "/assess-bot"
+      - "/cassandra-bot"
     schedule: { interval: "weekly" }
     open-pull-requests-limit: 5
   - package-ecosystem: "github-actions"

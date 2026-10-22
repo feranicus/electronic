@@ -1,0 +1,7 @@
+# colt-assessbot's own dependency, on top of the engine's
+# (hermes-skills/shodan-assessment/requirements.txt, which carries the reason this file is pinned).
+#
+# The bot is on python-telegram-bot 22.x. Cassandra is deliberately on 21.x and pins it in its own
+# file — that is why there is no single shared manifest for the two bots, and why the root
+# requirements.txt that claimed to be one was retired rather than repaired.
+python-telegram-bot==22.8

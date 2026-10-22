@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:fc1f98b8-2a29-61e3-69af-c78553f19671",
+  "serialNumber": "urn:uuid:7c3b6411-23c2-477b-111c-157a8bac633e",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-10-15T20:44:05Z",
+    "timestamp": "2026-10-22T11:32:51Z",
     "tools": [
       {
         "vendor": "Cybergod LLC",
@@ -15,7 +15,7 @@
     "component": {
       "type": "application",
       "name": "cybergod.ai",
-      "version": "81f0c6e61adc",
+      "version": "02998cf49796",
       "supplier": {
         "name": "Cybergod LLC / S4Biz Group"
       }
@@ -31,7 +31,7 @@
       },
       {
         "name": "cybergod:components",
-        "value": "124"
+        "value": "126"
       }
     ]
   },
@@ -822,6 +822,13 @@
     },
     {
       "type": "library",
+      "name": "certifi",
+      "version": "2026.10.19",
+      "purl": "pkg:pypi/certifi@2026.10.19",
+      "scope": "required"
+    },
+    {
+      "type": "library",
       "name": "fastapi",
       "version": "0.141.*",
       "purl": "pkg:pypi/fastapi@0.141.*",
@@ -830,8 +837,8 @@
     {
       "type": "library",
       "name": "google-auth",
-      "version": "unspecified",
-      "purl": "pkg:pypi/google-auth@unspecified",
+      "version": "2.62.0",
+      "purl": "pkg:pypi/google-auth@2.62.0",
       "scope": "required"
     },
     {
@@ -850,9 +857,16 @@
     },
     {
       "type": "library",
+      "name": "mmh3",
+      "version": "5.3.1",
+      "purl": "pkg:pypi/mmh3@5.3.1",
+      "scope": "required"
+    },
+    {
+      "type": "library",
       "name": "playwright",
-      "version": "unspecified",
-      "purl": "pkg:pypi/playwright@unspecified",
+      "version": "1.64.0",
+      "purl": "pkg:pypi/playwright@1.64.0",
       "scope": "required"
     },
     {
@@ -872,22 +886,22 @@
     {
       "type": "library",
       "name": "python-telegram-bot",
-      "version": "21",
-      "purl": "pkg:pypi/python-telegram-bot@21",
+      "version": "21.11",
+      "purl": "pkg:pypi/python-telegram-bot@21.11",
       "scope": "required"
     },
     {
       "type": "library",
       "name": "requests",
-      "version": "unspecified",
-      "purl": "pkg:pypi/requests@unspecified",
+      "version": "2.34.2",
+      "purl": "pkg:pypi/requests@2.34.2",
       "scope": "required"
     },
     {
       "type": "library",
       "name": "shodan",
-      "version": "unspecified",
-      "purl": "pkg:pypi/shodan@unspecified",
+      "version": "1.31.0",
+      "purl": "pkg:pypi/shodan@1.31.0",
       "scope": "required"
     },
     {

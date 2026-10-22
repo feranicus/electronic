@@ -1,0 +1,18 @@
+# Cassandra's runtime dependencies. Exact pins, for the reason written out in
+# hermes-skills/shodan-assessment/requirements.txt: an image whose packages are named rather than
+# pinned re-resolves only when its RUN line changes, and a build cache keeps that line from ever
+# changing. Cassandra's scan was green on 2026-10-22 purely because of when its layers happened to
+# be built, not because anything held it to a version.
+#
+# python-telegram-bot stays on 21.x. That cap is deliberate and predates this change; the bump to
+# 22 is a separate decision with its own testing, not something to smuggle in behind a CVE fix.
+python-telegram-bot==21.11
+# Chromium for the JS-render FALLBACK. `playwright install --with-deps chromium` downloads a
+# browser matched to this version, so a bump here re-downloads it — which is the cost of knowing
+# which browser is in the image. Set ENABLE_BROWSER=0 to leave it unused at runtime.
+playwright==1.64.0
+# Gmail API (HTTPS) for OTP delivery.
+google-auth==2.62.0
+requests==2.34.2
+# Transitive via requests, pinned by name: a trust store should never be resolved by accident.
+certifi==2026.10.19

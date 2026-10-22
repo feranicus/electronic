@@ -42,8 +42,11 @@ RUN mkdir -p /opt/node && cd /opt/node && npm init -y >/dev/null 2>&1 && npm ins
 ENV NODE_PATH=/opt/node/node_modules
 WORKDIR /app
 COPY webapp/backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt \
- && pip install --no-cache-dir shodan mmh3 google-auth requests
+# The engine's dependencies have ONE home and it is not this line. Installing them by name here
+# (and in three other Dockerfiles) is what let a build cache freeze certifi at 2026.7.22 in
+# colttechbot while this image happened to resolve 2026.10.19.
+COPY hermes-skills/shodan-assessment/requirements.txt ./engine-requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r engine-requirements.txt
 COPY hermes-skills/shodan-assessment /opt/shodan-skill
 # THE BRAIN HAS TO BE IN THE CONTAINER THAT RUNS IT.
 # perseus.py installs the package to /opt/perseus ON THE HOST, and then writes a systemd unit whose

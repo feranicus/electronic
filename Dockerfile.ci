@@ -30,9 +30,13 @@ WORKDIR /src
 # HOME for the app's python dependencies (ship.py's ensure_app_requirements reads the same file);
 # this never re-pins anything, it installs exactly what that file says.
 COPY webapp/backend/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt \
- && pip install --no-cache-dir ruff pytest \
- && pip install --no-cache-dir shodan mmh3 google-auth requests
+# The engine's dependencies come from the engine's own pinned manifest, so the gate's interpreter
+# holds the same versions the engine images ship. Installing them by name here would make the gate
+# resolve one set and the images another - which is the drift report_requirement_drift() exists to
+# catch for the app stack, and the engine stack had no equivalent at all.
+COPY hermes-skills/shodan-assessment/requirements.txt /tmp/engine-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt -r /tmp/engine-requirements.txt \
+ && pip install --no-cache-dir ruff pytest
 
 # NODE DEPENDENCIES. The comment above used to claim none were needed. That was MEASURED over
 # webapp/frontend/tools/*.mjs - which really do import only builtins - and then generalised to

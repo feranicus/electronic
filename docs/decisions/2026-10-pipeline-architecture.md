@@ -621,3 +621,18 @@ tuple or list repr, and both paths are now run through `bash -n`.
 
 Both mutations fail the suite: removing `GHCR_TOKEN` from the production step, and removing the
 logout.
+
+## Mutations caught while building the GHCR guard (moved out of CLAUDE.md, 2026-10-22)
+
+CLAUDE.md is at its context budget, so this evidence lives here. Four defects in my own guard,
+each found by mutating the thing it claimed to protect:
+
+- `printf '%%s'` inside a CONCATENATED string — class 44 has a precondition: the doubling rule
+  only applies to a %-FORMATTED string. As written it would have piped the literal `%s` as the
+  password.
+- A POSIX test harness gated on `shutil.which("bash")`. On this machine `bash` is WSL's bash.exe,
+  which answers yes and then fails in UTF-16. `shell_harness_allowed()` is the one home.
+- A `C:\` path handed to `bash -n` (classes 22 and 1): rc 127 "No such file or directory" rendered
+  as "the droplet would get invalid shell". Pipe the script on stdin as bytes instead.
+- A Python tuple where the generated script wanted a string — adding a second list element turned
+  an else-branch into a tuple joined with `"\n"`.

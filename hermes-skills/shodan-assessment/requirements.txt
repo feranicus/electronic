@@ -1,0 +1,39 @@
+# THE ENGINE'S RUNTIME DEPENDENCIES — the ONE HOME, for every image that carries the engine.
+#
+# WHAT THIS FILE IS FOR (2026-10-22). Pipeline run #12 failed its own scan gate:
+#
+#   colttechbot  certifi (METADATA)  GHSA-6q48-6c7w-9gw2  CRITICAL  2026.7.22 -> 2026.10.19
+#   "certifi bundles emSign root CAs with compromised intermediate CA keys"
+#
+# colt-web, built from the same sources in the same run, held certifi 2026.10.19 and passed. The
+# difference was not the code. assess-bot/Dockerfile installed its dependencies BY NAME
+# (`pip3 install shodan python-telegram-bot mmh3`), and pipeline.yml builds it with
+# `cache-from: type=gha,scope=bot`. A RUN line that never changes is a cache key that never
+# changes, so that layer had not re-resolved since the day it was first built and the versions
+# inside it were frozen there. xlsxwriter told the same story in the same scan: 3.2.9 in the bot,
+# 3.3.0 in the web image. Nothing was wrong on the day it was built and nothing could fix it
+# afterwards, because a cache hit does not consult PyPI.
+#
+# webapp/backend/requirements.txt already argues exactly this for starlette and python-multipart —
+# "a floor defeats the immutability guarantee... pip resolves independently in each build". The
+# engine's own dependencies were simply never held to it, and they were installed by name in four
+# Dockerfiles, which is four homes (defect class 32).
+#
+# SO: every version that ships is written down here, exactly, and every image installs `-r` this
+# file. A pin cannot be frozen by a cache, because changing the pin changes the COPY and the layer
+# with it. Keeping the pins current is Dependabot's job — .github/dependabot.yml now watches this
+# directory, which it could not do while the only pip manifest it knew about was a root file no
+# Dockerfile installed.
+#
+# certifi is a TRANSITIVE dependency (requests pulls it) and is pinned here anyway, by name,
+# because a trust store whose whole purpose is to be current is the last thing that should be
+# resolved by accident.
+#
+# Versions below were measured on 2026-10-22: each is what a clean resolve produces today, which
+# is what colt-web shipped and passed the scan with. Pinning changes no behaviour; it only makes
+# the next build produce the same bytes as this one.
+shodan==1.31.0
+mmh3==5.3.1
+requests==2.34.2
+google-auth==2.62.0
+certifi==2026.10.19

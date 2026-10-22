@@ -23,8 +23,9 @@ WORKDIR /app
 
 # backend python deps + the engine's own python deps (shodan recon)
 COPY webapp/backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt \
- && pip install --no-cache-dir shodan mmh3 google-auth requests
+# Engine dependencies: pinned manifest, never package names on a RUN line (see that file).
+COPY hermes-skills/shodan-assessment/requirements.txt ./engine-requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r engine-requirements.txt
 
 # engine (recon + 3/4 deck generators) + shared auth module
 COPY hermes-skills/shodan-assessment /opt/shodan-skill

@@ -56,4 +56,15 @@ jobs:
           failure-threshold: error
 
       - name: pip-audit - Python advisories
-        run: pip install pip-audit && pip-audit -r requirements.txt || true
+        # Audit the manifests the IMAGES install. This used to audit a root requirements.txt that
+        # no Dockerfile ever read, so it reported on a dependency set nothing shipped. [2026-10-22]
+        run: |
+          pip install pip-audit
+          for m in webapp/backend/requirements.txt \
+                   hermes-skills/shodan-assessment/requirements.txt \
+                   assess-bot/requirements.txt \
+                   cassandra-bot/requirements.txt; do
+            echo "::group::pip-audit $m"
+            pip-audit -r "$m" || true
+            echo "::endgroup::"
+          done

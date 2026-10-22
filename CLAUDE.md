@@ -268,8 +268,7 @@ supports one, naming the repair. **Plus GitHub-native output, emitted BY stagega
 keeps one home and the console is unchanged off Actions**: `::error::` naming the gate, a
 `$GITHUB_STEP_SUMMARY` table from `last_evidence()` (same numbers, failures first, appended never
 clobbered), and the log tee'd to an artifact (`set -o pipefail`, class 42) because GitHub truncates
-the middle of a long run. Seven mutations caught, one of which dumped the private key into a public
-log. [2026-10-15] `tests/test_gate_diagnostics.py`
+long runs. [2026-10-15] `tests/test_gate_diagnostics.py`
 
 **ASSERT THE REMOTE STATE, NEVER DEDUCE IT FROM A DOOR THAT OPENS FOR YOU.** `--fix-ci-key`
 re-authorizes BEFORE `check()`, which only proves THIS machine can log in; asserted on source ORDER.
@@ -284,30 +283,33 @@ ssh was never told to use — CHECK THE INVOCATION, NOT THE ARTIFACT (class 1).
 account**: `offered_identities()` parses `ssh -v`, on an auth failure only (a timeout never reaches
 auth), because "offered nothing" and "offered this, refused" print the identical line and need
 opposite repairs; it must drop the inherited `-o LogLevel=ERROR` (or it silences its own trace) and
-keep `-i` (or it reproduces the bug). Log VOLUME was never the gap: `stagegate.log` is a `tee` of
-the step log. [2026-10-16] `tests/test_ssh_identity.py` · `tests/test_gate_diagnostics.py`
+keep `-i` (or it reproduces the bug). Log VOLUME was never the gap: `stagegate.log` tees the step
+log. [2026-10-16] `tests/test_ssh_identity.py` · `tests/test_gate_diagnostics.py`
 
 **"not found" FROM GHCR MEANS TWO UNRELATED THINGS, AND SO DOES "denied".** Staging died pulling
-`ghcr.io/feranicus/colt-web:<sha>`: CI pushes to `${{ github.repository }}/colt-web`, and only
-`WEB_TAG` was threaded - the REPOSITORY half was hardcoded in three files (class 32). GHCR answers
+colt-web: CI pushes to `${{ github.repository }}/colt-web` and only `WEB_TAG` was threaded - the
+REPOSITORY half was hardcoded in three files (cls 32). GHCR answers
 an unauthorised request for a PRIVATE package with **404, not 401**, so a wrong name and a missing
 login are ONE message with opposite repairs. `ghcr.py` is the one home for the ref and for
 `report()`, which asks anonymously AND with a token and makes the DIFFERENCE the diagnosis, naming
-the tags that do exist. Pass BOTH halves, give the job `packages: read`, log in with the token on
-**stdin**, and SAY SO when pulling anonymously (class 37).
-**A STALE CREDENTIAL IS WORSE THAN NONE** [run #10]: `GHCR_TOKEN` reached the staging job only, so
-production pulled anonymously, met the droplet's expired ghcr login left by the retired
-web-deploy.yml, and docker said `denied` for an image the diagnosis proved pullable (`anonymous
-HTTP 200`). docker sends whatever `~/.docker/config.json` holds, so the anonymous path must
+the tags that do exist. Pass BOTH halves, give the job `packages: read`, token on **stdin**, and
+SAY SO when pulling anonymously (class 37).
+**A STALE CREDENTIAL IS WORSE THAN NONE** [#10]: `GHCR_TOKEN` reached staging only, so
+production pulled anonymously, met the droplet's expired ghcr login from the retired
+web-deploy.yml and said `denied` for an image the diagnosis proved pullable (`anonymous HTTP
+200`). docker sends whatever `~/.docker/config.json` holds, so the anonymous path must
 `docker logout ghcr.io` FIRST. The guard DERIVES every GHCR-pulling step and demands a token.
-My own mutations caught: `printf '%%s'` in a CONCATENATED string (class 44 has a precondition),
-a POSIX harness gated on `shutil.which("bash")` (WSL answers yes), a `C:\` path handed to
-`bash -n` (classes 22 and 1), a tuple where the script wanted a string.
 `tests/test_image_ref.py`
 
-**AN UNEXPECTED VHOST NAMES ITS FRAGMENT** (`_declared_in()`), or says none does. MEASURED: 2 of
-5 fragments have a committed source; 138 lines of the proxy live only on the droplet.
-[2026-10-16] `tests/test_vhost_attribution.py`
+**AN UNEXPECTED VHOST NAMES ITS FRAGMENT** (`_declared_in()`), or says none does. MEASURED: 2 of 5
+fragments have a committed source; 138 proxy lines live only on the droplet. [2026-10-16]
+`tests/test_vhost_attribution.py`
+
+**A PACKAGE NAME ON A `RUN` LINE IS A VERSION NOBODY WROTE DOWN; THE CACHE FREEZES IT.** Run #12:
+certifi 2026.7.22 CRITICAL in colttechbot, 2026.10.19 in colt-web, same commit. Every
+image installs `-r` a committed exact-pinned manifest (certifi BY NAME though transitive); the
+root requirements.txt no Dockerfile read is retired; dependabot/SBOM lists are DERIVED.
+[2026-10-22] `tests/test_image_dependencies.py`
 
 ## STANDING RULE — always end with the exact command to run — and it is ONE command
 

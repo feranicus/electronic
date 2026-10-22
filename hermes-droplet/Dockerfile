@@ -12,7 +12,8 @@ ENV PATH="/root/.local/bin:${PATH}"
 # --- skill deps ---
 RUN mkdir -p /opt/node && cd /opt/node && npm init -y >/dev/null 2>&1 && npm install pptxgenjs@^4 --no-audit --no-fund
 ENV NODE_PATH=/opt/node/node_modules
-RUN pip3 install --no-cache-dir --break-system-packages shodan
+COPY hermes-skills/shodan-assessment/requirements.txt /tmp/engine-requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/engine-requirements.txt
 RUN mkdir -p /root/work
 # DO Qwen as an OpenAI-compatible custom endpoint (key passed at RUN time)
 ENV OPENAI_BASE_URL="https://inference.do-ai.run/v1"
