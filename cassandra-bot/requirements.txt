@@ -6,7 +6,7 @@
 #
 # python-telegram-bot stays on 21.x. That cap is deliberate and predates this change; the bump to
 # 22 is a separate decision with its own testing, not something to smuggle in behind a CVE fix.
-python-telegram-bot==21.11
+python-telegram-bot==22.8
 # Chromium for the JS-render FALLBACK. `playwright install --with-deps chromium` downloads a
 # browser matched to this version, so a bump here re-downloads it — which is the cost of knowing
 # which browser is in the image. Set ENABLE_BROWSER=0 to leave it unused at runtime.
