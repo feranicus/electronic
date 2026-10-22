@@ -513,7 +513,7 @@ Read-only, one SSH session each, run from the operator's PC.
 | `python authz_audit.py` | does every route refuse an anonymous caller |
 | `python incident_report.py` | assemble a forensics package for an exposure |
 | `python secaudit.py` | kernel, reboot and patch posture, and staging-versus-production drift |
-| `python decommission.py` | retire a vhost from the shared proxy, dry run by default |
+| `python decommission.py --sites <name>` | retire a vhost from the shared proxy. Dry run by default, no default target, and a fragment shared with other domains is edited rather than deleted |
 
 ---
 

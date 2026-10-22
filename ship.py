@@ -2157,6 +2157,9 @@ def main():
     ap.add_argument("--pr", action="store_true",
                     help="reach main through a gated pull request instead of pushing to it "
                          "directly, then let pipeline.yml deploy (set SHIP_FLOW=pr to default)")
+    ap.add_argument("--decommission", metavar="SITES", default=None,
+                    help="after a VERIFIED ship, retire these vhosts from the shared proxy "
+                         "(names or a decommission.py group key, e.g. jev)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
     ap.add_argument("--fix-ci-key", action="store_true",
                     help="prove the deploy key works and set the DROPLET_SSH_KEY secret from it "
@@ -2645,6 +2648,37 @@ def main():
             ui_preview_stamp.record_shipped()
         except Exception:
             pass
+
+    # ---- RETIRE A VHOST, LAST, AND ONLY BEHIND A VERIFIED SHIP --------------------------------
+    # ONE ORCHESTRATOR (operating principle 7). Taking a site off the shared proxy is an operator
+    # action, not a deploy step, but telling him to run decommission.py himself is the second
+    # `python ...` line this repo keeps promising never to print.
+    #
+    # It runs LAST and only when the ship VERIFIED, for two reasons that are not style:
+    #   * the code that performs the retirement is then code that is committed and pushed
+    #     (principle 2), rather than whatever happened to be in the working tree;
+    #   * decommission.py finishes by probing every surviving vhost. Running it after a ship that
+    #     did not verify would blame the retirement for damage the deploy had already done.
+    # decommission.py still plans, refuses rather than guesses, and archives before it writes;
+    # nothing here duplicates that logic (ONE HOME).
+    if a.decommission and not DRY:
+        print("\n" + "-" * 74)
+        print("  DECOMMISSION — %s" % a.decommission)
+        print("-" * 74)
+        if not ok:
+            print("  SKIPPED: this ship did not verify. A vhost is not retired on top of a")
+            print("  deploy that is already in an unknown state - fix the ship, then re-run.")
+        else:
+            _dc = subprocess.run(
+                [sys.executable, os.path.join(HERE, "decommission.py"),
+                 "--sites", a.decommission, "--apply"],
+                encoding="utf-8", errors="replace", timeout=900)
+            if _dc.returncode != 0:
+                ok = False
+                VERIFY_FAILURES.append("decommission %s returned %d"
+                                       % (a.decommission, _dc.returncode))
+                print("\n  [X] the decommission did not complete cleanly. Its own plan and")
+                print("      verification are printed above; `--undo <stamp>` puts it back.")
 
     print("\n" + "=" * 74)
     if ok:

@@ -45,44 +45,121 @@ def _bash_ok(script, tmp_path, name):
     return r.returncode, r.stderr.decode("utf-8", "replace")
 
 
-@pytest.mark.parametrize("name", ["plan", "apply", "undo"])
+@pytest.mark.parametrize("name", ["plan", "apply", "edit", "undo"])
 def test_every_generated_script_is_valid_bash(name, tmp_path):
     """A remote script is assembled by %-formatting, and a stray placeholder or a mangled
     parameter expansion is invisible until it runs on the droplet. This repository has already
     shipped one `printf '%%s'` bug and one `%]` format error that masked a real traceback."""
-    s = {"plan": lambda: D.plan_script(D.DEFAULT_SITES),
+    s = {"plan": lambda: D.plan_script(D.expand_sites(["jev"])),
          "apply": lambda: D.apply_script(["a.caddy"], ["polara-web"], "20260901-120000"),
+         "edit": lambda: D.apply_script([], ["jev-web"], "20260901-120000",
+                                        {"_base.caddy": "godeyes.ai {\n  respond 200\n}\n"}),
          "undo": lambda: D.undo_script("20260901-120000")}[name]()
     rc, err = _bash_ok(s, tmp_path, name)
     assert rc == 0, "%s script is not valid bash: %s" % (name, err)
     assert "%s" not in s.replace("printf '%s'", ""), "an unformatted placeholder reached the script"
 
 
-def test_a_shared_fragment_is_refused(capsys):
-    """THE OUTAGE THIS PREVENTS. A Caddy fragment can declare several site names. Removing one
-    that also carries cybergod.ai would take cybergod.ai down, and you would find out from a
-    customer rather than from the plan."""
-    d = {"FRAGMENTS": "misc.caddy|jev.best cybergod.ai\npolara.caddy|klimaanlage-preise.de",
-         "MATCHES": "jev.best|misc.caddy\nklimaanlage-preise.de|polara.caddy",
-         "CONTAINERS": "polara-web|p|Up 3d|", "UPSTREAMS": ""}
-    frags, _ = D.show_plan(["jev.best", "klimaanlage-preise.de"], d)
-    assert frags is None, "a fragment that also serves an unlisted domain must be REFUSED"
+def _b64(text):
+    import base64
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+JEV_BLOCK = ("jev.best, www.jev.best {\n"
+             "  handle /api/* {\n"
+             "    reverse_proxy jev-api:8080\n"
+             "  }\n"
+             "  reverse_proxy jev-web:3000\n"
+             "}\n")
+BASE_FRAG = ("# shared base\n"
+             "godeyes.ai {\n"
+             "  reverse_proxy godeyes-web:8000\n"
+             "}\n" + JEV_BLOCK +
+             "s4biz.io {\n"
+             "  reverse_proxy s4biz-web:8000\n"
+             "}\n")
+
+
+def test_a_shared_fragment_is_NOT_deleted_whole(capsys):
+    """THE OUTAGE THIS PREVENTS. A Caddy fragment can declare several site names, and deleting the
+    file takes all of them down.
+
+    THE ORIGINAL DOCTRINE, KEPT BECAUSE IT IS STILL HALF RIGHT (class 17): this used to REFUSE
+    outright, and refusing beat proceeding. But on this droplet most vhosts share `_base.caddy`,
+    so "retire jev.best" could only ever answer no, and the honest conclusion was that the
+    operation was unsupported rather than unsafe. The rule now is narrower and still never deletes
+    a byte of somebody else's routing: the file is EDITED, the original is archived, the other
+    domains must still appear in the kept text."""
+    d = {"FRAGMENTS": "_base.caddy|godeyes.ai jev.best www.jev.best s4biz.io",
+         "MATCHES": "jev.best|_base.caddy\nwww.jev.best|_base.caddy",
+         "FRAGTEXT": "_base.caddy|" + _b64(BASE_FRAG),
+         "CONTAINERS": "jev-web|i|Up 3d|\ncolt-web|c|Up 2h|", "UPSTREAMS": ""}
+    plan, guess = D.show_plan(["jev.best", "www.jev.best"], d)
+    assert plan is not None, "a shared fragment must now be editable, not a dead end"
+    whole, extract = plan
+    assert whole == [], "the shared file must never be removed outright"
+    kept, removed, extra = extract["_base.caddy"]
+    assert "jev.best" not in kept and "jev-web" not in kept, "the target block is still served"
+    for survivor in ("godeyes.ai", "s4biz.io", "godeyes-web", "s4biz-web"):
+        assert survivor in kept, "%s was lost from the fragment" % survivor
+    assert "jev.best" in removed and sorted(extra) == ["godeyes.ai", "s4biz.io"]
     out = capsys.readouterr().out
-    assert "cybergod.ai" in out and "REFUSING" in out, "the refusal must NAME the collateral"
+    assert "WILL EDIT FRAGMENTS" in out, "the plan must say the file is edited, not removed"
 
 
-def test_a_clean_split_proceeds_and_never_targets_a_survivor(capsys):
+def test_a_header_mixing_a_target_with_a_survivor_is_still_refused(capsys):
+    """One header, two meanings. `jev.best, godeyes.ai { ... }` cannot be removed for one name and
+    kept for the other without rewriting routing nobody asked us to touch."""
+    mixed = "jev.best, godeyes.ai {\n  reverse_proxy shared:8000\n}\n"
+    d = {"FRAGMENTS": "_base.caddy|jev.best godeyes.ai",
+         "MATCHES": "jev.best|_base.caddy",
+         "FRAGTEXT": "_base.caddy|" + _b64(mixed),
+         "CONTAINERS": "", "UPSTREAMS": ""}
+    plan, _ = D.show_plan(["jev.best"], d)
+    assert plan is None, "a mixed header must be refused, not silently rewritten"
+    out = capsys.readouterr().out
+    assert "REFUSING" in out and "godeyes.ai" in out, "the refusal must NAME the collateral"
+
+
+def test_an_unreadable_fragment_is_refused_rather_than_guessed(capsys):
+    """Class 1: a check that cannot see its subject must not answer. No FRAGTEXT means we cannot
+    compute the edit, and 'I could not read it' is not 'there was nothing to remove'."""
+    d = {"FRAGMENTS": "_base.caddy|jev.best godeyes.ai", "MATCHES": "jev.best|_base.caddy",
+         "CONTAINERS": "", "UPSTREAMS": ""}
+    plan, _ = D.show_plan(["jev.best"], d)
+    assert plan is None
+    assert "could not read" in capsys.readouterr().out
+
+
+def test_a_dedicated_fragment_is_removed_whole_and_never_targets_a_survivor(capsys):
     d = {"FRAGMENTS": "polara.caddy|klimaanlage-preise.de www.klimaanlage-preise.de\n"
                       "jev.caddy|jev.best www.jev.best\ncybergod.caddy|cybergod.ai",
          "MATCHES": "jev.best|jev.caddy\nwww.jev.best|jev.caddy\n"
                     "klimaanlage-preise.de|polara.caddy\nwww.klimaanlage-preise.de|polara.caddy",
+         "FRAGTEXT": "jev.caddy|" + _b64(JEV_BLOCK),
          "CONTAINERS": "polara-web|p|Up 3d|\ncolt-web|c|Up 2h|\njhw-web|j|Up 5d|", "UPSTREAMS": ""}
-    frags, guess = D.show_plan(["jev.best", "www.jev.best", "klimaanlage-preise.de",
-                                "www.klimaanlage-preise.de"], d)
-    assert frags == ["jev.caddy", "polara.caddy"]
-    assert "cybergod.caddy" not in frags
+    plan, guess = D.show_plan(["jev.best", "www.jev.best", "klimaanlage-preise.de",
+                               "www.klimaanlage-preise.de"], d)
+    whole, extract = plan
+    assert whole == ["jev.caddy", "polara.caddy"] and not extract
+    assert "cybergod.caddy" not in whole
     for keep in ("colt-web", "jhw-web"):
         assert keep not in (guess or []), "%s must never be proposed for stopping" % keep
+
+
+def test_the_containers_to_stop_are_read_from_the_routing_not_the_name(capsys):
+    """The old rule was `any(k in name for k in ("polara","klima","jev"))`: three hardcoded homes
+    that would stop a container called `jev-archive` and miss one whose name says nothing about
+    its domain. The config already names the upstream serving the block being removed."""
+    d = {"FRAGMENTS": "_base.caddy|godeyes.ai jev.best www.jev.best s4biz.io",
+         "MATCHES": "jev.best|_base.caddy",
+         "FRAGTEXT": "_base.caddy|" + _b64(BASE_FRAG),
+         "CONTAINERS": "jev-web|i|Up 3d|\njev-api|i|Up 3d|\njev-archive|i|Up 1d|\n"
+                       "godeyes-web|g|Up 9d|", "UPSTREAMS": ""}
+    _, guess = D.show_plan(["jev.best", "www.jev.best"], d)
+    assert sorted(guess) == ["jev-api", "jev-web"], guess
+    assert "jev-archive" not in guess, "a name-substring match would have stopped an unrelated box"
+    assert "godeyes-web" not in guess, "the upstream of a KEPT block must never be stopped"
 
 
 def test_nothing_is_proposed_when_nothing_matches(capsys):
@@ -90,8 +167,8 @@ def test_nothing_is_proposed_when_nothing_matches(capsys):
     That distinction is the same one logship got wrong: 'I cannot see my subject' and 'there is
     nothing to do' produce the same output unless you make them different."""
     d = {"FRAGMENTS": "cybergod.caddy|cybergod.ai", "MATCHES": "", "CONTAINERS": "", "UPSTREAMS": ""}
-    frags, _ = D.show_plan(["jev.best"], d)
-    assert frags is None
+    plan, _ = D.show_plan(["jev.best"], d)
+    assert plan is None
     assert "none of the target sites" in capsys.readouterr().out
 
 
@@ -138,11 +215,172 @@ def test_the_survivors_are_verified_and_the_list_is_not_empty():
         "jobhuntwow shares this proxy and was one of the sites lost on 2026-08-07"
 
 
-def test_the_default_targets_include_the_www_variants():
+def test_naming_a_site_always_takes_its_www_partner_with_it():
     """Omitting `www.` is how you leave half a site served and trip the collateral check on the
-    next run for a domain you thought you had already removed."""
-    for base in ("jev.best", "klimaanlage-preise.de"):
-        assert base in D.DEFAULT_SITES and "www." + base in D.DEFAULT_SITES
+    next run for a domain you thought you had already removed.
+
+    THE DOCTRINE THAT CHANGED (class 17). This used to be asserted of `DEFAULT_SITES`, a module
+    constant that `--sites` defaulted to — so the pairing was guaranteed only for the three
+    domains someone had typed there, and `--apply` with no arguments retired all of them. The
+    pairing is the property worth keeping; the default target was the hazard. expand_sites()
+    enforces the pairing on whatever the operator actually names."""
+    assert D.expand_sites(["jev.best"]) == ["jev.best", "www.jev.best"]
+    assert sorted(D.expand_sites(["www.jev.best"])) == ["jev.best", "www.jev.best"]
+    klima = D.expand_sites(["klima"])
+    for base in ("klimaanlage-preise.de", "klimaanlage-montieren.de"):
+        assert base in klima and "www." + base in klima
+    assert D.expand_sites([""]) == [], "an empty argument must not expand into a target"
+
+
+def test_there_is_no_default_target():
+    """A destructive tool must not have a destructive default in EITHER half. Dry-run-by-default
+    covered the action; nothing covered the target, and the target list shipped with a live
+    project in it."""
+    src = open(os.path.join(ROOT, "decommission.py"), encoding="utf-8").read()
+    assert 'ap.add_argument("--sites", default=""' in src, (
+        "--sites has a default again; `decommission.py --apply` would then retire whatever that "
+        "default names")
+    assert not hasattr(D, "DEFAULT_SITES"), "the implicit target list is back"
+
+
+def test_the_edit_archives_the_original_before_it_writes():
+    """`--undo` restores whatever is in the archive, so the ORIGINAL has to be what lands there.
+    Archiving after the write would store the edited file and make undo a no-op."""
+    s = D.apply_script([], ["jev-web"], "t", {"_base.caddy": "godeyes.ai {\n}\n"})
+    assert s.index('cp -a "/opt/caddyguard/blocks/_base.caddy"') < s.index('mv "$DEST/_base.caddy.new"')
+    assert s.index("tar czf") < s.index('cp -a "/opt/caddyguard/blocks/_base.caddy"')
+    assert s.index('mv "$DEST/_base.caddy.new"') < s.index("assemble --apply"), \
+        "the reduced fragment must be in place before the config is reassembled"
+
+
+def test_an_empty_replacement_is_refused_rather_than_written():
+    """A truncated fragment is the 2026-08-07 shape. If the base64 fails to decode, the write must
+    stop rather than install an empty file and reload."""
+    s = D.apply_script([], [], "t", {"_base.caddy": "godeyes.ai {\n}\n"})
+    assert '[ -s "$DEST/_base.caddy.new" ]' in s and "exit 1" in s
+
+
+def test_the_edit_never_touches_the_live_caddyfile():
+    s = D.apply_script([], [], "t", {"_base.caddy": "godeyes.ai {\n}\n"})
+    for forbidden in ("sed -i", "> /opt/videodead/Caddyfile", "caddy reload"):
+        assert forbidden not in s, forbidden
+
+
+@pytest.mark.parametrize("text,sites,why", [
+    ("jev.best {\n  handle {\n    respond 200\n  }\n}\n", ["jev.best"], None),
+    ("jev.best {\n  handle {\n    respond 200\n", ["jev.best"], "never closes"),
+    ("godeyes.ai {\n  respond 200\n}\n", ["jev.best"], "no site block"),
+])
+def test_split_fragment_counts_braces_and_refuses_rather_than_guessing(text, sites, why):
+    """A nested `handle { }` is ordinary Caddy, so a line-based rule cuts the file in half. And an
+    unbalanced block means our counting disagrees with Caddy's parser, which is the one situation
+    where changing nothing is the only safe answer."""
+    kept, removed, refusal = D.split_fragment(text, sites)
+    if why is None:
+        assert refusal is None and removed.count("{") == removed.count("}")
+        assert kept.strip() == "", kept
+    else:
+        assert refusal and why in refusal
+
+
+def test_the_edit_segment_really_produces_the_reduced_fragment(tmp_path, monkeypatch):
+    """PARSE IS NOT RUN (class 48). The write is base64 inside a shell string inside a Python
+    %-format: it can be valid bash, pass every source assertion above, and still land the wrong
+    bytes. Run it against a real file and compare.
+
+    The fixture is proved first: the original must contain the block we expect to lose, or this
+    would pass by removing nothing."""
+    ok, why = _posix_ok()
+    if not ok:
+        pytest.skip(why)
+    guard = tmp_path / "caddyguard"
+    (guard / "blocks").mkdir(parents=True)
+    (guard / "decommissioned" / "t").mkdir(parents=True)
+    frag = guard / "blocks" / "_base.caddy"
+    frag.write_bytes(BASE_FRAG.encode("utf-8"))          # BINARY: class 21
+    assert "jev-web" in frag.read_text(encoding="utf-8"), "fixture does not hold the target block"
+
+    kept, removed, why2 = D.split_fragment(BASE_FRAG, ["jev.best", "www.jev.best"])
+    assert why2 is None and "jev-web" in removed
+
+    monkeypatch.setattr(D, "GUARD", str(guard).replace("\\", "/"))
+    script = D.apply_script([], [], "t", {"_base.caddy": kept})
+    # Cut on the WHOLE echo lines. Splitting on the bare marker leaves the opening quote of the
+    # next `echo "` behind and bash dies on a syntax error that says nothing about the write.
+    seg = script.split('echo "#### EDIT_FRAGMENTS"\n')[1].split('echo "#### REASSEMBLE"')[0]
+    r = subprocess.run(["bash", "-e", "-c", 'DEST="%s"\n%s' % (
+        str(guard / "decommissioned" / "t").replace("\\", "/"), seg)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
+
+    now = frag.read_text(encoding="utf-8")
+    assert now == kept, "the fragment on disk is not what the plan computed"
+    assert "jev.best" not in now and "jev-web" not in now
+    for survivor in ("godeyes.ai", "s4biz.io"):
+        assert survivor in now
+    archived = (guard / "decommissioned" / "t" / "_base.caddy").read_text(encoding="utf-8")
+    assert archived == BASE_FRAG, "undo would restore the wrong bytes"
+
+
+def _posix_ok():
+    sys.path.insert(0, os.path.join(ROOT, "tests"))
+    from test_teamwork import shell_harness_allowed
+    return shell_harness_allowed()
+
+
+def test_the_survivors_are_derived_from_what_is_actually_served():
+    """A hardcoded survivor list measures the day it was written. Editing the shared base can
+    break any vhost in it, so every name the proxy serves that we are not removing is checked."""
+    frag_names = {"_base.caddy": ["godeyes.ai", "jev.best", "s4biz.io"],
+                  "colt.caddy": ["cybergod.ai"]}
+    urls = D._survivor_urls(frag_names, ["jev.best", "www.jev.best"])
+    hosts = [u.split("/")[2] for u in urls]
+    assert "godeyes.ai" in hosts and "s4biz.io" in hosts
+    assert "jev.best" not in hosts, "a site being removed must not be probed as a survivor"
+    for floor in ("cybergod.ai", "www.jobhuntwow.com"):
+        assert floor in hosts, "the pinned floor must survive derivation"
+
+
+def _ship_src():
+    """ship.py with comments and docstrings stripped. A guard has matched its own explanatory
+    comment five separate times in this repository (class 4)."""
+    import ast
+    src = open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read()
+    tree = ast.parse(src)
+    drop = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) \
+                and isinstance(node.value.value, str):
+            drop.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return "\n".join(ln for i, ln in enumerate(src.splitlines(), 1)
+                     if i not in drop and not ln.strip().startswith("#"))
+
+
+def test_ship_py_owns_the_decommission_so_the_operator_runs_ONE_command():
+    """Operating principle 7. Retiring a vhost used to mean a second `python ...` line, which is
+    the rule this repository keeps writing down and then breaking."""
+    s = _ship_src()
+    assert '"--decommission"' in s, "ship.py does not expose the verb"
+    assert '"decommission.py"' in s and '"--apply"' in s, \
+        "the flag exists but nothing invokes the script - a control that is unreachable is not a " \
+        "control (class 9)"
+
+
+def test_the_decommission_runs_after_the_ship_verified_and_never_on_a_failed_one():
+    """Two properties in source ORDER, because both are about when it runs:
+
+    * it comes after the safe-point tag, so the code performing the retirement is code that has
+      been committed and pushed (principle 2, GitHub is the source of truth);
+    * it is skipped when the ship did not verify. decommission.py ends by probing every surviving
+      vhost, so running it on top of a broken deploy would blame the retirement for damage the
+      deploy had already done."""
+    s = _ship_src()
+    i_tag = s.index("tag_known_good()")
+    i_dec = s.index('"decommission.py"')
+    assert i_tag < i_dec, "the decommission must run after the ship has verified and tagged"
+    gate = s[s.index("if a.decommission"):i_dec]
+    assert "not DRY" in gate, "--dry-run must not retire a vhost"
+    assert "if not ok" in gate, "a ship that did not verify must not retire a vhost"
 
 
 def test_dry_run_is_the_default(tmp_path):
