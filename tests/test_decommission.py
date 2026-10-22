@@ -45,7 +45,7 @@ def _bash_ok(script, tmp_path, name):
     return r.returncode, r.stderr.decode("utf-8", "replace")
 
 
-@pytest.mark.parametrize("name", ["plan", "apply", "edit", "undo"])
+@pytest.mark.parametrize("name", ["plan", "apply", "edit", "diff", "undo"])
 def test_every_generated_script_is_valid_bash(name, tmp_path):
     """A remote script is assembled by %-formatting, and a stray placeholder or a mangled
     parameter expansion is invisible until it runs on the droplet. This repository has already
@@ -54,6 +54,7 @@ def test_every_generated_script_is_valid_bash(name, tmp_path):
          "apply": lambda: D.apply_script(["a.caddy"], ["polara-web"], "20260901-120000"),
          "edit": lambda: D.apply_script([], ["jev-web"], "20260901-120000",
                                         {"_base.caddy": "godeyes.ai {\n  respond 200\n}\n"}),
+         "diff": lambda: D.diff_script("last"),
          "undo": lambda: D.undo_script("20260901-120000")}[name]()
     rc, err = _bash_ok(s, tmp_path, name)
     assert rc == 0, "%s script is not valid bash: %s" % (name, err)
@@ -189,6 +190,17 @@ def test_the_decommission_deletes_no_data():
     assert "mv " in s, "fragments must be MOVED to the archive, not deleted"
 
 
+def test_a_refusable_edit_runs_before_any_fragment_is_moved():
+    """Each edit proves its payload by checksum and can REFUSE; `set -e` then stops the script.
+    With the moves ahead of them, a refused edit would leave another project's fragment already
+    archived and the config un-reassembled - a half-state for a change that decided not to happen.
+    This matters the moment one run retires two sites by different paths."""
+    s = D.apply_script(["polara__klima.caddy"], [], "t", {"_base.caddy": "godeyes.ai {\n}\n"})
+    assert s.index("REFUSING to install") < s.index('mv "/opt/caddyguard/blocks/$f"'), \
+        "a fragment is moved before the edit that might refuse"
+    assert s.index("#### EDIT_FRAGMENTS") < s.index("#### MOVE_FRAGMENTS")
+
+
 def test_it_backs_up_before_it_changes_anything():
     s = D.apply_script(["x.caddy"], ["polara-web"], "t")
     assert s.index("tar czf") < s.index("mv "), "back up BEFORE moving fragments"
@@ -253,11 +265,60 @@ def test_the_edit_archives_the_original_before_it_writes():
         "the reduced fragment must be in place before the config is reassembled"
 
 
-def test_an_empty_replacement_is_refused_rather_than_written():
-    """A truncated fragment is the 2026-08-07 shape. If the base64 fails to decode, the write must
-    stop rather than install an empty file and reload."""
-    s = D.apply_script([], [], "t", {"_base.caddy": "godeyes.ai {\n}\n"})
-    assert '[ -s "$DEST/_base.caddy.new" ]' in s and "exit 1" in s
+def test_the_write_proves_it_installed_what_was_computed():
+    """NON-EMPTY IS NOT CORRECT (class 17 - the doctrine this test used to encode was too weak).
+
+    The original gate was `[ -s "$DEST/<n>.new" ]`: refuse if the decoded file is empty. On
+    2026-10-22 a 94-line `_base.caddy` reached the droplet as ONE line, which is non-empty, so
+    that gate passed it and the assemble served it. godeyes.ai - a vhost declared as `{$DOMAIN} {`
+    in that same file - went dark.
+
+    Every local reproduction of the split, the base64 round trip and the remote write produced the
+    correct result, so the cause is somewhere this code cannot see. A checksum does not care: it
+    is exact, it is compared BEFORE anything is archived or moved, and a mismatch prints expected
+    against actual, which is the diagnosis the next occurrence will need."""
+    import hashlib
+    body = "godeyes.ai {\n}\n"
+    s = D.apply_script([], [], "t", {"_base.caddy": body})
+    assert hashlib.sha256(body.encode()).hexdigest() in s, "no checksum is sent"
+    assert "sha256sum" in s and "-ne 2" in s, "the line count is not verified"
+    assert s.index("REFUSING to install") < s.index('cp -a "/opt/caddyguard/blocks/_base.caddy"'), \
+        "the proof must come before anything is archived or moved"
+    assert "UNCHANGED" in s, "the refusal must say the live config was not touched"
+
+
+def test_a_corrupted_payload_is_refused_and_leaves_the_original_in_place(tmp_path, monkeypatch):
+    """PROVE THE GATE BY BREAKING THE THING IT GUARDS (class 3). Hand the remote script a payload
+    that does not match its own checksum - which is what 2026-10-22 looked like from the droplet's
+    side - and the fragment on disk must be untouched."""
+    ok, why = _posix_ok()
+    if not ok:
+        pytest.skip(why)
+    guard = tmp_path / "caddyguard"
+    (guard / "blocks").mkdir(parents=True)
+    dest = guard / "decommissioned" / "t"
+    dest.mkdir(parents=True)
+    frag = guard / "blocks" / "_base.caddy"
+    frag.write_bytes(BASE_FRAG.encode("utf-8"))
+
+    monkeypatch.setattr(D, "GUARD", str(guard).replace("\\", "/"))
+    kept, _, _ = D.split_fragment(BASE_FRAG, ["jev.best", "www.jev.best"])
+    script = D.apply_script([], [], "t", {"_base.caddy": kept})
+    seg = script.split('echo "#### EDIT_FRAGMENTS"\n')[1].split('echo "#### REASSEMBLE"')[0]
+
+    # CORRUPT THE PAYLOAD, exactly as whatever happened on the droplet did: the base64 now carries
+    # a single newline instead of the computed fragment.
+    import base64 as b64
+    good = b64.b64encode(kept.encode("utf-8")).decode("ascii")
+    seg = seg.replace(good, b64.b64encode(b"\n").decode("ascii"))
+
+    r = subprocess.run(["bash", "-c", 'DEST="%s"\n%s' % (str(dest).replace("\\", "/"), seg)],
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out = r.stdout.decode("utf-8", "replace")
+    assert r.returncode != 0, "a corrupted payload was accepted:\n%s" % out
+    assert "REFUSING to install" in out and "got      sha256" in out, out
+    assert frag.read_text(encoding="utf-8") == BASE_FRAG, "the original fragment was modified"
+    assert not (dest / "_base.caddy").exists(), "it archived before it had proved anything"
 
 
 def test_the_edit_never_touches_the_live_caddyfile():
@@ -326,6 +387,64 @@ def _posix_ok():
     sys.path.insert(0, os.path.join(ROOT, "tests"))
     from test_teamwork import shell_harness_allowed
     return shell_harness_allowed()
+
+
+COMMENT_BRACE = ("godeyes.ai {\n  respond 200\n}\n"
+                 "jev.best {\n  # handle { later\n  reverse_proxy jev-web:3000\n}\n"
+                 "s4biz.io {\n  respond 200\n}\n}\n")
+
+
+def test_a_stray_brace_in_a_comment_cannot_swallow_the_next_vhost():
+    """THE POST-CONDITION, and why 'nothing vanished' was not enough.
+
+    Caddy's parser ignores a `{` inside a comment or a quoted string; this splitter counts raw
+    braces, so one stray brace makes the counter run past the closing brace and take the following
+    vhost with it. The first version of the check asserted only that every header in the original
+    turned up in kept-or-removed - and a swallowed block IS in removed, so it passed.
+
+    The invariant that catches it: the removed side may contain NOTHING but target headers."""
+    kept, removed, why = D.split_fragment(COMMENT_BRACE, ["jev.best"])
+    assert kept is None and removed is None, "s4biz.io was removed along with jev.best"
+    assert "s4biz.io" in why, "the refusal must NAME what it would have taken: %s" % why
+    assert "Nothing is changed" in why
+
+
+def test_the_split_accounts_for_every_line_of_the_input():
+    """Arithmetic over the input and the output, so it holds whatever the mechanism was. On
+    2026-10-22 a 94-line fragment reached the droplet as one line and nothing noticed."""
+    kept, removed, why = D.split_fragment(BASE_FRAG, ["jev.best", "www.jev.best"])
+    assert why is None
+    assert len(kept.splitlines()) + len(removed.splitlines()) == len(BASE_FRAG.splitlines())
+
+
+def test_every_post_condition_clause_can_actually_fail():
+    """A CHECK THAT CANNOT FAIL IS NOT A CHECK (class 3), and two of these could not.
+
+    Inside the loop, 'every line is accounted for' and 'no header vanished' are unreachable by any
+    input: the loop puts each line on one side or the other by construction. Mutating them away
+    changed nothing and the suite stayed green. They exist to guard FUTURE edits to that loop, so
+    the test has to break the loop's OUTPUT on purpose - which is what 'prove a gate by breaking
+    the thing it guards' means."""
+    text = BASE_FRAG
+    kept, removed, why = D.split_fragment(text, ["jev.best", "www.jev.best"])
+    assert why is None and D.check_split(text, kept, removed, ["jev.best", "www.jev.best"]) is None
+
+    dropped = "\n".join(kept.splitlines()[:-1]) + "\n"          # the loop loses a line
+    assert "does not account for every line" in \
+        D.check_split(text, dropped, removed, ["jev.best", "www.jev.best"])
+
+    no_hdr = kept.replace("godeyes.ai {", "# godeyes.ai {")     # the loop loses a header
+    assert "vanished" in D.check_split(text, no_hdr, removed, ["jev.best", "www.jev.best"])
+
+    assert "still declared" in D.check_split(text, text, "", ["jev.best", "www.jev.best"])
+
+
+def test_the_header_detector_sees_an_environment_placeholder_vhost():
+    """`{$DOMAIN} {` is a real site header on this proxy - godeyes.ai is served by it, so that
+    hostname appears NOWHERE in the file. The plan's name grep (`^[a-z0-9.*-]+...`) cannot match
+    it, which is why a fragment holding two vhosts was recorded as holding one."""
+    assert D._headers("{$DOMAIN} {\n  respond 200\n}\n") == {"{$DOMAIN} {"}
+    assert D._headers("# a comment {\n(snippet) {\n\thandle {\n}\n") == set()
 
 
 def test_the_survivors_are_derived_from_what_is_actually_served():
@@ -431,6 +550,96 @@ def test_a_clean_apply_reports_success(monkeypatch, capsys):
     assert rc == 0, out
     assert "stopped part-way" not in out
     assert "all survivors answering" in out
+
+
+def test_the_forensic_verb_cannot_change_anything():
+    """`--diff` is reached for while reading an outage, which is the worst moment to run a script
+    that writes. It reads the archive the undo left behind and the live config, and nothing else."""
+    s = D.diff_script("last")
+    for verb in ("mv ", "rm ", "cp -a", "assemble --apply", "docker stop", "docker update",
+                 "base64 -d >", "sed -i"):
+        assert verb not in s, "the read-only forensic contains %r" % verb
+    assert "diff -u" in s and "#### CENSUS" in s
+
+
+def test_the_header_census_is_wider_than_the_one_that_measured_its_own_pattern():
+    """THE FIRST READING OF THIS INCIDENT WAS A GUESS, and the reason was this pattern.
+
+    The undo's grep was `^[A-Za-z0-9*][^{]*\\{[[:space:]]*$`. Against the real `_base.caddy` it
+    reported exactly ONE site header in a 95-line file that caddyguard counts as 13 brace pairs,
+    so the restore output could not distinguish 'the edit removed only jev' from 'the edit removed
+    jev and everything after it'. A census that finds one block in a file holding several is
+    measuring its own pattern (class 1).
+
+    The census must see a plain header, a multi-name header and a scheme-prefixed one, and must
+    skip comments, snippet definitions and indented directives."""
+    import re
+    m = re.search(r"grep -nE '([^']+)' \"\$v\"", D.diff_script("last"))
+    assert m, "the census grep moved; this guard is reading the wrong thing"
+    # POSIX classes -> Python. `[[:space:]]` is a class of its own; `[:space:]` also appears
+    # INSIDE a negated set (`[^[:space:]#(]`), where the outer brackets are the set's.
+    ere = m.group(1).replace("[[:space:]]", r"\s").replace("[:space:]", r"\s")
+    pat = re.compile(ere)
+    for line in ("godeyes.ai {", "jev.best, www.jev.best {", "https://s4biz.io {",
+                 "klimaanlage-preise.de, www.klimaanlage-preise.de {"):
+        assert pat.match(line), "the census would miss the header %r" % line
+    for line in ("# handle { later", "(common) {", "\thandle @spa {", "  reverse_proxy x:1 {"):
+        assert not pat.match(line), "the census counts %r as a site header" % line
+
+
+def test_a_site_that_goes_dark_is_restored_automatically(monkeypatch, capsys):
+    """godeyes.ai was down for twenty minutes because the only signal was one line in the middle
+    of a deploy that otherwise ended with DONE. The archive is byte-exact, so leaving somebody
+    else's domain dark while a human reads a log is a choice, not a constraint.
+
+    BOTH TERMS OVER THE SAME PERIOD: a site that was already down before the change must not be
+    blamed on it, which is what the baseline probe is for."""
+    seen = {"n": 0}
+
+    def flaky(url, **kw):
+        seen["n"] += 1
+        # healthy for the baseline sweep, dark for the after sweep, healthy once restored
+        if "godeyes" in url and 5 <= seen["n"] <= 8:
+            return None, "URLError"
+        return 200, "ok"
+
+    calls = []
+
+    def fake(script, timeout=240):
+        calls.append(script)
+        return [(PLAN_OUT, "", 0), ("#### NOTE\nok\n", "", 0),
+                ("#### RESTORE_FRAGMENTS\nrestored _base.caddy\n", "", 0)][min(len(calls) - 1, 2)]
+
+    monkeypatch.setattr(D, "ssh_script", fake)
+    monkeypatch.setattr(D, "probe", flaky)
+    monkeypatch.setattr(sys, "argv", ["decommission.py", "--sites", "jev", "--apply"])
+    rc = D.main()
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "THIS CHANGE TOOK A SITE DOWN" in out and "godeyes.ai" in out
+    assert "restoring" in out and "was REVERSED" in out
+    assert len(calls) == 3, "expected plan, apply, and an automatic undo - got %d" % len(calls)
+
+
+def test_a_site_already_down_is_not_blamed_on_the_change(monkeypatch, capsys):
+    """The baseline is what makes the check above able to be WRONG in the useful direction."""
+    def dark_throughout(url, **kw):
+        return (None, "URLError") if "godeyes" in url else (200, "ok")
+
+    calls = []
+
+    def fake(script, timeout=240):
+        calls.append(script)
+        return (PLAN_OUT, "", 0) if len(calls) == 1 else ("#### NOTE\nok\n", "", 0)
+
+    monkeypatch.setattr(D, "ssh_script", fake)
+    monkeypatch.setattr(D, "probe", dark_throughout)
+    monkeypatch.setattr(sys, "argv", ["decommission.py", "--sites", "jev", "--apply"])
+    D.main()
+    out = capsys.readouterr().out
+    assert "THIS CHANGE TOOK A SITE DOWN" not in out, \
+        "a site that was already dark was attributed to this change"
+    assert len(calls) == 2, "it ran an undo for damage it did not do"
 
 
 def test_a_failed_undo_does_not_report_a_restore_that_did_not_happen(monkeypatch, capsys):

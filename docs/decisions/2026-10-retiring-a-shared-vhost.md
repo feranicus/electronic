@@ -156,3 +156,70 @@ whenever the surviving sites happen to be up.
 And the class is now guarded repo-wide, not just here: `tests/test_probe_fail_closed.py` derives
 every module that imports `recover.ssh_script` and fails if any call site uses the result without
 unpacking three values. Everything else in the repo already did.
+
+---
+
+## The cause is still unknown, so the operation now proves its own work — 2026-10-22
+
+### What the forensic showed
+
+`--diff` put the archived original beside what the edit left:
+
+```
+_base.caddy          94 lines, 13 open-braces, 14 close
+_base.caddy.AFTER     1 line,   0 open-braces,  0 close
+@@ -1,94 +1 @@          (every line removed)
+```
+
+A 94-line fragment reached the droplet as one empty line. It took `{$DOMAIN}` with it — which is
+godeyes.ai, served by an **environment placeholder**, so that hostname appears nowhere in the
+file. That is also why the plan recorded `_base.caddy` as declaring one vhost: its name grep is
+`^[a-z0-9.*-]+...`, which cannot match `{$DOMAIN} {`. Measured, not assumed.
+
+### What it is not
+
+I reproduced the full pipeline against a faithful rebuild of the real file — 86 lines, the
+Cyrillic comment block, the 30-line blank run, the real `bash -s`-on-stdin execution model, a
+stubbed docker on PATH:
+
+| Stage | Result |
+|---|---|
+| plan base64 → `_frag_text` round trip | identical, 1633 chars |
+| `split_fragment` | clean: 71 kept, 15 removed, no refusal |
+| generated write, executed | file on disk byte-identical to what was computed |
+
+So it is not the splitter, not the base64, not the Cyrillic, and not the stdin execution model.
+My first reading — brace counting over-consuming — was wrong, and I had started building on it
+before measuring. Twice in one day (class 29).
+
+### What changed instead
+
+I do not know the cause, and that is exactly when you stop reasoning and make the operation prove
+its work. Four changes, none of which depend on knowing it:
+
+**The write proves itself.** The old gate was `[ -s ]` — refuse if empty. One line is not empty,
+so it passed. The script now carries the expected sha256 and line count, verifies both after
+decoding and **before** anything is archived or moved, and on a mismatch prints expected against
+actual and exits with the live config untouched. The next occurrence diagnoses itself.
+
+**The split proves itself,** in `check_split()`, separate from the loop that produces it: every
+line accounted for, no header vanished, no target left behind, and — the clause that matters —
+**the removed side contains nothing but targets**. A stray `{` inside a comment, with braces
+balancing further down, makes the counter swallow the next vhost, and every other clause passes
+because the swallowed block is still "accounted for" in `removed`.
+
+**A site that goes dark is put back, automatically.** Survivors are probed *before* the change as
+well as after, so a site already down is not blamed on it, and a regression triggers the undo
+immediately. godeyes.ai was dark for twenty minutes because the only signal was one line in the
+middle of a deploy that ended with DONE.
+
+**Edits run before moves.** Edits are the step that can refuse; with moves ahead of them a refusal
+would leave another project's fragment archived and the config un-reassembled.
+
+### Proof
+
+Baseline first, then mutations: eleven applied, eleven caught. Two escaped on the first pass — the
+line-arithmetic and vanished-header clauses, which are unreachable by any input because the loop
+puts every line on one side by construction. They guard future edits to that loop, so the fix was
+to extract `check_split()` and break the loop's *output* on purpose. A check that cannot fail is
+not a check, including when I wrote it myself an hour earlier.

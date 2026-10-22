@@ -50,6 +50,7 @@ THE COLLATERAL CHECK IS THE IMPORTANT PART
 """
 import argparse
 import base64
+import hashlib
 import binascii
 import os
 import re
@@ -163,12 +164,27 @@ def apply_script(frags, containers, stamp, edits=None):
             # indistinguishable from an unformatted placeholder that never got substituted - which
             # is the exact defect tests/test_decommission.py scans every generated script for.
             'echo "%s" | base64 -d > "$DEST/%s.new"\n'
-            '[ -s "$DEST/%s.new" ] || { echo "refusing: empty replacement for %s"; exit 1; }\n'
+            # THE DECODED FILE MUST BE WHAT WE COMPUTED, PROVED BY CHECKSUM AND LINE COUNT.
+            # `[ -s ]` was the old gate and it passed a file that had been reduced from 94 lines
+            # to one: non-empty is not correct. These two are exact, they are compared BEFORE
+            # anything is archived or moved, and on a mismatch the original is still in place.
+            'GOT=$(sha256sum < "$DEST/%s.new" | cut -c1-64); LN=$(wc -l < "$DEST/%s.new")\n'
+            'if [ "$GOT" != "%s" ] || [ "$LN" -ne %d ]; then\n'
+            '  echo "REFUSING to install %s - what arrived is not what was computed."\n'
+            '  echo "  expected sha256 %s  and %d line(s)"\n'
+            '  echo "  got      sha256 $GOT  and $LN line(s)"\n'
+            '  echo "  the live config and every fragment are UNCHANGED."\n'
+            '  exit 1\n'
+            'fi\n'
             'cp -a "%s/blocks/%s" "$DEST/%s"\n'
             'mv "$DEST/%s.new" "%s/blocks/%s"\n'
             % (("edited %s (original archived)" % name),
                base64.b64encode(text.encode("utf-8")).decode("ascii"), name,
                name, name,
+               hashlib.sha256(text.encode("utf-8")).hexdigest(),
+               len(text.splitlines()),
+               name,
+               hashlib.sha256(text.encode("utf-8")).hexdigest(), len(text.splitlines()),
                GUARD, name, name,
                name, GUARD, name))
     return r"""
@@ -183,6 +199,12 @@ echo "#### BACKUP"
 tar czf "$DEST/before.tgz" -C %s blocks 2>/dev/null && echo "saved $DEST/before.tgz"
 cp -a /opt/videodead/Caddyfile "$DEST/Caddyfile.before" 2>/dev/null && echo "saved live Caddyfile"
 
+echo "#### EDIT_FRAGMENTS"
+# EDITS FIRST, BECAUSE THEY ARE THE ONES THAT CAN REFUSE. Each edit proves its payload by
+# checksum before it installs anything, and `set -e` stops the script at the first failure. With
+# the moves ahead of them, a refused edit would leave another project's fragment already archived
+# and the live config un-reassembled - a half-state for a change that decided not to happen.
+%s
 echo "#### MOVE_FRAGMENTS"
 for f in %s; do
   if [ -f "%s/blocks/$f" ]; then
@@ -192,8 +214,6 @@ for f in %s; do
   fi
 done
 
-echo "#### EDIT_FRAGMENTS"
-%s
 echo "#### REASSEMBLE"
 # assemble --apply validates in the proxy's OWN image and env, refuses a config with no site
 # blocks, checks the bind mount is fresh, and only then reloads. If it refuses, we stop here with
@@ -221,18 +241,54 @@ echo "#### REMAINING"
 docker ps --format '{{.Names}}|{{.Status}}'
 echo "#### NOTE"
 echo "volumes and images kept. Nothing here deleted data. Undo: decommission.py --undo $STAMP"
-""" % (stamp, GUARD, GUARD, " ".join(frags) or "__none__", GUARD, GUARD,
+""" % (stamp, GUARD, GUARD,
        writes or 'echo "no shared fragment needed editing"',
+       " ".join(frags) or "__none__", GUARD, GUARD,
        GUARD, GUARD, GUARD, " ".join(containers) or "__none__")
 
 
 def undo_script(stamp):
+    """`stamp` may be a literal timestamp or `last`.
+
+    RESOLVING IT REMOTELY IS THE POINT. The stamp is printed in the apply log, and the moment you
+    need an undo is the moment you are reading an outage instead of scrolling a deploy log for a
+    timestamp. `last` is resolved on the droplet, in the same ssh session, from the archive itself.
+
+    It also KEEPS THE CURRENT FRAGMENT as `<name>.AFTER` before overwriting it. A restore that
+    discards the damaged file destroys the only evidence of what the damage was, and "it works
+    again" is not a diagnosis."""
     return r"""
 set -e
-DEST=%s/decommissioned/%s
+ROOT=%s/decommissioned
+STAMP="%s"
+if [ "$STAMP" = "last" ]; then
+  STAMP=$(ls -1t "$ROOT" 2>/dev/null | head -1)
+  [ -n "$STAMP" ] || { echo "#### ERROR"; echo "no decommission has ever been applied"; exit 1; }
+  echo "#### RESOLVED"
+  echo "newest decommission: $STAMP"
+fi
+DEST="$ROOT/$STAMP"
 [ -d "$DEST" ] || { echo "#### ERROR"; echo "no such decommission: $DEST"; exit 1; }
+echo "#### EVIDENCE"
+for f in "$DEST"/*.caddy; do
+  case "$f" in *.AFTER) continue;; esac
+  [ -f "$f" ] || continue
+  n=$(basename "$f")
+  cur=%s/blocks/$n
+  echo "$n:"
+  echo "  restoring these site headers:"
+  grep -nE '^[A-Za-z0-9*][^{]*\{[[:space:]]*$' "$f" 2>/dev/null | sed 's/^/     /' || true
+  if [ -f "$cur" ]; then
+    cp -a "$cur" "$DEST/$n.AFTER" 2>/dev/null || true
+    echo "  the file being replaced had (kept as $n.AFTER):"
+    grep -nE '^[A-Za-z0-9*][^{]*\{[[:space:]]*$' "$cur" 2>/dev/null | sed 's/^/     /' || true
+  else
+    echo "  (the fragment is not on the box at all - it was removed whole)"
+  fi
+done
 echo "#### RESTORE_FRAGMENTS"
 for f in "$DEST"/*.caddy; do
+  case "$f" in *.AFTER) continue;; esac
   [ -f "$f" ] || continue
   cp -a "$f" %s/blocks/ && echo "restored $(basename $f)"
 done
@@ -243,7 +299,54 @@ python3 %s/agent.py roster || true
 echo "#### NOTE"
 echo "containers are NOT started automatically - start the ones you want by hand, so a restore"
 echo "of the routing does not silently restart something that was spending money."
-""" % (GUARD, stamp, GUARD, GUARD, GUARD)
+""" % (GUARD, stamp, GUARD, GUARD, GUARD, GUARD)
+
+
+def diff_script(stamp):
+    """READ-ONLY. What did the edit actually change?
+
+    `--undo` keeps the damaged fragment as `<name>.AFTER` beside the original it restored, so the
+    two versions are both on the box and the question is answerable without re-running anything.
+    This prints the unified diff and a census of site headers on each side.
+
+    THE CENSUS NEEDS A WIDER PATTERN THAN THE ONE THE UNDO USED. That grep was
+    `^[A-Za-z0-9*][^{]*\\{[[:space:]]*$`, and against the real `_base.caddy` it found exactly ONE
+    header in a 95-line file that the guard reports as 13 brace pairs. A census that finds one
+    block in a file holding a dozen is measuring its own pattern, not the file (class 1), and it
+    is the reason the first reading of this incident was a guess. This one excludes only comments,
+    snippet definitions and indented lines, and names what it skipped so the number can be
+    checked."""
+    return r"""
+set +e
+ROOT=%s/decommissioned
+STAMP="%s"
+if [ "$STAMP" = "last" ]; then STAMP=$(ls -1t "$ROOT" 2>/dev/null | head -1); fi
+DEST="$ROOT/$STAMP"
+echo "#### STAMP"
+echo "$STAMP"
+[ -d "$DEST" ] || { echo "#### ERROR"; echo "no such decommission: $DEST"; exit 1; }
+echo "#### CENSUS"
+for f in "$DEST"/*.caddy; do
+  case "$f" in *.AFTER) continue;; esac
+  [ -f "$f" ] || continue
+  n=$(basename "$f")
+  for v in "$f" "$f.AFTER" %s/blocks/$n; do
+    [ -f "$v" ] || { echo "$v: (absent)"; continue; }
+    echo "$v: $(wc -l < "$v") lines, $(grep -c '{' "$v") open-braces, $(grep -c '}' "$v") close"
+    grep -nE '^[^[:space:]#(].*\{[[:space:]]*$' "$v" | sed 's/^/     header /'
+  done
+done
+echo "#### DIFF"
+for f in "$DEST"/*.caddy; do
+  case "$f" in *.AFTER) continue;; esac
+  [ -f "$f.AFTER" ] || continue
+  echo "--- $(basename "$f")  (restored original  ->  what the edit had left)"
+  diff -u "$f" "$f.AFTER" | head -200
+done
+echo "#### LIVE"
+echo "site headers in the LIVE assembled config:"
+grep -nE '^[^[:space:]#(].*\{[[:space:]]*$' /opt/videodead/Caddyfile | sed 's/^/   /'
+""" % (GUARD, stamp, GUARD)
 
 
 def _match_map(sec):
@@ -356,7 +459,73 @@ def split_fragment(text, sites):
         removed.append("".join(block))
     if not removed:
         return None, None, "no site block in this fragment declares any of the target names"
-    return "".join(kept), "".join(removed), None
+
+    kept_s, removed_s = "".join(kept), "".join(removed)
+
+    # THE POST-CONDITION, checked against the FILE rather than trusted from the algorithm above.
+    #
+    # 2026-10-22: this function was handed a 94-line `_base.caddy`, and what reached the droplet
+    # was ONE line. Every local reproduction of the split, the base64 round trip and the remote
+    # write - including the Cyrillic comments, the 30-line blank run and the real `bash -s` stdin
+    # execution model - produced the correct 79-line result. So the corruption happened somewhere
+    # this code cannot see, and no amount of reasoning about brace counting was going to find it.
+    #
+    # That is exactly when you stop theorising and make the operation prove its own work. These
+    # three checks are arithmetic over the input and the output; they hold whatever the cause was.
+    why = check_split(text, kept_s, removed_s, sites)
+    if why:
+        return None, None, why
+    return kept_s, removed_s, None
+
+
+def check_split(text, kept, removed, sites):
+    """A refusal reason, or None. The post-condition, SEPARATE from the loop that produces it.
+
+    It lives in its own function so each clause can be handed an inconsistent split directly and
+    shown to fire. Inside the loop they were unreachable by any input - the loop puts every line
+    on one side or the other by construction - so two of them were checks that could not fail
+    (class 3), which is the thing this file keeps being written to prevent. They guard FUTURE
+    edits to that loop, and now a test can break the loop's output on purpose and see them."""
+    n_in, n_out = len(text.splitlines()), len(kept.splitlines()) + len(removed.splitlines())
+    if n_in != n_out:
+        return ("the split does not account for every line: %d in, %d out. Nothing is changed."
+                % (n_in, n_out))
+
+    before, after, gone = _headers(text), _headers(kept), _headers(removed)
+    if before != after | gone:
+        return ("site header(s) vanished from the split: %s. Nothing is changed."
+                % ", ".join(sorted(before - (after | gone))))
+
+    still_there = [h for h in after if any(n in sites for n in _header_names(h))]
+    if still_there:
+        return "a target is still declared after the split: %s" % ", ".join(sorted(still_there))
+
+    # THE REMOVED SIDE MUST CONTAIN NOTHING BUT TARGETS. The clause above only proves no header
+    # vanished into thin air - a block swallowed along with the target is still "accounted for",
+    # because it is sitting in `removed`. MEASURED: a stray `{` inside a comment, with the braces
+    # balancing again further down, makes the counter run past the closing brace and take the next
+    # vhost with it, and every other clause here passes. This is the one that catches it.
+    collateral = [h for h in gone if not all(n in sites for n in _header_names(h))]
+    if collateral:
+        return ("the split would also remove %s - the target block's braces do not close where "
+                "its text says they do (a `{` inside a comment or a string will do this). "
+                "Nothing is changed." % ", ".join(sorted(collateral)))
+    return None
+
+
+# A site header is a line at column zero that ends in `{`. Deliberately WIDER than the name grep
+# the plan uses: `{$DOMAIN} {` is a real header on this proxy - godeyes.ai is served by an
+# ENVIRONMENT PLACEHOLDER, so its hostname appears nowhere in the file - and a pattern that cannot
+# see it reports a fragment as declaring one site when it declares two.
+_HEADER = re.compile(r"^[^\s#(].*\{\s*$")
+
+
+def _headers(text):
+    return {ln.rstrip() for ln in (text or "").splitlines() if _HEADER.match(ln)}
+
+
+def _header_names(header_line):
+    return [n.strip().lower() for n in header_line.rstrip("{ \t").split(",") if n.strip()]
 
 
 def _frag_names(sec):
@@ -472,6 +641,22 @@ def _survivor_urls(frag_names, sites):
     return out
 
 
+def probe_all(urls, label):
+    """{url: answering?} — measured, printed, and usable as a BASELINE.
+
+    BOTH TERMS OVER THE SAME PERIOD. Probing only after the change makes a site that was already
+    down look like damage we caused, and - the direction that actually bit us - gives nothing to
+    compare against when something stops answering. 2026-10-22: godeyes.ai went dark during a
+    decommission and the only signal was a CI run twenty minutes later."""
+    print("\n  %s" % label)
+    got = {}
+    for url in urls:
+        st, note = probe(url)
+        got[url] = bool(st) and st in (200, 301, 302, 401)
+        print("    %-40s %s" % (url, ("HTTP %s" % st) if st else str(note)[:40]))
+    return got
+
+
 def verify(survivors=None):
     print("\n  VERIFY: the sites that must survive")
     bad = []
@@ -493,7 +678,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="actually do it (default is a dry run)")
     ap.add_argument("--list", action="store_true", help="just show what is served")
-    ap.add_argument("--undo", metavar="STAMP", help="restore a previous decommission")
+    ap.add_argument("--undo", metavar="STAMP",
+                    help="restore a previous decommission ('last' = the newest)")
+    ap.add_argument("--diff", metavar="STAMP", nargs="?", const="last", default=None,
+                    help="READ-ONLY: what a decommission changed, original vs what it left")
     ap.add_argument("--sites", default="",
                     help="names or a group key (%s). www./apex partners are added automatically."
                          % ", ".join(sorted(SITE_GROUPS)))
@@ -501,6 +689,12 @@ def main():
     a = ap.parse_args()
 
     print("  droplet: %s" % HOST)
+    if a.diff:
+        out, ok = run_remote(diff_script(a.diff), 180, "reading the archive")
+        for name, body in sections(out).items():
+            print("\n#### %s\n%s" % (name, body.rstrip()))
+        return 0 if ok else 1
+
     if a.undo:
         out, ok = run_remote(undo_script(a.undo), 300, "undo %s" % a.undo)
         for name, body in sections(out).items():
@@ -545,6 +739,7 @@ def main():
     survivors = _survivor_urls(_frag_names(d.get("FRAGMENTS")), sites)
     containers = [c.strip() for c in a.containers.split(",") if c.strip()] or guess
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    baseline = probe_all(survivors, "BASELINE: what answers BEFORE the change")
     print("\n  APPLYING (stamp %s)" % stamp)
     edits = {frag: kept for frag, (kept, _, _) in extract.items()}
     out, ok = run_remote(apply_script(whole, containers, stamp, edits), 420,
@@ -558,6 +753,30 @@ def main():
               "\n      %s/decommissioned/%s  ->  python decommission.py --undo %s"
               % (GUARD, stamp, stamp))
         verify(survivors)
+        return 1
+
+    # A SITE THAT WAS ANSWERING AND NOW IS NOT GETS PUT BACK, NOW, WITHOUT ASKING.
+    # The archive is byte-exact and the alternative is leaving somebody else's domain dark while
+    # a human reads a 400-line log. On 2026-10-22 godeyes.ai was down for twenty minutes because
+    # the signal was one line in the middle of a deploy that otherwise said DONE.
+    after = probe_all(survivors, "AFTER: the same probes again")
+    regressed = sorted(u for u in survivors if baseline.get(u) and not after.get(u))
+    if regressed:
+        print("\n  [X] THIS CHANGE TOOK A SITE DOWN:\n      %s" % "\n      ".join(regressed))
+        print("      restoring %s automatically - nothing is left broken while you read this."
+              % stamp)
+        und, uok = run_remote(undo_script(stamp), 300, "automatic restore of %s" % stamp)
+        for name, body in sections(und).items():
+            print("\n#### %s\n%s" % (name, body.rstrip()))
+        back = probe_all(survivors, "AFTER THE RESTORE")
+        still = sorted(u for u in survivors if baseline.get(u) and not back.get(u))
+        if still or not uok:
+            print("\n  [X] THE RESTORE DID NOT FIX IT: %s" % (", ".join(still) or "see above"))
+            print("      python recover.py   # outage triage, read-only")
+        else:
+            print("\n  the decommission was REVERSED. Nothing was retired. The fragment and the"
+                  "\n  damaged version it produced are both in %s/decommissioned/%s"
+                  % (GUARD, stamp))
         return 1
     return verify(survivors)
 
