@@ -1926,6 +1926,39 @@ def _redirect_trail(m):
     return " ".join(x for x in out if x)
 
 
+# How many pinned addresses the sweep missed we are willing to ask about one at a time. Each is
+# one Shodan query credit, and the set it draws from is already bounded by what the customer's own
+# DNS resolved to, so this ceiling is a safety rail rather than a budget.
+PIN_LOOKUP_CAP = int(os.environ.get("PIN_LOOKUP_CAP", "25"))
+
+
+def host_to_matches(h):
+    """Shodan's host endpoint -> the record shape the sweep produces.
+
+    `api.host(ip)` returns one object for the ADDRESS with a `data` list of banner records, while
+    `api.search_cursor()` yields the banner records themselves with the address fields repeated on
+    each. The host-level fields are the authority for ip_str/org/isp/asn/location/hostnames, so
+    they are filled in where a banner omits them; everything the banner does carry is left alone.
+
+    Pure, so it can be tested without a network or an API key."""
+    if not isinstance(h, dict):
+        return []
+    top = {k: h.get(k) for k in ("ip_str", "org", "isp", "asn", "location", "hostnames", "domains")
+           if h.get(k) not in (None, "", [], {})}
+    out = []
+    for rec in (h.get("data") or []):
+        if not isinstance(rec, dict):
+            continue
+        m = dict(rec)
+        for k, v in top.items():
+            if m.get(k) in (None, "", [], {}):
+                m[k] = v
+        if not m.get("ip_str"):
+            continue                       # a record with no address cannot be attributed
+        out.append(m)
+    return out
+
+
 def _hay(m):
     """Every string on a host record that can name a product: banner, cert, HTTP server + title,
     AND the redirect chain — see _redirect_trail for why that last one is load-bearing."""
@@ -2045,7 +2078,11 @@ def _high_value_hit(m):
         return "CRITICAL", "nas_exposed"            # #1 SME ransomware target
     if _BACKUP_RE.search(hay):
         return "CRITICAL", "backup_console"         # own the backups, own the recovery
-    if _PBX_RE.search(hay) or port in (5060, 5061):
+    # `_PBX_PORTS`, not a literal tuple. The tuple here read (5060, 5061) while the constant forty
+    # lines up already read {5060, 5061, 5090, 5001}: one home said 3CX's tunnel port counted and
+    # the other did not. I widened the tuple before noticing the constant, which would have made it
+    # a third home (class 32).
+    if _PBX_RE.search(hay) or port in _PBX_PORTS:
         return "HIGH", "pbx_exposed"                # toll fraud + 3CX supply-chain history
     # An enterprise content / DAM / records platform is a crown-jewel store. On adpolice.gov.ae the
     # engine had the OpenText redirect chain in hand and still called the host a mail gateway.
@@ -2411,6 +2448,31 @@ def run(ident, F, audience, limit_per_query=500, progress=None):
             n += 1
             if n % _PAGE == 0 and _over(phase, unit, done, total):
                 return                              # page boundary, never mid-page
+    def _take(m, fdom=None):
+        """Fold ONE Shodan record into the estate. The ONE HOME for that bookkeeping.
+
+        It was inline inside the search loop, which was fine while search was the only way a
+        record could arrive. The pinned-host lookup below is a second way, and a second copy of
+        this would have drifted from the first the way every duplicated value in this repository
+        eventually has (class 32)."""
+        ip = m.get("ip_str")
+        hosts.setdefault(ip, []).append(m)
+        if fdom:
+            _by_dom.setdefault(fdom, set()).add(ip)
+        else:
+            _no_dom.add(ip)
+        ma = m.get("asn")
+        c = (m.get("location") or {}).get("country_code")
+        if ma:
+            asns.add(ma)
+            e = inv.setdefault(ma, {"holder": None, "cc": set(), "ips": set()})
+            e["holder"] = e["holder"] or (m.get("org") or m.get("isp"))
+            if c:
+                e["cc"].add(c)
+            e["ips"].add(ip)
+        if c:
+            countries.add(c)
+
     def _tick(msg):
         """Progress for the operator: what is running, and elapsed against the budget."""
         if progress is None:
@@ -2476,23 +2538,48 @@ def run(ident, F, audience, limit_per_query=500, progress=None):
                     horg = (m.get("org") or "") + " " + (m.get("isp") or "")
                     masn = ("AS" + str(m.get("asn"))) if str(m.get("asn") or "").isdigit() else (m.get("asn") or "")
                     if _is(horg, CDNS) and (own_asns and masn not in own_asns): dropped += 1; continue
-                hosts.setdefault(m.get("ip_str"), []).append(m)
-                if _fdom:
-                    _by_dom.setdefault(_fdom, set()).add(m.get("ip_str"))
-                else:
-                    _no_dom.add(m.get("ip_str"))
-                ma = m.get("asn"); c = (m.get("location") or {}).get("country_code")
-                if ma:
-                    asns.add(ma)
-                    e = inv.setdefault(ma, {"holder": None, "cc": set(), "ips": set()})
-                    e["holder"] = e["holder"] or (m.get("org") or m.get("isp"))
-                    if c: e["cc"].add(c)
-                    e["ips"].add(m.get("ip_str"))
-                if c: countries.add(c)
+                _take(m, _fdom)
                 n += 1
                 if n >= limit_per_query: break
         except shodan.APIError as e:
             print(f"[warn] query {q!r}: {e}", file=sys.stderr)
+    # ---- PINNED ADDRESSES THE SEARCH INDEX DID NOT RETURN ----------------------------------------
+    # A pinned address is one we resolved from the customer's OWN DNS, so there is no attribution
+    # question left to answer about it. For those we do not have to rely on the search index at
+    # all: Shodan's host endpoint answers about a single address directly, and it is the endpoint
+    # the public shodan.io/host/<ip> page is built from.
+    #
+    # MEASURED, mitrelli.com, 2026-10-27. `3cx.mitrelli.com` resolved to 213.8.178.20, that address
+    # was pinned, and shodan.io/host/213.8.178.20 shows an open port (5090/tcp, last seen three
+    # days before the run). The sweep carried all nineteen pinned addresses as one comma-joined
+    # `net:` clause, that clause returned nothing for it, and the engine then reported the name
+    # under "resolves with no observable service" - the opposite of what Shodan holds. Nineteen
+    # addresses inside one search clause is not the same question as nineteen host lookups, and on
+    # this run the difference was the customer's telephony system.
+    #
+    # Bounded on purpose: only addresses the sweep MISSED, only pinned ones, capped, and inside the
+    # recon budget like every other loop here.
+    _missed = [ip for ip in (ident.get("pinned") or []) if ip and ip not in hosts][:PIN_LOOKUP_CAP]
+    if _missed:
+        _tick("Shodan host lookups for %d pinned address(es) the search missed" % len(_missed))
+    for _i, _ip in enumerate(_missed):
+        if _over("Shodan host lookups", "addresses", _i, len(_missed)):
+            break
+        try:
+            _h = api.host(_ip)
+        except shodan.APIError as e:
+            # "No information available" is Shodan saying it has never scanned the address, which
+            # is a real answer and not an error we should hide. Anything else is a failed probe.
+            print("[auto] host lookup %s: %s" % (_ip, e), file=sys.stderr)
+            continue
+        _ms = host_to_matches(_h)
+        for _m in _ms:
+            _take(_m)
+        if _ms:
+            print("[auto] pinned host %s: %d record(s) the search did not return (port(s) %s)"
+                  % (_ip, len(_ms), ",".join(str(x.get("port")) for x in _ms[:6])),
+                  file=sys.stderr)
+
     # ---- PER-DOMAIN CONTRIBUTION BUDGET (the abakus-tk.de failure, 2026-08) ----------------------
     # abakus-tk.de is a 20-person reseller with one shared IONOS VIP. The deck claimed 401 IPs across
     # 42 ASNs and 49 countries, 236 of them Meta's, because `wa.me` -- the WhatsApp shortener in the

@@ -807,6 +807,81 @@ finally:
     R._get_json, R.time.sleep = _real_gj, _real_sleep
 
 
+# ==============================================================================================
+# [27] mitrelli.com — a PINNED address the search index did not return
+# ==============================================================================================
+# 3cx.mitrelli.com resolved to 213.8.178.20, that address was pinned from the customer's own DNS,
+# and shodan.io/host/213.8.178.20 shows one open port (5090/tcp) three days before the run. The
+# sweep asked about all nineteen pinned addresses in ONE comma-joined `net:` clause, got nothing
+# back for this one, and the engine then reported the name under "resolves with no observable
+# service" — the opposite of what Shodan holds. A customer's telephony system was the difference.
+#
+# The repair is to stop relying on the search index for addresses we are already certain about:
+# a pinned address gets a direct host lookup, which is the endpoint the public host page uses.
+print("\n" + "=" * 78)
+print("[27] a pinned address missed by the search gets a direct host lookup")
+
+_H = {"ip_str": "213.8.178.20", "org": "Partner Communications Ltd.",
+      "isp": "Partner Communications Ltd.", "asn": "AS12400",
+      "location": {"country_code": "IL"}, "hostnames": ["3cx.mitrelli.com"],
+      "data": [{"port": 5090, "transport": "tcp", "data": "\x04\x00\xfb\xffLAPK"}]}
+
+_ms = R.host_to_matches(_H)
+check(len(_ms) == 1, "the host endpoint's one banner becomes one record (got %d)" % len(_ms))
+_m = _ms[0]
+for _k, _v in (("ip_str", "213.8.178.20"), ("asn", "AS12400")):
+    check(_m.get(_k) == _v, "host-level %s is carried onto the banner (%r)" % (_k, _m.get(_k)))
+check(_m.get("hostnames") == ["3cx.mitrelli.com"],
+   "the hostname is carried, which is what classify() reads")
+check((_m.get("location") or {}).get("country_code") == "IL",
+   "the country is carried, so the inventory counts it")
+
+# THE POINT OF THE WHOLE CHANGE: this record is a HIGH finding, not a silent absence.
+_sev, _ft = R.classify(_m)
+check((_sev, _ft) == ("HIGH", "pbx_exposed"),
+   "a 3CX box on 5090 classifies HIGH/pbx_exposed (got %s/%s)" % (_sev, _ft))
+
+# ...and on the port alone, because a banner can be binary and a hostname can be absent.
+_m2 = R.host_to_matches(
+    {"ip_str": "1.2.3.4", "data": [{"port": 5090}]})[0]
+check(R.classify(_m2)[1] == "pbx_exposed",
+   "port 5090 alone is enough — the 3CX tunnel port")
+
+# ONE HOME for the port set: the inline tuple in classify() said (5060, 5061) while _PBX_PORTS
+# said {5060, 5061, 5090, 5001}. Two homes, and the narrower one was the one that decided.
+check(5090 in R._PBX_PORTS and 5060 in R._PBX_PORTS,
+   "_PBX_PORTS is the one home and carries the 3CX ports")
+_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "shodan_recon.py"), encoding="utf-8").read()
+_body = "\n".join(l for l in _src.splitlines() if not l.strip().startswith("#"))
+check("port in (5060, 5061)" not in _body,
+   "classify() reads _PBX_PORTS rather than its own copy of the list")
+
+# A malformed or empty answer must produce nothing rather than a half-record.
+for _bad in ({}, None, {"data": [None, 42]}, {"data": [{"port": 1}]}):
+    check(isinstance(R.host_to_matches(_bad), list),
+       "a malformed host answer returns a list, never raises")
+check(R.host_to_matches({"data": [{"port": 1}]}) == [],
+   "a banner with no address is dropped: it cannot be attributed")
+
+# WIRING (class 9): a pure converter nothing calls is not a fix.
+check("host_to_matches(_h)" in _body, "run() calls the converter on the host lookup")
+check("api.host(" in _body, "run() actually asks the host endpoint")
+_i_miss = _body.find("_missed = [ip for ip in")
+_i_nos = _body.find("_no_service = []")
+check(_i_miss != -1 and _i_nos != -1 and _i_miss < _i_nos,
+   "the lookup runs BEFORE the no-observable-service list is built, or it cannot change it")
+
+# ...and the set it works on must still be DERIVED from the pins and the sweep. A source check
+# proves the code is present, not that it runs: emptying `_missed` on the line above `if _missed:`
+# left every check above green while the lookup did nothing (measured, 2026-10-27). One assignment
+# only, and it must name both halves of "pinned, and the sweep did not return it".
+_assigns = [l for l in _body.splitlines() if l.strip().startswith("_missed =")]
+check(len(_assigns) == 1,
+      "_missed is assigned exactly once (found %d) - a second assignment can quietly empty it"
+      % len(_assigns))
+check(bool(_assigns) and 'ident.get("pinned")' in _assigns[0] and "not in hosts" in _assigns[0],
+      "_missed is derived from the pinned set MINUS what the sweep already returned")
 # =============================================================================================
 # THE REAL GATE. It must be the LAST thing in this file.
 # A test file whose only sys.exit sits in the middle silently stops enforcing everything below
@@ -822,3 +897,5 @@ if FAILED:
 print("  ALL %d CHECKS PASSED - every section, not just the ones above the old mid-file exit"
       % len(RAN))
 print("=" * 78)
+
+

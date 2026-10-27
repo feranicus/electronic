@@ -612,8 +612,16 @@ function ccCell(v) {
   // withheld from the INVENTORY as well, which is a different claim entirely. We knew those
   // addresses existed. Hiding an asset because we cannot say anything bad about it is the opposite
   // of the rule it was derived from. They are listed here, separately, with no severity attached.
-  const unscanned = Array.isArray(t.resolved_no_service)
-    ? t.resolved_no_service.filter(x => x && (x.name || x.ip)) : [];
+  // READ THE SHAPE, DO NOT ASSUME IT (class 36, and I assumed it). run_assessment.py writes this
+  // under `target.owned`, beside the other ownership evidence; the first version of this block
+  // read `target.resolved_no_service`, which is empty on every real run. The unit test passed
+  // because its fixture used the same wrong path I had assumed, so it tested my assumption rather
+  // than the engine's output, and the mitrelli rerun shipped with KNOWN ADDRESSES = SCANNED HOSTS
+  // and no block at all. clarify.py already read both spellings; the deck now does too.
+  const owned = (t && typeof t.owned === "object" && t.owned) ? t.owned : {};
+  const rawUnscanned = Array.isArray(owned.resolved_no_service) ? owned.resolved_no_service
+                     : (Array.isArray(t.resolved_no_service) ? t.resolved_no_service : []);
+  const unscanned = rawUnscanned.filter(x => x && (x.name || x.ip));
   const tiles = [[String(totalHosts), "SCANNED HOSTS"],
                  [String(totalHosts + unscanned.length), "KNOWN ADDRESSES"],
                  [String(nAsn), "ASNs"], [String(nCountry), "COUNTRIES"]];

@@ -408,13 +408,17 @@ def known_but_unscanned_assets():
          "role": "hosting / edge", "hosts": 1},
     ]
     fj["summary"]["countries"] = 3
-    # The real shape: the telephony host is the one that matters and the one that was lost.
-    fj["target"]["resolved_no_service"] = [
+    # THE REAL SHAPE, taken from run_assessment.py rather than from what I expected it to be.
+    # The first version of this fixture wrote `target.resolved_no_service`, the deck read the same
+    # path, and both were wrong: the engine writes it under `target.owned`. A fixture built from
+    # an assumption tests the assumption (class 12), and this one shipped a deck that still said
+    # KNOWN ADDRESSES = SCANNED HOSTS on the rerun it was written to fix.
+    fj["target"]["owned"] = {"resolved_no_service": [
         {"name": "3cx.mitrelli.com", "ip": "213.8.178.20"},
         {"name": "staging.mitrelli.com", "ip": "31.171.250.237"},
         {"name": "mail.mitrelli.com", "ip": "185.154.37.12"},
         {"name": "pbx.mitrelli.com", "ip": "192.117.119.131"},
-    ]
+    ]}
     src = os.path.join(tmp, "unscanned.json")
     json.dump(fj, open(src, "w", encoding="utf-8"), ensure_ascii=False)
     out = os.path.join(tmp, "unscanned.pptx")
@@ -438,6 +442,21 @@ def known_but_unscanned_assets():
 
     # PROVE THE FIXTURE FIRST (class 12): the host that was lost must be in the input.
     check("213.8.178.20" in json.dumps(fj), "fixture carries the telephony address that was lost")
+
+    # THE HOP ASSERTION (class 34), which is the check whose absence shipped the broken deck.
+    # Rendering correctly from a fixture proves the renderer, not the pipeline. The producer and
+    # the consumer have to agree on WHERE the value lives, and nothing was comparing them: the
+    # engine wrote target.owned.resolved_no_service and the deck read target.resolved_no_service,
+    # so both halves were internally consistent and the estate still vanished.
+    eng = open(os.path.join(HERE, "run_assessment.py"), encoding="utf-8").read()
+    m = re.search(r'fj\.setdefault\("target", \{\}\)\["owned"\]\s*=\s*\{(.*?)\n\s*\}\n', eng, re.S)
+    check(m is not None, "run_assessment still writes a target['owned'] block")
+    if m:
+        check('"resolved_no_service"' in m.group(1),
+              "run_assessment writes resolved_no_service INSIDE target['owned']")
+    deck_src = open(os.path.join(HERE, "build_findings_deck.js"), encoding="utf-8").read()
+    check("owned.resolved_no_service" in deck_src,
+          "the deck reads it from the same place the engine writes it")
 
     for name, ip in (("3cx.mitrelli.com", "213.8.178.20"), ("pbx.mitrelli.com", "192.117.119.131")):
         check(name.replace(".", "") in text.replace(".", "") or name in text,
