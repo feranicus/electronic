@@ -642,6 +642,10 @@ def main():
             # that named someone else. Both feed clarify.py: the first as a question the operator
             # answers, the second so a reviewer can see WHY the estate is smaller than the DNS.
             "resolved_no_service": list(ident.get("resolved_no_service") or []),
+            # A name of theirs pointing at an address with an OPEN PORT that nothing
+            # attributes to the customer. Different answer from "no service", and the
+            # one the operator can act on: confirm the address and it becomes a finding.
+            "resolved_unattributable": list(ident.get("resolved_unattributable") or []),
             "records_unattributable": list(ident.get("records_unattributable") or []),
             "cert_siblings": list(ident.get("cert_sibling_apexes") or []),
             "excluded": (list(ident.get("exclude_apexes") or []) + list(ident.get("exclude_ips") or [])),

@@ -1932,6 +1932,52 @@ def _redirect_trail(m):
 PIN_LOOKUP_CAP = int(os.environ.get("PIN_LOOKUP_CAP", "25"))
 
 
+def nameless_verdict(ip, pinned_ips, stranger_on, no_address_space):
+    """(keep, reason) for a Shodan record that carries NO identity of its own.
+
+    Pulled out of run() so it can be tested directly. It decides whether an exposure reaches a
+    customer's deck, and a rule that can only be exercised by a full Shodan sweep is a rule nobody
+    tests (class 3).
+
+    THE THREE CLAUSES, in this order, and the order is the safety property:
+
+    1. A STRANGER ON THE ADDRESS DISQUALIFIES IT, ALWAYS. This is what keeps a shared web VIP
+       out. On mitrelli.com, 141.193.213.20 carried calahan.com and plugpower.com, so a nameless
+       record there proves nothing about anyone. It is also what refuses the two recorded
+       disasters: the IONOS VIP behind abakus-tk.de and the TAMM government platform behind
+       adpolice.gov.ae both carry other tenants' names.
+
+    2. NO ADDRESS SPACE, NO ATTRIBUTION BY IP. A customer who announces no ASN and no prefixes
+       cannot have a nameless record attributed to them on an address nothing else connects to
+       them. Identity -- a name or a certificate -- is the only evidence available, and a nameless
+       record carries none.
+
+    3. Otherwise the fail-open is earned: the customer owns address space and nobody else has been
+       seen on the address.
+
+    WHY `pinned_ips` IS A PARAMETER AND IS DELIBERATELY NOT CONSULTED HERE.
+    On 2026-10-27 I added a clause between 1 and 2 that rescued a nameless record whenever the
+    address was PINNED, reasoning that `3cx.mitrelli.com A 213.8.178.20` is the customer naming
+    the address in a zone only they control. That reasoning is wrong, and the counter-example was
+    in the same run: `staging.mitrelli.com` resolves to 31.171.250.237, which serves
+    bluestallionfarm.kmt.co.il. A name in the customer's zone proves where THEY point, not who
+    owns the address at the other end. test_scope_abakus.py already pinned the same shape, and the
+    shipped consequence of the last fail-open here was a Swiss crypto bank receiving a CRITICAL on
+    a FortiGate belonging to a German formwork manufacturer's UAE subsidiary.
+    The parameter stays so the signature records the decision; a reader who reaches for the pin
+    next time finds this paragraph instead of re-deriving the mistake.
+
+    What a pinned address with an unattributable open port actually deserves is to be SURFACED as
+    exactly that -- "service seen, attribution unknown, confirm ownership" -- which is a question
+    for the operator, not a finding about the customer."""
+    if ip in (stranger_on or {}):
+        return False, ("<no name; %s also on this address>"
+                       % sorted(stranger_on[ip])[0][:26])
+    if no_address_space:
+        return False, "<no name; target owns no address space>"
+    return True, ""
+
+
 def host_to_matches(h):
     """Shodan's host endpoint -> the record shape the sweep produces.
 
@@ -2998,6 +3044,9 @@ def run(ident, F, audience, limit_per_query=500, progress=None):
     # per-record loop cannot know what the rest of the address looks like -- and a guard whose
     # baseline is computed while it is still consuming untrusted input is not a guard.
     _stranger_on = {}
+    # Addresses the customer's own DNS pointed us at (or the operator asserted). Hoisted out of
+    # the per-record loop: one home, computed once, read by the nameless-record branch below.
+    _pinned_ips = set(str(x) for x in (ident.get("pinned") or []))
     for ip in list(hosts.keys()):
         for m in hosts[ip]:
             _nm0 = _record_names(m)
@@ -3022,18 +3071,17 @@ def run(ident, F, audience, limit_per_query=500, progress=None):
                 _kept.append(m); continue            # not provider space -> the IP itself attributes
             _nm = _record_names(m)
             if not _nm:
-                # No identity on the record. Keep it ONLY where the fail-open was earned: the
-                # customer owns address space, and nobody else has been seen on this address.
-                if _no_space0:
-                    _attr_dropped.append((ip, m.get("port"),
-                                          "<no name; target owns no address space>"))
+                # No identity on the RECORD. Keep it only where the fail-open is earned.
+                #
+                # A STRANGER ON THE ADDRESS DISQUALIFIES IT, ALWAYS, AND THAT TEST COMES FIRST.
+                # It is the clause that keeps a shared web VIP out: 141.193.213.20 carries
+                # calahan.com and plugpower.com, so a nameless record there proves nothing.
+                _keep0, _why0 = nameless_verdict(ip, _pinned_ips, _stranger_on, _no_space0)
+                if not _keep0:
+                    _attr_dropped.append((ip, m.get("port"), _why0))
                     continue
-                if ip in _stranger_on:
-                    _attr_dropped.append((ip, m.get("port"),
-                                          "<no name; %s also on this address>"
-                                          % sorted(_stranger_on[ip])[0][:26]))
-                    continue
-                _kept.append(m); continue            # no names at all -> cannot disprove ownership
+                _kept.append(m)
+                continue
             if _names_the_target(m, _own_aps):
                 _kept.append(m); continue            # the record names the customer
             # Log the most INFORMATIVE name, not the alphabetically first one: the reverse-DNS of
@@ -3066,7 +3114,8 @@ def run(ident, F, audience, limit_per_query=500, progress=None):
     # NOTE: do NOT skip on identity_ips here. It is assigned as set(hosts) AFTER every filter has
     # run, so on a net/prefix sweep it contains the co-tenants too and the guard would never fire.
     # Only a PINNED host (resolved from the target's own DNS) is ours by definition.
-    _pinned_ips = set(ident.get("pinned") or [])
+    # `_pinned_ips` is built once, above the attribution gate, and read by both guards. It used to
+    # be rebuilt here from the same source, which is two homes for one set (class 32).
     _cotenant, _dropped_backup = [], {}
     for ip in list(hosts.keys()):
         if ip in _pinned_ips:
@@ -3403,6 +3452,7 @@ def run(ident, F, audience, limit_per_query=500, progress=None):
     # says "possible" and clarify.py puts it to the operator. Confirming it in a refine run is what
     # turns it into a real finding.
     _no_service = []
+    _unattr_named = []
     # A TRUNCATED recon cannot tell "no record" from "never asked": the budget stopped the sweep
     # before every query ran, so a name absent from `hosts` is absence of evidence twice over.
     # The candidate list is therefore not built at all on a truncated run.
@@ -3415,6 +3465,22 @@ def run(ident, F, audience, limit_per_query=500, progress=None):
             continue                            # something IS observable there
         if _is_saas_tenancy(_fq):
             continue                            # a SaaS tenancy is not their host to begin with
+        # "NOTHING THERE" AND "SOMETHING THERE WE CANNOT ATTRIBUTE TO YOU" ARE DIFFERENT ANSWERS,
+        # and the operator needs the second one far more than the first.
+        #
+        # mitrelli.com, 2026-10-27: `3cx.mitrelli.com` resolves to 213.8.178.20, Shodan shows an
+        # open port on it (5090/tcp, the 3CX tunnel), and the attribution gate correctly refused
+        # the record because the banner names nobody and the customer owns no address space. The
+        # engine then reported the name under "resolves with no observable service", which is not
+        # what it found. It found a service it could not attribute, and said the opposite.
+        #
+        # Both stay out of the findings. One becomes a much sharper question: confirm this address
+        # is yours and the port on it becomes a finding on the refine run.
+        _seen = [r for r in (_attr_dropped or []) if r[0] in _v4]
+        if _seen:
+            _unattr_named.append((_fq, _v4[0],
+                                  ",".join(str(r[1]) for r in _seen[:4] if r[1] is not None)))
+            continue
         _no_service.append((_fq, _v4[0]))
     if _no_service:
         # DEMOTED TO A QUESTION (adpolice.gov.ae, 2026-08). I built this as a MEDIUM finding on the
@@ -3430,6 +3496,17 @@ def run(ident, F, audience, limit_per_query=500, progress=None):
         print("[auto] %d name(s) resolve with no observable service - put to the operator as a "
               "question, NOT raised as a finding (absence of evidence is never a finding): %s"
               % (len(_no_service), ", ".join(n for n, _ in sorted(_no_service)[:5])),
+              file=sys.stderr)
+    if _unattr_named:
+        # A name of theirs pointing at an address with an OPEN PORT that nothing attributes to
+        # them. Not a finding (the address may not be theirs at all - staging.mitrelli.com points
+        # at a host serving somebody else's shop), and a far better question than "no service".
+        ident["resolved_unattributable"] = [{"name": n, "ip": i, "ports": p}
+                                            for n, i, p in sorted(_unattr_named)][:20]
+        print("[auto] %d name(s) resolve to an address with an OPEN PORT we cannot attribute to "
+              "the customer - confirm ownership and it becomes a finding on the refine run: %s"
+              % (len(_unattr_named),
+                 ", ".join("%s -> %s:%s" % t for t in sorted(_unattr_named)[:4])),
               file=sys.stderr)
 
     for _df in _dns_findings:

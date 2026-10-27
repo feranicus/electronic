@@ -882,6 +882,76 @@ check(len(_assigns) == 1,
       % len(_assigns))
 check(bool(_assigns) and 'ident.get("pinned")' in _assigns[0] and "not in hosts" in _assigns[0],
       "_missed is derived from the pinned set MINUS what the sweep already returned")
+
+# ==============================================================================================
+# [28] mitrelli.com — a PINNED address with no stranger on it is attributable
+# ==============================================================================================
+# 3cx.mitrelli.com A 213.8.178.20 is published in a zone only the customer controls. Shodan shows
+# one open port there (5090/tcp). The banner is binary, so the record carries no name, and the
+# attribution gate dropped it under "target owns no address space" - mitrelli announces no ASN and
+# no prefixes. The customer's telephony system therefore never reached the deck, twice.
+#
+# The fail-open is still EARNED, and the earning is unchanged in substance: evidence that names
+# the customer. What is admitted now is that a pin IS such evidence, because it comes from their
+# own DNS. The stranger-on-the-address test runs FIRST and is what keeps the old disasters out.
+print("\n" + "=" * 78)
+print("[28] a pin does NOT rescue a nameless record, and here is why")
+
+# THE CHANGE I MADE AND REVERTED, kept because deleting it would lose why (class 17).
+# On 2026-10-27, chasing a missing 3CX finding, I added a clause that kept a nameless record
+# whenever the address was PINNED: `3cx.mitrelli.com A 213.8.178.20` is the customer naming the
+# address in a zone only they control, so it looked like identity evidence arriving from DNS.
+#
+# The counter-example was in the SAME run. `staging.mitrelli.com` resolves to 31.171.250.237,
+# which serves bluestallionfarm.kmt.co.il - a farm shop. A name in the customer's zone proves
+# where THEY point, not who owns the address at the other end. test_scope_abakus.py already
+# pinned this exact shape, and the last time this branch failed open a Swiss crypto bank got a
+# CRITICAL on a FortiGate belonging to a German formwork manufacturer's UAE subsidiary.
+_STR = {"141.193.213.20": {"calahan.com", "plugpower.com"}}
+_PIN = {"213.8.178.20", "141.193.213.20", "31.171.250.237"}
+
+_k, _w = R.nameless_verdict("213.8.178.20", _PIN, _STR, True)
+check(_k is False and "owns no address space" in _w,
+      "a pinned, nameless record on a customer with no address space is still DROPPED (%r)" % _w)
+_k, _w = R.nameless_verdict("31.171.250.237", _PIN, _STR, True)
+check(_k is False,
+      "...including staging.mitrelli.com's address, which serves somebody else's shop")
+
+# The clauses that do decide, unchanged.
+_k, _w = R.nameless_verdict("141.193.213.20", _PIN, _STR, True)
+check(_k is False and "calahan.com" in _w,
+      "a stranger on the address refuses it and the refusal NAMES the stranger (%r)" % _w)
+check(R.nameless_verdict("141.193.213.20", _PIN, _STR, False)[0] is False,
+      "a stranger refuses it even for a customer WITH address space")
+check(R.nameless_verdict("8.8.8.8", _PIN, _STR, False)[0] is True,
+      "a customer WITH address space keeps a nameless record nobody else is on")
+check(R.nameless_verdict("1.2.3.4", None, None, False)[0] is True,
+      "empty pin/stranger inputs do not raise")
+check(R.nameless_verdict("1.2.3.4", None, None, True)[0] is False,
+      "...and still refuse when there is no address space")
+
+_src28 = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "shodan_recon.py"), encoding="utf-8").read()
+_fn = _src28[_src28.index("def nameless_verdict("):]
+_fn = _fn[:_fn.index("\ndef ")]
+# Everything after the closing triple quote is the executable body. Filtering lines that
+# merely CONTAIN a quote leaves the docstring's interior behind, and the docstring is exactly
+# where `pinned_ips` is discussed at length - a check that matched its own explanation.
+_code28 = _fn[_fn.index('"""', _fn.index('"""') + 3) + 3:]
+_code28 = "\n".join(l for l in _code28.splitlines() if not l.strip().startswith("#"))
+check("pinned_ips" not in _code28,
+      "the pin is not consulted in the body - the parameter exists to record the decision")
+check(_code28.index("in (stranger_on") < _code28.index("if no_address_space"),
+      "the stranger test is evaluated BEFORE the no-address-space drop")
+
+_run = "\n".join(l for l in _src28.splitlines() if not l.strip().startswith("#"))
+check("nameless_verdict(ip, _pinned_ips, _stranger_on, _no_space0)" in _run,
+      "run() calls nameless_verdict with the live pin set and stranger map")
+check(_run.count("_pinned_ips = set(") == 1,
+      "one home for the pinned set (found %d)" % _run.count("_pinned_ips = set("))
+check("_stranger_on.setdefault(ip, set()).update(_nm0)" in _run,
+      "the stranger map is still built from every record on the address, before any decision")
+
 # =============================================================================================
 # THE REAL GATE. It must be the LAST thing in this file.
 # A test file whose only sys.exit sits in the middle silently stops enforcing everything below

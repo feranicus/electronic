@@ -418,6 +418,8 @@ def known_but_unscanned_assets():
         {"name": "staging.mitrelli.com", "ip": "31.171.250.237"},
         {"name": "mail.mitrelli.com", "ip": "185.154.37.12"},
         {"name": "pbx.mitrelli.com", "ip": "192.117.119.131"},
+    ], "resolved_unattributable": [
+        {"name": "3cx.mitrelli.com", "ip": "213.8.178.20", "ports": "5090"},
     ]}
     src = os.path.join(tmp, "unscanned.json")
     json.dump(fj, open(src, "w", encoding="utf-8"), ensure_ascii=False)
@@ -483,6 +485,13 @@ def known_but_unscanned_assets():
           % tile_value("KNOWN ADDRESSES"))
     check("SCANNED HOSTS" in text.upper(),
           "the scanned count is LABELLED as scanned, not as the whole estate")
+
+    # "NOTHING THERE" AND "SOMETHING THERE WE CANNOT ATTRIBUTE TO YOU" ARE DIFFERENT ANSWERS.
+    # The mitrelli run reported 3cx.mitrelli.com under "no observable service" while Shodan held
+    # an open port on its address. Both stay out of the findings; only one is worth a question.
+    check("COULD NOT ATTRIBUTE" in text.upper(),
+          "the deck separates an unattributable open port from an absent scan record")
+    check("5090" in text, "and it names the port, which is what makes the question answerable")
 
 
 def main():

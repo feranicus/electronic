@@ -622,6 +622,10 @@ function ccCell(v) {
   const rawUnscanned = Array.isArray(owned.resolved_no_service) ? owned.resolved_no_service
                      : (Array.isArray(t.resolved_no_service) ? t.resolved_no_service : []);
   const unscanned = rawUnscanned.filter(x => x && (x.name || x.ip));
+  // Addresses where Shodan DOES show an open port and the attribution gate could not tie it to
+  // this customer. A different answer from "no scan record", and the one worth acting on.
+  const unattr = (Array.isArray(owned.resolved_unattributable) ? owned.resolved_unattributable : [])
+    .filter(x => x && (x.name || x.ip));
   const tiles = [[String(totalHosts), "SCANNED HOSTS"],
                  [String(totalHosts + unscanned.length), "KNOWN ADDRESSES"],
                  [String(nAsn), "ASNs"], [String(nCountry), "COUNTRIES"]];
@@ -673,6 +677,29 @@ function ccCell(v) {
     s.addText(shown.join("     " + RAQUO + "  ")
       + (unscanned.length > shown.length ? "     +" + (unscanned.length - shown.length) + " more" : ""),
       { x: 0.4, y: y0 + 0.62, w: 9.3, h: 0.46, fontSize: 7.4, fontFace: FM, color: C.tealDark,
+        margin: 0, valign: "top" });
+  }
+
+  if (unattr.length) {
+    const y1 = 2.44 + rows.length * rowH + (unscanned.length ? 1.34 : 0.26);
+    s.addText("OPEN PORTS WE COULD NOT ATTRIBUTE TO YOU", { x: 0.4, y: y1, w: 9.3, h: 0.2,
+      fontSize: 8, fontFace: FB, bold: true, color: C.red || C.tealDark, charSpacing: 1.4,
+      margin: 0 });
+    // NO PROMISE THE ENGINE CANNOT KEEP. This block first said "confirm ownership and each
+    // becomes a finding on the next run". It would not: an operator `--pin` lands in the same
+    // set as an auto-resolved pin, and the attribution gate deliberately refuses both for a
+    // nameless record. Honouring an operator's assertion differently from a DNS lookup is the
+    // right next change; until it exists, this says what is true.
+    s.addText(unattr.length + " name(s) in your DNS resolve to an address where a service IS "
+      + "visible, on infrastructure that carries no identity of yours. We do not claim these as "
+      + "yours, because a name can point at an address somebody else owns. Each is a question "
+      + "for you rather than a finding about you.",
+      { x: 0.4, y: y1 + 0.2, w: 9.3, h: 0.4, fontSize: 7.6, fontFace: FB, color: C.inkMuted,
+        margin: 0, valign: "top" });
+    s.addText(unattr.slice(0, 6)
+      .map(u => String(u.name || u.ip) + "  " + String(u.ip || "")
+                + (u.ports ? "  port " + u.ports : "")).join("     " + RAQUO + "  "),
+      { x: 0.4, y: y1 + 0.58, w: 9.3, h: 0.3, fontSize: 7.4, fontFace: FM, color: C.tealDark,
         margin: 0, valign: "top" });
   }
   footer(s); tracer(s);
