@@ -375,6 +375,97 @@ def index_pagination():
     check(ok2 and n2 == 1, "6 findings stay on ONE index slide (got %d)" % n2)
 
 
+def known_but_unscanned_assets():
+    """mitrelli.com (2026-10-27): the deck said "5 HOSTS" for an estate the engine had pinned 19
+    addresses in.
+
+    What the run log shows, verbatim:
+
+        [auto] asns=0 nets=0 pinned=19 ...
+        [auto] pinned hosts: ... 185.154.37.12, 31.171.250.237, ... 213.8.178.20 ...
+        [auto] 13 name(s) resolve with no observable service - put to the operator as a question,
+               NOT raised as a finding: 3cx.mitrelli.com, apache2.mitrelli.com, ...
+
+    Withholding them from the FINDINGS is correct and stays: Shodan not having scanned a host is
+    absence of evidence, and absence of evidence is never a finding. Withholding them from the
+    INVENTORY is a different claim, and it was wrong. We resolved those names from the customer's
+    own DNS, attributed them to the customer and pinned them. A reader of that deck concluded the
+    estate was five hosts, and one of the fourteen we did not show was their 3CX telephony box.
+
+    The rule, narrowed: the absence rule governs what we ASSERT about a host, never whether the
+    host is listed as one of theirs."""
+    print("\n== 9. assets we resolved but Shodan never scanned still reach the deck ==")
+    tmp = tempfile.mkdtemp()
+    fj = json.load(open(os.path.join(SAMPLE, "findings.sample.json"), encoding="utf-8"))
+    fj.setdefault("target", {})
+    fj.setdefault("summary", {})
+    fj["summary"]["inventory"] = [
+        {"holder": "Partner Communications Ltd.", "asn": "AS12400", "country": "IL",
+         "role": "hosting / edge", "hosts": 3},
+        {"holder": "EveryWare AG", "asn": "AS24951", "country": "CH",
+         "role": "hosting / edge", "hosts": 1},
+        {"holder": "NOS COMUNICACOES, S.A.", "asn": "AS1897", "country": "PT",
+         "role": "hosting / edge", "hosts": 1},
+    ]
+    fj["summary"]["countries"] = 3
+    # The real shape: the telephony host is the one that matters and the one that was lost.
+    fj["target"]["resolved_no_service"] = [
+        {"name": "3cx.mitrelli.com", "ip": "213.8.178.20"},
+        {"name": "staging.mitrelli.com", "ip": "31.171.250.237"},
+        {"name": "mail.mitrelli.com", "ip": "185.154.37.12"},
+        {"name": "pbx.mitrelli.com", "ip": "192.117.119.131"},
+    ]
+    src = os.path.join(tmp, "unscanned.json")
+    json.dump(fj, open(src, "w", encoding="utf-8"), ensure_ascii=False)
+    out = os.path.join(tmp, "unscanned.pptx")
+    ok, err = build("build_findings_deck.js", [src], out)
+    if not ok:
+        check(False, "deck renders with unscanned assets %s" % err)
+        return
+
+    z = zipfile.ZipFile(out)
+    inv_xml = ""
+    for n in sorted((x for x in z.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", x)),
+                    key=lambda x: int(re.findall(r"\d+", x)[0])):
+        xml = z.read(n).decode("utf8")
+        if "ASSET INVENTORY" in xml:
+            inv_xml = xml
+            break
+    if not inv_xml:
+        check(False, "there is an ASSET INVENTORY slide to check")
+        return
+    text = re.sub(r"<[^>]+>", "", inv_xml)
+
+    # PROVE THE FIXTURE FIRST (class 12): the host that was lost must be in the input.
+    check("213.8.178.20" in json.dumps(fj), "fixture carries the telephony address that was lost")
+
+    for name, ip in (("3cx.mitrelli.com", "213.8.178.20"), ("pbx.mitrelli.com", "192.117.119.131")):
+        check(name.replace(".", "") in text.replace(".", "") or name in text,
+              "%s is named on the inventory slide" % name)
+        check(ip in text, "%s is on the inventory slide" % ip)
+    check("NO SCAN RECORD" in text.upper(),
+          "the block says these have no scan record, so nothing is claimed about them")
+    # 5 scanned + 4 unscanned = 9 known. A tile that still said 5 is the defect itself.
+    #
+    # READ THE TILES AS TILES. Stripping the tags glues every run together, so the two tile values
+    # "5" and "9" become the string "59" and a `\b9\b` search finds nothing while the deck is
+    # perfectly correct. Walk the <a:t> runs in document order and take the value that PRECEDES
+    # each label instead, which is how the tile is actually built.
+    runs = [x.strip() for x in re.findall(r"<a:t>(.*?)</a:t>", inv_xml, re.S)]
+    def tile_value(label):
+        for i, r in enumerate(runs):
+            if r.upper() == label and i:
+                return runs[i - 1]
+        return None
+    check(tile_value("SCANNED HOSTS") == "5",
+          "SCANNED HOSTS tile reads 5 (got %r)" % tile_value("SCANNED HOSTS"))
+    check(tile_value("KNOWN ADDRESSES") == "9",
+          "KNOWN ADDRESSES tile counts scanned + unscanned, 5 + 4 = 9 (got %r)"
+          % tile_value("KNOWN ADDRESSES"))
+    check("SCANNED HOSTS" in text.upper(),
+          "the scanned count is LABELLED as scanned, not as the whole estate")
+
+
 def main():
     tmp = tempfile.mkdtemp()
     fj = json.load(open(os.path.join(SAMPLE, "findings.sample.json"), encoding="utf-8"))
@@ -478,6 +569,7 @@ def main():
     length_budgets()
     cover_title()
     index_pagination()
+    known_but_unscanned_assets()
 
     print("\n" + "=" * 78)
     print("  test_deck_quality: %s" % ("ALL PASSED" if not FAILS else "%d FAILURE(S)" % len(FAILS)))

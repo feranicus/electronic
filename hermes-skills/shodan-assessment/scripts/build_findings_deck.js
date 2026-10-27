@@ -601,7 +601,22 @@ function ccCell(v) {
   // derive it, split the cell first.
   const nCountry = num(sum.countries) ||
     new Set(inv.flatMap(r => String(r.country || "").split(/[,\s]+/)).filter(c => c && c !== EMDASH)).size;
-  const tiles = [[String(totalHosts), "HOSTS"], [String(inv.length), "OPERATORS"], [String(nAsn), "ASNs"], [String(nCountry), "COUNTRIES"]];
+  // KNOWN BUT NOT SCANNED. Addresses the engine resolved from the customer's own DNS, attributed
+  // to them and pinned, for which Shodan holds no host record.
+  //
+  // THE DEFECT THIS FIXES (mitrelli.com, 2026-10-27). That run pinned 19 addresses, including
+  // 3cx.mitrelli.com on 213.8.178.20 and staging.mitrelli.com on 31.171.250.237. Five of them had
+  // Shodan records, so the deck said "5 HOSTS" and the reader concluded the estate was five hosts.
+  // The other fourteen were correctly withheld from the FINDINGS - "absence of evidence is never a
+  // finding", and Shodan not having scanned a host says nothing about that host - and then
+  // withheld from the INVENTORY as well, which is a different claim entirely. We knew those
+  // addresses existed. Hiding an asset because we cannot say anything bad about it is the opposite
+  // of the rule it was derived from. They are listed here, separately, with no severity attached.
+  const unscanned = Array.isArray(t.resolved_no_service)
+    ? t.resolved_no_service.filter(x => x && (x.name || x.ip)) : [];
+  const tiles = [[String(totalHosts), "SCANNED HOSTS"],
+                 [String(totalHosts + unscanned.length), "KNOWN ADDRESSES"],
+                 [String(nAsn), "ASNs"], [String(nCountry), "COUNTRIES"]];
   let tx = 0.4; const tw = 2.24, tg = 0.18;
   tiles.forEach(([n, l]) => {
     s.addShape(pres.shapes.RECTANGLE, { x: tx, y: 1.34, w: tw, h: 0.9, fill: { color: C.tealDark }, line: { type: "none" } });
@@ -614,7 +629,10 @@ function ccCell(v) {
     { text: "OPERATOR / HOLDER", options: hopt }, { text: "ASN", options: hopt },
     { text: "COUNTRY", options: hopt }, { text: "ROLE", options: hopt }, { text: "HOSTS", options: hopt },
   ]];
-  inv.slice(0, 12).forEach((r, i) => {
+  // Fewer operator rows when there is a second block to fit under them: a table that runs to the
+  // footer and a note nobody can read is worse than naming eight operators and counting the rest.
+  const maxOps = unscanned.length ? 8 : 12;
+  inv.slice(0, maxOps).forEach((r, i) => {
     const zebra = i % 2 === 1 ? C.light : C.white;
     rows.push([
       { text: String(r.holder || r.operator || EMDASH), options: { fill: zebra, fontSize: 7.6, color: C.tealDark, bold: true } },
@@ -626,6 +644,29 @@ function ccCell(v) {
   });
   const rowH = Math.max(0.22, Math.min(0.34, 2.6 / Math.max(rows.length, 1)));
   drawTable(s, rows, { x: 0.4, y: 2.44, w: 9.3, colW: [3.5, 1.6, 1.2, 2.0, 1.0], rowH });
+
+  if (unscanned.length) {
+    if (inv.length > maxOps) {
+      s.addText("+" + (inv.length - maxOps) + " more operator(s) not shown",
+        { x: 0.4, y: 2.44 + rows.length * rowH + 0.02, w: 9.3, h: 0.18, fontSize: 7,
+          fontFace: FB, color: C.inkMuted, margin: 0 });
+    }
+    const y0 = 2.44 + rows.length * rowH + 0.26;
+    s.addText("KNOWN ADDRESSES WITH NO SCAN RECORD", { x: 0.4, y: y0, w: 9.3, h: 0.2,
+      fontSize: 8, fontFace: FB, bold: true, color: C.tealDark, charSpacing: 1.4, margin: 0 });
+    s.addText(unscanned.length + " address(es) resolved from the customer's own DNS and attributed "
+      + "to them, which Shodan has not indexed. No service is claimed for these and no finding is "
+      + "raised: a missing scan record says nothing about what runs there. They are listed because "
+      + "they are part of the estate.",
+      { x: 0.4, y: y0 + 0.2, w: 9.3, h: 0.42, fontSize: 7.6, fontFace: FB, color: C.inkMuted,
+        margin: 0, valign: "top" });
+    const shown = unscanned.slice(0, 8)
+      .map(u => String(u.name || u.ip) + (u.name && u.ip ? "  " + u.ip : ""));
+    s.addText(shown.join("     " + RAQUO + "  ")
+      + (unscanned.length > shown.length ? "     +" + (unscanned.length - shown.length) + " more" : ""),
+      { x: 0.4, y: y0 + 0.62, w: 9.3, h: 0.46, fontSize: 7.4, fontFace: FM, color: C.tealDark,
+        margin: 0, valign: "top" });
+  }
   footer(s); tracer(s);
 })();
 
