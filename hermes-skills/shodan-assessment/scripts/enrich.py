@@ -65,6 +65,47 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # want it: ENRICH_MODELS="kimi-k2.6,deepseek-3.2,llama-4-maverick,gemma-4-31B-it".
 _FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it", "kimi-k2.6"]
 
+# MODELS WE HAVE MEASURED AND REFUSED, as DATA rather than as a sentence in a comment.
+#
+# This knowledge was written down twice in prose above and in model_watch.py's THINKING_RE a third
+# time, and the three disagreed: the regex catches "think|reason|k3" and therefore does NOT catch
+# glm-5.3-flash, glm-5.2, minimax-* or qwen3.5-397b-a17b — every one of which we measured returning
+# HTTP 200 with an unparseable body. That gap is not academic. On 2026-11-02 DigitalOcean's own
+# deprecation email recommended **glm-5.3-flash** as the successor to gemma-4-31B-it, and nothing
+# in the code would have refused it: the regex passes it, DO's models page does not mark it
+# "cannot be disabled" the way it marks glm-5.3, and its failure mode is the worst kind for us —
+# a 200 with leaked chain-of-thought in `content`, which is a DIRTY failure, not a clean timeout.
+#
+# A prefix match, because the vendor renumbers faster than we re-measure: glm-5.3 is a different
+# id from glm-5.2 and we have no reason to believe the family changed character between them.
+# Entries are removed by MEASUREMENT (model_probe.py / compare_models.py on the real prompt), never
+# by a vendor's claim that the model is now instruct-shaped.
+NOT_CHAINED = {
+    "kimi-k3":    "measured: 200 but JSON-invalid; DO's changelog says max thinking effort by default",
+    "glm-5":      "measured: 200 but JSON-invalid (thinking). DO flags glm-5.3 'reasoning cannot be disabled'",
+    "minimax":    "measured: 200 but JSON-invalid (thinking)",
+    "qwen3.5-397b": "measured: 200 but JSON-invalid (thinking)",
+    "anthropic-": "HTTP 403 on this account: visible in the catalog, not entitled",
+    "mimo-v2.5-pro": "DO's models page flags Reasoning",
+}
+
+
+def not_chainable(mid):
+    """Reason this id must stay out of the chain, or "" if nothing is known against it.
+
+    ONE HOME for the question "may this model carry the strict-JSON contract". model_watch.py and
+    model_probe.py both ask here instead of each keeping their own pattern.
+    """
+    s = (mid or "").lower()
+    for pref, why in NOT_CHAINED.items():
+        if s.startswith(pref.lower()) or pref.lower() in s:
+            # commercial openai-gpt-* is 403, but the OPEN-WEIGHTS gpt-oss ids are not: do not let
+            # a substring match bar a model the account can actually call.
+            return why
+    if s.startswith("openai-gpt-") and "oss" not in s:
+        return "HTTP 403 on this account: commercial OpenAI id, visible but not entitled"
+    return ""
+
 # KIMI IS LAST, on measured evidence from the ecolines.net run — this reverses the earlier
 # "keep it at position 2" decision, which was preference, not measurement.
 # What it actually cost there: a 400 ("temperature must be 0.6"), then a retry that ran with
@@ -518,10 +559,46 @@ NIST, BSI, ISO, TISAX, NIS2, DORA, Admiralty, Monte-Carlo, Shodan, CISA KEV, EPS
 Факты, числа, идентификаторы и доказательства остаются без изменений.
 """
 
+LANG_PT = """
+=== IDIOMA / LANGUAGE — OBRIGATÓRIO ===
+Escreve TODO o texto corrido EXCLUSIVAMENTE em português europeu (norma de Portugal, Acordo
+Ortográfico de 1990), registo empresarial formal para CISO/CFO, tratamento na terceira pessoa
+("a organização", "a V. Exa." nunca; usa forma impessoal ou "o cliente"). Nada de português do
+Brasil: usa "ficheiro" (não "arquivo"), "equipa" (não "equipe"), "a gestão" (não "o gerenciamento"),
+"endereço IP", "cópia de segurança" (não "backup" quando houver termo corrente), "rede", "palavra-passe"
+(não "senha"), "ecrã", "utilizador" (não "usuário"), "atualização" (não "atualizaçãode"), "deteção"
+(não "detecção"), "receção" (não "recepção"). Isto aplica-se a TODOS os valores dos campos:
+exec_summary, what, why, rem, strengths, colt_mitigation, realComparable, lossScenario,
+geopol_context, qa_note.
+Traduz também a terminologia técnica:
+  ALE -> perda anual esperada (PAE) · PML -> perda máxima provável (PMP)
+  LEF -> frequência de eventos de perda (FEP) · TEF -> frequência de eventos de ameaça (FEA)
+  Loss Magnitude -> magnitude da perda (MP) · Cost of Delay -> custo do adiamento (CA)
+  ROSI -> retorno do investimento em segurança (RIS) · Kill Chain -> cadeia de ataque
+  finding -> constatação · exposure -> exposição · remediation -> remediação
+  attack surface -> superfície de ataque · asset -> ativo · threat actor -> agente de ameaça
+  patch -> correção · host -> anfitrião (mantém "host" quando designar um registo técnico concreto)
+NÃO traduzir (nomes próprios e identificadores): categorias de serviço (SASE, ZTNA, WAF, Managed
+Firewall, IP Guardian, DPI/NDR, SD-WAN), nomes de metodologias e normas (FAIR, MITRE ATT&CK, NIST,
+BSI, ISO, TISAX, NIS2, DORA, Admiralty, Monte-Carlo, Shodan, CISA KEV, EPSS, CVSS), identificadores
+CVE, nomes de anfitriões, endereços IP, portos, nomes de protocolos (RDP, Telnet, TLS, VPN) e nomes
+de empresas.
+As CHAVES do JSON permanecem em inglês, sem alteração — só os VALORES são em português.
+Factos, números, identificadores e provas permanecem inalterados.
+"""
+
 # THE LANGUAGE REGISTRY. `LANG_DE if lang.startswith("de") else ""` was repeated in three files, so
 # a third language meant finding and editing all three — and missing one would silently ship English
 # prose inside a translated deck. One dict, one lookup, keyed on the 2-letter code.
-LANG_BLOCKS = {"de": LANG_DE, "ru": LANG_RU}
+#
+# PORTUGUESE IS ONE LANGUAGE HERE, NOT TWO. The customers are Angolan and Portuguese, and both write
+# the European norm under the 1990 orthographic agreement — Angola signed it, and Angolan commercial
+# and legal writing follows Lisbon spelling, not Brazilian. So `pt` serves pt-AO and pt-PT together
+# and the prompt block forbids Brazilian vocabulary explicitly, because a model left to its own
+# devices produces Brazilian Portuguese by default (it is the larger training corpus) and an Angolan
+# CISO reads "arquivo" and "usuário" as a deck written for somebody else. If a pt-BR variant is ever
+# needed it gets its own code and its own pack; it does not get bolted onto this one.
+LANG_BLOCKS = {"de": LANG_DE, "ru": LANG_RU, "pt": LANG_PT}
 
 
 def lang_block(lang):

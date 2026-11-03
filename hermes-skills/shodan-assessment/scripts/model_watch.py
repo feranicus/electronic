@@ -74,28 +74,72 @@ BASE = os.environ.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1").rstri
 KEY = os.environ.get("OPENAI_API_KEY") or os.environ.get("DO_INFERENCE_KEY") or ""
 
 # Ids that must never enter the enrichment chain even if they are fast and cheap.
+#
+# THIS REGEX IS THE NAME-SHAPED HALF ONLY. It catches an id that ADVERTISES itself as a reasoning
+# model. It cannot catch one that does not say so in its name, and on 2026-11-02 that gap had a
+# price: DigitalOcean recommended glm-5.3-flash as the replacement for gemma-4-31B-it, and this
+# pattern passes it. The MEASURED half lives in enrich.NOT_CHAINED (one home, beside the chain it
+# protects) and is consulted by _refuse() below. Both must agree before a model is probed.
 THINKING_RE = re.compile(r"(think|reason|-r1\b|distill|^o1|^o3|-cot\b|k3\b|kimi-k3)", re.I)
+
+
+def _refuse(mid):
+    """Reason this id must not be probed as a chain candidate, or "" to allow it."""
+    if THINKING_RE.search(mid or ""):
+        return "reasoning/thinking model - breaks the strict-JSON contract"
+    try:
+        import enrich as E
+        return E.not_chainable(mid)
+    except Exception:
+        # enrich not importable (no deps on this box): the regex half still applies. Say so rather
+        # than reporting a narrower check as the full one.
+        return ""
 # Not text->JSON models: embeddings, rerankers, image/audio/video.
 NON_TEXT_RE = re.compile(r"(embed|rerank|whisper|tts|stt|image|sdxl|flux|diffusion|video|wan\d|audio)", re.I)
 
-# Published DO serverless rates, USD per 1M tokens (docs.digitalocean.com, verified 1 Jul 2026).
-# Used to cost a candidate BEFORE we adopt it. Unknown ids simply report price "?" - we never
-# invent a number for a customer-facing cost ledger.
+# Published DO serverless rates, USD per 1M tokens, re-read from docs.digitalocean.com's own
+# Inference Pricing page on 2 Nov 2026 (that page's own last_updated was 2026-10-30).
+#
+# THE WHOLE TABLE WAS WRONG, AND NOTHING NOTICED FOR FOUR MONTHS. It was last verified 1 Jul 2026
+# and by November EIGHT of its fifteen rows were false: deepseek-3.2 was 0.425/1.36 and is 0.50/1.60
+# (18% under), deepseek-4-flash 0.112/0.224 -> 0.14/0.28, deepseek-v4-pro 1.392/2.784 -> 1.74/3.48,
+# kimi-k2.6 0.76/3.20 -> 0.95/4.00, qwen3.5 0.385/2.45 -> 0.55/3.50, glm-5.2 1.05/4.40 -> 1.40/4.40,
+# and TWO ids had already been retired on 8 Sep 2026 (kimi-k2.5, nvidia-nemotron-3-super-120b)
+# while mimo-v2.5 was never an id at all (it is mimo-v2.5-pro). A price table that is only ever
+# read by a human is a table that goes stale silently, which is defect class 1: the check could
+# not see its own subject. `test_model_prices.py` now pins the verification date and fails the
+# build when it is older than 90 days, so the next drift is loud instead of invisible.
+#
+# Used to cost a candidate BEFORE we adopt it. Unknown ids report "?" - we never invent a number.
+PRICES_VERIFIED = "2026-11-02"
+PRICES_MAX_AGE_DAYS = 90
 PRICES = {
-    "deepseek-4-flash":   (0.112, 0.224),
-    "deepseek-v4-pro":    (1.392, 2.784),
-    "deepseek-3.2":       (0.425, 1.36),
-    "llama-4-maverick":   (0.25,  0.87),
-    "gemma-4-31B-it":     (0.18,  0.50),
+    # --- the chain today -------------------------------------------------------------------
+    "deepseek-3.2":       (0.50,  1.60),
+    "llama-4-maverick":   (0.25,  0.87),   # RETIRES 2026-11-09, Meta's only serverless id on DO
+    "gemma-4-31B-it":     (0.18,  0.50),   # RETIRES 2026-11-09, Google's only id on DO at all
+    "kimi-k2.6":          (0.95,  4.00),
+    # --- vendor-diverse instruct candidates (no reasoning flag on DO's models page) ----------
+    "mistral-3-14B":      (0.20,  0.20),   # Mistral. Only symmetric price in the catalog
+    "qwen3.5-397b-a17b":  (0.55,  3.50),   # Alibaba
+    "nemotron-3-ultra-550b":   (0.90, 1.70),   # NVIDIA
+    "nemotron-nano-12b-v2-vl": (0.20, 0.60),   # NVIDIA
+    "nemotron-3.5-super-vl":   (0.30, 0.65),   # NVIDIA
+    "reflection-beam":    (0.40,  1.20),   # Reflection AI
+    "minimax-m2.5":       (0.30,  1.20),   # MiniMax, public preview -> own lifecycle risk
+    # --- same vendor as the head: usable, but they do NOT restore the four-vendor hedge -------
+    "deepseek-v4.1-flash": (0.30, 1.20),   # DO's recommended successor to llama-4-maverick
+    "deepseek-4-flash":   (0.14,  0.28),
+    "deepseek-v4-pro":    (1.74,  3.48),
+    # --- OpenAI open-weights: DO flags no reasoning, upstream is harmony-format. MEASURE first -
     "openai-gpt-oss-120b": (0.10, 0.70),
     "openai-gpt-oss-20b": (0.05,  0.45),
-    "kimi-k2.5":          (0.375, 2.025),
-    "kimi-k2.6":          (0.76,  3.20),
-    "mimo-v2.5":          (0.105, 0.28),
-    "nvidia-nemotron-3-super-120b": (0.21, 0.455),
-    "mistral-3-14B":      (0.20,  0.20),
-    "qwen3.5-397b-a17b":  (0.385, 2.45),
-    "glm-5.2":            (1.05,  4.40),
+    # --- priced here only so a reader sees the cost of the thing THINKING_RE refuses -----------
+    "glm-5.2":            (1.40,  4.40),   # reasoning
+    "glm-5.3-flash":      (0.15,  0.50),   # reasoning. DO's recommended successor to gemma
+    "glm-5.3":            (1.40,  4.40),   # reasoning, DO: "cannot be disabled"
+    "mimo-v2.5-pro":      (0.80,  3.00),   # reasoning
+    "kimi-k3":            (3.00, 15.00),   # reasoning
 }
 
 
@@ -194,6 +238,13 @@ def main():
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-probe", action="store_true")
     ap.add_argument("--probe-all", action="store_true")
+    # WHY A NAMED SHORTLIST EXISTS. --probe-all takes the whole catalog and then cuts it to the
+    # first six that survive filtering, which is an ARBITRARY six: the ids are sorted
+    # alphabetically, so a deliberate bake-off between named candidates could not be run at all.
+    # When two chain slots have to be replaced against a deadline, probing a random sample is not
+    # an answer. --models probes exactly what is asked for, in that order, with no cap.
+    ap.add_argument("--models", default="",
+                    help="comma-separated ids to probe, in order, instead of the catalog diff")
     ap.add_argument("--timeout", type=int, default=60)
     a = ap.parse_args()
 
@@ -231,19 +282,33 @@ def main():
     elif known:
         print("[model-watch] no new models since the last deploy")
 
-    # probe: new text models only (cheap), or the whole shortlist on demand
-    todo = [m for m in (ids if a.probe_all else new)
-            if not NON_TEXT_RE.search(m)]
-    skipped = [m for m in todo if THINKING_RE.search(m)]
-    todo = [m for m in todo if not THINKING_RE.search(m)]
+    # probe: a named shortlist, or new text models only (cheap), or the whole catalog on demand
+    asked = [s.strip() for s in a.models.split(",") if s.strip()]
+    if asked:
+        # An id the catalog does not contain is REPORTED, not silently dropped: on a deadline,
+        # "we probed 3 of the 5 you named" has to be visible or the absence reads as a pass.
+        for m in asked:
+            if m not in ids:
+                print("  %-34s NOT-IN-CATALOG  this id does not exist on %s" % (m, BASE))
+                out["probed"].append({"model": m, "verdict": "not-in-catalog", "price": _price(m)})
+        todo = [m for m in asked if m in ids]
+    else:
+        todo = [m for m in (ids if a.probe_all else new) if not NON_TEXT_RE.search(m)]
+    _why = {m: _refuse(m) for m in todo}
+    skipped = [m for m in todo if _why[m]]
+    todo = [m for m in todo if not _why[m]]
     # Vendors we are MEASURED to be refused by never reach the probe. Named, so the reader knows
     # the model was seen and deliberately not called -- silence would look like it was missed.
     barred = [m for m in todo if not entitled(m)[0]]
-    todo = [m for m in todo if entitled(m)[0]][:6]
+    todo = [m for m in todo if entitled(m)[0]]
+    # The cap exists to keep an automatic deploy cheap. A shortlist the operator NAMED is not
+    # automatic, and cutting it would answer a different question than the one asked.
+    if not asked:
+        todo = todo[:6]
     for m in skipped:
-        print("  %-34s DO-NOT-CHAIN  reasoning/thinking model - breaks the strict-JSON contract"
-              % m)
-        out["probed"].append({"model": m, "verdict": "do-not-chain", "price": _price(m)})
+        print("  %-34s DO-NOT-CHAIN  %s" % (m, _why[m]))
+        out["probed"].append({"model": m, "verdict": "do-not-chain", "price": _price(m),
+                              "err": _why[m]})
     for m in barred:
         print("  %-34s NOT-ENTITLED  %s" % (m, entitled(m)[1]))
         out["probed"].append({"model": m, "verdict": "not-entitled", "price": _price(m)})

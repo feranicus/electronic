@@ -36,10 +36,120 @@ NAMES = {
     "es": "Español",
     "pl": "Polski",
     "ru": "Русский",
+    "pt": "Português (Portugal e Angola)",
 }
 
 # English is the source language of every builder — it needs no dictionary and is always available.
 BASE = "en"
+
+# A PACK MUST BE COMPLETE, NOT MERELY PRESENT.
+#
+# The rule written at the top of this file is "half a language is not a language", and until now it
+# was enforced at the granularity of a FILE: `pt.json` exists -> Portuguese is offered. A pack
+# translated to 40% would have passed, and the customer would have received a deck in two languages
+# at once, because an unknown string falls through to English by design and that fall-through is
+# invisible. The file-level check could not see its own subject (defect class 1): presence is not
+# completeness.
+#
+# The reference key set is DERIVED from the other packs on disk, never hardcoded, and never from the
+# pack being measured — a denominator produced by the thing under test is not a measurement
+# (class 3). de.json and ru.json currently carry an identical 780 keys, so the reference is
+# unambiguous today and will track the builders as they grow.
+PACK_COVERAGE_MIN = 0.98
+# ... and it must actually be TRANSLATED. A stub pack that copies the English value for every key
+# would score 100% coverage. Measured baselines: de.json leaves 4.0% of values identical to the
+# English (proper nouns: ASN, STATUS, FAIR, Deloitte), ru.json 2.7%. Portuguese shares far more
+# vocabulary with English than German does, so the ceiling is set well above both rather than
+# tuned to them: the job here is to catch a stub at ~100% identical, not to grade style.
+PACK_IDENTICAL_MAX = 0.25
+
+_CACHE = {}                                   # path -> (mtime, size, strings dict)
+
+
+def _strings(path):
+    """The `strings` block of a pack, cached on (mtime, size).
+
+    doc_langs() is called from an HTTP handler to answer GET /api/langs. Re-reading two 140 KB JSON
+    documents on every request would make a capability question into a latency problem, which is
+    the rule that an optional lookup must never be slower than the page's own budget.
+    """
+    try:
+        st = os.stat(path)
+        sig = (st.st_mtime, st.st_size)
+    except OSError:
+        return {}
+    hit = _CACHE.get(path)
+    if hit and hit[0] == sig:
+        return hit[1]
+    try:
+        import json
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+        s = d.get("strings") or {}
+        if not isinstance(s, dict):
+            s = {}
+    except (OSError, ValueError):
+        return {}
+    _CACHE[path] = (sig, s)
+    return s
+
+
+def _pack_codes():
+    try:
+        return sorted(f[:-5] for f in os.listdir(I18N_DIR)
+                      if f.endswith(".json") and f[:-5] != BASE)
+    except OSError:
+        return []
+
+
+def reference_keys(exclude=None):
+    """The key universe a pack is measured against: the largest OTHER pack on disk.
+
+    Excluding the pack under test is what stops a stub from being graded against itself.
+    """
+    best = set()
+    for code in _pack_codes():
+        if code == exclude:
+            continue
+        ks = set(_strings(os.path.join(I18N_DIR, code + ".json")))
+        if len(ks) > len(best):
+            best = ks
+    return best
+
+
+def pack_report(code):
+    """Measure one pack. Returns the numbers AND the verdict, never a bare verdict.
+
+    `ok` False with `ref` 0 means there was nothing to measure against, which is reported as
+    unknown rather than scored as a pass.
+    """
+    s = _strings(os.path.join(I18N_DIR, code + ".json"))
+    ref = reference_keys(exclude=code)
+    out = {"code": code, "keys": len(s), "ref": len(ref), "coverage": 0.0,
+           "identical": 0.0, "prose_block": _has_prose_block(code), "ok": False, "why": ""}
+    if not ref:
+        out["why"] = "no reference pack on disk to measure against"
+        return out
+    if not s:
+        out["why"] = "no pack, or no 'strings' block in it"
+        return out
+    out["coverage"] = len(set(s) & ref) / float(len(ref))
+    ident = sum(1 for k, v in s.items() if isinstance(v, str) and v.strip() == k.strip())
+    out["identical"] = ident / float(len(s))
+    if out["coverage"] < PACK_COVERAGE_MIN:
+        out["why"] = ("pack covers %.1f%% of the %d reference strings, below the %.0f%% floor; %d "
+                      "missing keys would render in English inside a translated deck"
+                      % (100 * out["coverage"], len(ref), 100 * PACK_COVERAGE_MIN,
+                         len(ref - set(s))))
+    elif out["identical"] > PACK_IDENTICAL_MAX:
+        out["why"] = ("%.1f%% of values are identical to the English key, above the %.0f%% ceiling "
+                      "— this looks like a stub rather than a translation"
+                      % (100 * out["identical"], 100 * PACK_IDENTICAL_MAX))
+    elif not out["prose_block"]:
+        out["why"] = "no LANG_* prompt block in enrich.py: deck chrome would be translated around English prose"
+    else:
+        out["ok"] = True
+    return out
 
 
 def _has_prose_block(code: str) -> bool:
@@ -67,15 +177,9 @@ def doc_langs() -> list[str]:
     Fail-closed: half a language is not a language.
     """
     out = [BASE]
-    try:
-        for f in sorted(os.listdir(I18N_DIR)):
-            if not f.endswith(".json"):
-                continue
-            code = f[:-5]
-            if code != BASE and code not in out and _has_prose_block(code):
-                out.append(code)
-    except OSError:
-        pass                                  # no dictionaries readable -> English only, never a crash
+    for code in _pack_codes():                # already OSError-safe: [] when the dir is unreadable
+        if code not in out and pack_report(code)["ok"]:
+            out.append(code)
     return out
 
 
@@ -97,4 +201,14 @@ def catalogue() -> list[dict]:
 
 if __name__ == "__main__":                    # python deck_langs.py -> what can we really produce?
     import json
-    print(json.dumps({"doc_langs": doc_langs(), "catalogue": catalogue()}, ensure_ascii=False, indent=2))
+    # PRINT THE COMPARISON, NOT A VERDICT. A language that is NOT offered has to say how far short
+    # it falls, or "Portuguese is missing" reads as a bug in the selector rather than as 380
+    # untranslated strings.
+    print("reference key universe: %d strings" % len(reference_keys()))
+    for _c in _pack_codes():
+        _r = pack_report(_c)
+        print("  %-4s %-6s keys %4d/%-4d  coverage %5.1f%%  identical %4.1f%%  prose %-5s %s"
+              % (_c, "OFFERED" if _r["ok"] else "NO", _r["keys"], _r["ref"],
+                 100 * _r["coverage"], 100 * _r["identical"], _r["prose_block"], _r["why"]))
+    print(json.dumps({"doc_langs": doc_langs(), "catalogue": catalogue()},
+                     ensure_ascii=False, indent=2))
