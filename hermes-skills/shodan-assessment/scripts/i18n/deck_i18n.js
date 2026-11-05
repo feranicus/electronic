@@ -20,6 +20,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { stripControls } = require("./safe_text");
 
 // LANGUAGE IS DATA, NOT A BRANCH. This used to be `/^de/i.test(...) ? "de" : "en"`, so adding a
 // third deck language meant editing this line, the PACK line, LOCALE, money() and dfmt() — five
@@ -50,6 +51,11 @@ const MISSES = new Map();
 /* ---------------------------------------------------------------- text lookup */
 function T(s) {
   if (typeof s !== "string" || !s.trim()) return s;
+  // STRIP BEFORE THE ENGLISH EARLY-RETURN, not after. T() is the single funnel every string takes
+  // on its way to pptxgenjs, so it is the right floor for "no control character reaches a customer
+  // file" — but an English deck returns on the next line and would skip the strip entirely, which
+  // is how a guard ends up protecting five languages and not the sixth. See i18n/safe_text.js.
+  s = stripControls(s);
   // preserve surrounding whitespace (builders concatenate e.g. "FINDING " + id)
   const m = s.match(/^(\s*)([\s\S]*?)(\s*)$/);
   const lead = m[1], core = m[2], tail = m[3];

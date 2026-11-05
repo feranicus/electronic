@@ -123,6 +123,50 @@ def test_no_german_statute_name_survived_into_portuguese():
 
 # --------------------------------------------------------------- the gate itself
 
+def test_portuguese_has_chrome_for_every_artifact():
+    """THE verint REGRESSION. Portuguese was declared a document language on the strength of the
+    DECK pack alone, and the animated GEOPOL report — which reads an entirely separate dictionary
+    at geopol_html/i18n/<code>.json — shipped Portuguese prose under 'Scene 01 · The exposed
+    estate'. A completeness gate that looks at one of two directories is not a completeness gate."""
+    a = deck_langs.artifact_packs("pt")
+    missing = [k for k, v in a.items() if not v]
+    assert not missing, "pt has no chrome for: %s (English furniture around Portuguese prose)" % missing
+
+
+def test_the_second_pack_directory_is_actually_checked():
+    """Prove the check can see a gap, or it is just a dict of True (class 3)."""
+    a = deck_langs.artifact_packs("zz-not-a-language")
+    assert a and not any(a.values()), a
+    assert set(deck_langs.artifact_packs("pt")) == set(deck_langs.ARTIFACT_PACKS)
+
+
+def test_the_geopol_pack_does_not_translate_its_two_lookup_keys():
+    """'SASE · ZTNA' is compared with === and 'SSE · SECURE EGRESS' with indexOf('EGRESS') in the
+    scene-04 animation. Translating either breaks the scene silently — the same rule as never
+    translating a severity enum."""
+    p = os.path.join(HERE, "geopol_html", "i18n", "pt.json")
+    with open(p, encoding="utf-8") as fh:
+        pt = json.load(fh)
+    for key in ("SASE · ZTNA", "SSE · SECURE EGRESS"):
+        if key in pt.get("canvas", {}):
+            assert pt["canvas"][key] == key, "%r is a lookup key and must not be translated" % key
+
+
+def test_the_geopol_pack_matches_the_reference_pack_key_for_key():
+    ru = json.load(open(os.path.join(HERE, "geopol_html", "i18n", "ru.json"), encoding="utf-8"))
+    pt = json.load(open(os.path.join(HERE, "geopol_html", "i18n", "pt.json"), encoding="utf-8"))
+    assert pt["locale"] == "pt-PT"
+    for section in ("strings", "canvas", "fallback"):
+        assert set(pt[section]) == set(ru[section]), (
+            "%s: %d missing, %d extra" % (section, len(set(ru[section]) - set(pt[section])),
+                                          len(set(pt[section]) - set(ru[section]))))
+    # placeholders and HTML entities are structural, not prose
+    for section in ("strings", "canvas", "fallback"):
+        for k, v in pt[section].items():
+            for tok in ("{{COMPANY_UPPER}}", "{{COMPANY}}", "&amp;", "&#8594;", "&#9889;"):
+                assert k.count(tok) == v.count(tok), "%s: %r lost %s" % (section, k[:40], tok)
+
+
 def test_partial_pack_is_refused(fake_i18n):
     ref = _ref_strings()
     half = {k: "xx " + k for k in list(ref)[:int(len(ref) * 0.6)]}

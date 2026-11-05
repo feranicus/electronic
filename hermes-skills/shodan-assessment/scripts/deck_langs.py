@@ -63,6 +63,25 @@ PACK_COVERAGE_MIN = 0.98
 # tuned to them: the job here is to catch a stub at ~100% identical, not to grade style.
 PACK_IDENTICAL_MAX = 0.25
 
+# THERE IS MORE THAN ONE PACK DIRECTORY, AND THE GATE ABOVE ONLY KNEW ABOUT ONE.
+#
+# `i18n/<code>.json` is the DECK chrome. The animated GEOPOL report has its own, entirely separate
+# dictionary at `geopol_html/i18n/<code>.json`, read by build_geopol_html.js and never by anything
+# here. On 2026-11-03 that cost a customer deliverable: Portuguese was declared a document language
+# on the strength of the deck pack alone, and the animated report went out with Portuguese prose
+# wrapped in English furniture — "Scene 01 · The exposed estate" above a Portuguese headline. The
+# completeness gate was real and it was looking at one of the two places.
+#
+# This is a REPORT, not a second gate, and deliberately so: geopol_html/i18n carries no de.json
+# because German is excluded there ON PURPOSE (that pack's own _comment explains why — the German
+# deck copy is reviewed elsewhere and a second unreviewed source would drift). Making every
+# directory mandatory would evict a shipping language to punish a documented decision. So the
+# artifacts are listed, the gaps are named, and a human decides.
+ARTIFACT_PACKS = {
+    "deck": "i18n",                     # scripts/i18n/<code>.json      — deck_i18n.js
+    "geopol_html": "geopol_html/i18n",  # the animated GEOPOL report    — build_geopol_html.js
+}
+
 _CACHE = {}                                   # path -> (mtime, size, strings dict)
 
 
@@ -115,6 +134,20 @@ def reference_keys(exclude=None):
         if len(ks) > len(best):
             best = ks
     return best
+
+
+def artifact_packs(code):
+    """{artifact: True/False} — does `code` have chrome for each artifact the engine produces?
+
+    False does not mean broken: a missing pack falls back to English chrome, which is a readable
+    document in two languages rather than a crash. It means a customer deliverable will be mixed,
+    which is a thing somebody has to decide about rather than discover.
+    """
+    out = {}
+    for name, rel in sorted(ARTIFACT_PACKS.items()):
+        d = os.path.join(HERE, *rel.split("/"))
+        out[name] = os.path.isfile(os.path.join(d, code + ".json"))
+    return out
 
 
 def pack_report(code):
@@ -207,8 +240,14 @@ if __name__ == "__main__":                    # python deck_langs.py -> what can
     print("reference key universe: %d strings" % len(reference_keys()))
     for _c in _pack_codes():
         _r = pack_report(_c)
+        _a = artifact_packs(_c)
+        _missing = [k for k, v in _a.items() if not v]
         print("  %-4s %-6s keys %4d/%-4d  coverage %5.1f%%  identical %4.1f%%  prose %-5s %s"
               % (_c, "OFFERED" if _r["ok"] else "NO", _r["keys"], _r["ref"],
                  100 * _r["coverage"], 100 * _r["identical"], _r["prose_block"], _r["why"]))
+        print("       artifact chrome: %s%s"
+              % (", ".join("%s=%s" % (k, "yes" if v else "NO") for k, v in sorted(_a.items())),
+                 ("   <- English furniture around %s prose in: %s" % (_c, ", ".join(_missing)))
+                 if _missing else ""))
     print(json.dumps({"doc_langs": doc_langs(), "catalogue": catalogue()},
                      ensure_ascii=False, indent=2))

@@ -17,7 +17,10 @@ if (!jsonPath || !outPath) { console.error("usage: build_compliance_html.js comp
 const D = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
 const LANG = (process.env.DECK_LANG || D.lang || "en").toLowerCase().startsWith("de") ? "de" : "en";
 const company = D.company || "Target";
-const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// stripControls FIRST, then escape — see build_geopol_html.js and i18n/safe_text.js. Escaping
+// answers "is this markup-safe", never "is this text", and a control character is neither.
+const { stripControls } = require("./i18n/safe_text");
+const esc = (s) => stripControls(String(s == null ? "" : s)).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const T = {
   eyebrow: { en: "EU DIGITAL & CYBER COMPLIANCE", de: "EU-DIGITAL- & CYBER-COMPLIANCE" },

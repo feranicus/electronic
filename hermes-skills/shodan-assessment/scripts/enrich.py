@@ -928,6 +928,50 @@ def _normalise(j):
     return j
 
 
+# C0 control characters, except the three that legitimately occur in text. DEL (0x7f) is included
+# because it is not text either. No natural-language prose contains any of these.
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def control_chars(obj, _path=""):
+    """[(path, codepoint, context)] for every C0 control character in any string in `obj`.
+
+    THE verint PORTUGUESE DECK, 2026-11-03. The animated GEOPOL report went out with
+    "administra\\x7f\\x103o" where "administração" belonged, and 57 control characters across the
+    page: ç became \\x7f, ã became \\x10, í and é both became \\x11, õ became \\x15. It was not an
+    encoding fault — the file was valid UTF-8, it carried <meta charset="utf-8">, "Múltiplas" in the
+    SAME SENTENCE was intact, and no encode/decode pair over every codec in the standard library
+    reproduces the mapping (measured, exhaustively). The same letter also mapped two different ways
+    in two places, so there is no transform to invert. The model simply emitted corrupt bytes.
+    What let it reach a customer is that nothing ever looked: `grounded()` checks that prose MENTIONS
+    its finding and `_contract_ok()` checks that the answer is not EMPTY, but no check asked whether
+    the text was text.
+    """
+    out = []
+    if isinstance(obj, str):
+        for m in _CTRL_RE.finditer(obj):
+            i = m.start()
+            out.append((_path or "<root>", ord(m.group()), obj[max(0, i - 18):i + 12]))
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            out.extend(control_chars(v, "%s.%s" % (_path, k) if _path else str(k)))
+    elif isinstance(obj, (list, tuple)):
+        for n, v in enumerate(obj):
+            out.extend(control_chars(v, "%s[%d]" % (_path, n)))
+    return out
+
+
+def strip_controls(s):
+    """Remove C0 controls from one string. The LAST line of defence, not the first.
+
+    The chain refusing the answer is the right fix, because a model that mangles diacritics has
+    mangled the WORDS too and a stripped "administrao" is still wrong. This exists for text that
+    never passed through the chain at all — Shodan banners, PTR names, certificate subjects — which
+    are attacker-controlled and have no business carrying control bytes into a customer artifact.
+    """
+    return _CTRL_RE.sub("", s or "")
+
+
 def _contract_ok(j, tokens_out=None):
     """Did the model actually ANSWER, or just emit a well-formed nothing?
 
@@ -944,6 +988,16 @@ def _contract_ok(j, tokens_out=None):
     findings = [x for x in (j.get("findings") or []) if isinstance(x, dict) and x.get("id")]
     if not has_summary and not findings:
         return False, "no exec_summary and no usable findings (keys=%s)" % sorted(j)[:6]
+    # TEXT MUST BE TEXT. A control character means the model's output is corrupt at the byte level,
+    # and corruption that eats a cedilla has eaten letters too, so there is nothing to repair --
+    # fail over to the next model, exactly as an empty answer does. NAME the evidence (class 26):
+    # "bad characters" sends the next investigation looking for an encoding bug, which this is not.
+    ctl = control_chars(j)
+    if ctl:
+        where, cp, ctx = ctl[0]
+        return False, ("model emitted %d control character(s) in its prose, first at %s: U+%04X in "
+                       "%r -- the answer is corrupt, not merely wrong"
+                       % (len(ctl), where, cp, ctx))
     return True, ""
 
 

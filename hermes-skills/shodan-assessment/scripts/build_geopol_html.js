@@ -39,7 +39,12 @@ let shell = fs.readFileSync(SKELETON, "utf8");
 let C = {};
 try { C = JSON.parse(fs.readFileSync(CONTENT, "utf8")); } catch (e) { console.error("bad content.json:", e.message); }
 
-const esc = (s) => String(s == null ? "" : s)
+// stripControls FIRST, then escape. The HTML builders never pass through deck_i18n.T(), which is
+// where the pptx path gets this, so the floor has to be re-laid here — and the verint Portuguese
+// report is the proof it was missing: 57 control characters on a customer-facing page, under a
+// correct <meta charset="utf-8">. Escaping answers "is this markup-safe", never "is this text".
+const { stripControls } = require("./i18n/safe_text");
+const esc = (s) => stripControls(String(s == null ? "" : s))
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /* ------------------------------------------------------------------ language
