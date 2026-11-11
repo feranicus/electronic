@@ -671,6 +671,62 @@ def test_vendor_diversity_counts_models_that_answered():
         "_live is computed from the catalog again rather than from what answered")
 
 
+# --------------------------------------------------------------- 3i. the mistral 400
+
+def test_mistral_never_sends_chat_template_kwargs():
+    """MEASURED 11 NOV 2026, the first run after the key was widened.
+
+    mistral-3-14B stopped returning 403 and started returning 400:
+        "chat_template is not supported for Mistral tokenizers."
+    We send chat_template_kwargs to suppress thinking. Mistral's tokenizer rejects it outright.
+    A constraint the server publishes on every rejection should cost zero round trips.
+    """
+    p = enrich._model_params("mistral-3-14B")
+    assert "chat_template_kwargs" in (p.get("_drop") or []), p
+    # and the payload really is built without it
+    import json as _j
+
+    sent = {}
+
+    def _fake_post(payload, timeout=None):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": '{"exec_summary": "x"}'}}], "usage": {}}
+
+    import unittest.mock as _m
+    with _m.patch.object(enrich, "_post", _fake_post):
+        enrich._call("prompt", model="mistral-3-14B", timeout=5)
+    assert "chat_template_kwargs" not in sent, sent.keys()
+    assert _j.dumps(sent)  # serialisable
+
+
+def test_kimi_still_gets_its_own_constraints():
+    """The new entry must not disturb the one that was already measured."""
+    p = enrich._model_params("kimi-k2.6")
+    assert p.get("temperature") == 0.6
+    assert "response_format" in (p.get("_drop") or [])
+
+
+def test_an_unconstrained_model_is_left_alone():
+    assert enrich._model_params("deepseek-3.2") == {}
+
+
+def test_the_400_repair_matches_the_field_the_server_named():
+    """BLANKET-STRIPPING IS THE DEFECT, NOT THE FIX.
+
+    The server said chat_template; the retry dropped response_format, because the generic path
+    assumed the usual culprit. That is the same shape as the ecolines regression, where dropping
+    chat_template_kwargs on an unrelated 400 re-enabled Kimi's thinking and produced 46,801
+    characters of rambling.
+    """
+    src = open(os.path.join(HERE, "enrich.py"), encoding="utf-8").read()
+    assert 're.search(r"chat[_ ]template"' in src, (
+        "the 400 path no longer recognises a body that names chat_template")
+    assert "the server named chat_template" in src
+    i = src.index('re.search(r"chat[_ ]template"')
+    j = src.index('temperature must be ([0-9.]+)')
+    assert i < j, "the chat_template repair must sit with the other named-field repairs"
+
+
 # --------------------------------------------------------------- 4. one command
 
 @pytest.mark.skipif(not os.path.exists(SHIP), reason="ship.py not in this checkout")

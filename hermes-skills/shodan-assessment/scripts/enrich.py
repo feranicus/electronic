@@ -720,6 +720,13 @@ MODEL_PARAMS = {
     # the value out of the 400 body and re-sends with it. This entry is the fast path that avoids the
     # round trip; the parser is what keeps us correct when DO retunes the model again.
     "kimi": {"temperature": 0.6, "_drop": ["response_format"]},
+    # mistral-*: measured 11 Nov 2026, the first run after the model access key was widened.
+    # The API answered, verbatim:
+    #     "chat_template is not supported for Mistral tokenizers."
+    # We send chat_template_kwargs to suppress thinking, which Mistral has no use for and its
+    # tokenizer rejects outright. Encoded here for the same reason as Kimi's: a constraint the
+    # server publishes on every rejection should cost zero round trips, not one per call.
+    "mistral": {"_drop": ["chat_template_kwargs"]},
 }
 
 
@@ -900,6 +907,14 @@ def _call(text, model=None, timeout=None, max_tokens=None):
             # A number the server publishes on every rejection must be READ, not memorised — that
             # is the difference between fixing this once and fixing it every time DO retunes a model.
             _fix = []
+            # THE SERVER NAMES THE FIELD; REPAIR THAT FIELD.
+            # mistral-3-14B returned "chat_template is not supported for Mistral tokenizers" and
+            # the retry dropped response_format instead, because the generic path assumed the
+            # usual culprit. That is exactly the blanket-strip that once re-enabled Kimi's
+            # thinking and produced 46,801 characters of rambling. Match on what was SAID.
+            if re.search(r"chat[_ ]template", _b or "", re.I):
+                if payload.pop("chat_template_kwargs", None) is not None:
+                    _fix.append("dropped chat_template_kwargs (the server named chat_template)")
             _m = re.search(r"temperature must be ([0-9.]+)", _b or "")
             if _m:
                 try:
