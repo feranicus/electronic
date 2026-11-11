@@ -173,6 +173,17 @@ def card(s, x, y, w, h, kicker, kcol, head, body, hcol=WHITE, bsize=10, fill=INK
     Same defect class as the site header row and the deck title row, both of which this repository
     has already paid for. Refuse it at build time rather than hope somebody looks at the render.
     """
+    # WRAPPED lines are NOT guarded here, and that is a deliberate decision rather than an
+    # oversight. The BitSight deck shipped a 54 character head into a 3.48in card, it wrapped to
+    # three lines and printed through the body. The obvious fix is to estimate the wrap from
+    # character count, and it was tried: six characters per inch, measured off two real renders.
+    # It then REFUSED a 41 character head that renders in two lines, and it broke
+    # build_aisoc_competitive_deck.py, whose 'A GRAFANA BOARD / FOR THE EVENTS' head has shipped
+    # correctly for months. Word wrap breaks at spaces, so a single characters-per-inch constant
+    # mispredicts in both directions and a guard that refuses a valid layout is worse than none.
+    # Calibrating it properly needs real font metrics for Arial Black, which this builder does not
+    # have. Until it does, the head length is checked by LOOKING at the render, which the
+    # operator's standing rule requires anyway.
     if head.count("\n") + 1 > 2:
         raise SystemExit("[X] card head is %d lines and overlaps the body (max 2): %r"
                          % (head.count("\n") + 1, head))

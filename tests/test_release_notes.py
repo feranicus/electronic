@@ -35,18 +35,30 @@ def _rn():
 
 def test_the_same_four_models_that_review_the_gate_write_the_notes():
     """Four vendors, so a provider-wide 429 cannot silence the whole panel."""
-    q = _read(os.path.join(ROOT, "deploy", "stagegate", "quorum.py"))
-    # CASE-SENSITIVE was wrong: `gemma-4-31B-it` has a capital B, so [a-z0-9.-]+ matched nothing
-    # for it and the panel silently came back as three models. A model id is not lowercase by
-    # convention, and assuming it is made this check quietly measure the wrong set.
-    panel = set(re.findall(r'"([A-Za-z0-9.\-]+)"', "".join(
-        re.findall(r"^(?:SOLDIERS|AUDITORS)\s*=\s*\[[^\]]*\]", q, re.M))))
+    # MECHANISM REWRITTEN 11 NOV 2026, ORIGINAL REASONING KEPT.
+    #
+    # This used to read SOLDIERS and AUDITORS out of quorum.py as string LITERALS with a regex.
+    # That was the right check while they were literals, and it already had one scar: a
+    # case-sensitive pattern missed `gemma-4-31B-it` and silently scored the panel as three.
+    #
+    # They are no longer literals. DigitalOcean retired two chained models and five separate
+    # hardcoded rosters went on naming the dead for two days, so quorum.py, release_notes.py and
+    # proteus.py now all DERIVE from enrich._FALLBACKS the way perseus already did. Parsing source
+    # text cannot see a computed value, so the check now imports and compares the real objects,
+    # which asserts the property the old regex was only approximating: one roster, not four.
+    import importlib.util as _il
+    _qp = os.path.join(ROOT, "deploy", "stagegate", "quorum.py")
+    _sp = _il.spec_from_file_location("_quorum_under_test", _qp)
+    _q = _il.module_from_spec(_sp)
+    _sp.loader.exec_module(_q)
+    panel = list(_q.SOLDIERS) + list(_q.AUDITORS)
     assert len(panel) == 4, (
-        "expected 4 panel models, read %d from quorum.py: %s. If the panel legitimately changed "
-        "size, the release notes must change with it." % (len(panel), sorted(panel)))
-    assert set(_rn().MODELS) == panel, (
+        "expected 4 panel models, quorum.py resolved %d: %s. If the panel legitimately changed "
+        "size, the release notes must change with it." % (len(panel), panel))
+    assert len(set(panel)) == 4, "the panel contains a duplicate: %s" % panel
+    assert list(_rn().MODELS) == panel, (
         "the release notes are written by a different set of models than the staging panel: "
-        "%s vs %s. One list, or they drift." % (sorted(_rn().MODELS), sorted(panel)))
+        "%s vs %s. One list, or they drift." % (list(_rn().MODELS), panel))
 
 
 def test_ship_py_sends_them_on_every_release():

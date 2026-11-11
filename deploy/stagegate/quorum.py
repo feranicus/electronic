@@ -46,8 +46,63 @@ except Exception as _e:                                    # pragma: no cover
 
 # 2 soldiers + 2 auditors, one per vendor. Order mirrors enrich._FALLBACKS, which is chosen from
 # MEASURED evidence (compare_models.py on the real prompt), not from taste.
-SOLDIERS = ["deepseek-3.2", "llama-4-maverick"]
-AUDITORS = ["gemma-4-31B-it", "kimi-k2.6"]
+def _load_enrich(*candidates):
+    """Load the REAL enrich.py from disk, by path, under a private module name.
+
+    `import enrich` trusts sys.modules, and sys.modules is shared: a sibling test installs a
+    FakeEnrich stub, another repo in the same checkout has its own module of that name, and the
+    roster silently resolves to whatever got imported first. Loading the file we mean, under a
+    name nobody else uses, removes the whole class. Returns None if no candidate exists.
+    """
+    import importlib.util as _il
+    import os as _os
+    for _p in candidates:
+        _p = _os.path.abspath(_p)
+        if not _os.path.isfile(_p):
+            continue
+        try:
+            _s = _il.spec_from_file_location("_roster_enrich", _p)
+            _m = _il.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            return _m
+        except Exception:
+            continue
+    return None
+
+
+def _panel():
+    """The staging panel, split out of the live chain rather than restated here.
+
+    These two literals named llama-4-maverick and gemma-4-31B-it for two days after DigitalOcean
+    retired them, so the staging gate was asking dead models for a verdict.
+    """
+    import sys as _s
+    _here = os.path.dirname(os.path.abspath(__file__))
+    for _p in ("/opt/shodan-skill/scripts",
+               os.path.join(_here, os.pardir, os.pardir,
+                            "hermes-skills", "shodan-assessment", "scripts")):
+        _p = os.path.abspath(_p)
+        if os.path.isdir(_p) and _p not in _s.path:
+            _s.path.insert(0, _p)
+    _E = _load_enrich("/opt/shodan-skill/scripts/enrich.py",
+                      os.path.join(_here, os.pardir, os.pardir, "hermes-skills",
+                                   "shodan-assessment", "scripts", "enrich.py"))
+    try:
+        c = list(getattr(_E, "MODELS", None) or getattr(_E, "_FALLBACKS"))
+    except Exception as _e:
+        # NEVER DEGRADE IN SILENCE. The first version looked only in /opt/shodan-skill/scripts,
+        # which exists on the droplet and nowhere else, so every run off the droplet quietly
+        # produced a TWO model panel and called it a quorum. A panel that is short without saying
+        # so is worse than one that fails: the gate still returns a verdict.
+        c = ["deepseek-3.2", "kimi-k2.6"]
+        print("[quorum] !! could not read the model chain (%s: %s); falling back to %s. The panel "
+              "is SHORT and this verdict carries less weight than a full quorum."
+              % (type(_e).__name__, _e, ", ".join(c)), file=_s.stderr)
+    half = max(1, len(c) // 2)
+    return c[:half], c[half:] or c[:half]
+
+
+SOLDIERS, AUDITORS = _panel()
 
 ARCH = """HOW CONFIG REACHES THE PROXY ON THIS SYSTEM (facts, so you do not have to guess):
   * ONE shared Caddy fronts every domain. /etc/caddy/Caddyfile is a single-FILE bind mount from the

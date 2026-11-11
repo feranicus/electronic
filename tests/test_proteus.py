@@ -241,20 +241,32 @@ def _vote(brand, logo="ppt/media/image1.png", mode="light", name="Acme Security 
 
 
 def test_the_panel_decides_by_quorum_not_by_the_first_answer():
+    """ROSTER-AGNOSTIC SINCE 11 NOV 2026.
+
+    This used to key `answers` on the four model ids literally. When DigitalOcean retired two of
+    them and the panel started deriving from enrich._FALLBACKS, the two new ids had no entry, both
+    votes were discarded and the panel scored 2/2 instead of 3/4. The property under test is the
+    QUORUM, not the names, so the votes are now built from whatever the panel is.
+    """
     f = P.extract(make_pptx())
-    answers = {"deepseek-3.2": _vote("C8102E"), "llama-4-maverick": _vote("C8102E"),
-               "gemma-4-31B-it": _vote("00843D"), "kimi-k2.6": _vote("C8102E")}
+    panel = list(P.PANEL)
+    assert len(panel) >= 3, "a quorum test needs at least three voters: %s" % panel
+    answers = {m: _vote("C8102E") for m in panel}
+    answers[panel[2]] = _vote("00843D")            # one dissenter
     j = P.judge(f, ask=lambda m, p: answers[m])
     assert j["brand"] == "C8102E"
-    assert "3/4" in j["decided_by"]
+    assert "%d/%d" % (len(panel) - 1, len(panel)) in j["decided_by"], j["decided_by"]
 
 
 def test_a_model_that_invents_a_colour_has_its_vote_discarded():
     """The colours are IN the file. A value that is not one of them is an answer to a different
     question, and adopting it would put a hallucinated shade on a partner's reports."""
     f = P.extract(make_pptx())
-    answers = {"deepseek-3.2": _vote("FF00FF"), "llama-4-maverick": _vote("C8102E"),
-               "gemma-4-31B-it": _vote("C8102E"), "kimi-k2.6": _vote("123456")}
+    panel = list(P.PANEL)
+    assert len(panel) >= 4, "this test needs four voters: %s" % panel
+    answers = {m: _vote("C8102E") for m in panel}
+    answers[panel[0]] = _vote("FF00FF")            # not a colour in the file
+    answers[panel[3]] = _vote("123456")            # nor is this one
     j = P.judge(f, ask=lambda m, p: answers[m])
     assert j["brand"] == "C8102E"
     assert sum(1 for v in j["votes"] if not v.get("ok")) == 2

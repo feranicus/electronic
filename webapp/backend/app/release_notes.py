@@ -32,7 +32,35 @@ import sys
 
 sys.path.insert(0, "/opt/shodan-skill/scripts")
 
-MODELS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it", "kimi-k2.6"]
+def _chain_or(default):
+    """The live chain from its ONE HOME, or `default` if enrich is not importable at all.
+
+    perseus/incident.py::panel_models() already did exactly this and was right to. Every other
+    roster kept its own literal copy, so when DigitalOcean retired llama-4-maverick and
+    gemma-4-31B-it the chain was fixed in one place and FIVE other lists went on naming the dead.
+    A value with several homes drifts, and the newer one always loses.
+    """
+    import importlib.util as _il
+    _here = os.path.dirname(os.path.abspath(__file__))
+    for _p in ("/opt/shodan-skill/scripts/enrich.py",
+               os.path.join(_here, "..", "..", "..", "hermes-skills", "shodan-assessment",
+                            "scripts", "enrich.py")):
+        _p = os.path.abspath(_p)
+        if not os.path.isfile(_p):
+            continue
+        try:
+            _s = _il.spec_from_file_location("_roster_enrich", _p)
+            _m = _il.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            c = list(getattr(_m, "MODELS", None) or getattr(_m, "_FALLBACKS", None) or [])
+            if c:
+                return c
+        except Exception:
+            continue
+    return list(default)
+
+
+MODELS = _chain_or(["deepseek-3.2", "kimi-k2.6"])
 
 PROMPT = """You are writing the release notes for cybergod.ai, an external cyber-risk and
 compliance assessment platform. You are one of four models writing them independently; your text

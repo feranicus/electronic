@@ -219,7 +219,7 @@ def author(fj, gj, company):
         }
         # appended AFTER the %-format so a future block containing a literal % can never blow up
         prompt = prompt + block
-        model = os.environ.get("GEOPOL_HTML_MODEL") or (E._chain() or ["gemma-4-31B-it"])[0]
+        model = os.environ.get("GEOPOL_HTML_MODEL") or (E._chain() or ["deepseek-3.2"])[0]
         txt, usage = E._call(prompt, model=model, timeout=int(os.environ.get("GEOPOL_HTML_TIMEOUT", "120")))
         j = E._json(txt)
         # merge model scenes over the deterministic base, but only if they carry real prose

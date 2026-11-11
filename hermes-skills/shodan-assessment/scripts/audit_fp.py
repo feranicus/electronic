@@ -75,10 +75,12 @@ def _pick_auditor(author, chain):
         if m != author:
             return m
     # 3) last resort: a hard-coded alternative from another vendor
-    for m in ("deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it", "openai-gpt-oss-120b"):
+    # The last resort used to be a literal naming two retired models, so on the bancobic.ao run
+    # the auditor resolved to nothing and the deck shipped with verdict "unaudited".
+    for m in (list(chain or []) + ["deepseek-3.2", "kimi-k2.6"]):
         if m != author and _vendor(m) != av:
             return m
-    return "deepseek-3.2" if author != "deepseek-3.2" else "llama-4-maverick"
+    return "deepseek-3.2" if author != "deepseek-3.2" else "kimi-k2.6"
 
 
 def audit(fj):
@@ -97,7 +99,7 @@ def audit(fj):
     try:
         sys.path.insert(0, HERE)
         import enrich as E
-        chain = E._chain() or ["gemma-4-31B-it"]
+        chain = E._chain() or ["deepseek-3.2"]
         # the ACTUAL deck author — the model that WON enrichment after any failover, not the chain
         # head. run_assessment records it as target.qwen.model.
         author = (tgt.get("qwen") or {}).get("model") or chain[0]

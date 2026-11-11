@@ -2160,6 +2160,8 @@ def main():
     ap.add_argument("--decommission", metavar="SITES", default=None,
                     help="after a VERIFIED ship, retire these vhosts from the shared proxy "
                          "(names or a decommission.py group key, e.g. jev)")
+    ap.add_argument("--model-bakeoff", action="store_true",
+                    help="measure every catalog model NOT in the chain, then exit. Changes nothing")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
     ap.add_argument("--fix-ci-key", action="store_true",
                     help="prove the deploy key works and set the DROPLET_SSH_KEY secret from it "
@@ -2169,6 +2171,50 @@ def main():
                          "or pass a tag like good-20260722-143000)")
     a = ap.parse_args()
     DRY = a.dry_run
+
+    # THE MODEL BAKE-OFF, AS A FLAG RATHER THAN A SECOND SCRIPT.
+    #
+    # The measurement needs the inference key, the key lives on the droplet and not on the
+    # operator's PC, so the honest instruction used to be "ssh in, then docker exec model_watch",
+    # which is two commands and the rule says one. This runs it where it can see its subject,
+    # prints the table and exits. It deploys nothing, commits nothing and touches nothing, which
+    # is why it sits before every gate rather than inside the pipeline.
+    if a.model_bakeoff:
+        _eng = os.path.join(HERE, 'hermes-skills', 'shodan-assessment', 'scripts')
+        _cmd = [sys.executable, os.path.join(_eng, 'model_watch.py'), '--unused']
+        _out = ''
+        try:
+            _r = subprocess.run(_cmd, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=900)
+            _out = (_r.stdout or '').rstrip()
+        except Exception as _e:
+            _out = ''
+            print('  local run skipped (%s)' % type(_e).__name__)
+        if 'catalog unavailable' in _out or not _out:
+            # THE REMOTE COPY IS LAST WEEK'S COPY, BY CONSTRUCTION.
+            # The first version of this fell straight through to `docker exec colt-web
+            # .../model_watch.py --unused`, which runs the file baked into the deployed IMAGE. A
+            # flag added in the working tree does not exist there until a deploy has happened, so
+            # the operator got `unrecognized arguments: --unused` and no measurement. Falling back
+            # to a stale copy of the very script being changed is worse than not falling back:
+            # say what is wrong and name the fix.
+            print('  the local run could not see the inference key.')
+            print('  it is read from the environment, or from assess-bot/.env in this repo.')
+            print('  trying the droplet, which runs the DEPLOYED copy of model_watch.py:')
+            _out = (ssh("docker exec colt-web python3 "
+                        "/opt/shodan-skill/scripts/model_watch.py --unused 2>&1 || true",
+                        timeout=900) or '').rstrip()
+            if 'unrecognized arguments' in _out or 'unrecognized argument' in _out:
+                print('')
+                print('  [X] the droplet is running an OLDER model_watch.py that has no --unused.')
+                print('      Two ways out, both one command:')
+                print('        put OPENAI_API_KEY (or DO_INFERENCE_KEY) in assess-bot/.env and')
+                print('        re-run this, which measures with the code in this working tree; or')
+                print('        run `python ship.py` first to deploy, then re-run the bake-off.')
+                print('      Measuring nothing is the right outcome here. Nothing was changed.')
+                return 2
+        print(_out or '  model-bakeoff: no output')
+        return 0
 
     # The CI deploy path has NEVER authenticated: every run dies at the first ssh with
     # "error in libcrypto", which means the DROPLET_SSH_KEY secret is not a usable OpenSSH private

@@ -589,7 +589,38 @@ def read_media(path_or_bytes, member):
 
 
 # --------------------------------------------------------------------------- judgement
-PANEL = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it", "kimi-k2.6"]
+# ONE HOME. This literal named two models DigitalOcean had already retired.
+def _load_enrich(*candidates):
+    """Load the REAL enrich.py from disk, by path, under a private module name.
+
+    `import enrich` trusts sys.modules, and sys.modules is shared: a sibling test installs a
+    FakeEnrich stub, another repo in the same checkout has its own module of that name, and the
+    roster silently resolves to whatever got imported first. Loading the file we mean, under a
+    name nobody else uses, removes the whole class. Returns None if no candidate exists.
+    """
+    import importlib.util as _il
+    import os as _os
+    for _p in candidates:
+        _p = _os.path.abspath(_p)
+        if not _os.path.isfile(_p):
+            continue
+        try:
+            _s = _il.spec_from_file_location("_roster_enrich", _p)
+            _m = _il.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            return _m
+        except Exception:
+            continue
+    return None
+
+
+_E = _load_enrich(os.path.join(os.path.dirname(os.path.abspath(__file__)), "enrich.py"))
+try:
+    PANEL = list(getattr(_E, "MODELS", None) or getattr(_E, "_FALLBACKS"))
+except Exception as _e:                                    # never degrade in silence
+    PANEL = ["deepseek-3.2", "kimi-k2.6"]
+    print("[proteus] !! could not read the model chain (%s); panel is SHORT: %s"
+          % (type(_e).__name__, ", ".join(PANEL)), file=sys.stderr)
 
 PROMPT = """You are choosing how to apply a company's existing PowerPoint design to a
 security report that another system generates. You are NOT inventing colours: every value below was

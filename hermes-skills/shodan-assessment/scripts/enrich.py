@@ -63,7 +63,28 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # the head slot belongs to the model MEASURED fastest and contract-valid on the real prompt
 # (deepseek-3.2: 25.0s, valid German, compare_models.py). Put Kimi back with one env var if you
 # want it: ENRICH_MODELS="kimi-k2.6,deepseek-3.2,llama-4-maverick,gemma-4-31B-it".
-_FALLBACKS = ["deepseek-3.2", "llama-4-maverick", "gemma-4-31B-it", "kimi-k2.6"]
+# CHAIN AS OF 11 NOV 2026. Two slots were replaced because DigitalOcean RETIRED their occupants:
+# llama-4-maverick (moved to dedicated inference) and gemma-4-31B-it (gone from the catalog on
+# 11 Nov). The bancobic.ao assessment is what this cost while they were still listed here: three
+# shards and two retries all spent on 404s, enrichment coverage 20% against an 80% floor, four of
+# five findings rendered as template text, the false-positive audit recorded "unaudited", and a
+# bank received that deck.
+#
+#   deepseek-3.2          DeepSeek   MEASURED, serving production. 42.7s on the real prompt
+#   openai-gpt-oss-120b   OpenAI     Apache 2.0 open weights. UNPROVEN: our own entitlement guard
+#                                    matched it on the "openai-gpt-" prefix and it has never once
+#                                    been probed. DO's limits page says Tier 1/2 may call exactly
+#                                    this family.
+#   mistral-3-14B         Mistral    Open weights, $0.20/$0.20. UNPROVEN: returned 403 on 10 Nov,
+#                                    which is either key scope or unaccepted provider terms.
+#   kimi-k2.6             Moonshot   MEASURED in the bancobic.ao run itself: the only model that
+#                                    answered, 53.5 tok/s.
+#
+# PUTTING TWO UNPROVEN IDS IN THE CHAIN IS DELIBERATE AND IT IS CHEAP. _GONE now remembers a 403
+# or a 404 for the life of the process, so a wrong guess costs ONE round trip per run and the
+# chain degrades to the two proven models. Leaving the dead ids in place cost far more than that.
+# Replace either one with whatever `python ship.py --model-bakeoff` measures.
+_FALLBACKS = ["deepseek-3.2", "openai-gpt-oss-120b", "mistral-3-14B", "kimi-k2.6"]
 
 # MODELS WE HAVE MEASURED AND REFUSED, as DATA rather than as a sentence in a comment.
 #
@@ -88,6 +109,11 @@ NOT_CHAINED = {
     "anthropic-": "HTTP 403 on this account: visible in the catalog, not entitled",
     "mimo-v2.5-pro": "DO's models page flags Reasoning",
 }
+
+
+# Models that answered 404 in THIS process. Not persisted: the catalog is DO's to change, and a
+# stale "this is dead" file would be worse than one wasted round trip after a model returns.
+_GONE = set()
 
 
 def not_chainable(mid):
@@ -216,7 +242,47 @@ try:
 except Exception:
     PRICE_MAP = {}
 BASE  = os.environ.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
-KEY   = os.environ.get("OPENAI_API_KEY", "")
+
+
+def resolve_key(start=None):
+    """The inference key: environment first, then the repo's local secret file.
+
+    ONE HOME, AND IT COST A WHOLE BAKE-OFF TO LEARN WHY IT HAS TO BE.
+    model_watch.py grew its own copy of this lookup so the catalog call would work on the
+    operator's PC. It did: 78 models came back. Every PROBE then failed with HTTP 401, because
+    probe() calls enrich._call and `KEY` HERE was still `os.environ.get("OPENAI_API_KEY", "")`,
+    which is empty off the droplet. Nineteen models were measured as FAIL with an auth error in
+    the note column, under a heading that reads CONTRACT. Two homes for one secret, and the newer
+    one won in exactly one of the two places that needed it.
+
+    In the container the environment carries the key, so this resolves identically there and the
+    file branch never runs.
+    """
+    for var in ("OPENAI_API_KEY", "DO_INFERENCE_KEY"):
+        v = os.environ.get(var)
+        if v:
+            return v.strip()
+    d = start or os.path.dirname(os.path.abspath(__file__))
+    for _ in range(6):                    # engine scripts sit a few levels under the repo root
+        p = os.path.join(d, "assess-bot", ".env")
+        if os.path.isfile(p):
+            try:
+                with open(p, encoding="utf-8", errors="replace") as fh:
+                    for line in fh:
+                        k, _, v = line.partition("=")
+                        if k.strip() in ("OPENAI_API_KEY", "DO_INFERENCE_KEY") and v.strip():
+                            return v.strip().strip('"').strip("'")
+            except OSError:
+                return ""
+            return ""
+        nxt = os.path.dirname(d)
+        if nxt == d:
+            break
+        d = nxt
+    return ""
+
+
+KEY   = resolve_key()
 PRICE = float(os.environ.get("QWEN_PRICE_PER_M", "0.65"))
 TIMEOUT  = int(os.environ.get("ENRICH_TIMEOUT", "120"))   # per-call wall budget (< pipeline subprocess timeout)
 # Attempts PER MODEL. With a multi-model chain, failover IS the retry — retrying the same slow model
@@ -757,6 +823,33 @@ def _call(text, model=None, timeout=None, max_tokens=None):
     try:
         d = _post(payload, timeout)
     except urllib.error.HTTPError as e:
+        if e.code in (403, 404):
+            # A RETIRED MODEL IS GONE FOR THE REST OF THE PROCESS, NOT GONE FOR THIS CALL.
+            #
+            # DigitalOcean retired llama-4-maverick and gemma-4-31B-it on 9 November 2026 with
+            # eleven days of notice. Both were still in _FALLBACKS the next morning, and the chain
+            # dutifully tried each of them on every finding, every shard and every retry: two dead
+            # round trips per call, for the whole run, forever. The failover worked perfectly and
+            # that is exactly why nobody noticed.
+            #
+            # 404 model_not_found is the one API answer that cannot change within a run, so it is
+            # the one answer worth remembering. Reads and probes may retry; this is not a retry,
+            # it is declining to ask a question whose answer is already known.
+            # 403 JOINS 404 HERE. The bancobic.ao run spent a 404 on llama-4-maverick and
+            # gemma-4-31B-it on EVERY shard and EVERY retry. Entitlement (403) is just as fixed
+            # within a single process as retirement (404): neither answer can change while the
+            # run is in flight, so asking twice is waste, not resilience. This is also what makes
+            # it cheap to put an UNPROVEN model in the chain: being wrong now costs one round trip
+            # per process instead of one per finding.
+            if model and model not in _GONE:
+                _GONE.add(model)
+                print("[warn] enrich: model %r returned HTTP %d (%s). Skipping it for the rest of "
+                      "this process; fix enrich._FALLBACKS. Live chain is now: %s"
+                      % (model, e.code,
+                         "model_not_found" if e.code == 404 else "not entitled",
+                         ", ".join(m for m in MODELS if m not in _GONE) or "EMPTY"),
+                      file=sys.stderr)
+            raise
         if e.code in (400, 422):
             # PRINT WHAT THE SERVER SAID. Discarding this body is exactly how "temperature must be 1
             # for this model" stayed invisible while Kimi was written off as broken.
