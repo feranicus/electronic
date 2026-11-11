@@ -770,6 +770,10 @@ def main():
                     _merged, _rep = _MR.run(fj, a.lang, deadline=_dl)
                     fj = _MR.apply(fj, _merged)
                     _cov0 = _rep["coverage"]
+                    # Carry WHO WROTE IT to the auditor. On the sharded path there is no single
+                    # author, so target.qwen.model cannot answer the question audit_fp has to ask.
+                    if _rep.get("authors"):
+                        fj.setdefault("target", {})["enrich_authors"] = list(_rep["authors"])
                     if _rep.get("deadline_hit"):
                         fj.setdefault("target", {})["enrich_truncated"] = {
                             "wall_s": _MR.wall_s(), "missing": _rep.get("missing") or []}
@@ -872,7 +876,10 @@ def main():
         except Exception: pass
         _dropped=_verdict.get("dropped") or []
         _refused=_verdict.get("refused") or []
-        _author=(fj.get("target",{}).get("qwen",{}) or {}).get("model")
+        # ONE HOME for "who wrote the prose": audit_fp decides it and reports it back. Recomputing
+        # it here from target.qwen.model is what printed "deck-author=?" on every sharded run
+        # while the auditor had in fact authored part of the deck.
+        _author=_verdict.get("author") or None
         _auditor=_verdict.get("auditor")
         # VISIBLE in the run log (the user asked "I don't see what model did the audit"):
         print("FP-AUDIT: auditor=%s  vs  deck-author=%s  ->  verdict=%s  flagged=%d  dropped=%d  refused=%d"

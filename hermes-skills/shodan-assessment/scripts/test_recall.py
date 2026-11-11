@@ -247,11 +247,51 @@ check(R.classify({"port": 443, "product": "nginx", "version": "1.18.0"})[1] != "
       "plain nginx is not misclassified as an appliance")
 
 print("\n[13] the FP auditor must be a DIFFERENT model than the deck author (never self-audit)")
+# DOCTRINE CORRECTED 11 NOV 2026, ORIGINAL REASONING KEPT (class 17).
+#
+# This section was written when enrichment was a SERIAL chain: one model won, and "the author"
+# was that one model id. It still is, on that path, so the single-author cases below are kept
+# verbatim - they are the original guarantee and it has not changed.
+#
+# What changed is that most estates are now enriched by the SHARDS, where three or four models
+# each write a slice. "The author" became a SET, and nothing said so: audit_fp read
+# target.qwen.model, which is null when the whole-estate call is skipped as infeasible. On the
+# verint run the log printed `deck-author=?` and the auditor, openai-gpt-oss-120b, had itself
+# written three of the nine findings it was reviewing. A guard comparing against None cannot
+# fail, which is why it never did.
 _chain = ["gemma-4-31B-it", "deepseek-3.2", "llama-4-maverick"]
 for _author in _chain + ["openai-gpt-oss-120b"]:
     _aud = _A._pick_auditor(_author, _chain)
     check(_aud != _author, "author %-22s -> auditor %-18s (different model)" % (_author, _aud))
     check(_A._vendor(_aud) != _A._vendor(_author), "   ...and a different vendor")
+
+# ...and the SET case, which is the one the shards produce.
+_chain4 = ["deepseek-3.2", "openai-gpt-oss-120b", "mistral-3-14B", "kimi-k2.6"]
+_verint = ["deepseek-3.2", "openai-gpt-oss-120b", "mistral-3-14B"]      # the real verint shards
+_aud = _A._pick_auditor(_verint, _chain4)
+check(_aud not in _verint, "3 shard authors -> auditor %s wrote none of it" % _aud)
+check(_aud == "kimi-k2.6", "and it is the one chain model that sat out the shards (got %s)" % _aud)
+check(_A._vendor(_aud) not in {_A._vendor(a) for a in _verint}, "   ...and a vendor that authored nothing")
+
+# A STRING MUST NOT ITERATE AS CHARACTERS. `m not in "deepseek-3.2"` is true for every model id,
+# so a bare string would have passed every independence test while checking nothing.
+check(_A._pick_auditor("deepseek-3.2", _chain4) != "deepseek-3.2",
+      "a bare string author is coerced, not iterated")
+
+# When every available model wrote part of the deck there is no independent auditor, and the
+# honest answer is to refuse. Faking independence is worse than saying "unaudited".
+check(_A._pick_auditor(_chain4 + ["deepseek-3.2", "kimi-k2.6"], _chain4) is None,
+      "every model authored -> no auditor, the caller refuses rather than self-audits")
+
+# authors_of() is the ONE HOME, and it must read the SHARD record, not just the serial winner.
+check(_A.authors_of({"enrich_authors": _verint}, _chain4) == _verint,
+      "authors_of reads the shard authors")
+check(_A.authors_of({"qwen": {"model": "kimi-k2.6"}}, _chain4) == ["kimi-k2.6"],
+      "authors_of still honours the serial winner")
+_both = _A.authors_of({"enrich_authors": ["deepseek-3.2"], "qwen": {"model": "kimi-k2.6"}}, _chain4)
+check(set(_both) == {"deepseek-3.2", "kimi-k2.6"}, "authors_of unions both paths (got %s)" % _both)
+check(_A.authors_of({}, _chain4) == ["deepseek-3.2"],
+      "with nothing recorded it falls back to the chain head, as it always did")
 
 print("\n" + "=" * 78)
 if FAILED:
@@ -422,7 +462,90 @@ _, _rep4 = _P.run(_fj3, "de")
 check(_rep4["coverage"] == 1.0, "a full-depth answer scores 100%")
 check(_rep4["shards"][0].get("tok_s") is not None,
       "throughput is recorded per shard so the next timeout is read, not guessed")
+
+# WHO WROTE IT, carried to the auditor. Derived from the shards that RETURNED ids - a shard that
+# was PLANNED for a model and then failed authored nothing, and naming it would deny the deck an
+# auditor it is entitled to.
+check(_rep4.get("authors") == ["deepseek-3.2"],
+      "the report names the model that actually wrote the prose (got %s)" % _rep4.get("authors"))
+
+def _fake_dead(text, model=None, timeout=None, max_tokens=None):
+    raise RuntimeError("HTTP 503")
+_E._call = _fake_dead
+_, _rep5 = _P.run(_fj3, "de")
+check(_rep5.get("authors") == [],
+      "a model that returned nothing is NOT an author (got %s)" % _rep5.get("authors"))
+# ...and the failing shard must still NAME the model (class 26). The exception path used to omit
+# it, so the per-shard log printed "(?)" for exactly the shards worth investigating, and "which
+# vendor is having a bad minute" - the question round-robin exists to answer - was unreadable.
+check(all(m.get("model") for m in _rep5["shards"]),
+      "a shard that raised still names its model: %s"
+      % [m.get("model") for m in _rep5["shards"]])
+
+# ---- EVERY VENDOR GETS WORK WHEN THERE IS WORK TO GO ROUND -------------------------------
+# verint, 11 Nov 2026: 9 findings, cap 3, so the greedy planner made exactly 3 shards, took chain
+# indices 0/1/2, and kimi-k2.6 drew nothing. The chain is four vendors so that no single outage
+# takes all the work; a slot that only runs on a big enough estate is a slot nobody has watched
+# succeed, and we would discover it was broken during the outage it exists for (class 53).
+def _plan_models(n):
+    """The models the planner actually dispatched to, first round only (retries are 900+)."""
+    _fjn = {"target": {"company": "T"},
+            "findings": [{"id": "N%d" % i, "sev": "HIGH", "title": "t",
+                          "evidence": ["203.0.113.1:443"]} for i in range(n)]}
+    def _quiet(text, model=None, timeout=None, max_tokens=None):
+        return _j3.dumps({"findings": []}), {"completion_tokens": 0}
+    _sv2 = _E._call
+    _E._call = _quiet
+    try:
+        _, _r = _P.run(_fjn, "en")
+    finally:
+        _E._call = _sv2
+    # metas arrive in COMPLETION order, not plan order (as_completed). Sort by the shard index
+    # or "the first shard" means "whichever finished first" - which is a race, not a fact.
+    return sorted([m for m in _r["shards"] if m.get("shard", 0) < 900],
+                  key=lambda m: m["shard"])
+
+_chain_now = _E._chain()
+_first = _plan_models(9)
+_used = {m["model"] for m in _first}
+check(_used == set(_chain_now),
+      "9 findings reach ALL %d chain models, not just the first 3 (got %s)"
+      % (len(_chain_now), sorted(_used)))
+check(all(m["model"] for m in _first), "every shard names its model")
+
+# ...and no shard exceeds what its model can finish inside the slice. Spreading must not quietly
+# hand a slow model more than the budget arithmetic says it can return.
+_per_cap = int(os.environ.get("ENRICH_SHARD_TIMEOUT", "150"))
+check(all(len(m["ids"]) <= max(1, min(3, _E.findings_that_fit(m["model"], _per_cap)))
+          for m in _first),
+      "no shard is given more findings than its model can finish: %s"
+      % [(m["model"], len(m["ids"])) for m in _first])
+
+# SEVERITY ORDER SURVIVES. The first shard still holds the highest-ranked findings, so the most
+# serious work still goes to the head of the chain rather than wherever the split lands.
+check(_first[0]["ids"] == sorted(_first[0]["ids"], key=lambda x: int(x[1:]))
+      and _first[0]["ids"][0] == "N0",
+      "the first shard still starts at the top of the ranking (got %s)" % _first[0]["ids"])
+
+# AND SPREADING HAS A FLOOR. The contract prompt is ~16,700 chars and dominates a small shard, so
+# two findings split into two calls doubles the input tokens to ask the same question twice.
+check(len(_plan_models(2)) == 1,
+      "a 2-finding estate is still ONE call, not one per vendor (got %d)" % len(_plan_models(2)))
 _E._call = _sv
+
+# WIRING, not intention: the engine must hand that list to the auditor, or it stays a field
+# nobody reads (class 9). The verint run proves the cost - the guard compared against None.
+_ra = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_assessment.py"),
+           encoding="utf-8").read()
+_ra_code = "\n".join(l for l in _ra.split("\n") if not l.strip().startswith("#"))
+check('["enrich_authors"] = list(_rep["authors"])' in _ra_code,
+      "run_assessment records the shard authors on target.enrich_authors")
+_af = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "audit_fp.py"),
+           encoding="utf-8").read()
+_af_code = "\n".join(l for l in _af.split("\n") if not l.strip().startswith("#"))
+check("authors_of(tgt, chain)" in _af_code, "audit_fp reads it through the ONE HOME")
+check('tgt.get("qwen") or {}).get("model") or chain[0]' not in _af_code,
+      "audit_fp no longer derives the author from the serial winner alone")
 
 
 print("\n[22] budget.gov.ru — a PUBLIC SUFFIX is not a company (the whole-government blow-out)")

@@ -52,6 +52,10 @@ sys.path.insert(0, HERE)
 SHARD_SIZE = int(os.environ.get("ENRICH_SHARD_SIZE", "3"))
 WORKERS = int(os.environ.get("ENRICH_WORKERS", "4"))
 MIN_COVERAGE = float(os.environ.get("ENRICH_MIN_COVERAGE", "0.8"))
+# The fewest findings worth giving a vendor its own call. The contract prompt is ~16,700 characters
+# and dominates a small shard, so splitting two findings into two calls doubles the input tokens to
+# ask the same question twice. Below this, filling shards greedily is the cheaper arrangement.
+MIN_SPREAD = int(os.environ.get("ENRICH_MIN_SPREAD", "2"))
 
 
 def _log(m):
@@ -193,7 +197,12 @@ def _call_shard(E, fj, batch, lang, idx, model=None, timeout=None, deadline=None
                      "extra": {k: v for k, v in j.items()
                                if k in ("geopol_context", "strengths", "posture")}}
     except Exception as e:
+        # NAME THE MODEL ON THE FAILURE PATH TOO (class 26). This branch omitted it, so the
+        # per-shard log line rendered `(?)` for exactly the shards worth investigating, and
+        # "which vendor is having a bad minute" — the question round-robin exists to answer —
+        # could not be read off the run at all.
         return {}, {"shard": idx, "ids": ids, "returned": [], "error": str(e)[:120],
+                    "model": model or getattr(E, "MODEL", "?"),
                     "ms": int((time.time() - t0) * 1000)}
 
 
@@ -216,12 +225,44 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS, deadline=None):
     # can finish. Never fewer than one finding: a model that cannot fit one is still the only way
     # that finding gets prose, and the deadline bounds it.
     def _plan(items, offset=0):
-        out, q, i = [], list(items), offset
-        while q:
-            m = _chain[i % len(_chain)] if _chain else None
-            cap = max(1, min(shard_size, _fit(m, _per) if _fit else shard_size))
-            out.append((q[:cap], m))
-            q, i = q[cap:], i + 1
+        """Split the findings into shards and name the model for each.
+
+        USE EVERY VENDOR WE HAVE, when there is enough work to go round. This used to fill each
+        shard to its model's capacity and stop as soon as the findings ran out, so the number of
+        shards was set by capacity alone: 9 findings at a cap of 3 produced exactly 3 shards, took
+        chain indices 0, 1, 2 — and kimi-k2.6, the fourth vendor, drew nothing. The operator saw
+        it in the verint log and asked why twice.
+
+        That is worse than idle. The chain is four vendors so that no outage can take all of the
+        work, and a slot that only runs when a run is big enough is a slot nobody has watched
+        succeed — which is the definition of a feature that is off (class 53). We would be
+        discovering kimi was broken during the outage it exists for.
+
+        So: aim for one shard per chain model, with the findings spread as evenly as the counts
+        allow (9 over 4 -> 3,2,2,2), then cap each by what that model can actually finish inside
+        its slice. A model that cannot fit its group still gets split further, exactly as before,
+        so nothing changes for a large estate where capacity, not vendor count, is the binding
+        constraint. Severity order is preserved, so the first (largest) group is still the most
+        serious findings and still goes to the head of the chain.
+        """
+        q = list(items)
+        if not q:
+            return []
+        n_models = len(_chain) if _chain else 1
+        # MIN_SPREAD findings per vendor before it is worth a separate call (see the constant).
+        target = max(1, min(n_models, len(q) // MIN_SPREAD))
+        base, extra = divmod(len(q), target)
+        out, i, pos = [], offset, 0
+        for k in range(target):
+            want = base + (1 if k < extra else 0)
+            while want > 0:
+                m = _chain[i % n_models] if _chain else None
+                cap = max(1, min(shard_size, _fit(m, _per) if _fit else shard_size))
+                take = min(want, cap)
+                out.append((q[pos:pos + take], m))
+                pos += take
+                want -= take
+                i += 1
         return out
 
     ranked = [f for b in shard(findings, 1) for f in b]       # severity order, deterministic
@@ -311,8 +352,19 @@ def run(fj, lang="en", shard_size=SHARD_SIZE, workers=WORKERS, deadline=None):
                 "  !! table is >2x off - update enrich.MODEL_TOK_S" if _tab and
                 (_med < _tab / 2.0 or _med > _tab * 2.0) else ""))
     report_rates = {k: sorted(v)[len(v) // 2] for k, v in _rates.items()}
+    # WHO ACTUALLY WROTE THE PROSE. ONE HOME, derived from the shards that RETURNED ids rather
+    # than from the plan: a shard that was planned for a model and then failed did not author
+    # anything, and the FP auditor must be independent of every model that DID.
+    #
+    # This was invisible until the sharded path became the normal one. `target.qwen.model` names
+    # the single model that won the SERIAL chain, and on a target where the whole-estate call is
+    # skipped as infeasible there is no such model — it stays null, and "never self-audit" then
+    # has nothing to compare against. On verint (11 Nov 2026, 9 findings, 3 shards) the auditor
+    # was openai-gpt-oss-120b, which had authored three of the nine itself.
+    authors = sorted({m["model"] for m in metas
+                      if m.get("model") and (m.get("returned") or [])})
     report = {"coverage": round(cov, 3), "total": len(want), "rewritten": rewritten,
-              "missing": sorted(want - set(merged)), "shards": metas,
+              "missing": sorted(want - set(merged)), "shards": metas, "authors": authors,
               "exec_summary": next((m["exec"] for m in metas if m.get("exec")), ""),
               "deadline_hit": _retry_cut or any(m.get("skipped") for m in metas),
               "measured_tok_s": report_rates,

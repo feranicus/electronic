@@ -58,29 +58,63 @@ def _slim(fj):
     return "\n".join(rows)
 
 
-def _pick_auditor(author, chain):
-    """Return a model GUARANTEED to differ from the deck author — different vendor if possible,
-    but at minimum a different model id. An audit by the same model that wrote the decks is not an
-    independent second opinion; it shares every blind spot and failure mode."""
+def authors_of(tgt, chain):
+    """EVERY model that wrote prose for this deck, newest knowledge first.
+
+    THE AUTHOR IS A SET, NOT A MODEL. The serial chain yields one winner, recorded as
+    target.qwen.model — but most large estates are enriched by the SHARDS, where three or four
+    models each write a slice, and where the whole-estate call is skipped as infeasible there is
+    no serial winner at all. Reading only target.qwen.model then returns None, and "never
+    self-audit" degrades to a comparison against nothing. [verint, 11 Nov 2026: the auditor had
+    authored three of the nine findings it was reviewing]
+
+    Falls back to the chain head only when NOTHING recorded an author, which is what the field
+    meant before the shards existed.
+    """
+    out = [m for m in (tgt.get("enrich_authors") or []) if m]
+    one = (tgt.get("qwen") or {}).get("model")
+    if one and one not in out:
+        out.append(one)
+    return out or ([chain[0]] if chain else [])
+
+
+def _pick_auditor(authors, chain):
+    """Return a model GUARANTEED to differ from EVERY deck author — different vendor if possible,
+    but at minimum a different model id. An audit by a model that wrote part of the deck is not an
+    independent second opinion; it shares every blind spot and failure mode.
+
+    `authors` is a list. It used to be a single model id, and a list silently passed the old
+    `m != author` test for every model in the chain (class 36: read the signature), so the
+    parameter was renamed rather than widened.
+    """
+    # A BARE STRING WOULD ITERATE AS CHARACTERS and every `m not in authors` test would then pass,
+    # which is the silent-success shape this function exists to prevent. Coerce, do not assume.
+    if isinstance(authors, str):
+        authors = [authors]
+    authors = [a for a in (authors or []) if a]
+    avs = {_vendor(a) for a in authors}
+    ok = lambda m: m not in authors                                             # noqa: E731
     forced = os.environ.get("FP_AUDIT_MODEL")
-    if forced and forced != author:
-        return forced                                  # operator override (only if not the author)
-    av = _vendor(author)
-    # 1) prefer a chain model from a DIFFERENT vendor than the author
+    if forced and ok(forced):
+        return forced                                  # operator override (never an author)
+    # 1) prefer a chain model from a vendor that authored NOTHING
     for m in chain:
-        if m != author and _vendor(m) != av:
+        if ok(m) and _vendor(m) not in avs:
             return m
     # 2) else any chain model that is at least a different id
     for m in chain:
-        if m != author:
+        if ok(m):
             return m
     # 3) last resort: a hard-coded alternative from another vendor
     # The last resort used to be a literal naming two retired models, so on the bancobic.ao run
     # the auditor resolved to nothing and the deck shipped with verdict "unaudited".
     for m in (list(chain or []) + ["deepseek-3.2", "kimi-k2.6"]):
-        if m != author and _vendor(m) != av:
+        if ok(m) and _vendor(m) not in avs:
             return m
-    return "deepseek-3.2" if author != "deepseek-3.2" else "kimi-k2.6"
+    for m in ["deepseek-3.2", "kimi-k2.6"]:
+        if ok(m):
+            return m
+    return None                                        # the caller REFUSES rather than fakes it
 
 
 def audit(fj):
@@ -102,18 +136,24 @@ def audit(fj):
         chain = E._chain() or ["deepseek-3.2"]
         # the ACTUAL deck author — the model that WON enrichment after any failover, not the chain
         # head. run_assessment records it as target.qwen.model.
-        author = (tgt.get("qwen") or {}).get("model") or chain[0]
-        auditor = _pick_auditor(author, chain)
-        if auditor == author:                          # must never happen — refuse rather than fake independence
-            print("[fp-audit] could not find a model different from the author %r — skipping audit"
-                  % author, file=sys.stderr)
+        authors = authors_of(tgt, chain)
+        author = ", ".join(authors) if authors else None
+        auditor = _pick_auditor(authors, chain)
+        if not auditor or auditor in authors:          # must never happen — refuse rather than fake independence
+            print("[fp-audit] every available model authored part of this deck (%s) — skipping "
+                  "the audit rather than letting a model review its own prose" % (author or "?"),
+                  file=sys.stderr)
             return {"auditor": None, "author": author, "verdict": "unaudited",
                     "false_positives": [], "notes": "no distinct auditor available"}
         txt, usage = E._call(prompt, model=auditor, timeout=int(os.environ.get("FP_AUDIT_TIMEOUT", "90")))
         j = E._json(txt) or {}
         fps = [x for x in (j.get("false_positives") or []) if isinstance(x, dict) and x.get("id")]
-        print("[fp-audit] auditor=%s (vendor=%s) vs deck author=%s (vendor=%s) verdict=%s flagged=%d"
-              % (auditor, _vendor(auditor), author, _vendor(author), j.get("verdict", "?"), len(fps)),
+        # NAME EVERY AUTHOR (class 26). "deck-author=?" sent the reader nowhere; the whole point of
+        # the line is to let a human confirm the auditor is not one of them.
+        print("[fp-audit] auditor=%s (vendor=%s) vs deck author(s)=%s verdict=%s flagged=%d"
+              % (auditor, _vendor(auditor),
+                 ", ".join("%s (%s)" % (a, _vendor(a)) for a in authors) or "?",
+                 j.get("verdict", "?"), len(fps)),
               file=sys.stderr)
         return {"auditor": auditor, "author": author, "verdict": j.get("verdict", "clean"),
                 "false_positives": fps, "notes": j.get("notes", "")}
