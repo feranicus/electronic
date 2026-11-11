@@ -196,15 +196,11 @@ never committed (asserted via `git ls-files -z` — tracked paths here contain s
 shreds them). `tests/test_secret_scan.py`
 
 **A TEST THAT CANNOT RUN ANYWHERE HAS NO BASELINE, AND NOBODY NOTICES.** `test_caddy_wiring.py`
-pins the 2026-08-14 "LIVE shared config is DAMAGED" incident, but the wiring later grew the
-`docker ps` / `docker inspect` lines that ASK the container where its Caddyfile is: the extracted
-segment re-assigned `$CF` over the fixture's temp file and, with no docker, died `rc 127` under
-`set -e`. Skipped on Windows, never reached in CI, so two red tests sat unseen. **SIMULATE docker, do not trim the segment** (class 20): a stub answers `ps`/`inspect`
-with the fixture's own path, and the test asserts the stub WAS consulted. The module gate is
-`shell_harness_allowed()` (ONE HOME), never `shutil.which("bash")`. Mutations caught: the bare-word
-range delete, the assumed path, `sed -i` restoring the inode swap.
-[2026-10-15] `tests/test_caddy_wiring.py`
-
+skipped on Windows and was never reached in CI, so two red tests sat unseen for weeks.
+**SIMULATE docker, do not trim the segment** (class 20): a stub answers `ps`/`inspect` with the
+fixture's own path and the test asserts the stub WAS consulted. Module gate is
+`shell_harness_allowed()` (ONE HOME), never `shutil.which("bash")`.
+[2026-10-15] `tests/test_caddy_wiring.py` · `docs/decisions/2026-10-caddy-wiring-harness.md`
 **124 FILES "BROKEN", NONE OF THEM BROKEN.** The first gate run past gitleaks failed the compile
 check on EVERY python file: `py_compile` writes the .pyc beside the source, the checkout belongs to
 the runner, the container is uid 10001 — EACCES on `__pycache__`, swallowed, rendered as a syntax
@@ -232,25 +228,14 @@ explaining them (class 4, sixth time), and the node_error tests never touched th
 [2026-10-15] `tests/test_gate_diagnostics.py`
 
 **HIS GREEN SUITE WAS TESTING A STACK THAT DOES NOT SHIP.** Four tests passed on his PC and failed
-in CI, one root cause each, all the same shape — the laptop is not the runner.
-**(a) A FLOOR IS NOT A PIN.** `starlette>=1.3.1` let image and laptop land on different releases;
-which responses poll for a client disconnect changed between them, so the white-label harness —
-which answered `http.request` FOREVER, wrong on every version — raised `Unexpected message
-received` only in CI. ASGI says one body then `http.disconnect`; `_receive_for()` is the ONE HOME
-and a contract test pins it, because a tolerant starlette passes the endpoint tests anyway. Pinned
-`starlette==1.7.0`; a test forbids a floor on anything serving HTTP.
-**(b) `ensure_app_requirements()` INSTALLS MISSING, NEVER UPGRADES** (still right), but its
-docstring claimed drift "is answered by the image build" — it is not.
-`report_requirement_drift()` is wired into ship.py, NAMES each mismatch, silent when they agree,
-never blocks.
-**(c) A TZ-MIXED DATE IS A PRODUCTION BUG.** `spend_watch.baseline()` parsed with local `mktime`
-and formatted with UTC `gmtime`, dropping a real day east of Greenwich (MEASURED: UTC 0.20, Berlin
-0.00). The droplet is UTC so the alert was never wrong there; his test asserted the buggy 0.00.
-`calendar.timegm`, plus a four-timezone test.
-**(d) `jobhuntwow-app/` IS GITIGNORED** — zero tracked files, so asserting its paths answered
-"wiring is wrong" when the truth was "not in this checkout" (class 1). In-repo half always
-asserted; sibling half skips with a reason. [2026-10-15]
-
+in CI, one root cause each — the laptop is not the runner. **(a) A FLOOR IS NOT A PIN**: a test
+forbids `>=` on anything serving HTTP, and `_receive_for()` is the ONE HOME for the ASGI receive
+contract. **(b)** `ensure_app_requirements()` installs MISSING, never upgrades, so
+`report_requirement_drift()` NAMES each mismatch in ship.py and never blocks. **(c) A TZ-MIXED
+DATE IS A PRODUCTION BUG**: parse and format in the SAME zone (`calendar.timegm`), because a UTC
+droplet hides it. **(d)** `jobhuntwow-app/` is GITIGNORED, so asserting its paths answers "wiring
+is wrong" when the truth is "not in this checkout" (class 1) - skip with a reason.
+[2026-10-15] `docs/decisions/2026-10-laptop-is-not-the-runner.md`
 **A CREDENTIAL IS PER-HOST AND PER-ACCOUNT.** `provision()` authorized the CI key on its DEFAULT
 host only, so the twin never had it. `deploy_hosts()` DERIVES the list (production `ci_key.HOST`,
 staging `stagegate.STAGING`, neither retyped) and says so aloud if staging cannot be derived
@@ -714,7 +699,12 @@ writing a check, a fixture or a diagnostic.
 56. **One response is built from ONE snapshot.** Reading the same cache twice inside one handler
     lets a refresh land in between and the two halves then describe different moments — `live`
     beside zero traffic. Read once, pass it down.
-
+57. **IN-PROCESS STATE DIES WITH THE PROCESS; THE ROW DOES NOT.** `_RUNNING` vs
+    `status='running'`: a restart left a finished run reading as live forever with nothing able to
+    end it. At boot every `running` row is an orphan BY CONSTRUCTION - reap it, log why in that
+    job's own log, and believe the MEASUREMENT, never the label. What a person can start they can
+    stop (owner-scoped; the KILL is the mechanism, not the DB write) and unbounded work gets a wall.
+    [2026-11-11] `tests/test_job_cancel.py` · `docs/decisions/2026-11-stopping-a-run.md`
 ---
 
 # WHAT LIVES WHERE (the map, so nothing has to be rediscovered)

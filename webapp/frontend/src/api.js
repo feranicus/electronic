@@ -88,6 +88,11 @@ export const ackPrivacy = () => postJSON("/api/privacy/ack", {});
 export const assessClarify = (jobId) => getJSON(`/api/assess/${encodeURIComponent(jobId)}/clarify`);
 export const assessRefine = (jobId, answers, lang = "en") =>
   postJSON(`/api/assess/${encodeURIComponent(jobId)}/refine`, { answers, lang });
+// Stop a run. ENGINE-AGNOSTIC like the status/events endpoints, so Compliance uses it unchanged.
+// Returns {ok, data:{status, stopped, already}} — `stopped` is true only when a live engine
+// process was actually killed, false when the row was an orphan with nothing behind it.
+export const assessCancel = (jobId) =>
+  postJSON(`/api/assess/${encodeURIComponent(jobId)}/cancel`, {});
 
 // ---- Compliance (regime set follows the JURISDICTION) ----
 // Shares the assess streaming/status/clarify/deck endpoints (engine-agnostic); only start + refine

@@ -381,6 +381,16 @@ export const keyed = {
   // banner, so it must stay ONE key (do not split it).
   "assess.reconnected": "Reconnected to an assessment already running on the server.",
   "assess.dropped": "Connection dropped \u2014 reconnecting\u2026 (the assessment keeps running on the server)",
+  // ---- Stopping a run (11 Nov 2026). A deploy recreated colt-web mid-assessment; the DB row still
+  // said running, the page re-attached to a job nobody was executing, and there was no way out of
+  // it — not even logging out. So: a Stop control, and four honest endings instead of one "failed".
+  "assess.cancel": "Stop",
+  "assess.cancelling": "Stopping\u2026",
+  "assess.cancelConfirm": "Stop this assessment? The engine is killed and no documents are produced.",
+  "assess.cancelled": "Assessment stopped. Nothing is still running on the server.",
+  "assess.cancelOrphan": "There was nothing running behind this page \u2014 the run had already ended on the server.",
+  "assess.timedOut": "Assessment stopped: it ran past its time limit. The last lines of the log say which phase it was in.",
+  "assess.interrupted": "This run was ended by a restart of the service. Nothing was running behind this page \u2014 start it again.",
   // Fallbacks used only when the server sends no message of its own.
   "assess.errFailed": "The assessment failed.",
   "assess.errStart": "Could not start the assessment.",

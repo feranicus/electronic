@@ -207,6 +207,12 @@ def main():
     answered = len([r for r in reviews if not r.get("error")])
     print("release_notes: %d/%d models answered | telegram=%s | email=%s"
           % (answered, len(MODELS), sent_tg, sent_mail))
+    # NAME THE SILENT MODEL ON THE CONSOLE, not only in the delivered notes (class 26).
+    # "3/4 answered" sent the operator hunting through four candidates after the 2026-11-11
+    # ship; the error was already recorded in the body, which is read hours later, if at all.
+    for r in reviews:
+        if r.get("error"):
+            print("  [silent] %-22s %s" % (r.get("model", "?"), r["error"]))
     # Deliberately 0 even on a delivery failure. This runs after a VERIFIED deploy; a mail server
     # having a bad day must never turn a good release into a failed one. The line above is the
     # honest record of what happened.

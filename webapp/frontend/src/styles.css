@@ -89,6 +89,15 @@ button{font-family:inherit}
   border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px}
 .ok{color:var(--green);background:var(--green-l);border:1px solid #B7E4D3;
   border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px}
+/* A STOPPED RUN IS NOT A BROKEN ONE. Cancelling, or finding that the server restarted under you,
+   is amber: something to read, not a red failure the operator has to wonder about. Same tokens as
+   .prog-notice so the two warnings on this page cannot drift apart. */
+.warn{color:var(--gold);background:var(--gold-l);border:1px solid #F5DFB4;
+  border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px}
+/* The Stop control sits in the running row, so it must not read as the primary action. */
+.btn-stop{margin-top:0;margin-left:auto;background:transparent;color:var(--red);
+  border:1px solid #F6C7D2;box-shadow:none}
+.btn-stop:hover:not(:disabled){background:var(--red-l)}
 .spinner{width:18px;height:18px;border:3px solid rgba(79,70,229,.22);
   border-top-color:var(--cta);border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}

@@ -1161,6 +1161,60 @@ def _collect_decks(job_id: str, jobdir: Path) -> list:
 
 
 _RUNNING: dict = {}          # job_id -> asyncio.Task, so we can see what is in flight
+_CANCELLED: set = set()      # job_ids the USER asked to stop — a cancel is not a crash
+
+# THE HARD WALL. The engine bounds its own phases (RECON_BUDGET_S, ENRICH_WALL_S), but nothing
+# bounded the subprocess as a whole, so a hang anywhere outside those two phases ran until the
+# container was recreated. Every long-running call needs a ceiling sized to what it legitimately
+# takes: a full run with a large estate and a slow model is ~12 minutes, so 45 is generous and
+# still finite. Raise it with JOB_WALL_S in the droplet .env if a real run ever needs more.
+JOB_WALL_S = int(os.environ.get("JOB_WALL_S") or 2700)
+
+# WHICH INTERPRETER RUNS THE ENGINE, in one place. The container has python3 on PATH and that is
+# still the default, but a hardcoded "python3" means the subprocess path cannot be exercised
+# anywhere else — on Windows `python3` is a Store alias that opens a shop. A test that cannot run
+# the real code is a test of a copy of it (class 2), so the name is settable.
+ENGINE_PYTHON = os.environ.get("ENGINE_PYTHON") or "python3"
+
+
+def _reap_orphans() -> int:
+    """At boot, every row still marked `running` belongs to a process that no longer exists.
+
+    NOT A HEURISTIC AND NOT A TIMEOUT. _RUNNING is in-process state; this function runs before any
+    job can be started in THIS process, so a `running` row here is an orphan by construction. The
+    browser's re-attach believes the DB, which is why the operator's 11 Nov run sat at 88% with
+    nothing behind it and could not be ended by logging out.
+
+    The reason is written into that job's own run.log, because the next thing the user does is
+    open the log and ask what happened.
+    """
+    n = 0
+    for job in store.running_jobs():
+        try:
+            logp = _job_dir(job["email"], job["job_id"]) / "run.log"
+            with open(logp, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps({
+                    "evt": "error", "message": "assessment stopped: the server restarted",
+                    "detail": "The run was ended by a restart of the service (a deploy, a reboot "
+                              "or a crash). Nothing was running behind this page. Start it again."
+                }) + "\n")
+        except Exception:
+            pass
+        store.finish_job(job["job_id"], [], {}, status="interrupted")
+        _log(evt="job_reaped", job=job["job_id"], company=job.get("company", ""),
+             user=job.get("email", ""))
+        n += 1
+    if n:
+        print("[startup] reaped %d orphaned job(s) left running by a previous process" % n,
+              flush=True)
+    return n
+
+
+@app.on_event("startup")
+async def _reap_on_boot():
+    # Synchronous and cheap (one indexed query, usually zero rows). Deliberately NOT a background
+    # task: a job must never be reaped AFTER this process has started a new one with the same id.
+    _reap_orphans()
 
 
 async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: list = None,
@@ -1190,7 +1244,7 @@ async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: 
         _w(json.dumps({"evt": "error", "message": f"engine not found at {engine}"}))
         store.finish_job(job_id, [], {}, status="error"); _RUNNING.pop(job_id, None); return
 
-    cmd = ["python3", "-u", engine, seed_flag, company, "--outdir", str(jobdir), "--lang", lang]
+    cmd = [ENGINE_PYTHON, "-u", engine, seed_flag, company, "--outdir", str(jobdir), "--lang", lang]
     cmd += list(overrides or [])
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -1208,6 +1262,25 @@ async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: 
 
     summary, completed, tail = {}, False, []
     assert proc.stdout is not None
+
+    # THE WALL, as a watchdog rather than a wait_for around the loop: a timed-out run must keep
+    # every line it already produced, and wait_for would discard the partially consumed stream.
+    hit_wall = {"yes": False}
+
+    async def _wall():
+        await asyncio.sleep(JOB_WALL_S)
+        hit_wall["yes"] = True
+        _w(json.dumps({"evt": "error",
+                       "message": "assessment stopped: it exceeded the %d minute limit"
+                                  % (JOB_WALL_S // 60),
+                       "detail": "The engine was still working when the time limit was reached. "
+                                 "The last lines above say which phase it was in."}))
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+    watchdog = asyncio.create_task(_wall())
     try:
         async for raw in proc.stdout:
             line = raw.decode("utf-8", "ignore").rstrip()
@@ -1231,10 +1304,21 @@ async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: 
     except asyncio.CancelledError:
         try: proc.kill()
         except Exception: pass
-        store.finish_job(job_id, [], summary, status="error")
-        _RUNNING.pop(job_id, None); raise
+        # A CANCEL IS NOT A CRASH. The same CancelledError arrives whether the user pressed Cancel
+        # or the server is shutting down, and the two need different words on the page, so the
+        # endpoint records the intent in _CANCELLED before it cancels the task.
+        _asked = job_id in _CANCELLED
+        if _asked:
+            _w(json.dumps({"evt": "error", "message": "assessment cancelled",
+                           "detail": "You stopped this run. The engine was killed; nothing else "
+                                     "was left running."}))
+        store.finish_job(job_id, [], summary, status="cancelled" if _asked else "interrupted")
+        watchdog.cancel()
+        _CANCELLED.discard(job_id); _RUNNING.pop(job_id, None); raise
     except Exception as e:
         _w(json.dumps({"evt": "error", "message": repr(e)[:200]}))
+    finally:
+        watchdog.cancel()
 
     if completed:
         # THE CUSTOMER RUN LOG, written here rather than in the engine because the engine's stdout
@@ -1262,10 +1346,15 @@ async def _run_job(job_id: str, email: str, company: str, lang: str, overrides: 
             _n3.notify_report(email, company, kind=_kind, phase="finished", extra=_extra)
         except Exception:
             pass
+    elif hit_wall["yes"]:
+        # The reason is already in the log, written by the watchdog at the moment it fired. Saying
+        # "assessment failed" on top of it would describe the same event twice, in two voices.
+        store.finish_job(job_id, [], summary, status="timeout")
     else:
         _w(json.dumps({"evt": "error", "message": "assessment failed",
                        "detail": "\n".join(tail) or "no output"}))
         store.finish_job(job_id, [], summary, status="error")
+    _CANCELLED.discard(job_id)
     _RUNNING.pop(job_id, None)
 
 
@@ -1316,8 +1405,11 @@ async def _assess_stream(job_id: str, email: str, start_line: int = 0):
                 yield _sse({"evt": "done", "decks": job.get("decks") or [],
                             "summary": job.get("summary") or {}})
             else:
-                yield _sse({"evt": "error", "message": "assessment failed",
-                            "detail": "see the log above"})
+                # CARRY THE STATUS, not just "failed". cancelled / timeout / interrupted are four
+                # different things to tell a person, and the page cannot distinguish them from a
+                # generic error message. The log already holds the full reason; this is the label.
+                yield _sse({"evt": "error", "status": status,
+                            "message": "assessment failed", "detail": "see the log above"})
             return
 
         await asyncio.sleep(0.4)
@@ -1351,6 +1443,43 @@ def assess_status(job_id: str, request: Request):
     return {"status": job.get("status"), "company": job.get("company"), "lang": job.get("lang"),
             "lines": lines, "decks": job.get("decks") or [], "summary": job.get("summary") or {},
             "running": job_id in _RUNNING}
+
+
+@app.post("/api/assess/{job_id}/cancel")
+async def assess_cancel(job_id: str, request: Request):
+    """Stop a run. Owner-scoped, idempotent, and honest about which of the two cases it hit.
+
+    TWO CASES, ONE BUTTON:
+      * the job is in _RUNNING  -> cancel the task; the handler kills the engine subprocess and
+        writes status='cancelled'. The kill is what actually stops the work; flipping the DB row
+        without it would leave Shodan queries and paid model calls running behind a finished page.
+      * the job is NOT in _RUNNING but the row says running -> an orphan this process does not own
+        (a restart between the reaper and now). There is nothing to kill, so the row is corrected.
+
+    `stopped` says which one happened, because "we killed it" and "there was nothing to kill" are
+    different facts and a button that reports the same thing either way teaches nobody anything.
+    """
+    email = _require_ready(request)
+    job = store.get_job(job_id)
+    if not job or job["email"] != email.lower():
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.get("status") != "running":
+        # Idempotent on purpose: a double click, or a cancel that races the engine finishing, must
+        # not 500 and must not rewrite a finished run.
+        return {"ok": True, "status": job.get("status"), "stopped": False, "already": True}
+
+    task = _RUNNING.get(job_id)
+    if task is not None:
+        _CANCELLED.add(job_id)
+        task.cancel()
+        _log(evt="assess_cancel", user=email, job=job_id, company=job.get("company", ""),
+             owned=True)
+        return {"ok": True, "status": "cancelled", "stopped": True, "already": False}
+
+    store.finish_job(job_id, [], {}, status="interrupted")
+    _log(evt="assess_cancel", user=email, job=job_id, company=job.get("company", ""),
+         owned=False)
+    return {"ok": True, "status": "interrupted", "stopped": False, "already": False}
 
 
 @app.get("/api/assess/{job_id}/events")

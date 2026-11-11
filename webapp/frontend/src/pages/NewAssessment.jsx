@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { startAssess, assessEventsUrl, ackPrivacy, assessStatus,
-  assessClarify, assessRefine } from "../api.js";
+  assessClarify, assessRefine, assessCancel } from "../api.js";
 import { NOTICE, useLegalLang, LangToggle } from "../legal";
 import BrandChip from "../components/BrandChip.jsx";
 import { useT } from "../i18n";
@@ -50,7 +50,12 @@ export default function NewAssessment() {
   const [shown, setShown] = useState(0);    // eased value actually drawn (never goes backwards)
   const [elapsed, setElapsed] = useState(0);
   const startedRef = useRef(0);
-  const [status, setStatus] = useState("idle"); // idle | running | done | error
+  const [status, setStatus] = useState("idle"); // idle | running | done | error | refused
+  // HOW a run ended, when it did not end well. The server now carries this on the error frame
+  // (cancelled / timeout / interrupted / error) because "assessment failed" described four very
+  // different events in one sentence, and three of them are not failures at all.
+  const [ending, setEnding] = useState("");
+  const [cancelling, setCancelling] = useState(false);
   const [lines, setLines] = useState([]);
   const [decks, setDecks] = useState([]);
   const [summary, setSummary] = useState("");
@@ -129,7 +134,14 @@ export default function NewAssessment() {
       if (stale || !data || !data.status) {
         try { localStorage.removeItem("cg_job"); } catch { /* ignore */ } return;
       }
-      if (data.status === "running") {
+      if (data.status === "running" && data.running === false) {
+        // THE DB ROW SAYS RUNNING AND THE SERVER SAYS NOTHING IS. Believe the measurement, not
+        // the label: re-attaching here is what left the operator watching a dead job at 88%.
+        setCompany(data.company || "");
+        setLines(data.lines || []);
+        setEnding("interrupted"); setErrMsg(t("assess.interrupted")); setStatus("error");
+        try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
+      } else if (data.status === "running") {
         setCompany(data.company || "");
         // do NOT preload lines here: a fresh EventSource sends no Last-Event-ID, so the stream
         // replays the log from the start. Preloading would double every line.
@@ -194,6 +206,7 @@ export default function NewAssessment() {
         es.close();
       } else if (payload.evt === "error") {
         try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
+        setEnding(payload.status || "error");
         setErrMsg(payload.message || t("assess.errFailed"));
         setStatus("error");
         es.close();
@@ -214,6 +227,25 @@ export default function NewAssessment() {
     es.onopen = () => setNotice((n) => (n === t("assess.dropped") ? "" : n));
   }
 
+  // STOP A RUN. The button is not the mechanism: the server kills the engine subprocess and the
+  // stream then delivers the ending like any other. So this does not fake a finished state — if
+  // the cancel does not take, the page keeps saying running, which is the truth.
+  async function cancel() {
+    if (!jobId || cancelling || status !== "running") return;
+    if (!window.confirm(t("assess.cancelConfirm"))) return;
+    setCancelling(true);
+    const { ok, data } = await assessCancel(jobId);
+    if (!ok) { setCancelling(false); setNotice(t("assess.errFailed")); return; }
+    try { localStorage.removeItem("cg_job"); } catch { /* ignore */ }
+    // `stopped` false means there was no live engine behind the row — a different fact, and the
+    // one the operator hit on 11 Nov. Say which happened rather than one reassuring sentence.
+    setEnding(data.stopped ? "cancelled" : "interrupted");
+    setErrMsg(data.stopped ? t("assess.cancelled") : t("assess.cancelOrphan"));
+    setStatus("error");
+    setCancelling(false);
+    if (esRef.current) esRef.current.close();
+  }
+
   async function run(e, zoneSurvey = false) {
     if (e && e.preventDefault) e.preventDefault();
     const name = company.trim();
@@ -221,6 +253,7 @@ export default function NewAssessment() {
     if (!ackd) { acknowledge(); }                   // first Assess click = notice was shown + accepted
     setStatus("running"); setLines([]); setDecks([]); setSummary(""); setErrMsg("");
     setClarify(null); setAnswers({}); setRefused(null);   // fresh run — drop the previous state
+    setEnding(""); setCancelling(false);
     setPct(0); setShown(0); setElapsed(0); setPhase(t("assess.phaseStart")); setNotice("");
     startedRef.current = Date.now();
 
@@ -328,10 +361,27 @@ export default function NewAssessment() {
         )}
 
         {status === "running" && (
-          <div className="status-row"><span className="spinner" /> {t("assess.statusWorking")}</div>
+          <div className="status-row">
+            <span className="spinner" /> {t("assess.statusWorking")}
+            {/* The way out. Present from the first second of a run, not only once it looks stuck —
+                an operator who has to wait for a timeout to get a button has no control at all. */}
+            <button className="btn btn-sm btn-stop" type="button"
+              onClick={cancel} disabled={cancelling || !jobId}>
+              {cancelling ? t("assess.cancelling") : t("assess.cancel")}
+            </button>
+          </div>
         )}
 
-        {status === "error" && <div className="err">{asText(errMsg)}</div>}
+        {/* FOUR ENDINGS, FOUR SENTENCES. `ending` comes from the server; the generic message is
+            only used when the server did not say, so a new status can never render as blank. */}
+        {status === "error" && (
+          <div className={ending === "cancelled" || ending === "interrupted" ? "warn" : "err"}>
+            {ending === "cancelled" ? t("assess.cancelled")
+              : ending === "timeout" ? t("assess.timedOut")
+              : ending === "interrupted" ? t("assess.interrupted")
+              : asText(errMsg)}
+          </div>
+        )}
 
         {/* A DELIBERATE REFUSAL, presented as a choice rather than a failure. The engine explains
             why a shared zone is not one company and what to do; the operator can still insist, and

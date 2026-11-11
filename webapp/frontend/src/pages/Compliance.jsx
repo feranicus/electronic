@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { startCompliance, complianceRefine, assessEventsUrl, assessStatus, assessClarify, getJurisdictions } from "../api.js";
+import { startCompliance, complianceRefine, assessEventsUrl, assessStatus, assessClarify,
+  assessCancel, getJurisdictions } from "../api.js";
 import BrandChip from "../components/BrandChip.jsx";
 import { useT } from "../i18n";
 import { useDocLangs } from "../docLangs.js";
@@ -49,6 +50,10 @@ export default function Compliance() {
   const [lines, setLines] = useState([]);
   const [decks, setDecks] = useState([]);
   const [errMsg, setErrMsg] = useState("");
+  // Same four endings as Assess, same words: both pages drive the SAME engine through the SAME
+  // endpoints, so a run stopped here must not be described differently from one stopped there.
+  const [ending, setEnding] = useState("");
+  const [cancelling, setCancelling] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [clarify, setClarify] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -108,6 +113,7 @@ export default function Compliance() {
         loadClarify(id); es.close();
       } else if (p.evt === "error") {
         try { localStorage.removeItem("cg_cjob"); } catch { /* ignore */ }
+        setEnding(p.status || "error");
         setErrMsg(p.message || t("comp.errFailed")); setStatus("error"); es.close();
       }
     };
@@ -127,7 +133,12 @@ export default function Compliance() {
       if (!jid) return;
       const data = await assessStatus(jid).catch(() => null);
       if (!data || stale) return;
-      if (data.status === "running") {
+      if (data.status === "running" && data.running === false) {
+        // The row says running and the server says nothing is. Believe the measurement.
+        setCompany(data.company || ""); setLines(data.lines || []);
+        setEnding("interrupted"); setErrMsg(t("assess.interrupted")); setStatus("error");
+        try { localStorage.removeItem("cg_cjob"); } catch { /* ignore */ }
+      } else if (data.status === "running") {
         setCompany(data.company || ""); setLines([]); setStatus("running");
         startedRef.current = Date.now(); setNotice(t("comp.reconnected"));
         attach(jid);
@@ -140,11 +151,25 @@ export default function Compliance() {
     return () => { stale = true; };
   }, []);
 
+  async function cancel() {
+    if (!jobId || cancelling || status !== "running") return;
+    if (!window.confirm(t("assess.cancelConfirm"))) return;
+    setCancelling(true);
+    const { ok, data } = await assessCancel(jobId);
+    if (!ok) { setCancelling(false); setNotice(t("comp.errFailed")); return; }
+    try { localStorage.removeItem("cg_cjob"); } catch { /* ignore */ }
+    setEnding(data.stopped ? "cancelled" : "interrupted");
+    setErrMsg(data.stopped ? t("assess.cancelled") : t("assess.cancelOrphan"));
+    setStatus("error"); setCancelling(false);
+    if (esRef.current) esRef.current.close();
+  }
+
   async function run(e) {
     e.preventDefault();
     const name = company.trim();
     if (!name || status === "running") return;
-    setStatus("running"); setLines([]); setDecks([]); setErrMsg(""); setClarify(null); setAnswers({});
+    setStatus("running"); setLines([]); setDecks([]); setErrMsg("");
+    setEnding(""); setCancelling(false); setClarify(null); setAnswers({});
     setPct(0); setShown(0); setElapsed(0); setPhase(t("comp.phaseStart")); setNotice("");
     startedRef.current = Date.now();
     const { ok, data } = await startCompliance(name, lang, juris);
@@ -159,7 +184,8 @@ export default function Compliance() {
     const { ok, data } = await complianceRefine(jobId, answers, lang, juris);
     setRefining(false);
     if (!ok || !data.job_id) { setErrMsg(data.message || t("comp.errRefine")); return; }
-    setStatus("running"); setLines([]); setDecks([]); setErrMsg(""); setClarify(null);
+    setStatus("running"); setLines([]); setDecks([]); setErrMsg("");
+    setEnding(""); setCancelling(false); setClarify(null);
     setPct(0); setShown(0); setElapsed(0); setPhase(t("comp.phaseRescope")); setNotice("");
     startedRef.current = Date.now();
     try { localStorage.setItem("cg_cjob", data.job_id); } catch { /* ignore */ }
@@ -221,6 +247,13 @@ export default function Compliance() {
             <div className="prog-track"><div className="prog-fill" style={{ width: Math.max(2, shown) + "%" }} /></div>
             {notice && <div className="prog-notice">⚠ {notice}</div>}
             <div className="prog-note">{t("comp.note")}</div>
+            <div className="status-row">
+              <span className="spinner" /> {t("assess.statusWorking")}
+              <button className="btn btn-sm btn-stop" type="button"
+                onClick={cancel} disabled={cancelling || !jobId}>
+                {cancelling ? t("assess.cancelling") : t("assess.cancel")}
+              </button>
+            </div>
           </div>
         )}
 
@@ -232,7 +265,14 @@ export default function Compliance() {
           </div>
         )}
 
-        {status === "error" && <div className="err">{String(errMsg)}</div>}
+        {status === "error" && (
+          <div className={ending === "cancelled" || ending === "interrupted" ? "warn" : "err"}>
+            {ending === "cancelled" ? t("assess.cancelled")
+              : ending === "timeout" ? t("assess.timedOut")
+              : ending === "interrupted" ? t("assess.interrupted")
+              : String(errMsg)}
+          </div>
+        )}
 
         {status === "done" && (
           <>

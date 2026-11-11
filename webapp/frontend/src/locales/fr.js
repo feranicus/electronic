@@ -373,6 +373,14 @@ export const keyed = {
   // la bannière : elle doit rester UNE seule clé (ne pas la scinder).
   "assess.reconnected": "Reconnecté à une analyse déjà en cours sur le serveur.",
   "assess.dropped": "Connexion interrompue — reconnexion… (l'analyse se poursuit sur le serveur)",
+  // ---- Arr\u00eat d'une analyse (11 nov. 2026). Voir en.js pour l'incident.
+  "assess.cancel": "Arr\u00eater",
+  "assess.cancelling": "Arr\u00eat en cours\u2026",
+  "assess.cancelConfirm": "Arr\u00eater cette analyse ? Le moteur est arr\u00eat\u00e9 et aucun document n'est produit.",
+  "assess.cancelled": "Analyse arr\u00eat\u00e9e. Plus rien ne tourne sur le serveur.",
+  "assess.cancelOrphan": "Rien ne tournait derri\u00e8re cette page : l'analyse \u00e9tait d\u00e9j\u00e0 termin\u00e9e sur le serveur.",
+  "assess.timedOut": "Analyse arr\u00eat\u00e9e : elle a d\u00e9pass\u00e9 sa limite de temps. Les derni\u00e8res lignes du journal indiquent la phase en cours.",
+  "assess.interrupted": "Cette analyse a \u00e9t\u00e9 termin\u00e9e par un red\u00e9marrage du service. Rien ne tournait derri\u00e8re cette page \u2014 relancez-la.",
   // Repli utilisé uniquement lorsque le serveur n'envoie aucun message.
   "assess.errFailed": "L'analyse a échoué.",
   "assess.errStart": "Impossible de démarrer l'analyse.",

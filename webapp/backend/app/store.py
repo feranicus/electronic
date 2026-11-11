@@ -70,6 +70,23 @@ def set_status(job_id: str, status: str) -> None:
         c.execute("UPDATE jobs SET status=? WHERE job_id=?", (status, job_id))
 
 
+def running_jobs() -> list:
+    """Every row still marked running.
+
+    EXISTS FOR THE ORPHAN REAPER. `_RUNNING` in main.py maps job_id -> asyncio.Task and lives in
+    the worker process, so it is empty the instant the container is recreated — but the DB row
+    says `running` forever. The browser then re-attaches to a job nobody is executing and sits at
+    88% until the user gives up (11 Nov 2026: a ship.py deploy recreated colt-web mid-assessment
+    and the operator had no way to end it, not even by logging out).
+
+    A run cannot outlive the process that owns it, so at startup these rows are orphans BY
+    CONSTRUCTION. That is a deterministic fact about the architecture, not a heuristic about time.
+    """
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM jobs WHERE status='running' ORDER BY created").fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
 def get_job(job_id: str):
     with _conn() as c:
         row = c.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()

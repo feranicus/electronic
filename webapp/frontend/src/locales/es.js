@@ -379,6 +379,14 @@ export const keyed = {
   // el aviso: tiene que seguir siendo UNA sola clave (no dividirla).
   "assess.reconnected": "Reconectado a una evaluación que ya se está ejecutando en el servidor.",
   "assess.dropped": "Conexión interrumpida — reconectando… (la evaluación sigue ejecutándose en el servidor)",
+  // ---- Detener una evaluaci\u00f3n (11 nov 2026). Vea en.js para el incidente.
+  "assess.cancel": "Detener",
+  "assess.cancelling": "Deteniendo\u2026",
+  "assess.cancelConfirm": "\u00bfDetener esta evaluaci\u00f3n? Se termina el motor y no se produce ning\u00fan documento.",
+  "assess.cancelled": "Evaluaci\u00f3n detenida. Ya no queda nada ejecut\u00e1ndose en el servidor.",
+  "assess.cancelOrphan": "No hab\u00eda nada ejecut\u00e1ndose detr\u00e1s de esta p\u00e1gina: la evaluaci\u00f3n ya hab\u00eda terminado en el servidor.",
+  "assess.timedOut": "Evaluaci\u00f3n detenida: super\u00f3 su l\u00edmite de tiempo. Las \u00faltimas l\u00edneas del registro indican en qu\u00e9 fase estaba.",
+  "assess.interrupted": "Esta evaluaci\u00f3n termin\u00f3 por un reinicio del servicio. No hab\u00eda nada ejecut\u00e1ndose detr\u00e1s de esta p\u00e1gina: v\u00faelvala a lanzar.",
   // Respaldo que solo se usa cuando el servidor no envía ningún mensaje propio.
   "assess.errFailed": "La evaluación ha fallado.",
   "assess.errStart": "No se ha podido iniciar la evaluación.",

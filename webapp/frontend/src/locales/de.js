@@ -345,6 +345,14 @@ export const keyed = {
   // verglichen, um das Banner zu l\u00f6schen \u2014 der String muss EIN Schl\u00fcssel bleiben.
   "assess.reconnected": "Wieder verbunden mit einer Analyse, die bereits auf dem Server l\u00e4uft.",
   "assess.dropped": "Verbindung abgebrochen \u2014 Neuverbindung\u2026 (die Analyse l\u00e4uft auf dem Server weiter)",
+  // ---- Lauf abbrechen (11.11.2026). Siehe en.js fuer den Vorfall.
+  "assess.cancel": "Abbrechen",
+  "assess.cancelling": "Wird abgebrochen\u2026",
+  "assess.cancelConfirm": "Diese Analyse abbrechen? Die Engine wird beendet und es entstehen keine Dokumente.",
+  "assess.cancelled": "Analyse abgebrochen. Auf dem Server l\u00e4uft nichts mehr.",
+  "assess.cancelOrphan": "Hinter dieser Seite lief nichts mehr \u2014 der Lauf war auf dem Server bereits beendet.",
+  "assess.timedOut": "Analyse beendet: Sie hat ihr Zeitlimit \u00fcberschritten. Die letzten Zeilen des Protokolls zeigen, in welcher Phase sie war.",
+  "assess.interrupted": "Dieser Lauf wurde durch einen Neustart des Dienstes beendet. Hinter dieser Seite lief nichts mehr \u2014 starten Sie ihn erneut.",
   "assess.errFailed": "Die Analyse ist fehlgeschlagen.",
   "assess.errStart": "Die Analyse konnte nicht gestartet werden.",
   "assess.errRefine": "Die Analyse konnte nicht verfeinert werden.",

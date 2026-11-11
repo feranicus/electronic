@@ -177,3 +177,47 @@ def test_the_outcome_reaches_the_models_and_the_message():
     assert "FAILED CHECK:" in app_rn, "and name the checks that failed"
     assert "LEAD with that" in app_rn, "the prompt must tell the model not to gloss over a failure"
 
+
+def test_the_console_names_the_model_that_did_not_answer():
+    """Class 26: a diagnostic that does not NAME its subject sends the next hunt down four roads.
+
+    11 Nov 2026: the ship ended `release_notes: 3/4 models answered`. The staging panel on the
+    SAME run reported 4 of 4, so one model had failed on this call and only on this call — and
+    the line gave the operator no way to know which, or why. The error text was already being
+    recorded (compose() prints `[model] did not answer: ...` into the delivered notes), but the
+    notes are read hours later, if at all; the console is read now. So the console gets it too.
+
+    The test drives main(), not compose(), because main() is where the operator-facing line is
+    produced and compose() was already correct.
+    """
+    import io
+    import json as _json
+
+    rn = _rn()
+    facts = {"commit": "abc1234", "tag": "good-20261111-101918", "message": "m",
+             "staging": "GO", "tests": "1 passed"}
+    dead = rn.MODELS[-1]
+
+    real_ask, real_stdin = rn._ask, sys.stdin
+    rn._ask = lambda m, ft: ({"model": m, "error": "ReadTimeout: took too long"} if m == dead
+                             else {"model": m, "headline": "h", "summary": [], "customer_value": [],
+                                   "watch": [], "tokens_out": 1})
+    sys.stdin = io.StringIO(_json.dumps(facts))
+    try:
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = rn.main()
+        out = buf.getvalue()
+    finally:
+        rn._ask, sys.stdin = real_ask, real_stdin
+
+    assert rc == 0, "a silent model must never fail the ship"
+    assert "3/4 models answered" in out, "the count must still be there (fixture proof)"
+    assert dead in out.split("models answered", 1)[1], (
+        "the console must NAME the model that went silent, after the count: %r" % out)
+    assert "ReadTimeout" in out, "and say WHY, or the next step is still a guess"
+    for alive in rn.MODELS[:-1]:
+        assert alive not in out.split("models answered", 1)[1], (
+            "only the silent model is named; listing the healthy ones re-creates the hunt")
+

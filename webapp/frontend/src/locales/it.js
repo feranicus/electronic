@@ -366,6 +366,14 @@ export const keyed = {
   // valore in es.onopen per azzerare il banner: deve restare UNA sola chiave.
   "assess.reconnected": "Riconnesso a un'analisi già in esecuzione sul server.",
   "assess.dropped": "Connessione interrotta — riconnessione in corso… (l'analisi prosegue sul server)",
+  // ---- Interruzione di un'analisi (11 nov 2026). Vedi en.js per l'incidente.
+  "assess.cancel": "Interrompi",
+  "assess.cancelling": "Interruzione in corso\u2026",
+  "assess.cancelConfirm": "Interrompere questa analisi? Il motore viene terminato e non viene prodotto alcun documento.",
+  "assess.cancelled": "Analisi interrotta. Sul server non \u00e8 rimasto nulla in esecuzione.",
+  "assess.cancelOrphan": "Dietro questa pagina non c'era nulla in esecuzione: l'analisi era gi\u00e0 terminata sul server.",
+  "assess.timedOut": "Analisi interrotta: ha superato il limite di tempo. Le ultime righe del log indicano in quale fase si trovava.",
+  "assess.interrupted": "Questa analisi \u00e8 stata terminata da un riavvio del servizio. Dietro questa pagina non c'era nulla in esecuzione: riavviala.",
   "assess.errFailed": "L'analisi non è riuscita.",
   "assess.errStart": "Non è stato possibile avviare l'analisi.",
   "assess.errRefine": "Non è stato possibile affinare l'analisi.",
