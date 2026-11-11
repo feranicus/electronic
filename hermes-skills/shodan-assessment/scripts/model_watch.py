@@ -399,6 +399,17 @@ def main():
     gone = sorted(known - set(ids))
     out["new"], out["gone"] = new, gone
 
+    # WHICH KEY IS THIS? The one question the operator could not answer from the output.
+    # A new key was created in the console and the next run looked identical, because nothing
+    # printed anything about the credential in use. A sha256 prefix is NOT the secret, it is safe
+    # in a log and in this public repo, and it is decisive: two runs with the same fingerprint used
+    # the same key, full stop. Same reasoning as the CI key work, which prints a public fingerprint
+    # for exactly this purpose.
+    import hashlib as _h
+    _fp = _h.sha256((KEY or "").encode("utf-8")).hexdigest()[:12] if KEY else "NONE"
+    print("[model-watch] key fingerprint %s (sha256 prefix, not the secret) · %d chars"
+          % (_fp, len(KEY or "")))
+    out["key_fingerprint"] = _fp
     print("[model-watch] %d models visible on %s" % (len(ids), BASE))
     if not known:
         print("[model-watch] first run - recording the baseline at %s, nothing to diff" % SNAPSHOT)
@@ -475,9 +486,11 @@ def main():
     # reading.
     _control = None
     if todo and not a.no_probe:
+        _chain_live = []
         try:
             import enrich as _E
-            _control = next((m for m in _E.MODELS if m in ids), None)
+            _chain_live = [m for m in _E.MODELS if m in ids]
+            _control = next(iter(_chain_live), None)
         except Exception:
             _control = None
     if _control:
@@ -514,6 +527,28 @@ def main():
             return 3
         print("  CONTROL passed, so a 403 below is a statement about that model, not about the key.")
 
+        # EVERY CHAIN MEMBER, NOT JUST THE CONTROL.
+        # --unused measures what we do NOT run, which is correct for finding replacements and
+        # useless for answering "is what I just deployed actually working". Two unproven models
+        # were put in the chain and the next bake-off skipped both of them, by design, so the run
+        # could not answer its own most important question. The chain is now always reported.
+        _rest = [m for m in _chain_live if m != _control and m in ids]
+        if _rest:
+            print("\n  CHAIN HEALTH  (every model the engine will actually call)")
+            print("  %-30s %-9s %-8s %s" % ("MODEL", "CONTRACT", "ms", "note"))
+            print("  %-30s %-9s %-8s %s" % (_control, "ok", _cr["ms"], "control"))
+            for _m in _rest:
+                _r = probe(_m, a.timeout)
+                _v = ("ok" if _r["ok"] else ("AUTH" if _r.get("auth") else
+                      ("BUSY" if _r.get("transient") else "FAIL")))
+                print("  %-30s %-9s %-8s %s" % (_m[:30], _v, _r["ms"], (_r["err"] or "")[:44]))
+                out["probed"].append({"model": _m, "verdict": _v.lower(), "ms": _r["ms"],
+                                      "price": _price(_m), "err": _r["err"], "in_chain": True})
+            _bad = [p for p in out["probed"] if p.get("in_chain") and p["verdict"] != "ok"]
+            if _bad:
+                print("  !! %d of %d chain models cannot answer. The chain is effectively %d deep."
+                      % (len(_bad), len(_chain_live), len(_chain_live) - len(_bad)))
+
     if todo and not a.no_probe:
         print("\n  %-34s %-9s %-8s %-14s %s" % ("MODEL", "CONTRACT", "ms", "$/1M in,out", "note"))
         for m in todo:
@@ -529,12 +564,20 @@ def main():
                                   "ms": r["ms"], "price": _price(m), "err": r["err"]})
         _auth = [p for p in out["probed"] if p.get("verdict") == "auth"]
         _tried = [p for p in out["probed"] if p.get("verdict") in ("ok", "fail", "auth")]
-        if _auth and len(_auth) == len(_tried):
+        _ctl_ok = bool((out.get("control") or {}).get("ok"))
+        if _auth and len(_auth) == len(_tried) and not _ctl_ok:
             print("\n[model-watch] !! EVERY probe failed to authenticate (%d of %d). That is ONE "
                   "fault in this run's credentials, not %d verdicts about %d models. Nothing here "
                   "says anything about any model. Check the key the PROBE uses: it travels through "
                   "enrich.resolve_key(), not through this file."
                   % (len(_auth), len(_tried), len(_auth), len(_auth)))
+        if _auth and len(_auth) == len(_tried) and _ctl_ok:
+            print("\n[model-watch] all %d candidates returned 403 while the CONTROL SUCCEEDED on "
+                  "the same key in the same run.\n"
+                  "   So the credential works and these models are genuinely not enabled for it. "
+                  "A DigitalOcean model\n"
+                  "   access key is scoped to a model list at creation and cannot be edited "
+                  "afterwards." % len(_auth))
         good = [p for p in out["probed"] if p.get("verdict") == "ok"]
         if good:
             good.sort(key=lambda p: p.get("ms", 1e9))
@@ -553,7 +596,18 @@ def main():
                 _chain = list(_E.MODELS)
             except Exception:
                 _chain = []
-            _live = [m for m in _chain if m in ids]
+            # LIVE MEANS IT ANSWERED, NOT THAT IT IS LISTED.
+            # This read "Vendors still live in the chain: deepseek, mistral, moonshot, openai"
+            # three lines below CHAIN HEALTH reporting that three of those four returned 403 or
+            # truncated. Being in the catalog is not being able to answer, and a summary that
+            # contradicts the table above it is the same defect as the all-auth warning that
+            # argued with the control.
+            _answered = {p["model"] for p in out["probed"]
+                         if p.get("in_chain") and p.get("verdict") == "ok"}
+            _ctl = (out.get("control") or {})
+            if _ctl.get("ok"):
+                _answered.add(_ctl.get("model"))
+            _live = [m for m in _chain if m in _answered]
             _have = {vendor(m) for m in _live}
             print("\n" + "=" * 94)
             print("  BAKE-OFF RESULT  (contract-valid only, fastest first)")
@@ -570,8 +624,12 @@ def main():
                          "YES, new vendor" if new else
                          ("no, %s is already in the chain" % v if v != "?" else "unknown vendor")))
             print("")
-            print("  Vendors still live in the chain: %s"
-                  % (", ".join(sorted(_have)) if _have else "NONE, every slot is dead"))
+            print("  Vendors that ANSWERED this run: %s   (%d of %d chain models)"
+                  % (", ".join(sorted(_have)) if _have else "NONE, every slot is dead",
+                     len(_live), len([m for m in _chain if m in ids])))
+            _mute = [m for m in _chain if m in ids and m not in _answered]
+            if _mute:
+                print("  Listed but could NOT answer: %s" % ", ".join(_mute))
             _dead = [m for m in _chain if m not in ids]
             if _dead:
                 print("  DEAD SLOTS IN enrich._FALLBACKS RIGHT NOW: %s" % ", ".join(_dead))

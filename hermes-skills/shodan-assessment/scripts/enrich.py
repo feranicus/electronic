@@ -266,14 +266,39 @@ def resolve_key(start=None):
     for _ in range(6):                    # engine scripts sit a few levels under the repo root
         p = os.path.join(d, "assess-bot", ".env")
         if os.path.isfile(p):
+            # PREFERENCE ORDER, NOT FILE ORDER. This loop returned the FIRST matching line, so the
+            # winner was decided by where a name happens to sit in the .env rather than by which
+            # name we prefer. assess-bot/.env lists DO_INFERENCE_KEY above OPENAI_API_KEY, so after
+            # `set_secret.py OPENAI_API_KEY` installed a NEW key the engine went on using the OLD
+            # one that was still parked in DO_INFERENCE_KEY, and the bake-off's own fingerprint
+            # proved it: the file held 3c6b3a6a832e and 5847c2bbe7cd, and the resolver picked the
+            # stale one. The env branch above already had this right; the file branch did not.
+            # Exactly the class CLAUDE.md records for GitHub secret scopes: a secret has several
+            # homes and something other than you picks the winner.
+            found = {}
             try:
                 with open(p, encoding="utf-8", errors="replace") as fh:
                     for line in fh:
                         k, _, v = line.partition("=")
-                        if k.strip() in ("OPENAI_API_KEY", "DO_INFERENCE_KEY") and v.strip():
-                            return v.strip().strip('"').strip("'")
+                        k, v = k.strip(), v.strip().strip('"').strip("'")
+                        if k in ("OPENAI_API_KEY", "DO_INFERENCE_KEY") and v:
+                            found.setdefault(k, v)
             except OSError:
                 return ""
+            # A STALE DUPLICATE IS WORSE THAN NO DUPLICATE: it looks like a working credential and
+            # it silently wins or loses depending on ordering. Say so once, name neither secret.
+            if len(found) > 1 and len(set(found.values())) > 1:
+                import hashlib as _hh
+                print("[warn] enrich: OPENAI_API_KEY and DO_INFERENCE_KEY in %s are DIFFERENT "
+                      "credentials (%s vs %s, sha256 prefixes). Using OPENAI_API_KEY. Delete or "
+                      "update the other, or the next reader may pick the stale one."
+                      % (p,
+                         _hh.sha256(found["OPENAI_API_KEY"].encode()).hexdigest()[:12],
+                         _hh.sha256(found["DO_INFERENCE_KEY"].encode()).hexdigest()[:12]),
+                      file=sys.stderr)
+            for var in ("OPENAI_API_KEY", "DO_INFERENCE_KEY"):
+                if found.get(var):
+                    return found[var]
             return ""
         nxt = os.path.dirname(d)
         if nxt == d:
