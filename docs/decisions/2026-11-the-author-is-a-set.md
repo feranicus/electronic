@@ -67,6 +67,36 @@ Two incidental repairs on the way:
 
 249 checks in recall, 1,252 in `tests/`.
 
+## The question that found it: why was kimi idle?
+
+The operator asked twice, and the first answer — "correct arithmetic" — was true and not good
+enough. Shards were filled greedily to each model's capacity and the planner stopped when the
+findings ran out, so the NUMBER of shards was set by capacity alone. Nine findings at a cap of
+three gave exactly three shards, chain indices 0, 1, 2. The fourth vendor drew nothing.
+
+That is worse than idle. The chain is four vendors specifically so that no single provider outage
+can take all of the work, and a slot that only runs when an estate is big enough is a slot nobody
+has watched succeed — a feature that is off (class 53). We would be finding out kimi was broken
+during the outage it exists for.
+
+`_plan()` now aims for one shard per chain model, spreading the findings as evenly as the counts
+allow and then capping each group by what that model can finish inside its slice. Nine findings
+measured, with the current throughput table:
+
+    before:  deepseek x3, gpt-oss x3, mistral x3                        (3 calls, kimi idle)
+    after:   deepseek x3, gpt-oss x2, mistral x2, kimi x1, deepseek x1  (5 calls, all four used)
+
+Kimi draws one finding because `findings_that_fit` reads 9 tok/s for it, which splits its group
+and sends the remainder on round-robin — conservative, and right for the weakest slot. Severity
+order is untouched, so the largest and most serious group still goes to the head of the chain.
+Below `MIN_SPREAD` findings per vendor the planner still fills greedily: the contract prompt is
+~16,700 characters and dominates a small shard, so splitting two findings into two calls doubles
+the input tokens to ask the same question twice. For a large estate, where capacity rather than
+vendor count is binding, nothing changes at all.
+
+Three more mutations, three more failures: greedy fill restored (the verint shape), spreading
+with no floor, and ignoring the per-model capacity cap.
+
 ## Open, not fixed here
 
 The same run flagged the throughput table twice:
