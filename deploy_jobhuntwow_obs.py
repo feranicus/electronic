@@ -10,7 +10,7 @@ Lights up jobhuntwow.com in the EXISTING Grafana/Loki stack on this droplet.
   3) drops a provisioned Grafana dashboard "JobHuntWOW" into
      /opt/videodead/observability/grafana/dashboards/jobhuntwow.json
 
-Idempotent + backups. godeyes.ai untouched. Run as root on the droplet:
+Idempotent + backups. cybergod.ai untouched. Run as root on the droplet:
     python3 deploy_jobhuntwow_obs.py
     python3 deploy_jobhuntwow_obs.py --dry-run
 """
@@ -197,7 +197,7 @@ def main():
         ok("wrote " + DASH_PATH)
 
     print("\n=== done ===")
-    print("  Open Grafana:  https://godeyes.ai/observe  -> Dashboards -> 'JobHuntWOW'")
+    print("  Open Grafana:  https://cybergod.ai/observe  -> Dashboards -> 'JobHuntWOW'")
     print("  (provisioning auto-loads it in ~10-30s; or:  docker restart videodead-grafana-1)")
     print("  Generate some traffic to see data:")
     print("     for i in $(seq 30); do curl -s -o /dev/null https://jobhuntwow.com/; done")

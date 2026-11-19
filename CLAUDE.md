@@ -350,11 +350,11 @@ nameservers, and making a GHCR package public.
 | Production droplet | **64.225.108.200**, FRA1, **4 GB / 2 AMD vCPU / 80 GB** |
 | Its name lies | `ubuntu-s-1vcpu-1gb-fra1-01` is the size it was CREATED at. Read the spec, never the name. |
 | Staging twin | **165.245.244.174**, FRA1, same size/image/region deliberately |
-| Public sites on the shared proxy | cybergod.ai · jobhuntwow.com · jev.best · klimaanlage-preise.de (+ montieren) · s4biz.io · godeyes.ai |
+| Public sites on the shared proxy | **`estate.py` is the ONE HOME** (it had nine). cybergod.ai (+ /observe for Grafana) · jobhuntwow.com · s4biz.io. RETIRED 19-21 Nov 2026: jev.best, both klimaanlage domains, godeyes.ai. |
 | Shared reverse proxy | `videodead-caddy-1` owns :443 for EVERY site. Its death is a total outage and never an application fault. |
-| cybergod.ai DNS | **GoDaddy** (ns07/ns08.domaincontrol.com). `python golive.py` automates it with a GoDaddy API key in `golive.secrets.env`. Do NOT run publish_landing.py for cybergod. |
+| cybergod.ai DNS | **GoDaddy**, and there is NO credential for it anywhere in this repo (MEASURED 19 Nov 2026: no env file holds one, `golive.secrets.env` does not exist, `cloudflare_setup.py` was never run). A new record is a console job. The only registrar this estate automates is INWX, in the Klima project. |
 | Engine images | The engine lives in BOTH `webapp/Dockerfile` (colt-web) and `assess-bot/Dockerfile` (colt-assessbot). Two delivery paths; update both. |
-| Event volumes | colt_events (cybergod, jobhuntwow, jev) · polara_events (klima) · s4biz_events (s4biz). Compose PREFIXES volume names with the project; ASK docker, never assume. |
+| Event volumes | colt_events (cybergod, jobhuntwow) · s4biz_events (s4biz). Compose PREFIXES volume names with the project; ASK docker, never assume. |
 | Loki | ONE instance, `videodead-loki-1`. Every promtail pushes to it. It is the shared substrate and the only thing that holds the PAST. |
 | SMTP | **BLOCKED outbound.** Mail goes through the Gmail API in `notify.py`. Never "fix" this to smtplib. |
 
@@ -362,13 +362,11 @@ nameservers, and making a GHCR package public.
 
     cybergod.ai          cd "C:\Python SW\Linkedin Scraper"        python ship.py
     jobhuntwow.com       cd jobhuntwow-app                          python ship.py
-    jev.best             cd "C:\React SW\yantar\jev-best"          python jev.py deploy   (+ jev.py api)
-    klimaanlage-preise   cd "C:\Python SW\Klima\klima-shop"        python ship.py
     s4biz.io             cd "...\S4biz new website"                python ship.py
     the whole fleet      cd "C:\Python SW\Linkedin Scraper"        python perseus.py --rollout
 
-`jhw.py deploy` is NOT a subcommand and never was. jev's middleware lives in the **jev-api** image,
-so `jev.py deploy` alone does not ship it.
+`jhw.py deploy` is NOT a subcommand and never was. jev.best and klimaanlage ended in Nov 2026;
+their code, sidecars and vhosts are retired, and `estate.RETIRED` carries the dates.
 
 ## Diagnostic verbs (READ-ONLY, one ssh session each, from the operator's PC)
 

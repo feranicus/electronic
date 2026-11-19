@@ -99,6 +99,8 @@ def jhw_snippet():
 
 def build(restore, check_only):
     agent = _b64(os.path.join(GUARD, "agent.py"))
+    import estate as _estate          # ONE HOME for which sites exist
+    _expect = ",".join(_estate.expected_vhosts())
     svc = _b64(os.path.join(GUARD, "caddyguard.service"))
     tmr = _b64(os.path.join(GUARD, "caddyguard.timer"))
     jhw_path, jhw_ok = jhw_snippet()
@@ -122,6 +124,10 @@ echo "#### INSTALL"
 mkdir -p /opt/caddyguard/blocks /opt/caddyguard/backups
 echo '%s' | base64 -d > /opt/caddyguard/agent.py
 chmod 755 /opt/caddyguard/agent.py
+# THE ROSTER TRAVELS WITH THE AGENT. estate.py is the one home and it lives in the repo; the
+# agent runs on the droplet where no repo exists, so the list is exported here rather than
+# duplicated there. Retiring a site is then one edit in estate.py, not two that drift.
+export CADDY_EXPECT='%s'
 echo '%s' | base64 -d > /etc/systemd/system/caddyguard.service
 echo '%s' | base64 -d > /etc/systemd/system/caddyguard.timer
 python3 -c "import ast;ast.parse(open('/opt/caddyguard/agent.py').read())" \
@@ -286,7 +292,7 @@ echo "-- listeners:"
 echo "-- proxy:"
 docker ps -a --filter name=caddy --format '{{.Names}}\t{{.Status}}'
 echo "-- TLS certificate expiry (a lapsed cert takes EVERY domain down together):"
-for d in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de s4biz.io; do
+for d in cybergod.ai jobhuntwow.com s4biz.io; do
   END=$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null \
         | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
   if [ -n "$END" ]; then
@@ -303,7 +309,7 @@ done
 # Caddy renews at 30 days; still under 7 means renewal has been FAILING for three weeks.
 if [ -n "$CERTBAD" ]; then echo "   [X] CERT GATE FAILED — renewal is not working, this is days from an outage"; fi
 echo "-- local probes (code + BYTES: an empty 200 is what 'the site is dead' looks like):"
-for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.com/ https://jobhuntwow.com/ https://klimaanlage-preise.de/ https://s4biz.io/api/health; do
+for u in https://cybergod.ai/api/me https://cybergod.ai/observe/ https://www.jobhuntwow.com/ https://jobhuntwow.com/ https://s4biz.io/api/health; do
   R=$(curl -sk -o /tmp/body -w '%%{http_code} %%{size_download}' --max-time 12 "$u")
   CODE=${R%% *}; BYTES=${R##* }
   FLAG=""
@@ -331,7 +337,7 @@ for u in https://cybergod.ai/api/me https://godeyes.ai/ https://www.jobhuntwow.c
   printf '   %%-42s %%s  %%s bytes%%s\n' "$u" "$CODE" "$BYTES" "$FLAG"
 done
 echo "END"
-""" % (agent, svc, tmr, "check" if check_only else "install",
+""" % (agent, _expect, svc, tmr, "check" if check_only else "install",
        "yes" if restore else "no", jhw, colt, pw)
 
 

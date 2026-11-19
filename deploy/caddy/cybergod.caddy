@@ -1,6 +1,17 @@
 # colt:cybergod BEGIN — managed by CI (web-deploy.yml). Edit here, not on the droplet.
 cybergod.ai, www.cybergod.ai {
 	encode zstd gzip
-	reverse_proxy colt-web:8000
+
+	# Grafana, moved off godeyes.ai on 19 Nov 2026 when that domain was given up. It keeps the
+	# /observe sub-path it has always served from (GF_SERVER_SERVE_FROM_SUB_PATH=true), so every
+	# dashboard link still works and only the hostname changed. This route is matched BEFORE the
+	# catch-all below and cannot collide with the React app: colt-web has no /observe path.
+	handle /observe* {
+		reverse_proxy grafana:3000
+	}
+
+	handle {
+		reverse_proxy colt-web:8000
+	}
 }
 # colt:cybergod END

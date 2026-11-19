@@ -66,12 +66,6 @@ SITES = {
     },
     "s4biz.io": {"public": ["/", "/api/health"], "must_refuse": ["/api/models", "/api/chat",
                                                                  "/api/admin", "/api/users"]},
-    "klimaanlage-preise.de": {"public": ["/"], "must_refuse": ["/api/models", "/api/chat",
-                                                               "/api/admin", "/api/users",
-                                                               "/api/config", "/api/leads"]},
-    "godeyes.ai": {"public": ["/"], "must_refuse": ["/api/models", "/api/chat", "/api/admin"]},
-    "jev.best": {"public": ["/"], "must_refuse": ["/api/models", "/api/chat", "/api/admin",
-                                                  "/api/users", "/api/config"]},
 }
 
 # Paths worth trying everywhere: an LLM passthrough, a config dump, a user list. These are the

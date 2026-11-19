@@ -1,7 +1,7 @@
 # Deploy the Colt bots to the DigitalOcean droplet — reuse your existing Grafana/Loki
 
 Droplet `64.225.108.200` already runs **Amnezia VPN**, **VideoDead**, and a **Grafana + Loki**
-stack (jobhuntwow / `godeyes.ai/observe`). We add **NO second observability stack** — the bots
+stack (jobhuntwow / `cybergod.ai/observe`). We add **NO second observability stack** — the bots
 ship their logs into your **existing Loki**, and you import one dashboard into your **existing
 Grafana**. Everything else on the droplet is left untouched.
 
@@ -40,7 +40,7 @@ writes `LOKI_URL`/`LOKI_NETWORK` → `docker compose -f docker-compose.reuse.yml
 
 ## Import the dashboard into your EXISTING Grafana (one time)
 
-In your Grafana (`godeyes.ai/observe`): **Dashboards → New → Import → Upload JSON file** →
+In your Grafana (`cybergod.ai/observe`): **Dashboards → New → Import → Upload JSON file** →
 choose `obs/grafana/dashboards/assess.json` → when prompted, pick your **existing Loki datasource**
 → **Import**. It appears as **"Colt Bots Observability"** and filters to the bots' streams
 (`container="assess-bot"`, `bot="colttechbot|cassandra"`) so it won't mix with jobhuntwow panels.

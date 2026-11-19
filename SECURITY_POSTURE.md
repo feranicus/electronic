@@ -73,7 +73,7 @@ wrote them.
 YES, for cybergod.ai: detect → tarpit → timed block → Telegram menu → operator tap → applied,
 with every step time-boxed and reversible.
 
-**NO, for the other four sites.** godeyes.ai, jobhuntwow.com, klimaanlage-preise.de and jev.best
+**NO, for the other four sites.** cybergod.ai, jobhuntwow.com, klimaanlage-preise.de and jev.best
 share the proxy but have no shield — enforcement lives inside colt-web. That is the honest limit of
 the tier-1 design, and it is exactly what Coraza/CrowdSec at the proxy would fix.
 

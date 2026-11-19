@@ -163,7 +163,7 @@ const PROJECTS = [
       ["Models", "The same four as Cybergod: deepseek-3.2, llama-4-maverick, gemma-4-31B-it, "
                + "kimi-k2.6. Two act as soldiers and two as auditors."],
       ["Protects", "cybergod.ai, jobhuntwow.com, klimaanlage-preise.de, s4biz.io, jev.best and "
-                 + "godeyes.ai, from one shared brain."],
+                 + "cybergod.ai, from one shared brain."],
       ["Built with", "Python, Grafana Loki as the log substrate, systemd timers, enforcement at "
                    + "the HTTP layer inside our own containers. It never touches the host "
                    + "firewall, because the host is shared."],

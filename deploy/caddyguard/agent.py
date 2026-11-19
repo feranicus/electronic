@@ -680,10 +680,12 @@ def _served(cfg):
 # is not expected can never be reported as MISSING. Its disappearance was invisible.
 EXPECT = [d for d in os.environ.get(
     "CADDY_EXPECT",
-    "cybergod.ai,www.cybergod.ai,godeyes.ai,jobhuntwow.com,www.jobhuntwow.com,"
-    "klimaanlage-preise.de,klimaanlage-montieren.de,www.klimaanlage-montieren.de,"
-    "jev.best,www.jev.best,"
-    "s4biz.io,www.s4biz.io"
+    # jev.best and the two klimaanlage domains were retired on 19 Nov 2026 and godeyes.ai on
+    # the 21st. A retired name left here is reported MISSING on every run, which is the warning
+    # that teaches you to read past the real one. The one home is estate.py in the repo; this
+    # agent runs ON the droplet with no repo beside it, so the list is passed in CADDY_EXPECT by
+    # caddyguard.py and this literal is only the fallback.
+    "cybergod.ai,www.cybergod.ai,jobhuntwow.com,www.jobhuntwow.com,s4biz.io,www.s4biz.io"
 ).split(",") if d.strip()]
 
 

@@ -96,7 +96,7 @@ def fire(rule, subject, title, lines, severity="HIGH"):
     body = "\n".join(str(x) for x in lines)
     stamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
     full = "%s\n\nWhen : %s\nRule : %s\nWhere: cybergod.ai (colt-web)\n\n%s\n\n" \
-           "Grafana: godeyes.ai/observe -> 'Cybergod Web (cybergod.ai)' -> Security row" % (
+           "Grafana: cybergod.ai/observe -> 'Cybergod Web (cybergod.ai)' -> Security row" % (
                title, stamp, rule, body)
     notify._log(evt="security_alert", rule=rule, severity=severity, subject=str(subject)[:120],
                 title=title[:160], detail=body[:600])

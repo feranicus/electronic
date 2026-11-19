@@ -3,7 +3,7 @@
 deploy_jobhuntwow_caddy.py
 ==========================
 Adds jobhuntwow.com (static one-pager) to the EXISTING Caddy that already
-fronts godeyes.ai (the `videodead` compose stack) on this DigitalOcean droplet.
+fronts cybergod.ai (the `videodead` compose stack) on this DigitalOcean droplet.
 
 Steps 3, 4, 5:
   3) adds a read-only volume for /opt/jobhuntwow/site to the `caddy` service
@@ -11,7 +11,7 @@ Steps 3, 4, 5:
   5) validates the Caddyfile, then recreates ONLY the caddy container
 
 Idempotent + backups. If validation fails, the Caddyfile backup is restored
-and nothing is deployed. godeyes.ai is NOT touched.
+and nothing is deployed. cybergod.ai is NOT touched.
 
 Usage (run as root on the droplet):
     python3 deploy_jobhuntwow_caddy.py            # do it
@@ -200,7 +200,7 @@ def main():
         print("\n[5] (dry-run) would run: docker compose up -d caddy\n")
         print("Dry run complete. Re-run without --dry-run to apply.\n"); return
 
-    print("\n[5] recreate the caddy container (godeyes.ai blips ~2-3s)")
+    print("\n[5] recreate the caddy container (cybergod.ai blips ~2-3s)")
     cc = compose_cmd()
     r = subprocess.run(cc + ["up", "-d", CADDY_SERVICE], cwd=COMPOSE_DIR)
     if r.returncode != 0:

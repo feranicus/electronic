@@ -898,12 +898,12 @@ export const byEn = {
     "email+pw+code",
   "entire":
     "toute",
-  "events.log to <code>promtail</code> to Loki to Grafana (<code>godeyes.ai/observe</code>)":
-    "events.log vers <code>promtail</code> vers Loki vers Grafana (<code>godeyes.ai/observe</code>)",
+  "events.log to <code>promtail</code> to Loki to Grafana (<code>cybergod.ai/observe</code>)":
+    "events.log vers <code>promtail</code> vers Loki vers Grafana (<code>cybergod.ai/observe</code>)",
   "every run, priced":
     "chaque exécution, chiffrée",
-  "godeyes.ai/observe":
-    "godeyes.ai/observe",
+  "cybergod.ai/observe":
+    "cybergod.ai/observe",
   "live":
     "direct",
   "machine":

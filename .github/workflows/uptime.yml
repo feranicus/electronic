@@ -38,10 +38,9 @@ jobs:
             "cybergod.ai|https://cybergod.ai/api/me|^(401)$"
             "www.cybergod.ai|https://www.cybergod.ai/|^(200|301|302|308)$"
             "cybergod.ai/|https://cybergod.ai/|^(200)$"
-            "godeyes.ai|https://godeyes.ai/|^(200|301|302|308)$"
+            "cybergod.ai/observe|https://cybergod.ai/observe/|^(200|302)$"
             "jobhuntwow.com|https://jobhuntwow.com/|^(200|301|302|308)$"
             "www.jobhuntwow.com|https://www.jobhuntwow.com/|^(200|301|302|308)$"
-            "klimaanlage-preise.de|https://klimaanlage-preise.de/|^(200|301|302|308)$"
             # s4biz.io is NOT probed here. It owns its own repository and its own
             # .github/workflows/uptime.yml, which is the single source of truth for that site.
             # Duplicating the targets would give two homes for one list, and the second copy is
@@ -69,7 +68,7 @@ jobs:
           # same instant. Caddy renews at 30 days, so under 10 means renewal has been failing for
           # ~3 weeks and nobody noticed. Checked from OUTSIDE, because the box's own monitoring
           # sits behind the proxy it is monitoring.
-          for host in cybergod.ai godeyes.ai jobhuntwow.com klimaanlage-preise.de; do
+          for host in cybergod.ai jobhuntwow.com; do
             end=$(echo | timeout 20 openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null \
                   | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
             if [ -z "$end" ]; then

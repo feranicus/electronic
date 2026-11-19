@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 import_dashboard.py — push the 'Colt Bots Observability' dashboard into your EXISTING Grafana
-(videodead / godeyes.ai) over the Grafana HTTP API. No manual upload, no new Grafana.
+(videodead / cybergod.ai) over the Grafana HTTP API. No manual upload, no new Grafana.
 
 It:
   1) finds your Loki datasource uid automatically,
@@ -14,10 +14,10 @@ Auth (pick one):
   * Admin basic auth: --user admin --password <pw>  (or env GRAFANA_USER / GRAFANA_PASS)
 
 Examples (run from C:\\Python SW\\Linkedin Scraper):
-  python import_dashboard.py --url https://godeyes.ai/observe --token glsa_XXXX…
-  python import_dashboard.py --url https://godeyes.ai/observe --user admin --password '***'
+  python import_dashboard.py --url https://cybergod.ai/observe --token glsa_XXXX…
+  python import_dashboard.py --url https://cybergod.ai/observe --user admin --password '***'
   # if datasource listing is blocked, name the Loki uid yourself:
-  python import_dashboard.py --url https://godeyes.ai/observe --token … --loki-uid loki
+  python import_dashboard.py --url https://cybergod.ai/observe --token … --loki-uid loki
 """
 import argparse, base64, json, os, ssl, sys, urllib.request, urllib.error
 
@@ -68,8 +68,8 @@ def retarget(obj, uid):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default=os.environ.get("GRAFANA_URL", "https://godeyes.ai/observe"),
-                    help="Grafana base URL incl. sub-path (e.g. https://godeyes.ai/observe)")
+    ap.add_argument("--url", default=os.environ.get("GRAFANA_URL", "https://cybergod.ai/observe"),
+                    help="Grafana base URL incl. sub-path (e.g. https://cybergod.ai/observe)")
     ap.add_argument("--token", default=os.environ.get("GRAFANA_TOKEN", ""))
     ap.add_argument("--user", default=os.environ.get("GRAFANA_USER", ""))
     ap.add_argument("--password", default=os.environ.get("GRAFANA_PASS", ""))

@@ -27,5 +27,5 @@ jobs:
           if [ -z "$GRAFANA_TOKEN" ]; then
             echo "GRAFANA_TOKEN secret not set — skipping (set it to enable auto-import)."; exit 0
           fi
-          python import_dashboard.py --url "${GRAFANA_URL:-https://godeyes.ai/observe}" \
+          python import_dashboard.py --url "${GRAFANA_URL:-https://cybergod.ai/observe}" \
             --token "$GRAFANA_TOKEN" --all

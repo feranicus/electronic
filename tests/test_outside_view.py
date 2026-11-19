@@ -12,6 +12,7 @@ completely dead front page healthy.
 Nth instance of the recurring disease: a check that cannot see its subject is not a check.
 """
 import os
+import sys
 import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,12 +63,32 @@ def test_the_front_page_itself_is_monitored():
         "nothing monitors the cybergod.ai front page itself"
 
 
-def test_the_roster_covers_every_domain_the_proxy_serves():
-    """A benign warning on every run trains you to ignore the one that is not benign."""
+def test_the_roster_matches_the_estate_exactly():
+    """DOCTRINE CORRECTED 19 NOV 2026, ORIGINAL REASONING KEPT (class 17).
+
+    This used to assert that jev.best, www.jev.best and the two klimaanlage domains were ON the
+    roster, because they were being served and a vhost served but not expected can never be
+    reported as MISSING when it disappears. That reasoning is still right and still enforced
+    below for every LIVE site.
+
+    What changed is the facts: those projects ended. klimaanlage-preise.de had been answering 502
+    for weeks and jev.best was 502 on 19 Nov, which is what made `observemove.py --apply` refuse
+    to start. A retired name left on the roster produces a MISSING warning on every single run,
+    and a warning that fires every time is the thing that teaches you to read past the one that
+    matters. So the rule is now two-sided and both sides derive from estate.py, which exists
+    because this list had nine homes.
+    """
     import importlib.util as u
+    sys.path.insert(0, ROOT)
+    import estate
     sp = u.spec_from_file_location("ag", os.path.join(ROOT, "deploy", "caddyguard", "agent.py"))
     m = u.module_from_spec(sp)
     sp.loader.exec_module(m)
-    for d in ("jev.best", "www.jev.best", "klimaanlage-montieren.de",
-              "www.klimaanlage-montieren.de"):
-        assert d in m.EXPECT, "%s is served but still not on the committed roster" % d
+    for d in estate.expected_vhosts():
+        assert d in m.EXPECT, "%s is live and not on the roster, so its death would be silent" % d
+    for d in estate.RETIRED:
+        assert d not in m.EXPECT, (
+            "%s was retired on %s and is still expected, so every drift check reports it missing"
+            % (d, estate.RETIRED[d][0]))
+    assert sorted(m.EXPECT) == estate.expected_vhosts(), (
+        "the roster and the estate disagree: %s" % sorted(set(m.EXPECT) ^ set(estate.LIVE)))

@@ -4,7 +4,7 @@ deploy.py — A-to-Z deploy of the Colt bots to the DigitalOcean droplet over SS
 
 Two modes:
   --reuse   (RECOMMENDED for you) bots + a tiny promtail that ships into your EXISTING Loki
-            (the jobhuntwow/godeyes.ai Grafana stack). Adds NO Grafana/Loki of our own.
+            (the jobhuntwow/cybergod.ai Grafana stack). Adds NO Grafana/Loki of our own.
   --deploy  standalone: also brings up our own Loki+Grafana (only if you have no existing one).
 
 SAFE alongside Amnezia VPN / VideoDead / jobhuntwow:
@@ -300,7 +300,7 @@ def deploy_reuse(loki_url, loki_net, assume_yes):
         "docker compose -f docker-compose.reuse.yml -p {p} ps"
         .format(r=REMOTE, u=loki_url, n=loki_net, p=PROJECT), timeout=900)
     print("\nDONE. The bots now ship into your EXISTING Loki. Next:")
-    print("  1) In your Grafana (godeyes.ai/observe): Dashboards -> New -> Import ->")
+    print("  1) In your Grafana (cybergod.ai/observe): Dashboards -> New -> Import ->")
     print("     upload  obs/grafana/dashboards/assess.json  -> pick your existing Loki datasource -> Import.")
     print("  2) Send /auth on Telegram, then check the 'Colt Bots Observability' dashboard.")
     print("\nUntouched: firewall, Amnezia VPN, VideoDead, and your existing Grafana/Loki.")
