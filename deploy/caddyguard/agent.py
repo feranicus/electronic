@@ -503,7 +503,100 @@ def cmd_write(name, path):
     return 0
 
 
+# ---------------------------------------------------------------------------------------------
+# RETIRED SITES. Declarative, idempotent, and part of the ordinary assemble.
+#
+# WHY THIS LIVES HERE AND NOT IN ITS OWN SCRIPT (corrected 20 Nov 2026). It was written as a
+# separate `observemove.py --apply`, which made the operator run a second command. Operating
+# principle 7 says a migration is wired INTO the orchestrator in the same change, and a new
+# script somebody has to remember is a bug. It is also the wrong SHAPE: "the proxy should serve
+# exactly what estate.py says" is not a one-off migration, it is a convergence step, and a
+# convergence step belongs on every run.
+#
+# The names arrive in CADDY_RETIRE, exported by caddyguard.py from estate.RETIRED, because that
+# file is the ONE HOME and this agent runs on the droplet with no repo beside it.
+#
+# Idempotent by construction: with nothing retired left it changes nothing and says so, which is
+# what makes it safe to run on every single ship.
+RETIRE = [d for d in os.environ.get("CADDY_RETIRE", "").split(",") if d.strip()]
+
+
+def _is_retired_header(line):
+    """NOT \b after the name. The godeyes.ai block's header is `{$DOMAIN} {` - a placeholder, so
+    its hostname appears nowhere - and there is no word boundary between `}` and a space, so a
+    \b pattern silently never matched the one site this was written for."""
+    return any(re.match(r"^%s(\s|,|\{|$)" % re.escape(w), line) for w in RETIRE)
+
+
+def _block_bounds(lines, start):
+    """End of the site block that opens at `start`, counting braces that are STRUCTURE.
+
+    A brace inside a comment or a quoted string is not structure. decommission.py already records
+    what the naive version costs: the counter runs past the real closing brace, the braces balance
+    again further down, and the edit takes the NEXT vhost with it."""
+    depth = 0
+    for i in range(start, len(lines)):
+        t = re.sub(r'"[^"]*"', '""', lines[i]).split("#", 1)[0]
+        depth += t.count("{") - t.count("}")
+        if depth <= 0 and i > start:
+            return i
+    return None
+
+
+def retire_blocks():
+    """Drop every retired site from _base.caddy, and delete any fragment that is ALL retired.
+
+    Returns a list of what it did. Nothing is written when there is nothing to do, so the mtime
+    of a clean fragment set never moves."""
+    done = []
+    if not RETIRE or not os.path.isdir(FRAG):
+        return done
+
+    base_p = os.path.join(FRAG, "_base.caddy")
+    if os.path.exists(base_p):
+        src = read(base_p)
+        lines, changed = src.split("\n"), True
+        while changed:
+            changed = False
+            for i, l in enumerate(lines):
+                if not _is_retired_header(l):
+                    continue
+                end = _block_bounds(lines, i)
+                if end is None:
+                    print("  [!] %s: the block at line %d never closes - left alone"
+                          % (os.path.basename(base_p), i + 1))
+                    break
+                done.append("_base.caddy: %s" % l.rstrip(" {").strip())
+                lines = lines[:i] + lines[end + 1:]
+                changed = True
+                break
+        if done:
+            write_inplace(base_p, "\n".join(lines))
+
+    for n in sorted(os.listdir(FRAG)):
+        if n.startswith("_") or not n.endswith(".caddy"):
+            continue
+        f = os.path.join(FRAG, n)
+        heads = [l for l in read(f).split("\n") if re.match(r"^[^\s#(].*\{\s*$", l)]
+        if not heads:
+            continue
+        dead = [h for h in heads if _is_retired_header(h)]
+        if not dead:
+            continue
+        if len(dead) != len(heads):
+            # A fragment with even one LIVE header is never deleted: that would retire a site
+            # nobody asked to retire. Say so and leave it for a human.
+            print("  [!] %s: %d of %d headers retired, the rest are live - left alone"
+                  % (n, len(dead), len(heads)))
+            continue
+        os.rename(f, f + ".retired")
+        done.append("%s (every header retired)" % n)
+    return done
+
+
 def cmd_assemble(do_apply):
+    for what in retire_blocks():
+        print("  retired %s" % what)
     text = assemble()
     ok, msg = acceptable(text)
     print("assembled %d bytes — %s" % (len(text), "OK" if ok else "INVALID: " + msg))

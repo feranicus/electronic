@@ -78,6 +78,21 @@ def expected_vhosts():
     return sorted(LIVE)
 
 
+def retire_headers():
+    """The site headers the proxy must stop serving, DERIVED from RETIRED rather than typed.
+
+    godeyes.ai is special and the special case is the point: it was served by the `{$DOMAIN}`
+    placeholder in the VideoDead stack's Caddyfile, so its hostname appeared nowhere in the file
+    and no name-grep could ever have found it. The placeholder is listed beside the literal names.
+
+    www variants ride on their apex's header (`jev.best, www.jev.best {`), so they are not listed
+    separately; the matcher anchors on the first name in the header.
+    """
+    out = ["{$DOMAIN}"]
+    out += [h for h in sorted(RETIRED) if not h.startswith("www.") and h != "godeyes.ai"]
+    return out
+
+
 def is_retired(host):
     return host.lower().lstrip("*.") in RETIRED
 

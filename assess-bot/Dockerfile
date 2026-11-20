@@ -1,9 +1,28 @@
 # Dedicated Colt assessment Telegram bot — NO LLM. Runs the deterministic engine.
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl nodejs npm python3-pip \
- && rm -rf /var/lib/apt/lists/*
+# APT MUST RETRY, AND IT MUST SAY WHAT WENT WRONG.
+#
+# Run #<pipeline 19 Nov 2026> died here: `exit code 100`, after 17m04s, on a layer that takes
+# under a minute when the mirror is healthy. Exit 100 is apt's generic "an error occurred" and
+# carries no cause; the cause is on the `E:` lines, and seventeen minutes is the signature of
+# fetch retries against a sick mirror rather than of a missing package, which fails in seconds.
+# colt-web, built from the same sources in the same run, succeeded: it is python:3.12-slim and
+# pulls from deb.debian.org, while this image is ubuntu:24.04 and pulls from the Ubuntu archive.
+# Same minute, same runner, different mirror, different outcome.
+#
+# So: bound the retries instead of letting the default behaviour burn the job's clock, and make
+# the failure name itself rather than leaving `exit code 100` as the whole report (class 26).
+# This is NOT a claim that the mirror was the cause. It is the change that makes the next run
+# either succeed or print the evidence to decide on.
+RUN set -eu; \
+    printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+      > /etc/apt/apt.conf.d/99-retries; \
+    apt-get update 2>/tmp/apt.err || { echo "=== apt-get update failed ==="; cat /tmp/apt.err; exit 100; }; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl nodejs npm python3-pip 2>/tmp/apt.err \
+      || { echo "=== apt-get install failed ==="; cat /tmp/apt.err; exit 100; }; \
+    rm -rf /var/lib/apt/lists/* /tmp/apt.err
 RUN mkdir -p /opt/node && cd /opt/node && npm init -y >/dev/null 2>&1 && npm install pptxgenjs@^4 --no-audit --no-fund
 ENV NODE_PATH=/opt/node/node_modules
 # DEPENDENCIES COME FROM COMMITTED, PINNED MANIFESTS — never from package names on this line.

@@ -101,6 +101,9 @@ def build(restore, check_only):
     agent = _b64(os.path.join(GUARD, "agent.py"))
     import estate as _estate          # ONE HOME for which sites exist
     _expect = ",".join(_estate.expected_vhosts())
+    # Retired names go with it: the agent converges the proxy onto estate.py on
+    # every run, so a site that ended stops being served without a second command.
+    _retire = ",".join(_estate.retire_headers())
     svc = _b64(os.path.join(GUARD, "caddyguard.service"))
     tmr = _b64(os.path.join(GUARD, "caddyguard.timer"))
     jhw_path, jhw_ok = jhw_snippet()
@@ -128,6 +131,7 @@ chmod 755 /opt/caddyguard/agent.py
 # agent runs on the droplet where no repo exists, so the list is exported here rather than
 # duplicated there. Retiring a site is then one edit in estate.py, not two that drift.
 export CADDY_EXPECT='%s'
+export CADDY_RETIRE='%s'
 echo '%s' | base64 -d > /etc/systemd/system/caddyguard.service
 echo '%s' | base64 -d > /etc/systemd/system/caddyguard.timer
 python3 -c "import ast;ast.parse(open('/opt/caddyguard/agent.py').read())" \
@@ -337,7 +341,7 @@ for u in https://cybergod.ai/api/me https://cybergod.ai/observe/ https://www.job
   printf '   %%-42s %%s  %%s bytes%%s\n' "$u" "$CODE" "$BYTES" "$FLAG"
 done
 echo "END"
-""" % (agent, _expect, svc, tmr, "check" if check_only else "install",
+""" % (agent, _expect, _retire, svc, tmr, "check" if check_only else "install",
        "yes" if restore else "no", jhw, colt, pw)
 
 
