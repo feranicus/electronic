@@ -478,6 +478,13 @@ def main():
     # Everything is sent as raw LF bytes: text=True would turn \n into \r\n on Windows and feed
     # bash CRLF, which breaks the heredoc.
     payload = "\n".join([
+        # A SENTINEL ONLY A SHELL THAT REALLY RAN CAN ECHO. 20 Nov 2026: this step exited 1
+        # with ZERO bytes of output, and "see output above" was the whole failure report when
+        # there was no output above. Empty-and-failed has two different causes - ssh never
+        # reached a shell, or the script ran and said nothing - and they need opposite repairs.
+        # CLAUDE.md already mandates this shape for probes (sshout's sentinel); the deploy
+        # path never had it.
+        "echo REMOTE_SHELL_ALIVE",
         "set -e",
         "mkdir -p /opt/colt-stack",
         "cd /opt/colt-stack",
@@ -503,7 +510,27 @@ def main():
         sys.exit("[X] the remote build exceeded 20 minutes and was killed.\n"
                  "    Nothing is left half-applied: compose is idempotent, just re-run.")
     if r.returncode:
-        sys.exit("[X] remote deploy failed (see output above)")
+        # NAME THE SUBJECT AND MEASURE (class 26), rather than pointing at output that may not
+        # exist. stderr is already folded into stdout here, so an EMPTY stream means ssh itself
+        # printed nothing either, which is evidence rather than an absence of it.
+        alive = "REMOTE_SHELL_ALIVE" in out
+        print("")
+        print("[X] remote deploy failed on %s" % tgt)
+        print("    ssh exit code    : %d" % r.returncode)
+        print("    bytes of output  : %d" % len(out))
+        print("    remote shell ran : %s" % ("YES" if alive else "NO"))
+        if alive:
+            print("    READING: the shell ran, so the failure is in the build and its cause is")
+            print("    in the output above this line.")
+        else:
+            print("    READING: the payload never reached a shell. Nothing was unpacked and")
+            print("    nothing was built, so the droplet is untouched. Causes that look")
+            print("    identical here and need opposite repairs: a refused or reset connection")
+            print("    (sshd restarting, or PerSourcePenalties after a burst of sessions from")
+            print("    this address), the wrong key being offered, or the ~5 MB payload on")
+            print("    stdin being cut. `python recover.py` separates them in one read-only")
+            print("    session.")
+        sys.exit(1)
     if "TRIVY_CRITICAL_FAIL" in out:
         sys.exit("[X] colt-web has a CRITICAL, fixable vulnerability. The image is built and the\n"
                  "    container is running the PREVIOUS image; this stops the promotion.\n"

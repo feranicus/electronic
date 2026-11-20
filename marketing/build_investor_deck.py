@@ -116,7 +116,7 @@ from pptx.enum.text import PP_ALIGN                                  # noqa: E40
 from build_consensus_deck import (                                   # noqa: E402
     BODY, CYAN, Deck, DISPLAY, GREEN, INDIGO, INK, LINE, MONO, MUTED, TEXT, VIOLET, WHITE,
     _rect, _tb)
-from deck_chrome import X3, W3, assert_layout, guarded               # noqa: E402
+from deck_chrome import X2, W2, X3, W3, assert_layout, guarded               # noqa: E402
 
 FOOT = "S4BIZ GROUP · SEED ROUND · CONFIDENTIAL · SEPTEMBER 2026"
 X, W = 0.55, 12.23        # left margin and content width, same as deck_chrome's column geometry
@@ -235,8 +235,11 @@ def build(template, out):
             ("264", "tests behind the SOC\nacross 8 files", VIOLET)]):
         bigstat(s, X3[i], BODY_TOP, W3, val, cap, col, vsize=60)
     rule(s, 4.55, w=8.00)
-    line(s, 4.85, "Pre-revenue. No customer has signed yet, and the round is what changes that.",
-         16, WHITE, h=0.50)
+    # 20 Nov 2026: a distributor HAS now signed, so "no customer has signed yet" was true of
+    # customers and read as "nothing has moved". Record the move without inflating it - a signed
+    # distributor is not revenue, and saying so here is what makes the rest of the deck credible.
+    line(s, 4.85, "Pre-revenue. One distributor signed, no end customer yet, and the round is "
+                  "what changes that.", 16, WHITE, h=0.50)
 
     # ============================================================= 04 PROBLEM
     # One focal point, centred, because the number IS the argument and the sentence under it is a
@@ -292,6 +295,30 @@ def build(template, out):
          "Perseus decides for itself: four models from four vendors propose, deterministic code "
          "decides, and every block expires by itself.",
          18, BODY, w=11.60, h=1.20, space=1.32)
+
+    # ============================================================= 06b TWO PRODUCTS
+    # The founder's deck described the engine. It never said in one place that this is TWO
+    # products with two buyers and two revenue shapes, which is the first thing an investor
+    # needs in order to size anything.
+    s = d.slide("THE TWO PRODUCTS", "ONE ENGINE.", " TWO PRODUCTS.",
+                "Different buyer, different cadence, different revenue shape. The second is "
+                "what makes the first recurring.", FOOT)
+    for i, (lab, head, body, col) in enumerate([
+            ("PRODUCT ONE", "Security assessment",
+             "A company name in, four boardroom decks out, in minutes. No packet reaches the "
+             "assessed company, so it runs pre-sale, on a prospect, with nobody's permission. "
+             "Sold per assessment and through partners.", CYAN),
+            ("PRODUCT TWO", "AI SOC",
+             "Four models from four vendors watch the live estate, score every request and "
+             "propose detections that code, never a model, promotes. Sold per month.", VIOLET)]):
+        _rect(s, X2[i], 2.30, W2, 0.05, col, None)
+        _tb(s, X2[i], 2.52, W2, 0.30, lab, 12, col, MONO, True)
+        _tb(s, X2[i], 2.92, W2, 0.50, head, 24, WHITE, DISPLAY, True)
+        _tb(s, X2[i], 3.58, W2, 1.70, body, 14, BODY, TEXT, space=1.30)
+    rule(s, 5.55)
+    line(s, 5.80, "The assessment finds what is exposed. The SOC watches what happens next. A "
+                  "customer who buys the first has already been shown why they need the second.",
+         16, WHITE, h=0.70, space=1.25)
 
     # ============================================================= 08 DEFENSIBILITY
     # The most important slide in the deck. Three numbers, each one a refusal the product now
@@ -368,8 +395,53 @@ def build(template, out):
         _tb(s, X + 0.34, y, 1.70, 0.34, lab.upper(), 12, col, MONO, True)
         line(s, y + 0.40, text, 17, WHITE, x=X + 0.34, w=10.80, h=0.80, space=1.26)
 
+    # ============================================================= 12b WHY THIS NUMBER
+    # HE ASKED ME TO QUALIFY THE ASK, SO THE ARITHMETIC IS ON A SLIDE RATHER THAN IN A FOOTNOTE.
+    # The number moved from EUR 20m to EUR 4.5m. Measured 2026 benchmarks: the CEE seed median
+    # is EUR 2m with half of disclosed seeds between EUR 1.4m and EUR 3.1m, and cybersecurity
+    # seeds specifically run USD 3-6m at USD 16-22m post. EUR 20m is four to seven times the
+    # band and is a Series B number; a deck labelled seed that asks for it is filtered before
+    # anyone reaches the product slide. The sources are in appendix A6.
+    s = d.slide("WHY THIS NUMBER", "FOUR AND A HALF,", " NOT TWENTY.",
+                "Sized from the market it is raised in, not from ambition.", FOOT)
+    for i, (v, lab) in enumerate([
+            ("EUR 2.0m", "European seed median,\n2026"),
+            ("USD 3-6m", "cybersecurity seed,\nsame year"),
+            ("EUR 4.5m", "our ask: top of the\nband, two countries"),
+            ("24 mo", "runway to the\nSeries A evidence")]):
+        bigstat(s, X + i * 3.07, 2.30, 2.85, v, lab, col=CYAN if i < 2 else VIOLET, vsize=30)
+    rule(s, 4.30)
+    line(s, 4.55,
+         "Top of the band rather than the middle, because the plan funds two go-to-market "
+         "motions at once and a US entity is not a cheaper version of a European one. Above the "
+         "band would price the round as a Series B and be judged as one.",
+         16, WHITE, h=0.90, space=1.26)
+    line(s, 5.70,
+         "At roughly 21 per cent dilution that is a post-money near EUR 21m, which sits inside "
+         "the USD 16-22m the same sources report for cybersecurity seeds.",
+         14, BODY, h=0.70, space=1.26)
+
+    # ============================================================= 12c WHERE IT GOES
+    s = d.slide("WHERE IT GOES", "TWO MARKETS,", " ONE ENGINE.",
+                "The entities already exist. What they do not have is people.", FOOT)
+    rows2(s, X, 2.40, W, ("Line", "What it funds, and why it is a separate line"), [
+        ("SALES 40%", "EU first: a country lead and two sellers across Frankfurt, Tallinn and "
+                      "Lisbon. The assessment opens the door, the SOC is the subscription "
+                      "behind it.", CYAN),
+        ("US 2027", "Delaware, staffed once the European motion repeats. A US entity is not a "
+                    "cheaper European one and is funded as its own line, not as overflow.", CYAN),
+        ("ENGINEERING 30%", "Continuous monitoring, customer-held keys, enforcement and "
+                            "takedown. Four engineers.", VIOLET),
+        ("MARKETING 15%", "Partner demand generation, not brand. The unit is a partner, not a "
+                          "seat.", VIOLET),
+        ("ASSURANCE 5%", "ISO 27001 and SOC 2. Below that bar an enterprise security buyer "
+                         "cannot sign, whatever the product does.", INDIGO),
+        ("WORKING CAP 10%", "Twenty-four months of runway, so the Series A is raised on "
+                            "evidence rather than on a deadline.", INDIGO),
+    ], rh=0.66, size=12.5, lw=2.60)
+
     # ============================================================= 13 THE ASK
-    s = d.slide("THE ASK", "EUR ", "20,000,000.",
+    s = d.slide("THE ASK", "EUR ", "4,500,000.",
                 "Sales and channel 40 · Engineering and cloud 30 · Marketing 15 · Assurance 5 · "
                 "Working capital 10", FOOT)
     line(s, 2.35,
@@ -473,22 +545,29 @@ def build(template, out):
                   "vendors and lets deterministic code decide.", 11.5, MUTED, h=0.40)
 
     # ============================================================= A5 CHANNEL STATUS
+    # UPDATED 20 Nov 2026. byon and the Canadian bank are OUT at the operator's instruction:
+    # neither moved, and a channel slide that keeps a stalled name is padding an investor will
+    # find on the first reference call. The three that remain are ordered by how far they have
+    # actually travelled, and the STAGE WORD stays precise - signed, signing, advanced - because
+    # the whole value of this slide is that it is the one place the deck under-claims.
     s = d.slide("APPENDIX A5 · CHANNEL", "CHANNEL", " STATUS.",
-                "Four conversations, each labelled with the stage it is genuinely at.", FOOT)
+                "Three partners, each labelled with the stage it is genuinely at.", FOOT)
     rows2(s, X, BODY_TOP, 11.60, ("Where", "Actual stage, precisely"),
-          [("byon, Germany", "PROPOSAL. A pilot is proposed and their internal security review is "
-                             "pending. Not a signed pilot.", WHITE),
-           ("Swiss distributor", "AGREEMENT DRAFTED. The distribution agreement is unsigned and "
-                                 "nothing has been sold under it.", WHITE),
-           ("Southern Africa", "EARLY CONVERSATION. A local entity or partner of record is still "
-                               "an open decision.", WHITE),
-           ("A Canadian bank", "EARLY CONVERSATION. A named technical contact, a small quota, no "
-                               "commercial discussion.", WHITE)],
-          rh=0.62, size=12.5, lw=2.60)
-    rule(s, 5.20, col=LINE, th=0.012)
-    line(s, 5.45,
-         "NONE OF THE FOUR IS A CUSTOMER. None is a win and none is a running pilot. The first "
-         "reference call establishes exactly this, so the deck says it first.",
+          [("Projectale, Switzerland",
+            "SIGNED. The distribution agreement is executed. Nothing has been sold under it "
+            "yet, which is the next milestone rather than a claim.", CYAN),
+           ("New Cognito, Angola",
+            "SIGNING. Terms agreed and a proof of value about to begin. Not revenue, and the "
+            "Angolan compliance mapping is deliberately out of its scope.", CYAN),
+           ("Paratus, Africa",
+            "ADVANCED. A regional carrier conversation at partnership terms, not yet an "
+            "agreement.", WHITE)],
+          rh=0.66, size=12.5, lw=2.60)
+    rule(s, 4.95, col=LINE, th=0.012)
+    line(s, 5.20,
+         "ONE SIGNED DISTRIBUTOR, ONE SIGNING, ONE ADVANCED. None is yet revenue and none is a "
+         "running pilot. The first reference call establishes exactly this, so the deck says it "
+         "first.",
          13, MUTED, bold=True, h=0.80, space=1.34)
 
     assert_layout(d)
