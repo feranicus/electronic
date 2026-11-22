@@ -343,6 +343,48 @@ def _require_ready(request: Request) -> str:
     return email
 
 
+def role_for(email: str) -> str:
+    """The signed-in person's effective role. ONE HOME for the lookup, so no route re-derives it.
+
+    The store is consulted for the row and roles.py decides what that row MEANS: a missing row, a
+    stale role name or a typo all degrade to the least-privileged role rather than to a crash or,
+    worse, to a silent pass. colt_auth.ADMIN_EMAILS still wins, so a bad row can never lock the
+    platform out of its own administration.
+    """
+    try:
+        import roles as _roles
+        import user_store as _us
+        row = _us.get(email) or {}
+        return _roles.role_of(email, row.get("role"))
+    except Exception:
+        # A BROKEN STORE REFUSES rather than guesses, exactly as the password path does. The
+        # least-privileged role is the safe answer; the admin floor above still applies.
+        try:
+            import roles as _roles
+            return _roles.role_of(email, None)
+        except Exception:
+            return "user"
+
+
+def _require_perm(perm: str):
+    """A FastAPI dependency that demands a VERB, not an identity.
+
+    `Depends(_require_perm("pipeline.view"))`. An unknown verb answers NO (roles.can), so a typo
+    in a decorator closes a route instead of opening it - deny by default, which is the rule
+    authz_audit.py exists to prove. The denial is logged with the verb and the role, because
+    "403" with no subject is the diagnostic that sends the next investigation nowhere.
+    """
+    def dep(request: Request) -> str:
+        import roles as _roles
+        email = _require_ready(request)
+        role = role_for(email)
+        if _roles.can(perm, role):
+            return email
+        _log(evt="perm_denied", user=email, role=role, perm=perm)
+        raise HTTPException(status_code=403, detail="permission required: %s" % perm)
+    return dep
+
+
 def _require_admin(request: Request) -> str:
     """Authenticated, ready, AND on the committed administrator list.
 

@@ -94,6 +94,13 @@ def _conn():
                      created_by  TEXT,
                      note        TEXT
                  )""")
+    # MIGRATION, same shape as the `lang` column in store.py. CREATE TABLE IF NOT EXISTS will not
+    # add a column to a table the droplet already has, and without this every existing deployment
+    # 500s on the first read. A role column that defaults to '' means "no row said otherwise", and
+    # roles.role_of() turns that into the least-privileged role rather than into a crash.
+    _cols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
+    if "role" not in _cols:
+        c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT ''")
     c.commit()
     return c
 
@@ -221,6 +228,28 @@ def clear_must_change(email):
         return False
 
 
+def set_role(email, role, by=""):
+    """Record a role. The CALLER decides whether the actor is allowed to: roles.may_grant() and
+    roles.may_touch() answer that, and they live in roles.py so there is one home for the policy.
+    This function only writes, and it refuses a role the policy does not define - a typo must not
+    become a silent demotion to the default."""
+    import roles as _roles
+    r = (role or "").strip().lower()
+    if r not in _roles.ROLES:
+        return False
+    try:
+        c = _conn()
+        try:
+            cur = c.execute("UPDATE users SET role=?, updated_ts=?, created_by=COALESCE(?, created_by) "
+                            "WHERE email=?", (r, time.time(), by or None, _norm(email)))
+            c.commit()
+            return cur.rowcount > 0
+        finally:
+            c.close()
+    except Exception:
+        return False
+
+
 def set_disabled(email, disabled=True):
     c = _conn()
     try:
@@ -243,9 +272,15 @@ def delete(email):
 
 
 def _row(r):
+    # ANY NEW COLUMN MUST BE ADDED HERE TOO. This dict is hardcoded, so a column that is selected
+    # but not listed is silently dropped between the database and the caller - exactly how `lang`
+    # was lost once already. `role` is read through roles.role_of() by the caller, never trusted
+    # raw, so a stale or misspelled value degrades to the least-privileged role.
+    k = r.keys()
     return {"email": r["email"], "must_change": bool(r["must_change"]),
             "disabled": bool(r["disabled"]), "created_ts": r["created_ts"],
-            "updated_ts": r["updated_ts"], "created_by": r["created_by"], "note": r["note"]}
+            "updated_ts": r["updated_ts"], "created_by": r["created_by"], "note": r["note"],
+            "role": (r["role"] if "role" in k and r["role"] else "")}
 
 
 def get(email):
@@ -253,7 +288,7 @@ def get(email):
         c = _conn()
         try:
             r = c.execute("""SELECT email, must_change, disabled, created_ts, updated_ts,
-                                    created_by, note FROM users WHERE email=?""",
+                                    created_by, note, role FROM users WHERE email=?""",
                           (_norm(email),)).fetchone()
             return _row(r) if r else None
         finally:
@@ -269,7 +304,7 @@ def list_all():
         c = _conn()
         try:
             rows = c.execute("""SELECT email, must_change, disabled, created_ts, updated_ts,
-                                       created_by, note FROM users ORDER BY email""").fetchall()
+                                       created_by, note, role FROM users ORDER BY email""").fetchall()
             return [_row(r) for r in rows]
         finally:
             c.close()
