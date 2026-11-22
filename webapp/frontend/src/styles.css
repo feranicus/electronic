@@ -1327,3 +1327,36 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .fleet .pill.bad{background:rgba(220,38,38,.12);border-color:#c62828;color:#a11b1b}
 .fleet td.bad{color:var(--red);font-weight:700}
 @media (max-width:720px){.fleet-stat{flex:1 1 45%}.fleet-why{max-width:none}}
+
+/* ---- the channel pipeline board -----------------------------------------------------------
+   A HORIZONTAL SCROLLER, NOT A WRAP. The Herkos track has eleven columns; wrapping them would
+   put stage H9 under stage H0 and the board would stop reading left to right, which is the one
+   thing a pipeline has to do. Each column has a floor so a card's text never decides the layout.
+   Ported from jobhuntwow, where the same arithmetic was settled against a real board. */
+.kan{display:flex;gap:12px;overflow-x:auto;padding:4px 2px 14px;align-items:flex-start}
+.kcol{flex:0 0 232px;background:var(--raised);border:1px solid var(--line);border-radius:14px;
+  padding:10px;min-height:120px}
+.kcol h4{margin:2px 0 2px;font-size:13px;color:var(--ink);display:flex;align-items:center;gap:6px}
+.kcode{font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:11px;
+  color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 5px}
+/* The exit criterion IS the column's definition, so it is on the board and not in a tooltip:
+   a stage that is only a noun is a stage two people fill in differently. */
+.kgate{margin:0 0 8px;font-size:11px;line-height:1.35;color:var(--mut)}
+.kdrop{border-color:var(--cta);box-shadow:0 0 0 3px rgba(79,70,229,.14)}
+.kcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 10px;
+  margin-bottom:8px;cursor:grab;display:flex;flex-direction:column;gap:2px}
+.kcard:active{cursor:grabbing}
+.kcard b{font-size:13px;color:var(--ink)}
+.kcard small{font-size:11px;color:var(--body);line-height:1.3}
+/* While the PATCH is in flight the card is dimmed rather than removed: an optimistic move that
+   hides the card looks like a delete if the server then refuses. */
+.ksaving{opacity:.55}
+.kmove{margin-top:6px;padding:4px 6px;font-size:11px;height:auto;width:100%}
+.pipe-mail{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}
+.pipe-mail .hint{flex:1 1 100%;margin:0}
+.pipe-detail h3{margin:16px 0 6px;font-size:14px}
+.pipe-notes{list-style:none;margin:0;padding:0;font-size:13px}
+.pipe-notes li{border-bottom:1px solid var(--line);padding:7px 0}
+.pipe-notes li:last-child{border-bottom:none}
+.pipe-notes .hint{margin:3px 0 0;font-size:11px}
+@media (max-width:720px){ .kcol{flex:0 0 78vw} }

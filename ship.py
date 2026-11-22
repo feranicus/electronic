@@ -897,6 +897,21 @@ def do_tests():
     else:
         print('  authz: every non-public route refuses an anonymous caller')
 
+    # THE PIPELINE'S STAGES MUST STILL BE THE PROCESS MAP'S. The columns are taken verbatim from
+    # Herkos_Commercial_Process_Map_v0.1_DRAFT.docx (Assad Kondakji), which is the document the
+    # sales conversation is held against; a board that drifts from it is a board that disagrees
+    # with the process everybody else is following. Printing the tracks here means a change to the
+    # stage list is VISIBLE in the ship log rather than discovered on the board.
+    try:
+        sys.path.insert(0, os.path.join(HERE, 'webapp', 'backend'))
+        from app import pipeline as _pl
+        _tr = ", ".join("%s %d" % (t["key"], len([x for x in _pl.stage_meta(t["key"])
+                                                  if x["code"] != "--"]))
+                        for t in _pl.tracks())
+        print('  pipeline stages (process map HRK-COM-PRC-001): %s' % _tr)
+    except Exception as _e:
+        sys.exit('[X] the pipeline stage model could not be read: %r' % (_e,))
+
     # PERSEUS: the thin client is the ONLY duplicated file, so it must be identical everywhere.
     # A stale copy in one project is exactly the "several homes, the newer one loses" defect that
     # this repo has paid for with ENRICH_MODELS, the language set and the model allowlist.

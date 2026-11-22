@@ -740,7 +740,20 @@ def me(request: Request):
         pass
     # `must_change` is advisory to the UI only. The refusal itself lives in _require_ready, so a
     # client that ignores this field gains nothing.
-    return {"email": email, "is_admin": is_admin, "must_change": _must_change(email)}
+    # WHAT THIS PERSON MAY DO, so the cabinet can render the nav it will actually be allowed to
+    # use. PRESENTATION ONLY - every route depends on _require_perm independently, so a client
+    # that lies to itself about `perms` gains nothing but a 403. The alternative, hiding the
+    # Pipeline link behind an email-domain check in the frontend, would be a second authorisation
+    # model with no server behind it.
+    perms, role = [], "user"
+    try:
+        import roles as _roles
+        role = role_for(email)
+        perms = sorted(_roles.perms_of(role))
+    except Exception:
+        pass
+    return {"email": email, "is_admin": is_admin, "must_change": _must_change(email),
+            "role": role, "perms": perms}
 
 
 # ---------------- password self-service ----------------
@@ -920,6 +933,25 @@ def _grant_role(actor, email, want):
         raise HTTPException(status_code=400, detail="could not record the role for %s" % target)
     _log(evt="role_set", user=actor, role=actor_role, target=target, granted=effective)
     return {"ok": True, "email": target, "role": _roles.role_of(target, want)}
+
+
+# ---------------------------------------------------------------------------------------------
+# THE CHANNEL PIPELINE. The router is BUILT here rather than declared in pipeline.py, so the
+# permissions it demands come from roles.py through _require_perm - one home for the policy, and a
+# module that can be exercised in a test without an auth stack.
+#
+# WIRED AT IMPORT, NOT BEHIND A TRY THAT SWALLOWS. A feature wrapped in `except Exception: pass`
+# is a feature that can be absent from production while every log stays clean (class 37); if this
+# cannot be built the app must fail loudly at boot, because a board the sales team cannot open is
+# not a degraded mode, it is an outage they will report as "the site is broken".
+# ---------------------------------------------------------------------------------------------
+from . import pipeline as _pipeline      # noqa: E402
+
+app.include_router(_pipeline.build_router(
+    require_view=_require_perm("pipeline.view"),
+    require_edit=_require_perm("pipeline.edit"),
+    require_admin=_require_perm("pipeline.admin"),
+))
 
 
 class AdminRoleReq(BaseModel):

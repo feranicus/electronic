@@ -6,6 +6,7 @@ import Compliance from "./Compliance.jsx";
 import Assistant from "./Assistant.jsx";
 import History from "./History.jsx";
 import Admin from "./Admin.jsx";
+import Pipeline from "./Pipeline.jsx";
 import WhiteLabel from "./WhiteLabel.jsx";
 import ChangePassword from "./ChangePassword.jsx";
 import { getMe } from "../api.js";
@@ -48,7 +49,7 @@ export default function Cabinet() {
 
   return (
     <div className="cab">
-      <Sidebar email={me?.email} isAdmin={!!(me && me.is_admin)} />
+      <Sidebar email={me?.email} isAdmin={!!(me && me.is_admin)} perms={(me && me.perms) || []} />
       <main className="main">
         <Routes>
           <Route path="/" element={<NewAssessment />} />
@@ -59,6 +60,13 @@ export default function Cabinet() {
           <Route path="password" element={<ChangePassword onDone={refresh} />} />
           {/* Rendered only for an administrator. This is convenience, not security: /api/admin/*
               refuses anyone not on colt_auth.ADMIN_EMAILS regardless of what the SPA renders. */}
+          {/* THE ROUTE IS GATED BY THE VERB, not by a domain or a title. "just for users that are
+              part of S4biz" is a PERMISSION - pipeline.view, held today by admin, s4biz_power,
+              reseller_admin and sales_rep - so letting a partner's sales person in later is a role
+              change rather than a code change. Hiding the route is presentation; /api/pipeline
+              refuses on its own. */}
+          {me && (me.perms || []).includes("pipeline.view")
+            ? <Route path="pipeline" element={<Pipeline />} /> : null}
           {me && me.is_admin ? <Route path="admin" element={<Admin />} /> : null}
         </Routes>
       </main>

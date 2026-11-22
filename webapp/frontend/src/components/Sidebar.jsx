@@ -35,7 +35,14 @@ const ADMIN_ITEM = ["/app/admin", "side.admin", (
   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6" /></svg>
 )];
 
-export default function Sidebar({ email, isAdmin = false }) {
+// Same reasoning, different question: this one appears when /api/me says the person holds
+// `pipeline.view`. A VERB, never a domain or a title - the server asks the same thing of every
+// /api/pipeline route, so showing the link to the wrong person would grant them a 403.
+const PIPE_ITEM = ["/app/pipeline", "side.pipeline", (
+  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></svg>
+)];
+
+export default function Sidebar({ email, isAdmin = false, perms = [] }) {
   const nav = useNavigate();
   const [, , t] = useT();
   async function logout() {
@@ -59,6 +66,12 @@ export default function Sidebar({ email, isAdmin = false }) {
               <span className="nav-label">{t(label)}</span>
             </NavLink>
           ))}
+          {(perms || []).includes("pipeline.view") ? (
+            <NavLink key={PIPE_ITEM[0]} to={PIPE_ITEM[0]}>
+              <span className="nav-ico">{PIPE_ITEM[2]}</span>
+              <span className="nav-label">{t(PIPE_ITEM[1])}</span>
+            </NavLink>
+          ) : null}
           {isAdmin ? (
             <NavLink key={ADMIN_ITEM[0]} to={ADMIN_ITEM[0]}>
               <span className="nav-ico">{ADMIN_ITEM[2]}</span>

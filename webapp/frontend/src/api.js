@@ -27,6 +27,16 @@ export async function delJSON(path) {
   return { ok: r.ok, status: r.status, data };
 }
 
+// SAME CONTRACT AGAIN: { ok, status, data }. The pipeline board PATCHes a card's stage and has to
+// be able to put it back when the server refuses, which needs the status and the detail - a helper
+// that threw or returned a bare body could not support an optimistic move.
+export async function patchJSON(path, body) {
+  const r = await fetch(path, opts("PATCH", body));
+  let data = {};
+  try { data = await r.json(); } catch { /* empty body ok */ }
+  return { ok: r.ok, status: r.status, data };
+}
+
 // ---- Auth ----
 export const authBegin  = (email, password) => postJSON("/api/auth/begin",  { email, password });
 export const authVerify = (email, code)     => postJSON("/api/auth/verify", { email, code });

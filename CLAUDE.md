@@ -698,6 +698,12 @@ writing a check, a fixture or a diagnostic.
     job's own log, and believe the MEASUREMENT, never the label. What a person can start they can
     stop (owner-scoped; the KILL is the mechanism, not the DB write) and unbounded work gets a wall.
     [2026-11-11] `tests/test_job_cancel.py` · `docs/decisions/2026-11-stopping-a-run.md`
+59. **A PROCESS THE BUSINESS ALREADY WROTE DOWN IS NOT MINE TO INVENT.** The pipeline's columns
+    are VERBATIM from `Herkos_Commercial_Process_Map_v0.1_DRAFT.docx` (Assad) - THREE tracks
+    (partner R1-R6, Herkos H0-H9, Perseus P0-P10), so `canon_stage` is track-aware or a card lands
+    in a column that board never renders. A mail LABEL never moves a card: the gates are signature
+    events. A tie leaves the mail unfiled WITH the reason.
+    [2026-11-22] `tests/test_pipeline.py` · `docs/decisions/2026-11-pipeline.md`
 58. **A ROLE IS NOT A CREDENTIAL AND MUST NOT LIVE IN THE CREDENTIAL ROW.** The people it is FOR
     have no row (shared password, `pw_hash NOT NULL`), so a `users.role` column means inventing
     one - `has_account()` turns true and TAKES THE SHARED PASSWORD AWAY. Own table; policy only
@@ -709,22 +715,15 @@ writing a check, a fixture or a diagnostic.
 
 ## cybergod.ai (this repo)
 
-- `hermes-skills/shodan-assessment/scripts/` — the ENGINE. `run_assessment.py` (orchestrator),
-  `shodan_recon.py` (discovery + ownership gates + `classify()`), `enrich.py` + `enrich_parallel.py`
-  (LLM prose, the ONE chokepoint for spend), `audit_fp.py`, `clarify.py`, `psl.py`, `scope_deny.py`,
-  `group_discovery.py`, `asn_sources.py`, `email_auth.py`, `cert_intel.py`, `naming.py`,
-  `active_probe.py`, `compliance_*.py`, `build_*_deck.js`, `build_*_html.js`, `deck_i18n.js`,
-  `i18n/`, `deck_langs.py`, `proteus.py` (White Label), `run_log.py`, `demo_build.py`,
-  `cost_ledger.py`, `engine_config.py`, `model_probe.py`.
-- `webapp/backend/app/` — FastAPI. `main.py`, `auth.py`, `store.py`, `telemetry.py`, `visitors.py`,
-  `alerts.py`, `notify.py`, `shield.py` + `shield_panel.py` + `shield_console.py`, `slow_store.py`,
-  `siege.py`, `fleet.py`, `brand.py`, `llm_meter.py`, `llm_events.py`, `spend_watch.py`,
-  `attack_digest.py`, `threat_intel.py`, `abuse_report.py`, `ip_reputation.py`,
-  `security_headers.py`, `daily_report.py`, `release_notes.py`, `geoip.py`, `perseus_client.py`.
-- `webapp/frontend/src/` — React. `i18n.jsx` + `locales/` + `legal.jsx` + `legal-locales/` +
-  `partners-locales/` (six UI languages, 100% enforced), `components/`, `pages/`, `styles.css`.
-  Gates in `tools/`: i18n_catalogue, i18n_audit, header_layout, contrast_gate, canvas_smoke,
-  api_contract, shipped_shell, partners_gate, render_gate.
+- `hermes-skills/shodan-assessment/scripts/` — the ENGINE; `ls` it. The four that carry the
+  doctrine: `run_assessment.py` (orchestrator), `shodan_recon.py` (discovery + ownership gates +
+  `classify()`), `enrich.py` + `enrich_parallel.py` (LLM prose, the ONE chokepoint for spend).
+- `webapp/backend/app/` — FastAPI; `ls` it rather than listing it here (class 32: prose must not
+  restate what a selector shows). The non-obvious ones: `main.py` holds every route AND the
+  authorisation helpers (`role_for`, `_require_perm`, `_grant_role`); `pipeline.py` + `dealmatch.py`
+  + `gmail_read.py` are the channel board; `shield*`/`siege`/`perseus_client` are the defence.
+- `webapp/frontend/src/` — React; six UI languages at 100%, enforced by the gates in `tools/`
+  (`ls webapp/frontend/tools`), every one of which ship.py runs.
 - `perseus/` — the hub (`hub.py`, `ruleset.py`, `vet.py`, `abuse.py`, `incident.py`, `client.py`).
   Three timers, three verbs: `--cycle` daily 04:40 · `--weekly` Sun 05:20 (re-vet live rules against
   today's routes, retire what a month never matched) · `--watch` every 10 min (four-vendor consensus
