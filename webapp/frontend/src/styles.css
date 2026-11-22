@@ -1224,6 +1224,12 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .admin-tbl .mono{font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:13px}
 .admin-tbl .row-off td{opacity:.55}
 .admin-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+/* The role picker sits INSIDE a table cell, so it takes the row's height rather than the form
+   control's: a full-size .input here makes every row 48px tall and the table twice as long as the
+   screen. The longest label is the German "S4biz-Hauptbenutzer", which is what 190px is measured
+   against; min-width keeps it from collapsing when a shorter language is selected. */
+.admin-tbl select.admin-role{width:190px;min-width:190px;padding:6px 8px;font-size:13px;
+  height:auto;line-height:1.3}
 .admin-tbl .tag{margin-left:8px;padding:3px 8px;font-size:11px}
 .admin-tbl .tag.ok{color:var(--green);border-color:var(--green-f);background:var(--green-l)}
 .admin-tbl .tag.warn{color:var(--amber,#92400E);border-color:var(--line2);background:var(--navy)}

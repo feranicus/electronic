@@ -257,15 +257,52 @@ def _no_comments(s):
     return "\n".join(ln for ln in s.split("\n") if not ln.lstrip().startswith("#"))
 
 
+# THE DOCTRINE, AND ITS ONE CORRECTION (class 17: when the rule changes, rewrite the test and
+# KEEP THE OLD REASONING, because deleting it loses why).
+#
+# ORIGINAL RULE, and it still holds for every route it was written for: an /api/admin/* route is
+# gated by _require_admin, which checks the committed colt_auth.ADMIN_EMAILS list. Hiding the nav
+# item is presentation; anyone can issue the request the menu would have issued.
+#
+# THE CORRECTION (22 Nov 2026, with the role picker). The point of the rule is "no administrative
+# route is reachable without a server-side authorisation decision", and _require_admin was simply
+# the only decision that existed. The role endpoint makes a DIFFERENT and strictly narrower one:
+# roles.may_grant() refuses every role at or above the actor's own and refuses outright for any
+# role holding no invite permission, and roles.may_touch() confines a company administrator to
+# their own tenant. A platform administrator passes both, so nothing was opened; what changed is
+# that the route can be reached by a company administrator later without that being a code change
+# to this rule. Writing _require_admin there as well would make may_grant decoration.
+#
+# The exception is NAMED, one route at a time, and it must demonstrate its alternative. "This route
+# has its own policy" accepted as a free-text claim is how a weak check gets waved through.
+_POLICY_GATED = {
+    'post("/api/admin/users/{email}/role")': ("_roles.may_grant(", "_roles.may_touch("),
+}
+
+
 def test_every_admin_route_is_gated_server_side():
     """Grep the CODE, not the comments: the prose in this file legitimately discusses the rule."""
     src = _no_comments(_src("webapp/backend/app/main.py"))
     blocks = src.split("@app.")
     admin = [b for b in blocks if '"/api/admin' in b.split("\n")[0]]
     assert len(admin) >= 4, "expected the admin routes; found %d" % len(admin)
+    seen = set()
     for b in admin:
         route = b.split("\n")[0]
-        assert "_require_admin(request)" in b, "%s is not gated by _require_admin" % route
+        alt = _POLICY_GATED.get(route)
+        if alt is None:
+            assert "_require_admin(request)" in b, "%s is not gated by _require_admin" % route
+            continue
+        seen.add(route)
+        # An authenticated caller at minimum, THEN the policy. Either half alone is a hole:
+        # without _require_ready an anonymous caller reaches the policy with no role at all.
+        assert "_require_ready(request)" in b, "%s does not authenticate the caller" % route
+        for frag in alt:
+            assert frag in b, "%s claims a policy gate but never calls %s" % (route, frag)
+    missing = set(_POLICY_GATED) - seen
+    assert not missing, (
+        "a named exception no longer matches any route, so it is now a blanket hole: %s"
+        % sorted(missing))
 
 
 def test_the_forced_change_blocks_the_functional_endpoints():
@@ -545,3 +582,89 @@ def test_every_dockerfile_COPY_survives_BOTH_wiring_points():
     assert not unpacked, (
         "these COPY sources never reach the droplet - the pack list decides that, and it is a "
         "SEPARATE list from .dockerignore: %s" % sorted(unpacked))
+
+
+# ---------------------------------------------------------------------------------------------
+# 5. ROLES, THROUGH THE REAL REQUEST PATH. The greps above prove the policy is WRITTEN into the
+#    route; only these prove it is REACHED, and that the one thing the operator actually asked for
+#    works: assigning a role to the Colt addresses that cannot be removed and have no account here.
+# ---------------------------------------------------------------------------------------------
+def _role_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("USER_DB", str(tmp_path / "u.sqlite"))
+    import user_store
+    importlib.reload(user_store)
+    sys.path.insert(0, os.path.join(ROOT, "webapp", "backend"))
+    from app import main
+    monkeypatch.setattr(main, "user_store", user_store, raising=False)
+    return user_store
+
+
+def test_an_administrator_can_give_a_role_to_a_shared_password_user(tmp_path, monkeypatch):
+    us = _role_env(tmp_path, monkeypatch)
+    who = "armin.hall@colt.net"
+    assert not us.has_account(who), "the fixture is not the case under test"
+
+    r = _request("/api/admin/users/%s/role" % who, "POST", email="feranicus@s4biz.io",
+                 body={"role": "sales_rep"})
+    assert r["status"] == 200, "the administrator could not set a role (%d %r)" % (
+        r["status"], r["json"])
+    assert us.get_role(who) == "sales_rep"
+    # ...and the person did not lose the password they sign in with.
+    assert not us.has_account(who), "setting a role created a credential row"
+
+    # The listing now reports it, which is what the picker renders.
+    page = _request("/api/admin/users", "GET", email="feranicus@s4biz.io")
+    row = [u for u in page["json"]["users"] if u["email"] == who]
+    assert row and row[0]["role"] == "sales_rep", "the page does not show the role it just stored"
+    assert page["json"]["grantable"], "an administrator is offered no roles to grant"
+
+
+def test_a_role_nobody_defined_is_refused_through_the_route(tmp_path, monkeypatch):
+    _role_env(tmp_path, monkeypatch)
+    r = _request("/api/admin/users/x@colt.net/role", "POST", email="feranicus@s4biz.io",
+                 body={"role": "wizard"})
+    assert r["status"] in (400, 403), "an undefined role was accepted (%d)" % r["status"]
+
+
+def test_the_administrator_cannot_demote_themselves_or_the_committed_floor(tmp_path, monkeypatch):
+    _role_env(tmp_path, monkeypatch)
+    r = _request("/api/admin/users/feranicus@s4biz.io/role", "POST", email="feranicus@s4biz.io",
+                 body={"role": "user"})
+    assert r["status"] == 400, "an administrator demoted themselves (%d)" % r["status"]
+
+
+def test_an_ordinary_user_cannot_hand_out_a_role(tmp_path, monkeypatch):
+    """DENY BY DEFAULT through the real path. This route is gated by the policy rather than by
+    _require_admin, so this is the test that proves the policy is doing the refusing."""
+    us = _role_env(tmp_path, monkeypatch)
+    r = _request("/api/admin/users/victim@colt.net/role", "POST", email="someone.else@s4biz.io",
+                 body={"role": "admin"})
+    assert r["status"] == 403, "a plain user granted a role (%d %r)" % (r["status"], r["json"])
+    assert us.get_role("victim@colt.net") == "", "the refused grant was written anyway"
+
+
+def test_a_company_administrator_cannot_reach_outside_their_own_tenant(tmp_path, monkeypatch):
+    """may_touch, through the request. Same actor, two targets, one difference: the domain."""
+    us = _role_env(tmp_path, monkeypatch)
+    actor = "boss@colt.net"
+    assert us.set_role(actor, "company_admin") is True
+
+    ok = _request("/api/admin/users/colleague@colt.net/role", "POST", email=actor,
+                  body={"role": "sales_rep"})
+    assert ok["status"] == 200, "a company administrator cannot administer their own people (%d)" % (
+        ok["status"])
+
+    out = _request("/api/admin/users/stranger@example.org/role", "POST", email=actor,
+                   body={"role": "sales_rep"})
+    assert out["status"] == 403, "a company administrator reached another tenant (%d)" % out["status"]
+    assert us.get_role("stranger@example.org") == ""
+
+
+def test_nobody_can_grant_a_role_at_or_above_their_own(tmp_path, monkeypatch):
+    us = _role_env(tmp_path, monkeypatch)
+    actor = "boss@colt.net"
+    us.set_role(actor, "company_admin")
+    for want in ("admin", "s4biz_power", "company_admin"):
+        r = _request("/api/admin/users/colleague@colt.net/role", "POST", email=actor,
+                     body={"role": want})
+        assert r["status"] == 403, "a company administrator granted %s (%d)" % (want, r["status"])

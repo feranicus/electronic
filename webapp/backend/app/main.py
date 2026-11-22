@@ -354,8 +354,7 @@ def role_for(email: str) -> str:
     try:
         import roles as _roles
         import user_store as _us
-        row = _us.get(email) or {}
-        return _roles.role_of(email, row.get("role"))
+        return _roles.role_of(email, _us.get_role(email))
     except Exception:
         # A BROKEN STORE REFUSES rather than guesses, exactly as the password path does. The
         # least-privileged role is the safe answer; the admin floor above still applies.
@@ -818,7 +817,9 @@ def admin_users(request: Request):
     password, which is most of them today — and "who is registered" would then be a comforting
     subset rather than an answer.
     """
-    _require_admin(request)
+    me = _require_admin(request)
+    import roles as _roles
+    stored_roles = user_store.list_roles()
     accounts = {u["email"]: dict(u, source="assigned") for u in user_store.list_all()}
     # Everyone who has ever completed email + password + OTP. This is the de-facto register.
     for uid, rec in (getattr(AUTH, "authed", {}) or {}).items():
@@ -830,6 +831,14 @@ def admin_users(request: Request):
                                       "created_ts": None, "updated_ts": None, "created_by": "",
                                       "note": "", "source": "self-served"})
         row["last_login_ts"] = (rec or {}).get("ts")
+    # AND EVERYONE SOMEBODY HAS GIVEN A ROLE. Without this the page is built from credential rows
+    # plus people who have signed in SINCE THIS PROCESS STARTED, so assigning a role to somebody
+    # who has not logged in here makes them disappear from the only screen that could change it
+    # back. Found by a request-path test, not by reading: the write succeeded and the row was gone.
+    for e in stored_roles:
+        accounts.setdefault(e, {"email": e, "must_change": False, "disabled": False,
+                                "created_ts": None, "updated_ts": None, "created_by": "",
+                                "note": "", "source": "role-only", "last_login_ts": None})
     out = []
     for e, row in accounts.items():
         row.setdefault("last_login_ts", None)
@@ -837,15 +846,75 @@ def admin_users(request: Request):
         row["is_admin"] = colt_auth.is_admin(e)
         row["allowed"] = colt_auth.email_allowed(e)
         row["quota"] = colt_auth.quota_for(e)
+        # THE EFFECTIVE ROLE, never the raw column. An address on colt_auth.ADMIN_EMAILS is admin
+        # whatever the table says, and the page must show what the server will actually enforce or
+        # it is a different question's answer. `role_set` says whether somebody decided it.
+        row["role"] = _roles.role_of(e, stored_roles.get(e))
+        row["role_set"] = bool(stored_roles.get(e))
+        row["role_fixed"] = colt_auth.is_admin(e)      # the floor: cannot be changed from here
+        row["org"] = _roles.org_of(e)
         try:
             row["assessments"] = store.count_jobs(e)
         except Exception:
             row["assessments"] = None
         out.append(row)
     out.sort(key=lambda r: (not r["is_admin"], r["email"]))
+    # THE CATALOGUE AND THE GRANT LIST COME FROM THE SERVER, because the server is what enforces
+    # them. A picker built from a list hardcoded in the frontend would drift from roles.py the
+    # first time a role is added, and the drift would show up as a 403 the operator cannot explain.
+    my_role = role_for(me)
     return {"users": out, "store_ok": user_store.available(),
             "min_password_len": user_store.MIN_PASSWORD_LEN,
-            "shared_password_active": bool(colt_auth.COLT_PW)}
+            "shared_password_active": bool(colt_auth.COLT_PW),
+            "me": {"email": me, "role": my_role},
+            "roles": [{"key": k, "label": v["label"], "about": v["about"], "rank": v["rank"]}
+                      for k, v in sorted(_roles.ROLES.items(), key=lambda kv: kv[1]["rank"])],
+            "grantable": [k for k in _roles.ROLES if _roles.may_grant(my_role, k)]}
+
+
+class AdminRoleReq(BaseModel):
+    role: str = ""
+
+
+@app.post("/api/admin/users/{email}/role")
+def admin_set_role(email: str, req: AdminRoleReq, request: Request):
+    """Assign a role. Works for an address with no credential row, which is most of them.
+
+    THE POLICY IS NOT RE-STATED HERE. roles.may_grant() decides whether this actor may hand out
+    this role at all (it refuses upward and sideways grants, and refuses entirely for a role that
+    holds no invite permission), and roles.may_touch() decides whether this actor may administer
+    this particular person (a company administrator is confined to their own tenant). Both live in
+    roles.py; this route only carries the two refusals that are about THIS endpoint rather than
+    about the policy.
+    """
+    import roles as _roles
+    actor = _require_ready(request)
+    actor_role = role_for(actor)
+    target = (email or "").strip().lower()
+    want = (req.role or "").strip().lower()
+
+    # 1. NOBODY EDITS THEIR OWN ROLE. Not a privilege question - a recovery one. An administrator
+    #    who is not on the committed ADMIN_EMAILS floor could otherwise demote themselves out of
+    #    the page they would need in order to undo it, and nothing in the product could put it back.
+    if target == actor.strip().lower():
+        raise HTTPException(status_code=400, detail="you cannot change your own role")
+    # 2. THE COMMITTED FLOOR IS NOT EDITABLE HERE. colt_auth.ADMIN_EMAILS wins over any stored row
+    #    (roles.role_of), so writing one for such an address would store a value the server then
+    #    ignores, and the page would display a role nobody is actually being given.
+    if colt_auth.is_admin(target):
+        raise HTTPException(status_code=400,
+                            detail="%s is an administrator by configuration; change "
+                                   "colt_auth.ADMIN_EMAILS to alter that" % target)
+
+    effective = want or _roles.DEFAULT_ROLE
+    if not _roles.may_grant(actor_role, effective) or not _roles.may_touch(actor_role, actor, target):
+        _log(evt="role_denied", user=actor, role=actor_role, target=target, want=effective)
+        raise HTTPException(status_code=403,
+                            detail="a %s may not grant %s" % (actor_role, effective))
+    if not user_store.set_role(target, want, by=actor):
+        raise HTTPException(status_code=400, detail="could not record the role for %s" % target)
+    _log(evt="role_set", user=actor, role=actor_role, target=target, granted=effective)
+    return {"ok": True, "email": target, "role": _roles.role_of(target, want)}
 
 
 @app.post("/api/admin/users")

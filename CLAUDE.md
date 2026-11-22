@@ -2,22 +2,16 @@
 
 ## READ THIS FIRST — where the rest of this file went (2026-09-09)
 
-This file used to be **646 KB / 7,950 lines / 307 sections**. It is re-injected into the model's
-context on EVERY turn, so it was spending ~160,000 tokens before the operator typed anything, and
-that is what produced *"This conversation is too long to continue."*
-
-Nothing was deleted. The full narrative history — every incident, every root cause, every measured
-number, verbatim — is at:
+This file is re-injected into the model's context on EVERY turn, so at 646 KB it was spending
+~160,000 tokens before the operator typed anything — *"This conversation is too long to continue."*
+Nothing was deleted; every incident, root cause and measured number is verbatim at:
 
     docs/decisions/HISTORY-2026-07-to-2026-09-10.md
 
 **This file now carries only what must be true on EVERY turn**: the operating principles, the
-settled facts, and the defect classes as one-line rules. The history is the EVIDENCE for those
-rules and is read on demand, not on every turn.
-
-**HOW TO USE THE HISTORY.** When a rule below matters and you need the story — what broke, what was
-measured, which fixture proved it — `grep` the history file for the phrase in the rule. Every rule
-here was earned by an incident recorded there; searching for the key words in the rule finds it.
+settled facts, and the defect classes as one-line rules. The history is the EVIDENCE and is read on
+demand. **HOW TO USE IT:** `grep` it for the phrase in the rule — every rule here was earned by an
+incident recorded there, so the rule's own key words find the story.
 
 **HOW TO ADD TO IT.** A new incident goes in `docs/decisions/<YYYY-MM>.md`, in the same voice and
 detail as the history file. It gets **at most one line here**, and only if it is a rule that must
@@ -350,7 +344,7 @@ nameservers, and making a GHCR package public.
 | Production droplet | **64.225.108.200**, FRA1, **4 GB / 2 AMD vCPU / 80 GB** |
 | Its name lies | `ubuntu-s-1vcpu-1gb-fra1-01` is the size it was CREATED at. Read the spec, never the name. |
 | Staging twin | **165.245.244.174**, FRA1, same size/image/region deliberately |
-| Public sites on the shared proxy | **`estate.py` is the ONE HOME** (it had NINE, and the ninth - `recover.SITES` - kept godeyes.ai after retirement and failed the CI production gate on `4/5 endpoints answering`: a stale health check does not fail safe, it fails loud and blocks the release it protects). `LIVE` is what must answer, `RETIRED` is what caddyguard takes OFF the proxy on every ship - declarative, idempotent, no second command. cybergod.ai (+ /observe for Grafana) · jobhuntwow.com · s4biz.io. Retired Nov 2026: jev.best, both klimaanlage domains, godeyes.ai. |
+| Public sites on the shared proxy | **`estate.py` is the ONE HOME** - it had NINE, and the ninth (`recover.SITES`) kept godeyes.ai after retirement and failed the CI gate on `4/5 endpoints answering`: a stale health check does not fail safe, it fails loud and blocks the release it protects. Read the file, never a list here. `LIVE` must answer; `RETIRED` is what caddyguard takes OFF the proxy every ship - declarative, idempotent. |
 | Shared reverse proxy | `videodead-caddy-1` owns :443 for EVERY site. Its death is a total outage and never an application fault. |
 | cybergod.ai DNS | **GoDaddy**, and there is NO credential for it anywhere in this repo (MEASURED 19 Nov 2026: no env file holds one, `golive.secrets.env` does not exist, `cloudflare_setup.py` was never run). A new record is a console job. The only registrar this estate automates is INWX, in the Klima project. |
 | Engine images | The engine lives in BOTH `webapp/Dockerfile` (colt-web) and `assess-bot/Dockerfile` (colt-assessbot). Two delivery paths; update both. |
@@ -365,8 +359,7 @@ nameservers, and making a GHCR package public.
     s4biz.io             cd "...\S4biz new website"                python ship.py
     the whole fleet      cd "C:\Python SW\Linkedin Scraper"        python perseus.py --rollout
 
-`jhw.py deploy` is NOT a subcommand and never was. jev.best and klimaanlage ended in Nov 2026;
-their code, sidecars and vhosts are retired, and `estate.RETIRED` carries the dates.
+`jhw.py deploy` is NOT a subcommand and never was. Retired projects and their dates: `estate.RETIRED`.
 
 ## Diagnostic verbs (READ-ONLY, one ssh session each, from the operator's PC)
 
@@ -703,6 +696,11 @@ writing a check, a fixture or a diagnostic.
     job's own log, and believe the MEASUREMENT, never the label. What a person can start they can
     stop (owner-scoped; the KILL is the mechanism, not the DB write) and unbounded work gets a wall.
     [2026-11-11] `tests/test_job_cancel.py` · `docs/decisions/2026-11-stopping-a-run.md`
+58. **A ROLE IS NOT A CREDENTIAL AND MUST NOT LIVE IN THE CREDENTIAL ROW.** The people it is FOR
+    have no row (shared password, `pw_hash NOT NULL`), so a `users.role` column means inventing
+    one - `has_account()` turns true and TAKES THE SHARED PASSWORD AWAY. Own table; policy only
+    in `roles.py`; a listing merges role-only people or the person vanishes.
+    [2026-11-22] `tests/test_roles.py` · `docs/decisions/2026-11-roles.md`
 ---
 
 # WHAT LIVES WHERE (the map, so nothing has to be rediscovered)

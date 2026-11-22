@@ -46,6 +46,10 @@ export const adminSetUser = (email, password, mustChange = true, note = "") =>
 export const adminDisable = (email, disabled = true) =>
   postJSON(`/api/admin/users/${encodeURIComponent(email)}/disable?disabled=${disabled ? "true" : "false"}`, {});
 export const adminDeleteUser = (email) => delJSON(`/api/admin/users/${encodeURIComponent(email)}`);
+// The empty string clears the role, which is how somebody goes back to the default. The server
+// decides whether this actor may: the picker only OFFERS what /api/admin/users said is grantable.
+export const adminSetRole = (email, role) =>
+  postJSON(`/api/admin/users/${encodeURIComponent(email)}/role`, { role });
 
 // ---- White Label (Proteus) ----
 // getJSON-backed: the parsed body { active, brand?, max_logo_kb }.

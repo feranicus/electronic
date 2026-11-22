@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { adminUsers, adminSetUser, adminDisable, adminDeleteUser } from "../api.js";
+import { adminUsers, adminSetUser, adminDisable, adminDeleteUser, adminSetRole } from "../api.js";
 import { useT } from "../i18n";
 import Fleet from "./Fleet.jsx";
 
@@ -65,6 +65,17 @@ export default function Admin() {
     load();
   }
 
+  // THE ROLE OF SOMEBODY WITH NO PASSWORD ROW IS SETTABLE, and that is the point of the feature:
+  // every Colt address on this page signs in with the shared password and has no credential row at
+  // all. Roles live in their own table for exactly that reason, so this works on every row here.
+  async function setRole(u, role) {
+    setBusy(true); setErr("");
+    const r = await adminSetRole(u.email, role);
+    setBusy(false);
+    if (!r.ok) setErr((r.data && r.data.detail) || t("admin.saveFail"));
+    load();
+  }
+
   async function remove(u) {
     if (!window.confirm(t("admin.confirmRemove").replace("{email}", u.email))) return;
     setBusy(true);
@@ -76,6 +87,28 @@ export default function Admin() {
 
   const users = ((data && data.users) || []).filter(
     (u) => !q.trim() || u.email.includes(q.trim().toLowerCase()));
+
+  // THE KEY IS NEVER TRANSLATED, ONLY THE LABEL. Renaming an enum key at render time is the rule
+  // in CLAUDE.md and the reason for it is that a translated key stops matching and the row
+  // silently disappears. `admin`, `sales_rep` and the rest are what travels on the wire in both
+  // directions; this map only decides what the operator reads.
+  // One literal t() call per role on purpose: tools/i18n_catalogue.mjs resolves call sites
+  // statically, so a computed key would be invisible to the gate that proves every key exists.
+  const ROLE_LABEL = {
+    admin: t("admin.roleAdmin"),
+    s4biz_power: t("admin.roleS4bizPower"),
+    reseller_admin: t("admin.roleResellerAdmin"),
+    company_admin: t("admin.roleCompanyAdmin"),
+    presales: t("admin.rolePresales"),
+    sales_rep: t("admin.roleSalesRep"),
+    user: t("admin.roleUser"),
+  };
+  // DERIVED FROM THE SERVER, never from a list kept here. roles.py is the one home for the policy;
+  // a second copy in the frontend drifts the first time a role is added and the drift shows up as
+  // a 403 nobody can explain.
+  const catalogue = (data && data.roles) || [];
+  const grantable = new Set((data && data.grantable) || []);
+  const myEmail = ((data && data.me && data.me.email) || "").toLowerCase();
 
   return (
     <div className="page">
@@ -155,6 +188,7 @@ export default function Admin() {
           <thead>
             <tr>
               <th>{t("admin.colEmail")}</th>
+              <th>{t("admin.colRole")}</th>
               <th>{t("admin.colAccess")}</th>
               <th>{t("admin.colState")}</th>
               <th>{t("admin.colLast")}</th>
@@ -168,6 +202,25 @@ export default function Admin() {
                 <td>
                   {u.email}
                   {u.is_admin ? <span className="tag admin">{t("admin.tagAdmin")}</span> : null}
+                </td>
+                <td>
+                  {/* An address on the committed ADMIN_EMAILS floor is admin whatever the table
+                      says, so offering a picker for it would let the operator store a value the
+                      server then ignores. It reads, it does not edit. */}
+                  {u.role_fixed || u.email.toLowerCase() === myEmail ? (
+                    <span className="tag muted">{ROLE_LABEL[u.role] || u.role}</span>
+                  ) : (
+                    <select className="input admin-role" value={u.role} disabled={busy}
+                            aria-label={t("admin.colRole")}
+                            onChange={(e) => setRole(u, e.target.value === "user" ? "" : e.target.value)}>
+                      {catalogue.map((r) => (
+                        <option key={r.key} value={r.key}
+                                disabled={!grantable.has(r.key) && r.key !== u.role}>
+                          {ROLE_LABEL[r.key] || r.key}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </td>
                 <td>
                   {u.has_password
@@ -202,12 +255,13 @@ export default function Admin() {
               </tr>
             ))}
             {!users.length ? (
-              <tr><td colSpan="6" className="muted">{data ? t("admin.none") : t("admin.loading")}</td></tr>
+              <tr><td colSpan="7" className="muted">{data ? t("admin.none") : t("admin.loading")}</td></tr>
             ) : null}
           </tbody>
         </table>
       </div>
       <p className="hint">{t("admin.removeNote")}</p>
+      <p className="hint">{t("admin.roleNote")}</p>
       </>)}
     </div>
   );

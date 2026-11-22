@@ -94,10 +94,29 @@ def _conn():
                      created_by  TEXT,
                      note        TEXT
                  )""")
-    # MIGRATION, same shape as the `lang` column in store.py. CREATE TABLE IF NOT EXISTS will not
-    # add a column to a table the droplet already has, and without this every existing deployment
-    # 500s on the first read. A role column that defaults to '' means "no row said otherwise", and
-    # roles.role_of() turns that into the least-privileged role rather than into a crash.
+    # A ROLE IS NOT A CREDENTIAL, AND IT MUST NOT LIVE IN THE CREDENTIAL ROW.
+    #
+    # The first version of this put a `role` column on `users`. It cannot work, and the admin page
+    # is where it fails: most of the people on it - every Colt address, every partner on a trusted
+    # domain - have NO row here at all, because they sign in with the shared password. `users`
+    # requires pw_hash NOT NULL, so giving one of them a role would have meant inventing a
+    # credential row, and that row has two side effects nobody asked for: `has_account()` would
+    # start returning True, which takes the shared password away from them (i.e. assigning a role
+    # LOCKS THE PERSON OUT), and `_has_enabled_account()` in colt_auth would start treating it as
+    # an authorisation source in its own right. Naming somebody a Sales Rep is not an act of
+    # granting or revoking access and must not quietly be one.
+    #
+    # So roles get their own table, keyed by address, with no dependence on whether a password was
+    # ever issued. Reading it answers "what may this person do"; `users` answers "how do they prove
+    # who they are". The dead `role` column is still added below because the droplet already has
+    # it (it shipped on 22 Nov) and a schema that differs between boxes is its own class of bug;
+    # nothing reads it, and tests/test_roles.py fails the build if anything starts to.
+    c.execute("""CREATE TABLE IF NOT EXISTS user_roles (
+                     email      TEXT PRIMARY KEY,
+                     role       TEXT NOT NULL,
+                     updated_ts REAL,
+                     set_by     TEXT
+                 )""")
     _cols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
     if "role" not in _cols:
         c.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT ''")
@@ -229,25 +248,69 @@ def clear_must_change(email):
 
 
 def set_role(email, role, by=""):
-    """Record a role. The CALLER decides whether the actor is allowed to: roles.may_grant() and
-    roles.may_touch() answer that, and they live in roles.py so there is one home for the policy.
-    This function only writes, and it refuses a role the policy does not define - a typo must not
-    become a silent demotion to the default."""
+    """Record a role for ANY address, with or without a credential row.
+
+    The CALLER decides whether the actor is allowed to: roles.may_grant() and roles.may_touch()
+    answer that, and they live in roles.py so there is one home for the policy. This function only
+    writes, and it refuses a role the policy does not define - a typo must not become a silent
+    demotion to the default. The empty string CLEARS the row, which is how a person goes back to
+    the default role; that is a deletion rather than a stored "user" so the table says only what
+    somebody actually decided.
+    """
     import roles as _roles
+    e = _norm(email)
+    if not e or "@" not in e:
+        return False
     r = (role or "").strip().lower()
-    if r not in _roles.ROLES:
+    if r and r not in _roles.ROLES:
         return False
     try:
         c = _conn()
         try:
-            cur = c.execute("UPDATE users SET role=?, updated_ts=?, created_by=COALESCE(?, created_by) "
-                            "WHERE email=?", (r, time.time(), by or None, _norm(email)))
+            if not r:
+                c.execute("DELETE FROM user_roles WHERE email=?", (e,))
+            else:
+                c.execute("INSERT INTO user_roles (email, role, updated_ts, set_by) VALUES (?,?,?,?) "
+                          "ON CONFLICT(email) DO UPDATE SET role=excluded.role, "
+                          "updated_ts=excluded.updated_ts, set_by=excluded.set_by",
+                          (e, r, time.time(), by or ""))
             c.commit()
-            return cur.rowcount > 0
+            return True
         finally:
             c.close()
     except Exception:
         return False
+
+
+def get_role(email):
+    """The stored role, or '' when nobody has decided one.
+
+    Fails to '' rather than raising: roles.role_of() turns '' into the least-privileged role, so a
+    store we cannot read removes privilege instead of inventing it.
+    """
+    try:
+        c = _conn()
+        try:
+            row = c.execute("SELECT role FROM user_roles WHERE email=?", (_norm(email),)).fetchone()
+            return (row["role"] if row else "") or ""
+        finally:
+            c.close()
+    except Exception:
+        return ""
+
+
+def list_roles():
+    """{address: role} for everyone who has one. ONE query, because the admin listing needs the
+    role of every address on the page and N lookups over a shared sqlite file on a 4 GB droplet is
+    how a list page becomes a timeout."""
+    try:
+        c = _conn()
+        try:
+            return {r["email"]: r["role"] for r in c.execute("SELECT email, role FROM user_roles")}
+        finally:
+            c.close()
+    except Exception:
+        return {}
 
 
 def set_disabled(email, disabled=True):
@@ -274,13 +337,11 @@ def delete(email):
 def _row(r):
     # ANY NEW COLUMN MUST BE ADDED HERE TOO. This dict is hardcoded, so a column that is selected
     # but not listed is silently dropped between the database and the caller - exactly how `lang`
-    # was lost once already. `role` is read through roles.role_of() by the caller, never trusted
-    # raw, so a stale or misspelled value degrades to the least-privileged role.
-    k = r.keys()
+    # was lost once already. The ROLE is deliberately absent: it is not a property of a credential
+    # and most people who have one have no row here. get_role() is its one home.
     return {"email": r["email"], "must_change": bool(r["must_change"]),
             "disabled": bool(r["disabled"]), "created_ts": r["created_ts"],
-            "updated_ts": r["updated_ts"], "created_by": r["created_by"], "note": r["note"],
-            "role": (r["role"] if "role" in k and r["role"] else "")}
+            "updated_ts": r["updated_ts"], "created_by": r["created_by"], "note": r["note"]}
 
 
 def get(email):
@@ -288,7 +349,7 @@ def get(email):
         c = _conn()
         try:
             r = c.execute("""SELECT email, must_change, disabled, created_ts, updated_ts,
-                                    created_by, note, role FROM users WHERE email=?""",
+                                    created_by, note FROM users WHERE email=?""",
                           (_norm(email),)).fetchone()
             return _row(r) if r else None
         finally:
@@ -304,7 +365,7 @@ def list_all():
         c = _conn()
         try:
             rows = c.execute("""SELECT email, must_change, disabled, created_ts, updated_ts,
-                                       created_by, note, role FROM users ORDER BY email""").fetchall()
+                                       created_by, note FROM users ORDER BY email""").fetchall()
             return [_row(r) for r in rows]
         finally:
             c.close()
