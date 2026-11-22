@@ -58,7 +58,7 @@ var LANES=[
 var TOP=196, GAP=76;
 LANES.forEach(function(L,i){ L.y=TOP+i*GAP; L.fired=0; L.blocked=0; });
 
-var MODELS=["deepseek-3.2","llama-4-maverick","gemma-4-31B-it","kimi-k2.6"];
+var MODELS=["deepseek-v4.1-flash","llama-4-maverick","gemma-4-31B-it","kimi-k2.6"];
 
 /* ---- state ------------------------------------------------------------------------------- */
 var shots=[], bursts=[], ripples=[], floats=[], embers=[], friends=[];

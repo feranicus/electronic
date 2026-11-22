@@ -402,10 +402,16 @@ remote script travels in argv and the value on stdin — the two are mutually ex
 
 ## The model chain and its budget
 
-`enrich._FALLBACKS` = **deepseek-3.2 -> llama-4-maverick -> gemma-4-31B-it -> kimi-k2.6**, four
-vendors so no shared failure domain. It is the ONE home: compose must not restate it (ship.py fails
-the deploy if `- ENRICH_MODELS=` reappears) and ship.py deletes `ENRICH_MODEL`/`ENRICH_MODELS` from
-the droplet .env. `GET /api/diag` + `engine_config.py` report the EFFECTIVE config with provenance.
+`enrich._FALLBACKS` is the chain - read it, never retype it; four vendors so no shared failure
+domain. Compose must not restate it (ship.py fails the deploy if `- ENRICH_MODELS=` reappears) and
+ship.py deletes `ENRICH_MODEL`/`ENRICH_MODELS` from the droplet .env. `GET /api/diag` +
+`engine_config.py` report the EFFECTIVE config with provenance.
+**THE HEAD HAS ELEVEN OTHER HOMES** as a fallback default (shield_panel, release_notes, settings,
+quorum, proteus, audit_fp, author_geopol, cassandra-bot, patchwatch x2, defense.js) - separate
+deployables that cannot import it. `tests/test_model_chain.py` DERIVES that set, so a deprecation
+is one line plus a suite that names every straggler, not a grep. `modelcheck.py` asks the live
+catalogue BEFORE the deploy: a marketing name is not an API id (`deepseek-v4-flash` 404'd for
+days), and do_verify alone would find it only after production was running it. [2026-11-22]
 
 - Entitlement is not visibility: every `anthropic-*` and commercial `openai-gpt-*` returns **403**
   on this account. `model_watch.entitled()` skips probing them and says why.
@@ -420,17 +426,13 @@ the droplet .env. `GET /api/diag` + `engine_config.py` report the EFFECTIVE conf
   `enrich.MODEL_TOK_S` (measured 5-26 tok/s, NOT the 100 once assumed) x `TOKENS_PER_FINDING` 600:
   the whole-estate call is skipped when it cannot fit, shards are sized per model, and every run
   logs the rate it measured and flags a table >2x off. [AS37468: all 4 models 'failed' = arithmetic]
-- **Recon is bounded too**: `RECON_BUDGET_S` (default 300, ONE home `shodan_recon.ReconBudget`),
-  checked at loop boundaries only, fails OPEN, and a stop is `ident["recon_truncated"]` ->
-  `summary.partial_estate` -> the deck. A truncated scan never reads as "nothing else is exposed".
-  [caixabank.es, 22 min at 55%]
-- **So is the whole enrichment phase**: `ENRICH_WALL_S` (default 540, ONE home
-  `enrich_parallel.WALL_S_DEFAULT`) from the start of enrich.py; every shard AND retry is sized from
-  that deadline when it starts, a call under 45s is not issued, cut ids stay template text and
-  `target.enrich_truncated` says so. Two consecutive chain timeouts hand over to the shards. [AS37468]
-- **The model sees ONLY `enrich.slim_payload()`** (both paths, never `json.dumps(...)[:N]`), a shard
-  that cannot see its findings is not sent, and `enrich.grounded()` rejects prose naming nothing of
-  its finding (port, product, CVE, title word): template beats a confident wrong paragraph. [AS37468]
+- **Recon and enrichment are bounded too**, each with ONE home: `shodan_recon.ReconBudget` and
+  `enrich_parallel.WALL_S_DEFAULT`. A stop is reported (`recon_truncated` / `enrich_truncated`) and
+  reaches the deck - a truncated scan never reads as "nothing else is exposed". [caixabank.es,
+  AS37468]
+- **The model sees ONLY `enrich.slim_payload()`**; a blind shard is not sent, and
+  `enrich.grounded()` rejects prose naming nothing of its finding: a template beats a confident
+  wrong paragraph. [AS37468]
 - Cost: `llm_meter.py` at `enrich._call` — the ONE chokepoint, per-direction pricing, unknown model
   priced at the dearest rate we know, `allow()` checked BEFORE the request, fails OPEN on a storage
   fault and CLOSED on the budget. `spend_watch.py` compares a MEDIAN baseline against the DO

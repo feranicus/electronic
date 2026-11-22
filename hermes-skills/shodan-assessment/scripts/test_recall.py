@@ -280,7 +280,10 @@ check(_A._pick_auditor("deepseek-3.2", _chain4) != "deepseek-3.2",
 
 # When every available model wrote part of the deck there is no independent auditor, and the
 # honest answer is to refuse. Faking independence is worse than saying "unaudited".
-check(_A._pick_auditor(_chain4 + ["deepseek-3.2", "kimi-k2.6"], _chain4) is None,
+# DERIVE THE EXHAUSTIVE LIST (class 13: defeat every guard on the path). Retyping the last-resort
+# pair here meant the 22 Nov model change updated audit_fp and not this fixture, so the fixture no
+# longer covered the fallback and an auditor WAS found - the check passed its own mutation.
+check(_A._pick_auditor(_chain4 + list(_A.LAST_RESORT), _chain4) is None,
       "every model authored -> no auditor, the caller refuses rather than self-audits")
 
 # authors_of() is the ONE HOME, and it must read the SHARD record, not just the serial winner.
@@ -388,8 +391,19 @@ check(_sent.get("chat_template_kwargs") == {"enable_thinking": False},
 _E._call("x", model="deepseek-3.2", timeout=120)
 check("response_format" in _sent, "other models still get response_format=json_object")
 _E._post = _saved_post
-check(_E._FALLBACKS[0] == "deepseek-3.2",
-      "chain head is the model MEASURED fastest+valid on the real prompt, not the slowest")
+# DOCTRINE CORRECTED 22 Nov 2026, old reasoning kept because deleting it loses why (class 17).
+# This read:
+#     check(_E._FALLBACKS[0] == "deepseek-3.2",
+#           "chain head is the model MEASURED fastest+valid on the real prompt, not the slowest")
+# The head WAS chosen by measurement, and that principle stands. What ended it was DigitalOcean
+# deprecating deepseek-3.2; a vendor retiring a model is not a measurement, and pinning the test
+# to one id meant the retirement broke the suite instead of the chain telling us. What must stay
+# true is the property the pin was standing in for: the head is not the model measured SLOWEST.
+# kimi-k2.6 burned 164s of a 175s slice on ecolines.net and starved the next model, so it is last.
+check(_E._FALLBACKS[0] != "kimi-k2.6" and _E._FALLBACKS[-1] == "kimi-k2.6",
+      "the slowest measured model is last in the chain, never the head")
+check(_E._FALLBACKS[0] in _E.RATES,
+      "the chain head is priced; an unpriced head bills at the dearest rate we know")
 check(_E._FALLBACKS[-1].startswith("kimi"),
       "kimi is LAST - it burned 164s of a 175s slice on ecolines.net and starved the next model")
 
@@ -466,7 +480,7 @@ check(_rep4["shards"][0].get("tok_s") is not None,
 # WHO WROTE IT, carried to the auditor. Derived from the shards that RETURNED ids - a shard that
 # was PLANNED for a model and then failed authored nothing, and naming it would deny the deck an
 # auditor it is entitled to.
-check(_rep4.get("authors") == ["deepseek-3.2"],
+check(_rep4.get("authors") == [_E._FALLBACKS[0]],
       "the report names the model that actually wrote the prose (got %s)" % _rep4.get("authors"))
 
 def _fake_dead(text, model=None, timeout=None, max_tokens=None):

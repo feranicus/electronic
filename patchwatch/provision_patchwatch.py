@@ -197,7 +197,7 @@ def main():
         "DO_API_TOKEN": DO_TOKEN if drop_id else "", "DROPLET_ID": drop_id, "SNAPSHOT_KEEP": "3",
         "BACKUP_PATHS": "/etc /opt/colt-stack /root/colt-stack", "COMPOSE_PROJECT": "colt-stack",
         "OPENAI_BASE_URL": shared.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1"),
-        "PATCH_LLM_MODEL": shared.get("ENRICH_MODEL", "deepseek-3.2"),
+        "PATCH_LLM_MODEL": shared.get("ENRICH_MODEL", "deepseek-v4.1-flash"),
         "PATCH_TG_TOKEN": bot_token, "PATCH_TG_CHAT": chat,
         "PATCH_EVENTS_LOG": "/var/lib/docker/volumes/colt-stack_colt_events/_data/events.log",
     }

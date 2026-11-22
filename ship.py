@@ -2409,6 +2409,32 @@ def main():
     _stage_verdict = "not run (--no-stage)"
     _test_summary = "all suites passed (ship.py exits before deploying if any fail)"
 
+    # ---- DOES THE CHAIN WE ARE ABOUT TO SHIP EXIST? -----------------------------------------
+    #      modelcheck.py is a BUILDING BLOCK, not a second command (operating principle 7).
+    #      do_verify() already asserts this - in STEP 5, after the image is built, scanned, pushed
+    #      through staging and running in production. A model id that does not exist is therefore
+    #      found BY production, and the repair is a second full deploy. `deepseek-v4-flash` was
+    #      taken from DigitalOcean's pricing page, put at the head of the chain, and 404'd on every
+    #      assessment for days; a marketing name is not an API id, and the only authority on an API
+    #      id is the API. So the question is asked here, before anything moves.
+    #      An UNKNOWN (no key, catalog unreachable) is reported and does NOT block: this check must
+    #      not become a reason a release cannot ship when the gateway is the thing that is down.
+    try:
+        _mc = subprocess.run([sys.executable, os.path.join(HERE, 'modelcheck.py')],
+                             capture_output=True, text=True, encoding="utf-8",
+                             errors="replace", timeout=150)
+        for _l in ((_mc.stdout or '') + (_mc.stderr or '')).rstrip().splitlines():
+            print('  ' + _l.strip())
+        if _mc.returncode == 1:
+            sys.exit('[X] the enrichment chain names a model the inference API does not serve. '
+                     'Every assessment would waste a round-trip and silently degrade. Fix '
+                     'enrich.py::_FALLBACKS with the ids printed above, then ship again.')
+    except SystemExit:
+        raise
+    except Exception as _e:
+        print('  [!] model check skipped (%s) - the chain is UNVERIFIED, not verified.'
+              % type(_e).__name__)
+
     # ---- STAGING GATE — validate on the twin BEFORE production is touched -------------------
     #      The 2026-08-07 outage had no environment in which the change could be REBOOTED first.
     #      stagegate deploys to the staging droplet, health-checks it, reboots it, health-checks it

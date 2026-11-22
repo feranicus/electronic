@@ -78,6 +78,12 @@ def authors_of(tgt, chain):
     return out or ([chain[0]] if chain else [])
 
 
+# The vendors of last resort, when the chain itself cannot supply an independent auditor. Two
+# names, two vendors, and they must stay different from each other or the fallback is one model
+# twice. tests/test_model_chain.py asserts they track the live chain.
+LAST_RESORT = ("deepseek-v4.1-flash", "kimi-k2.6")
+
+
 def _pick_auditor(authors, chain):
     """Return a model GUARANTEED to differ from EVERY deck author — different vendor if possible,
     but at minimum a different model id. An audit by a model that wrote part of the deck is not an
@@ -105,13 +111,16 @@ def _pick_auditor(authors, chain):
     for m in chain:
         if ok(m):
             return m
-    # 3) last resort: a hard-coded alternative from another vendor
+    # 3) last resort: a hard-coded alternative from another vendor.
     # The last resort used to be a literal naming two retired models, so on the bancobic.ao run
-    # the auditor resolved to nothing and the deck shipped with verdict "unaudited".
-    for m in (list(chain or []) + ["deepseek-3.2", "kimi-k2.6"]):
+    # the auditor resolved to nothing and the deck shipped with verdict "unaudited". It was then
+    # written out TWICE in this function, which is the same defect one scale smaller: the 22 Nov
+    # deepseek deprecation changed one copy, the test that exhausts this list kept the other, and
+    # "every model authored -> refuse" started finding an auditor. ONE HOME, and the test reads it.
+    for m in (list(chain or []) + list(LAST_RESORT)):
         if ok(m) and _vendor(m) not in avs:
             return m
-    for m in ["deepseek-3.2", "kimi-k2.6"]:
+    for m in LAST_RESORT:
         if ok(m):
             return m
     return None                                        # the caller REFUSES rather than fakes it
@@ -133,7 +142,7 @@ def audit(fj):
     try:
         sys.path.insert(0, HERE)
         import enrich as E
-        chain = E._chain() or ["deepseek-3.2"]
+        chain = E._chain() or ["deepseek-v4.1-flash"]
         # the ACTUAL deck author — the model that WON enrichment after any failover, not the chain
         # head. run_assessment records it as target.qwen.model.
         authors = authors_of(tgt, chain)

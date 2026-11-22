@@ -21,7 +21,7 @@ AUTHFILE  = os.environ.get("AUTH_STORE", os.path.join(os.path.dirname(EVENTS), "
 # ---------------- DeepSeek (DO serverless) ----------------
 BASE    = os.environ.get("OPENAI_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
 KEY     = os.environ.get("OPENAI_API_KEY", "")
-MODEL    = os.environ.get("ASSIST_MODEL", "deepseek-3.2")
+MODEL    = os.environ.get("ASSIST_MODEL", "deepseek-v4.1-flash")
 FALLBACK = os.environ.get("ASSIST_FALLBACK_MODEL", "openai-gpt-oss-120b")  # fast, reliable backup
 TIMEOUT  = int(os.environ.get("ASSIST_TIMEOUT", "60"))
 MAXTOK   = int(os.environ.get("ASSIST_MAX_TOKENS", "1200"))

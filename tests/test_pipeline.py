@@ -681,3 +681,64 @@ def test_the_timer_is_installed_by_ship_and_not_by_the_operator():
     # A TIMER POINTED AT A MISSING CONTAINER fires every 15 minutes and fails every time, which
     # teaches the operator to ignore systemd.
     assert "refusing to enable a timer that cannot work" in ms
+
+
+# ---------------------------------------------------------------------------------------------
+# 7. THE MANUAL MUST NOT DRIFT. A document that states a threshold the code stopped using is
+#    worse than no document: somebody reads it, believes it, and debugs the wrong thing. Same
+#    class as a rule that is only written down - which is why CLAUDE.md has a build gate too.
+# ---------------------------------------------------------------------------------------------
+MANUAL = os.path.join(ROOT, "docs", "PIPELINE_MAIL.md")
+
+
+def _manual():
+    return io.open(MANUAL, encoding="utf-8").read()
+
+
+def test_every_number_in_the_manual_is_the_number_the_code_uses():
+    sys.path.insert(0, BACKEND)
+    from app import dealmatch, gmail_read
+    doc = _manual()
+    for name, value, shown in (
+            ("MIN_SCORE", dealmatch.MIN_SCORE, "`MIN_SCORE` %d" % dealmatch.MIN_SCORE),
+            ("WINDOW_DAYS", dealmatch.WINDOW_DAYS, "`WINDOW_DAYS` %d" % dealmatch.WINDOW_DAYS),
+            ("LOOKBACK_DAYS", gmail_read.LOOKBACK_DAYS,
+             "`LOOKBACK_DAYS` %d" % gmail_read.LOOKBACK_DAYS),
+            ("MAX_MESSAGES", gmail_read.MAX_MESSAGES,
+             "`MAX_MESSAGES` %d" % gmail_read.MAX_MESSAGES)):
+        assert shown in doc, (
+            "the manual does not state the live value of %s (%r). Change the doc in the same "
+            "change as the code." % (name, value))
+
+
+def test_the_points_table_matches_the_scoring_code():
+    """DERIVE N FROM SOMETHING AUTHORITATIVE (class 35). Counting the rows by hand is how the
+    manual ended up with six when the code had seven - the two forms of the domain signal were
+    collapsed into one line, which reads fine and is wrong."""
+    import re
+    src = io.open(os.path.join(ROOT, "webapp", "backend", "app", "dealmatch.py"),
+                  encoding="utf-8").read()
+    code = sorted(int(m) for m in re.findall(r"sc \+= (\d)", src))
+    table = sorted(int(m) for m in re.findall(r"^\| (\d) \|", _manual(), re.M))
+    assert code == table, (
+        "the manual's points table and the scoring code disagree: code=%s doc=%s" % (code, table))
+
+
+def test_the_manual_describes_roles_that_exist():
+    import roles
+    doc = _manual()
+    for key in ("admin", "s4biz_power", "reseller_admin", "sales_rep"):
+        assert roles.ROLES[key]["label"] in doc, (
+            "%s is in the code and not in the manual's who-can-do-what table" % key)
+    for verb in ("pipeline.view", "pipeline.edit", "pipeline.admin"):
+        assert verb in doc, "%s is not explained anywhere in the manual" % verb
+
+
+def test_the_manual_does_not_promise_a_scope_we_do_not_hold():
+    """The scope the manual tells a domain admin to grant must be the scope the code asks for; a
+    manual that names the wrong one sends them to grant something we never use."""
+    sys.path.insert(0, BACKEND)
+    from app import gmail_read
+    doc = _manual()
+    assert gmail_read.SCOPE in doc, "the manual names a different scope than the code requests"
+    assert "gmail.modify" not in doc, "the manual asks for a write scope nothing here needs"

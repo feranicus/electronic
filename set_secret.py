@@ -95,11 +95,35 @@ def remote_command(name):
             "bash \"$S\" '%s'; rc=$?; rm -f \"$S\"; exit $rc" % (b64, name))
 
 
+# ONE CREDENTIAL, TWO NAMES - so setting one of them is how the stale twin is born.
+#
+# The engine resolves its inference key by trying OPENAI_API_KEY then DO_INFERENCE_KEY, and
+# enrich.py carries the scar in a comment: `set_secret.py OPENAI_API_KEY` installed a NEW key while
+# the OLD one stayed parked in DO_INFERENCE_KEY, the file-order resolver picked the stale one, and
+# the bake-off's own fingerprint proved it (3c6b3a6a832e vs 5847c2bbe7cd). Writing one name and
+# leaving the other is not a half-done job, it is a credential that looks right and silently is
+# not. So either name writes BOTH, and the warning about divergent twins can no longer be reached
+# through this script.
+TWINS = {"OPENAI_API_KEY", "DO_INFERENCE_KEY"}
+
+
+def names_for(name):
+    """Every name this value must be written under. One home for 'which names mean the key'."""
+    return sorted(TWINS) if name in TWINS else [name]
+
+
 def run(name, value):
-    upsert_local(name, value)                     # local first: it is what deploy.py ships
-    r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), remote_command(name)],
-                       input=value.encode("utf-8"))   # VALUE only on stdin, never in argv
-    return r.returncode
+    rc = 0
+    targets = names_for(name)
+    if len(targets) > 1:
+        print("   note   : %s is the inference key, which the engine reads under %s - writing "
+              "both so neither can go stale." % (name, " and ".join(targets)))
+    for n in targets:
+        upsert_local(n, value)                    # local first: it is what deploy.py ships
+        r = subprocess.run(SSH + ["%s@%s" % (USER, HOST), remote_command(n)],
+                           input=value.encode("utf-8"))  # VALUE only on stdin, never in argv
+        rc = rc or r.returncode
+    return rc
 
 
 def main():

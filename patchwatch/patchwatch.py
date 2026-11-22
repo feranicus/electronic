@@ -53,7 +53,7 @@ COMPOSE_PROJECT = env("COMPOSE_PROJECT", "colt-stack")
 # LLM digest (reuse the DO serverless inference you already run)
 LLM_KEY   = env("OPENAI_API_KEY")
 LLM_BASE  = env("OPENAI_BASE_URL", "https://inference.do-ai.run/v1")
-LLM_MODEL = env("PATCH_LLM_MODEL", env("ENRICH_MODEL", "deepseek-3.2"))
+LLM_MODEL = env("PATCH_LLM_MODEL", env("ENRICH_MODEL", "deepseek-v4.1-flash"))
 LLM_TIMEOUT = int(env("PATCH_LLM_TIMEOUT", "120"))
 
 # Telegram digest

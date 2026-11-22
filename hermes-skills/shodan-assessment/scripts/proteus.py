@@ -618,7 +618,7 @@ _E = _load_enrich(os.path.join(os.path.dirname(os.path.abspath(__file__)), "enri
 try:
     PANEL = list(getattr(_E, "MODELS", None) or getattr(_E, "_FALLBACKS"))
 except Exception as _e:                                    # never degrade in silence
-    PANEL = ["deepseek-3.2", "kimi-k2.6"]
+    PANEL = ["deepseek-v4.1-flash", "kimi-k2.6"]
     print("[proteus] !! could not read the model chain (%s); panel is SHORT: %s"
           % (type(_e).__name__, ", ".join(PANEL)), file=sys.stderr)
 

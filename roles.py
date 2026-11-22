@@ -43,7 +43,8 @@ PERMISSIONS = {
     "brand.manage":      "set the white-label branding used on their company's documents",
     "pipeline.view":     "open the channel pipeline",
     "pipeline.edit":     "move a deal, write an update, attach a file",
-    "pipeline.admin":    "edit anybody's deal and change the stage list",
+    "pipeline.admin":    "read the connected mailboxes into the board, and re-file a message by "
+                         "hand onto a different deal",
     "users.invite.org":  "create and disable accounts INSIDE their own company",
     "users.invite.any":  "create accounts in any company, and create companies",
     "users.manage.all":  "create, disable and delete any account anywhere",
