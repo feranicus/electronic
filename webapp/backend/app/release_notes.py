@@ -60,7 +60,7 @@ def _chain_or(default):
     return list(default)
 
 
-MODELS = _chain_or(["deepseek-v4.1-flash", "kimi-k2.6"])
+MODELS = _chain_or(["deepseek-v4.1-flash-1017", "kimi-k2.6"])
 
 PROMPT = """You are writing the release notes for cybergod.ai, an external cyber-risk and
 compliance assessment platform. You are one of four models writing them independently; your text

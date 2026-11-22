@@ -207,6 +207,40 @@ override is a bug, and this one had no escape hatch: the chain is built to degra
 head is a tax on every call, not an outage, and it must not be the reason a release cannot ship
 once the operator has read the evidence.
 
+## The answer: they are two different models
+
+With the NEAR line finally printing, the gateway's deepseek offering is:
+
+    deepseek-3.2, deepseek-v4-flash-0731, deepseek-v4-pro, deepseek-v4-pro-0813,
+    deepseek-v4.1-flash, deepseek-v4.1-flash-1017
+
+`deepseek-v4.1-flash` and `deepseek-v4.1-flash-1017` are **two separate models**, not an id and
+its dated snapshot. The operator's key grants, by its console entry: Deepseek 3.2, **DeepSeek V4.1
+Flash 1017**, Kimi K2.6, Ministral 3 14B, OpenAI GPT-oss-120b — which is exactly the three models
+that answered plus the one that did not. The chain was calling `deepseek-v4.1-flash`. The key
+grants `deepseek-v4.1-flash-1017`. The 403 was correct every single time.
+
+**The reasoning that put the wrong one in was recorded in this very file**, under "The id, and why
+I did not take it from the email": *"DigitalOcean serves dated snapshots while the callable id is
+undated — `deepseek-3.2-0813` is the dated form of `deepseek-3.2`. '1017' is the snapshot, not the
+id."* That generalised from one model to another and was wrong, and it was written down
+confidently enough that three later diagnoses took it as settled and went looking at credentials
+instead. A reasoned conclusion recorded beside measured facts gets read as a measured fact.
+
+**Two separate checks could each have ended this on day one and neither did**, for the same
+reason: both treated "the id is listed" as "the id is right".
+
+  * `modelcheck` computed `visible` and never read it, then announced entitlement (class 7).
+  * The NEAR line printed only on a 404, so the 403 path never showed the sibling ids at all.
+
+The verdict now says only what /models can support — the gateway serves this id, therefore it is
+not a typo, and that is *not* evidence about entitlement, because the catalogue returns 78 models
+while this key grants 5. Then each sibling is **called**, and the ones that answer are named. It
+still does not pick a model: `deepseek-v4-flash` got in because a name looked right, and a
+resolver that quietly chose the closest entry would be that mistake with more machinery.
+
+Four mutations, four caught, including reverting the verdict to the line that claimed entitlement.
+
 ## Mistakes made while doing this
 
 **I rewrote history.** The bulk rename skipped lines starting with `#` and `//` but not

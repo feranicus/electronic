@@ -37,7 +37,7 @@ COMPLIANCE_ENGINE = os.getenv("COMPLIANCE_ENGINE") or str(Path(ENGINE).with_name
 # --- assistant (cassandra / DeepSeek on DO serverless) ---
 OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://inference.do-ai.run/v1").rstrip("/")
-ASSIST_MODEL    = os.getenv("ASSIST_MODEL", os.getenv("ENRICH_MODEL", "deepseek-v4.1-flash"))
+ASSIST_MODEL    = os.getenv("ASSIST_MODEL", os.getenv("ENRICH_MODEL", "deepseek-v4.1-flash-1017"))
 ASSIST_FALLBACK = os.getenv("ASSIST_FALLBACK_MODEL", "openai-gpt-oss-120b")
 ASSIST_TIMEOUT  = int(os.getenv("ASSIST_TIMEOUT", "60"))
 ASSIST_MAX_TOKENS = int(os.getenv("ASSIST_MAX_TOKENS", "1200"))

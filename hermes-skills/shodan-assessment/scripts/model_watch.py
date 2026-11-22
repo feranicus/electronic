@@ -155,7 +155,8 @@ PRICES = {
     "reflection-beam":    (0.40,  1.20),   # Reflection AI
     "minimax-m2.5":       (0.30,  1.20),   # MiniMax, public preview -> own lifecycle risk
     # --- same vendor as the head: usable, but they do NOT restore the four-vendor hedge -------
-    "deepseek-v4.1-flash": (0.30, 1.20),   # DO's recommended successor to llama-4-maverick
+    "deepseek-v4.1-flash": (0.30, 1.20),        # served, but a DIFFERENT model from 1017
+    "deepseek-v4.1-flash-1017": (0.30, 1.20),   # the chain head: the one the key grants
     "deepseek-4-flash":   (0.14,  0.28),
     "deepseek-v4-pro":    (1.74,  3.48),
     # --- OpenAI open-weights: DO flags no reasoning, upstream is harmony-format. MEASURE first -

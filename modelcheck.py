@@ -122,14 +122,19 @@ for i, m in enumerate(want):
         # and unused two lines above. It cost an evening: the operator was sent to the
         # DigitalOcean console to grant a model to a key that already had five, when the catalogue
         # answer was sitting in the same function.
+        # DO NOT OVERCLAIM FROM /models. MEASURED on this account: the catalogue returns 78
+        # models while the key's console entry grants 5, so /models is the GATEWAY's list, not
+        # this key's. "It is in the catalogue" therefore proves the id EXISTS and proves nothing
+        # about entitlement - and saying otherwise is what sent the operator to grant a model he
+        # had already granted.
         if visible:
-            print("FORBIDDEN %-24s IS in this key's catalogue, so the id is right and the key is "
-                  "NOT entitled. %s" % (m, detail))
-            bad.append((m, i, "entitlement"))
+            print("FORBIDDEN %-24s the gateway serves this id, so it is not a typo - but /models "
+                  "is the gateway's list, not this key's, so this does NOT prove entitlement. %s"
+                  % (m, detail))
         else:
-            print("FORBIDDEN %-24s and it is NOT in the catalogue this key can see - so this is "
-                  "very likely the WRONG ID, answered 403 rather than 404. %s" % (m, detail))
-            bad.append((m, i, "id"))
+            print("FORBIDDEN %-24s and the gateway does not serve this id at all - a WRONG ID "
+                  "answered 403 rather than 404. %s" % (m, detail))
+        bad.append((m, i, "id"))
     elif code == 404 or not visible:
         print("MISSING %-26s not served under this id. %s" % (m, detail))
         bad.append((m, i, "id"))
@@ -141,14 +146,35 @@ for i, m in enumerate(want):
         print("UNKNOWN %-26s HTTP %s %s" % (m, code, detail))
         bad.append((m, i, "unknown"))
 
-# PRINT THE EVIDENCE FOR EVERY BAD MODEL, not only the ones already judged to be a wrong id.
-# The ids this key can actually see are what settle "wrong id" versus "not entitled", and leaving
-# them out on a 403 is what turned a one-line answer into an evening of guessing.
+# THE SIBLINGS ARE NOT SNAPSHOTS, THEY ARE SEPARATE MODELS, and only a call can tell you which
+# one this key may use. MEASURED: the gateway serves BOTH `deepseek-v4.1-flash` and
+# `deepseek-v4.1-flash-1017`; the console granted the 1017 one; the chain called the other and got
+# 403 for two days while every diagnosis argued about credentials.
+#
+# THIS DOES NOT PICK A MODEL. `deepseek-v4-flash` got into the chain because a name looked right,
+# and a resolver that silently chose the "closest" entry would be that mistake with more
+# machinery. It CALLS each sibling and REPORTS which ones answer. A person still edits the chain.
 for m, i, why in bad:
     stem = m.split("-")[0].lower()
-    near = [x for x in ids if x.lower().startswith(stem)]
-    print("NEAR    %s -> this key sees: %s"
-          % (m, ", ".join(near) if near else "(nothing from that vendor)"))
+    near = [x for x in ids if x.lower().startswith(stem) and x != m]
+    if not near:
+        print("NEAR    %s -> the gateway serves nothing else from that vendor" % m)
+        continue
+    print("NEAR    %s -> the gateway also serves: %s" % (m, ", ".join(near)))
+    usable = []
+    for alt in near:
+        acode, _ = call(alt)
+        mark = "USABLE  " if acode in (200, 201, 400) else "HTTP %-3s" % acode
+        print("        %s %s" % (mark, alt))
+        if acode in (200, 201, 400):
+            usable.append(alt)
+    if usable:
+        print("        -> THIS KEY CAN CALL: %s" % ", ".join(usable))
+        print("        -> if one of those is the model you granted, put it in "
+              "enrich.py::_FALLBACKS - the id you asked for is a DIFFERENT model.")
+    else:
+        print("        -> this key cannot call ANY of them, so the grant is the problem, not the "
+              "id (DigitalOcean console -> the model access key -> model list).")
 
 # THE HEAD IS DIFFERENT FROM THE REST. The chain is built to degrade, so an unusable model at
 # position 2+ is a warning. An unusable HEAD costs every single call a wasted round-trip before

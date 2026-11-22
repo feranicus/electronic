@@ -94,7 +94,7 @@ def _panel():
         # which exists on the droplet and nowhere else, so every run off the droplet quietly
         # produced a TWO model panel and called it a quorum. A panel that is short without saying
         # so is worse than one that fails: the gate still returns a verdict.
-        c = ["deepseek-v4.1-flash", "kimi-k2.6"]
+        c = ["deepseek-v4.1-flash-1017", "kimi-k2.6"]
         print("[quorum] !! could not read the model chain (%s: %s); falling back to %s. The panel "
               "is SHORT and this verdict carries less weight than a full quorum."
               % (type(_e).__name__, _e, ", ".join(c)), file=_s.stderr)

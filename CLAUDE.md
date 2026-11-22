@@ -398,10 +398,9 @@ an authorisation act; it fails CLOSED and can only ever ADD). Extend without cod
 `python set_secret.py NAME` — value on **stdin**, never argv (`bash -s` reads its SCRIPT from
 stdin; the script travels in argv).
 **A CREDENTIAL HAS AS MANY HOMES AS SOMEBODY GAVE IT; A CONTAINER'S ENV IS BAKED AT CREATION** (a
-stale key 403s like a wrong model id): homes local+droplet DERIVED from `BOTS_SECRETS`, others
-NAMED not written, consumers **recreated** not restarted, per SERVICE by
-label (per FILE, reuse.yml beats ghcr.yml and swaps the scanned artifact), `colt-stack` only,
-image ref printed. `test_secret_homes`
+stale key 403s like a wrong id): homes DERIVED from `BOTS_SECRETS`, others NAMED not written,
+consumers **recreated** not restarted, per SERVICE by label (per FILE, reuse.yml beats ghcr.yml
+and swaps the scanned artifact), `colt-stack` only. `test_secret_homes`
 
 ## The model chain and its budget
 
@@ -412,9 +411,10 @@ ship.py deletes `ENRICH_MODEL`/`ENRICH_MODELS` from the droplet .env. `GET /api/
 **THE HEAD HAS ELEVEN OTHER HOMES** as a fallback default - separate deployables that cannot import
 it; read `test_model_chain.HEAD_HOMES`, never a list here (class 32). That suite DERIVES the set
 from the whole tree and names every straggler, so a deprecation is one line, not a grep.
-`modelcheck.py` asks the live
-catalogue BEFORE the deploy: a marketing name is not an API id (`deepseek-v4-flash` 404'd for
-days), and do_verify alone would find it only after production was running it. [2026-11-22]
+`modelcheck.py` CALLS every chain model
+before deploying: **LISTED IS NOT CALLABLE** (/models is the gateway, not the key) and
+**a suffix is a DIFFERENT MODEL** (`-v4.1-flash` vs `-1017` cost 2 days): it calls siblings and
+NAMES the usable one, never picks.
 
 - Entitlement is not visibility: every `anthropic-*` and commercial `openai-gpt-*` returns **403**
   on this account. `model_watch.entitled()` skips probing them and says why.

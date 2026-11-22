@@ -84,7 +84,7 @@ HERE  = os.path.dirname(os.path.abspath(__file__))
 # or a 404 for the life of the process, so a wrong guess costs ONE round trip per run and the
 # chain degrades to the two proven models. Leaving the dead ids in place cost far more than that.
 # Replace either one with whatever `python ship.py --model-bakeoff` measures.
-_FALLBACKS = ["deepseek-v4.1-flash", "openai-gpt-oss-120b", "mistral-3-14B", "kimi-k2.6"]
+_FALLBACKS = ["deepseek-v4.1-flash-1017", "openai-gpt-oss-120b", "mistral-3-14B", "kimi-k2.6"]
 
 # MODELS WE HAVE MEASURED AND REFUSED, as DATA rather than as a sentence in a comment.
 #
@@ -1225,6 +1225,7 @@ RATES = {
     # successor. $0.30 in / $1.20 out per 1M, from the deprecation notice - the same pair
     # model_watch.MODEL_PRICES already carried for this id, which is why they agree.
     "deepseek-v4.1-flash": (0.30, 1.20),
+    "deepseek-v4.1-flash-1017": (0.30, 1.20),
     "deepseek-3.2":        (0.425, 1.360),      # kept: historical rows in the ledger price on it
     "deepseek-4-flash":    (0.112, 0.224),
     "llama-4-maverick":    (0.250, 0.850),

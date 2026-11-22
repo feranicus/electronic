@@ -81,7 +81,7 @@ def authors_of(tgt, chain):
 # The vendors of last resort, when the chain itself cannot supply an independent auditor. Two
 # names, two vendors, and they must stay different from each other or the fallback is one model
 # twice. tests/test_model_chain.py asserts they track the live chain.
-LAST_RESORT = ("deepseek-v4.1-flash", "kimi-k2.6")
+LAST_RESORT = ("deepseek-v4.1-flash-1017", "kimi-k2.6")
 
 
 def _pick_auditor(authors, chain):
@@ -142,7 +142,7 @@ def audit(fj):
     try:
         sys.path.insert(0, HERE)
         import enrich as E
-        chain = E._chain() or ["deepseek-v4.1-flash"]
+        chain = E._chain() or ["deepseek-v4.1-flash-1017"]
         # the ACTUAL deck author — the model that WON enrichment after any failover, not the chain
         # head. run_assessment records it as target.qwen.model.
         authors = authors_of(tgt, chain)

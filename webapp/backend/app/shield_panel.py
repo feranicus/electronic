@@ -27,7 +27,7 @@ import sys
 
 sys.path.insert(0, "/opt/shodan-skill/scripts")
 
-MODELS = ["deepseek-v4.1-flash", "llama-4-maverick", "gemma-4-31B-it", "kimi-k2.6"]
+MODELS = ["deepseek-v4.1-flash-1017", "llama-4-maverick", "gemma-4-31B-it", "kimi-k2.6"]
 QUORUM = 3          # of 4 must agree on a direction before any threshold moves
 
 try:

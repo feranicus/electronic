@@ -108,11 +108,18 @@ def test_the_verint_failure_is_caught_and_named_as_entitlement():
     rc, out = _run(CHAIN, {"deepseek-v4.1-flash": 403}, ALL_VISIBLE)
     assert rc == 1, out
     assert "FORBIDDEN" in out and "deepseek-v4.1-flash" in out, out
-    assert "not entitled" in out.lower(), out
     assert "MISSING" not in out, "a 403 was reported as a missing id - the opposite repair"
-    assert "IS in this key's catalogue" in out, (
-        "the verdict does not say the catalogue was consulted, so it reads the same whether or "
-        "not it was - see the next test for what that cost")
+    # THE DOCTRINE WAS CORRECTED, AND THE OLD LINE IS KEPT HERE SO THE REASON SURVIVES (class 17).
+    # This used to assert the verdict said "not entitled":
+    #     assert "not entitled" in out.lower()
+    # It was wrong, and it was wrong in the direction that costs days. MEASURED on this account:
+    # /models returns 78 models while the key's console entry grants 5, so the catalogue is the
+    # GATEWAY's list, not the key's. Seeing an id there proves it EXISTS and says nothing about
+    # entitlement, so a check that announced "the key is not entitled" was stating a conclusion it
+    # had no evidence for - and it sent the operator to grant a model he had already granted.
+    assert "does NOT prove entitlement" in out, (
+        "the verdict claims to know why the 403 happened. /models cannot tell you that:\n" + out)
+    assert "the gateway serves this id" in out, out
 
 
 def test_a_403_on_a_model_the_key_cannot_SEE_is_called_a_wrong_id():
@@ -127,13 +134,48 @@ def test_a_403_on_a_model_the_key_cannot_SEE_is_called_a_wrong_id():
     catalog = [m for m in ALL_VISIBLE if m != "deepseek-v4.1-flash"] + ["deepseek-v4.1-flash-1017"]
     rc, out = _run(CHAIN, {"deepseek-v4.1-flash": 403}, catalog)
     assert rc == 1, out
-    assert "NOT in the catalogue" in out, (
-        "a 403 on an id this key cannot even see was still reported as an entitlement problem:\n"
+    assert "does not serve this id at all" in out, (
+        "a 403 on an id the gateway does not serve was still reported as an entitlement problem:\n"
         + out)
     assert "WRONG ID" in out, out
     assert "deepseek-v4.1-flash-1017" in out, (
-        "it did not print the deepseek ids this key DOES see, which is the one thing that names "
-        "the repair:\n" + out)
+        "it did not print the deepseek ids the gateway DOES serve, which is the one thing that "
+        "names the repair:\n" + out)
+
+
+def test_the_siblings_are_CALLED_and_the_usable_one_is_named():
+    """THE ANSWER, AND WHY IT TOOK TWO DAYS (22 Nov 2026). The gateway serves BOTH
+    `deepseek-v4.1-flash` and `deepseek-v4.1-flash-1017`. They are not an id and its snapshot -
+    they are two separate models, and the DigitalOcean console granted the 1017 one while the
+    chain called the other. Every diagnosis in between argued about credentials, because listing
+    the id was treated as proof the id was right.
+
+    Listing the siblings is not enough either: only a CALL distinguishes the one this key may use.
+    So each is called and the usable ones are named.
+
+    IT STILL DOES NOT PICK A MODEL. `deepseek-v4-flash` got into the chain because a name looked
+    right; a resolver that silently chose the closest entry would be that mistake with more
+    machinery. A person edits the chain."""
+    catalog = ALL_VISIBLE + ["deepseek-v4.1-flash-1017"]
+    codes = {"deepseek-v4.1-flash": 403, "deepseek-3.2": 403}
+    rc, out = _run(CHAIN, codes, catalog)
+    assert rc == 1, out
+    assert "USABLE   deepseek-v4.1-flash-1017" in out, (
+        "the sibling was never called, so 'which deepseek may this key use' stays unanswered:\n"
+        + out)
+    assert "THIS KEY CAN CALL: deepseek-v4.1-flash-1017" in out, out
+    assert "deepseek-3.2" not in out.split("THIS KEY CAN CALL:")[1], (
+        "a sibling that also 403s was listed as callable - that is the same guess again")
+
+
+def test_when_no_sibling_answers_the_grant_is_named_as_the_problem():
+    """The other half, and the opposite repair. If NOTHING from that vendor answers, the id is not
+    the variable - the key's model list is."""
+    rc, out = _run(CHAIN, {"deepseek-v4.1-flash": 403, "deepseek-3.2": 403},
+                   ALL_VISIBLE)
+    assert rc == 1, out
+    assert "cannot call ANY of them" in out, out
+    assert "DigitalOcean console" in out, "it did not name where the repair happens"
 
 
 def test_a_wrong_id_is_named_as_a_wrong_id_with_the_alternatives():
