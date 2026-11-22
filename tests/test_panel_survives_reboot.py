@@ -157,7 +157,65 @@ def test_no_checks_at_all_is_not_a_pass():
     assert m.fallback_verdict([], "")["gate"] == "NO-GO"
 
 
-# --------------------------------------------------------------------------- 3. identity
+# --------------------------------------------------------------------------- 3. the race
+
+def test_the_post_reboot_run_waits_for_the_APP_not_just_for_sshd():
+    """THE CAUSE, and the reason this is intermittent rather than new.
+
+    `wait_for_reboot()` waits for a new boot_id over ssh — the BOX. sshd answers in seconds;
+    colt-web is python + uvicorn + the engine coming up behind docker's restart policy. The health
+    run started the moment ssh answered, so the first three probes hit a port nothing was listening
+    on yet (000), while `concurrency` — probing THE SAME 127.0.0.1:8090 a few checks later — got
+    forty 401s. The app was not down, it was not up YET.
+
+    That is a race (class 15), which is why the gate passed at 20:01 and failed at 21:15 with
+    nothing relevant changed in between."""
+    code = _code()
+    i = code.index("post = parse_checks(out2)")
+    call = code[code.rindex("ssh_script(", 0, i):i]
+    assert "wait_for_app=True" in call, (
+        "the post-reboot health run does not wait for the app, so it races colt-web's start:\n"
+        + call)
+
+
+def test_the_wait_is_bounded_and_a_timeout_is_a_failure_carrying_the_number():
+    """A readiness wait that hides a genuinely dead app is a worse bug than the race it fixes."""
+    m = _mod()
+    w = m.READY_WAIT
+    assert "chk app_ready no" in w, "running out of time is not reported as a failure"
+    assert "${_t}s" in w, "neither branch reports how long it actually waited"
+    assert "seq 1 90" in w, "the wait is unbounded"
+    assert "chk app_ready yes" in w and "after ${_t}s" in w, (
+        "the PASS does not say how long the app took, so a box that is degrading towards the "
+        "limit looks identical to a healthy one until the day it trips")
+
+
+def test_the_wait_runs_after_chk_is_defined_and_only_after_the_reboot():
+    """`chk` is the CHECK-line protocol and has ONE definition. Prepending the wait to the whole
+    script would run it before that function exists."""
+    m = _mod()
+    with_wait = m.health_script(wait_for_app=True)
+    assert with_wait.index("chk() {") < with_wait.index("app_ready"), (
+        "the readiness wait calls chk before chk is defined")
+    assert "app_ready" not in m.health_script(), (
+        "the pre-reboot run also waits, which measures nothing and hides a slow first start")
+    assert m.health_script() == m.HEALTH, "the no-wait path is no longer the plain script"
+
+
+def test_the_anchor_is_proven_rather_than_assumed():
+    """A silent no-op injection would put the gate straight back into the race it was built to
+    close, and nothing would say so (class 37)."""
+    import pytest
+    m = _mod()
+    real, m.HEALTH = m.HEALTH, "no preamble here"
+    try:
+        with pytest.raises(AssertionError):
+            m.health_script(wait_for_app=True)
+    finally:
+        m.HEALTH = real
+
+
+# --------------------------------------------------------------------------- 4. identity
 
 def test_the_health_run_prints_which_container_and_image_answered():
     """engine_fresh says the bytes differ. A stale build and a REPLACED container produce that

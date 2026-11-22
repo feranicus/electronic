@@ -1055,8 +1055,16 @@ def test_a_truncated_health_run_fails_instead_of_counting_a_smaller_denominator(
         "the completeness check does not compute what is MISSING")
 
     # 4. The return code must not be discarded on the post-reboot run.
-    m = re.search(r"^\s*(\S+), (\S+), (\S+) = ssh_script\(HEALTH,", body, re.M)
-    assert m, "could not find the post-reboot health call"
+    # THE DOCTRINE IS UNCHANGED; THE EXPRESSION MOVED (class 17). This matched
+    # `ssh_script(HEALTH,` until the post-reboot run began waiting for colt-web to be READY before
+    # probing it — it is now `ssh_script(health_script(wait_for_app=True), ...)`. The property
+    # asserted below, that the return code is not discarded, is the same one. Matching the
+    # ARGUMENT rather than the literal name is what makes this survive the next such change.
+    # [2026-11-22]
+    m = re.search(r"^\s*(\S+), (\S+), (\S+) = ssh_script\((?:HEALTH|health_script\([^)]*\)),",
+                  body, re.M)
+    assert m, ("could not find the post-reboot health call — it is the one ssh_script() that "
+               "runs HEALTH after the reboot")
     assert m.group(3) != "_", (
         "the post-reboot ssh return code is discarded with `_`, so a dropped connection that "
         "returned partial output is invisible - that is exactly how the six checks were lost")

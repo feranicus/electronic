@@ -934,6 +934,63 @@ def _decide_from_verdict(verdict):
     return gate, verdict.get("digest", "")
 
 
+# SSHD IS NOT THE APPLICATION, AND THAT IS THE WHOLE BUG (22 Nov 2026).
+#
+# `wait_for_reboot()` waits for a NEW boot_id over ssh - the BOX. sshd is serving within seconds;
+# colt-web is python + uvicorn + the engine coming up behind docker's restart policy, and it is not
+# ready for a good while after that. The post-reboot health run started the moment ssh answered, so
+# the first three probes hit a port nothing was listening on yet:
+#
+#     post_reboot_api_auth     FAIL  GET /api/me -> 000
+#     post_reboot_app_served   FAIL  GET / -> 000
+#     post_reboot_bot_gate     FAIL  bot UA got 000
+#     post_reboot_proxy_routes OK    proxy -> colt-web -> 401
+#     post_reboot_concurrency  OK    40 parallel requests -> 40x401
+#
+# Those last two are the proof: `concurrency` probes THE SAME 127.0.0.1:8090 and got forty 401s a
+# few checks later. The app was not down, it was not up YET. `engine_fresh` has the same shape - a
+# `docker exec` into a container that is still unpacking reads fewer files, and `md5sum` over a
+# shorter input is simply a different 12-char hash, which renders as "the container is NOT running
+# what we sent".
+#
+# This is a RACE (class 15), which is why it passed at 20:01 and failed at 21:15 with nothing
+# relevant changed in between, and why it teaches the operator to re-run rather than read.
+#
+# A readiness wait that hides a genuinely dead app would be a worse bug than the race, so this one
+# is BOUNDED, it REPORTS the seconds it waited, and running out of time is a FAIL carrying that
+# number - never a silent continue.
+READY_WAIT = r'''
+_t0=$(date +%s); _ready=""
+for _i in $(seq 1 90); do
+  _c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8090/api/me 2>/dev/null)
+  if [ "$_c" = "401" ]; then _ready=yes; break; fi
+  sleep 2
+done
+_t=$(( $(date +%s) - _t0 ))
+if [ -n "$_ready" ]; then
+  chk app_ready yes "colt-web answered /api/me with 401 after ${_t}s — the health checks below ran against a STARTED app, not a starting one"
+else
+  chk app_ready no "colt-web never answered 401 on 127.0.0.1:8090 within ${_t}s — every probe below is about an app that did not come back, and that is a real failure, not a slow start"
+fi
+'''
+
+
+def health_script(wait_for_app=False):
+    """The health run, optionally preceded by the readiness wait. ONE HOME for assembling it.
+
+    The wait is INJECTED after `chk()` is defined rather than prepended to the whole script: `chk`
+    is the CHECK-line protocol and it has exactly one definition (class 32), so the wait has to run
+    inside the script that owns it - and it stays ONE ssh session either way (class 43).
+    """
+    anchor = 'echo "#### HEALTH"'
+    if not wait_for_app:
+        return HEALTH
+    if anchor not in HEALTH:
+        raise AssertionError("the HEALTH preamble moved; the readiness wait has no anchor and "
+                             "would run before chk() exists")
+    return HEALTH.replace(anchor, anchor + READY_WAIT, 1)
+
+
 def fallback_verdict(checks, panel_output=""):
     """The deterministic verdict used when the AI panel does not answer. ONE HOME.
 
@@ -1179,7 +1236,7 @@ def run(reboot_test=True, quiet=False):
             checks.append({"name": "reboot_recovery", "ok": True,
                            "detail": "new boot_id after %ds, kernel %s, uptime %ss"
                                      % (waited, now[1], now[2])})
-            out2, _err2, _rc2 = ssh_script(HEALTH, timeout=600)
+            out2, _err2, _rc2 = ssh_script(health_script(wait_for_app=True), timeout=900)
             post = parse_checks(out2)
             if "#### HEALTH_END" not in out2:
                 post.append({"name": "health_run_complete", "ok": False,

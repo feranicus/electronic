@@ -85,6 +85,45 @@ class FakeDroplet:
         self._bash("rm -rf '%s'" % self.root)
 
 
+def test_a_staging_no_go_releases_the_deploy_lock_before_it_exits():
+    """A DECIDED REFUSAL IS NOT A CRASH (22 Nov 2026).
+
+    The lock came off only after a SUCCESSFUL deploy, so every staging NO-GO held it for the full
+    45-minute staleness window — while the line immediately above told the operator to re-run.
+    He met that as "[X] ANOTHER DEPLOY IS RUNNING — holder: feran@perseus1", himself, 18 minutes
+    in, on a run whose shell had already returned.
+
+    This does not weaken the doctrine that STALENESS, not release, is what guarantees the lock: a
+    SIGKILL still cannot run this and the 45-minute backstop is untouched. Nothing is deploying at
+    that point — the gate refused before production was reached — so holding it protects nobody.
+
+    ORDER IS THE PROPERTY (class 4): releasing after sys.exit() is releasing never.
+    """
+    src = open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read()
+    code = "\n".join(l for l in src.split("\n") if not l.lstrip().startswith("#"))
+    i = code.index("Override deliberately with:  python ship.py --no-stage")
+    tail = code[i:i + 600]
+    assert "_lock.__exit__(None, None, None)" in tail, (
+        "the staging NO-GO path exits without releasing the deploy lock, so the re-run it just "
+        "advised is refused for 45 minutes")
+    assert tail.index("_lock.__exit__(None, None, None)") < tail.index("sys.exit(2)"), (
+        "the release is written after the exit, which means it never runs")
+
+
+def test_breaking_the_lock_is_one_command_and_never_automatic():
+    """ONE ORCHESTRATOR, ONE COMMAND (principle 7). The repair used to be `teamlock.py --break`
+    followed by `ship.py` — two commands, the rule this repo keeps breaking. It must stay an
+    explicit operator assertion though: with two developers, an automatic break is how one deploy
+    lands on top of another mid-recreate."""
+    src = open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read()
+    code = "\n".join(l for l in src.split("\n") if not l.lstrip().startswith("#"))
+    assert '"--break-lock"' in src, "there is no single-command repair for a dead lock"
+    assert "teamlock.release(force=True)" in code, "the flag does not actually break the lock"
+    assert "if a.break_lock:" in code, (
+        "the break is not gated on the flag — an unconditional break is a second deploy landing "
+        "on a live one")
+
+
 def shell_harness_allowed(platform=None, which=None, env=None):
     """(ok, reason) - may THIS machine host the lock harness? A function, not an inline condition,
     so the decision itself is testable: `sys.platform = "win32"` cannot be simulated globally
@@ -417,8 +456,29 @@ def test_the_deploy_is_wrapped_in_the_lock_and_released_before_the_long_tail():
     take = body.index("__enter__")
     for step in ("do_web(", "do_bots(", "do_verify("):
         assert take < body.index(step), "%s runs OUTSIDE the lock" % step
-    assert body.index("do_verify(") < body.index("__exit__"), "the lock is released too early"
-    assert body.index("__exit__") < body.index("caddyguard.py"), (
+    # THE DOCTRINE WAS CORRECTED, AND THE OLD LINE IS KEPT SO THE REASON SURVIVES (class 17).
+    # This used to be:
+    #     assert body.index("do_verify(") < body.index("__exit__")
+    # i.e. "the FIRST release in main() comes after the deploy". That is a POSITION, not a
+    # property (class 4), and it broke the moment a SECOND, legitimate release appeared: the
+    # staging NO-GO path now gives the lock back before `sys.exit(2)`, because a decided refusal
+    # is not a crash and the operator is being told to re-run. [2026-11-22]
+    #
+    # The property is unchanged and is what is asserted now: a release may only happen after the
+    # deploy, OR on a path that is terminating anyway.
+    releases = [m.start() for m in re.finditer(r"__exit__", body)]
+    assert releases, "main() never releases the lock"
+    for pos in releases:
+        if pos > body.index("do_verify("):
+            continue                                   # the deploy path, released after the work
+        window = body[pos:pos + 300]
+        assert "sys.exit(" in window, (
+            "the lock is released before the deploy on a path that then CONTINUES - a second "
+            "developer can take it while this run is still deploying")
+    assert max(releases) > body.index("do_verify("), (
+        "nothing releases the lock after the deploy, so the successful path holds it until it "
+        "goes stale")
+    assert max(releases) < body.index("caddyguard.py"), (
         "holding the lock through the never-blocking tail is how the next developer concludes "
         "the deploy is stuck")
 

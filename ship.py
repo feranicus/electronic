@@ -2169,6 +2169,11 @@ def main():
     ap.add_argument("--fast-stage", action="store_true",
                     help="validate on staging but SKIP the reboot test (faster, weaker — the "
                          "reboot is the test that would have caught the 2026-08-07 outage)")
+    ap.add_argument("--break-lock", action="store_true",
+                    help="drop a deploy lock you are SURE is dead, then ship — one command "
+                         "instead of `teamlock.py --break` followed by `ship.py`. Never "
+                         "automatic: with two developers that is how one deploy lands on top "
+                         "of another mid-recreate.")
     ap.add_argument("--pr", action="store_true",
                     help="reach main through a gated pull request instead of pushing to it "
                          "directly, then let pipeline.yml deploy (set SHIP_FLOW=pr to default)")
@@ -2497,6 +2502,16 @@ def main():
     _lock = None
     if not DRY:
         import teamlock
+        if a.break_lock:
+            # ONE COMMAND (principle 7). Before this flag the repair was "run teamlock --break,
+            # then run ship.py" - two commands, which is the rule this repo keeps breaking. It is
+            # deliberate and loud, in the same family as SHIP_ALLOW_BRANCH / SHIP_ALLOW_BEHIND:
+            # the operator is asserting that the holding run is dead. It is never automatic,
+            # because with two developers an automatic break is how one deploy lands on top of
+            # another mid-recreate.
+            _r = teamlock.release(force=True)
+            print("  deploy lock: BROKE it deliberately (--break-lock) -> %s"
+                  % _r.get("RESULT", _r))
         _lock = teamlock.held("staging gate + production deploy")
         if not _lock.__enter__():
             sys.exit(2)
@@ -2534,6 +2549,18 @@ def main():
                 except Exception as _g:
                     print("  [!] governance loop unavailable (%s)" % type(_g).__name__)
                 print("      Override deliberately with:  python ship.py --no-stage")
+                # RELEASE ON A DECIDED OUTCOME. The lock used to come off only after a SUCCESSFUL
+                # deploy, so every staging NO-GO held it for the full 45-minute staleness window -
+                # and the line directly above tells the operator to re-run, which the lock then
+                # refuses. He met it as "[X] ANOTHER DEPLOY IS RUNNING - holder: himself".
+                # This does NOT weaken the doctrine that STALENESS, not release, is what guarantees
+                # the lock: a SIGKILL still cannot run this, and the 45-minute backstop is
+                # unchanged. It only stops an ORDERLY, decided refusal from behaving like a crash.
+                # Nothing is deploying at this point - the gate refused before production was
+                # touched - so holding it protects nobody.
+                if _lock is not None:
+                    _lock.__exit__(None, None, None)
+                    _lock = None
                 sys.exit(2)
         except SystemExit:
             raise

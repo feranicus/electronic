@@ -1,15 +1,46 @@
 # The AI panel went "unavailable", and the governance step contradicted the gate — 22 Nov 2026
 
-## It was not the key, and it was not the model
+## My first answer was wrong, and the operator was right to refuse it
 
-The operator's question was "why did a key change and one model change create multiple bugs". It
-did not. The three ships before this one exited at `modelcheck` — the chain head was 403'ing, so
-`ship.py` never reached step 3. Fixing the head is what let the pipeline run the staging gate and
-its reboot test for the first time in days. Everything below was already broken; it had simply not
-been reached.
+I wrote that these were pre-existing failures the pipeline had simply never reached, because the
+three previous ships exited at `modelcheck`. The operator pushed back: RBAC and Pipeline shipped
+fine earlier the same day with the same four models.
 
-That is worth saying plainly because the opposite conclusion — "the last change broke it" — is the
-one that gets a correct fix reverted.
+He is right, and it is checkable — `good-20261122-200100` is a tag on this repository. A full ship
+went green at 20:01, which means the staging gate, the reboot test and the AI panel all worked
+today. "Never reached" was false, and it is the comfortable kind of false: it explains a failure
+without implicating anything I changed.
+
+The diff from that green commit to the failing one is one-line model-id renames, `modelcheck.py`,
+`set_secret.py` and `ship.py`. Nothing in that set can make a staging container stop answering.
+
+## It is a race, which is why it passed at 20:01 and failed at 21:15
+
+`wait_for_reboot()` waits for a new boot_id **over ssh** — the box. sshd is serving within seconds;
+colt-web is python, uvicorn and the engine coming up behind docker's restart policy, and it is not
+ready for a while after that. The post-reboot health run started the moment ssh answered.
+
+The evidence was in the same output all along:
+
+    post_reboot_api_auth     FAIL  GET /api/me -> 000
+    post_reboot_app_served   FAIL  GET / -> 000
+    post_reboot_bot_gate     FAIL  bot UA got 000
+    post_reboot_proxy_routes OK    proxy -> colt-web -> 401
+    post_reboot_concurrency  OK    40 parallel requests -> 40x401
+
+`concurrency` probes **the same `127.0.0.1:8090`** and got forty 401s a few checks later. The app
+was not down. It was not up yet. `engine_fresh` has the same shape: a `docker exec` into a
+container still unpacking reads fewer files, and `md5sum` over a shorter input is a different
+12-char hash, which renders as "the container is NOT running what we sent".
+
+Class 15 — a test that depends on a race teaches the operator to re-run rather than read — and
+this one taught both of us to blame the last thing that changed.
+
+The wait is bounded (180s), it reports the seconds either way, and exhausting it is a FAIL
+carrying that number. A readiness wait that hides a genuinely dead app would be worse than the race
+it closes. It is injected after `chk()` is defined rather than prepended, because `chk` is the
+CHECK-line protocol and has one home; the anchor is asserted rather than assumed, since a silent
+no-op injection would restore the race with nothing saying so (class 37).
 
 ## What the gate reported
 
