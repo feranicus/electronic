@@ -66,6 +66,46 @@ stale one, and the bake-off's own fingerprint proved it (`3c6b3a6a832e` vs `5847
 `set_secret.py` now writes **both** when either is named. Writing one and leaving the other is not
 a half-done job; it is a credential that looks right and silently is not.
 
+## It shipped, and it 403'd — the check was blind to the fault that happened
+
+Release `good-20261122-200100` went out green. `modelcheck.py` passed, the staging gate passed,
+and then the Verint run said:
+
+    [warn] enrich: model 'deepseek-v4.1-flash' returned HTTP 403 (not entitled)
+    [enrich-mr] shard 0: 0/3 ids in 261ms  ERROR: HTTP Error 403: Forbidden
+    [enrich-mr] shard 4: 0/1 ids in 144ms  ERROR: HTTP Error 403: Forbidden
+
+**The id is right.** 403 is not 404. The model is in the catalogue and the gateway knows it; the
+KEY is not granted it. Three of the four chain models answered on the same key in the same run,
+which rules out the two blanket causes DigitalOcean documents — a paused key and a VPC-scoped key
+both refuse everything, not one model.
+
+**And my check measured the wrong thing.** It asked `/models` — does DigitalOcean *list* this
+model — and called the chain verified. CLAUDE.md has carried the rule the whole time:
+*"Entitlement is not visibility: every `anthropic-*` and commercial `openai-gpt-*` returns 403 on
+this account."* I built a guard against the previous incident (`deepseek-v4-flash`, a 404) and it
+could not fail for the reason that actually occurred. Class 1 and class 3 in one check.
+
+`modelcheck.py` now issues a REAL one-token call per chain model and gives the three outcomes three
+different diagnoses, because they have three different repairs:
+
+| | meaning | repair |
+|---|---|---|
+| 200 / 400 | usable (400 = the model wants its own payload; kimi does this) | none |
+| **403** | the id is right, the KEY is not entitled | DigitalOcean console: grant the model to the key |
+| **404** | the id is wrong | `enrich.py::_FALLBACKS` |
+
+It also prints the key's sha256 fingerprint and length, because "did the new key actually land?"
+is the first thing you need and a 403 cannot answer it. Never key material: this repo is public.
+
+The HEAD is treated differently from the rest. The chain is built to degrade, so an unusable model
+at position 2+ is a warning and does not block a release — making this check the reason a release
+cannot ship would be its own defect. An unusable head costs every call a wasted round-trip first,
+which is exactly what those 261ms and 144ms shards were.
+
+Six mutations, six caught, including the decisive one: reverting to the catalogue-only logic fails
+three tests, one of which replays the Verint 403 verbatim.
+
 ## Mistakes made while doing this
 
 **I rewrote history.** The bulk rename skipped lines starting with `#` and `//` but not

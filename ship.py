@@ -2426,9 +2426,15 @@ def main():
         for _l in ((_mc.stdout or '') + (_mc.stderr or '')).rstrip().splitlines():
             print('  ' + _l.strip())
         if _mc.returncode == 1:
-            sys.exit('[X] the enrichment chain names a model the inference API does not serve. '
-                     'Every assessment would waste a round-trip and silently degrade. Fix '
-                     'enrich.py::_FALLBACKS with the ids printed above, then ship again.')
+            # TWO FAULTS, OPPOSITE REPAIRS, and the old wording named only one. A 403 means the
+            # id is RIGHT and the key is not granted that model (DigitalOcean console); a 404
+            # means the id is wrong and belongs in enrich.py. Saying "does not serve" for both
+            # sent the operator to edit code when the code was correct - which is what the
+            # Verint run cost. modelcheck prints which it is; this line must not contradict it.
+            sys.exit('[X] the chain HEAD is unusable, so every assessment pays a wasted '
+                     'round-trip before failing over. Read the FORBIDDEN / MISSING lines above: '
+                     'FORBIDDEN = grant the model to the key in the DigitalOcean console; '
+                     'MISSING = fix the id in enrich.py::_FALLBACKS.')
     except SystemExit:
         raise
     except Exception as _e:
