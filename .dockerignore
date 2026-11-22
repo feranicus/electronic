@@ -7,6 +7,12 @@
 !cassandra-bot
 !colt_auth.py
 !user_store.py
+# WHO MAY DO WHAT. main.py does a bare `import roles` in the admin routes and in _require_perm, so
+# an image without this file answers 500 on the Administration page - which is exactly what shipped
+# on 22 Nov 2026. This is the third wiring point for one module (here, both Dockerfiles, and
+# deploy_web_direct.INCLUDE), and class 35 names .dockerignore as the one that gets missed. It got
+# missed. tests/test_image_modules.py now DERIVES the set from main.py's own imports.
+!roles.py
 !webapp
 # THE SECURITY BRAIN. webapp/Dockerfile does `COPY perseus /opt/perseus/perseus` because
 # perseus.service runs `docker exec colt-web ... /opt/perseus/perseus/hub.py`, and that path only

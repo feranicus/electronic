@@ -63,6 +63,7 @@ COPY hermes-skills/shodan-assessment /opt/shodan-skill
 COPY perseus /opt/perseus/perseus
 COPY colt_auth.py /opt/colt_auth.py
 COPY user_store.py /opt/user_store.py
+COPY roles.py /opt/roles.py
 COPY webapp/backend/app ./app
 COPY --from=fe /fe/dist ./frontend_dist
 ENV ENGINE=/opt/shodan-skill/scripts/run_assessment.py FRONTEND_DIST=/app/frontend_dist DATA_DIR=/data JOBS_DIR=/data/jobs

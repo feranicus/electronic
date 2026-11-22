@@ -34,6 +34,10 @@ if KEY and os.path.exists(KEY):
 # never carried it. Anything a Dockerfile COPYs from the repo root must appear here; asserted by
 # tests/test_admin_users.py so the next one cannot be missed.
 INCLUDE = ["webapp", "hermes-skills/shodan-assessment", "colt_auth.py", "user_store.py",
+           # The authorisation policy. Missing here and in .dockerignore is how the Administration
+           # page answered 500 on 22 Nov: main.py does a bare `import roles`, /opt is the only
+           # sys.path entry that can supply it, and nothing put the file there.
+           "roles.py",
            # The security brain. webapp/Dockerfile COPYs it into the image because the systemd unit
            # runs `docker exec colt-web ... /opt/perseus/perseus/hub.py`, and that path only existed
            # on the HOST -- so the daily cycle failed every night and no blocklist was ever
@@ -164,10 +168,44 @@ def pack(include=None, extra=()):
                 tar.add(p, arcname=item, filter=_filter)
     return tf.name
 
+def _module_check():
+    """Every root module main.py imports must LOAD inside the image. ONE HOME, both tails.
+
+    THE INCIDENT (22 Nov 2026). main.py does a bare `import roles` in the admin routes; roles.py
+    was in no image, because inside the container /opt is the only sys.path entry that can supply a
+    root module and nothing copied it there. The Administration page answered 500. Every unit test
+    passed - they import from the repo, where the file sits beside main.py.
+
+    tests/test_image_modules.py derives the same set and guards the wiring, but a static test
+    reasons about the Dockerfile while this reasons about the RUNNING CONTAINER, and only one of
+    those is the artifact (class 49). It belongs in BOTH tails because the twin is where a missing
+    module should be found: staging rehearses the same bytes, so letting it skip this check would
+    mean production is the first box to discover it, which is what happened.
+
+    The list is DERIVED from main.py at pack time (class 35), so a module added tomorrow is covered
+    without editing a line here.
+    """
+    return [
+        "echo '== every root module main.py imports must LOAD inside this image =='",
+        "docker exec colt-web python3 -c 'import sys, importlib.util;sys.path.insert(0, \"/opt\");"
+        "mods = " + _module_literal() + ";"
+        "missing = [m for m in mods if importlib.util.find_spec(m) is None];"
+        # THE VERDICT COMES FIRST. The earlier ordering printed "root modules loaded in the image:
+        # colt_auth, roles, user_store" and THEN said roles was missing - a success-shaped line on
+        # a failing run, which is class 7 and is exactly how an operator skims past the real cause.
+        "sys.exit(\"MISSING from /opt (the route that imports it answers 500): \" "
+        "+ \", \".join(missing)) if missing else None;"
+        # Only reached when all of them are present, so this really does import them: a module that
+        # is findable but broken raises here with its own traceback instead of at the first request.
+        "[importlib.import_module(m) for m in mods];"
+        "print(\"root modules loaded in the image: \" + \", \".join(mods))'",
+    ]
+
+
 def _staging_tail():
     """The twin has no shared proxy to publish into, so staging stops at "the app is up".
     ONE HOME: both the build path and the pull path end here when proxy=False."""
-    return [
+    return _module_check() + [
             "echo '== staging: no shared proxy on this box — skipping the caddy wiring =='",
             "echo -n 'colt-web image : '; docker inspect colt-web -f '{{.Config.Image}}'",
             "sleep 4",
@@ -184,7 +222,7 @@ def _proxy_tail():
     copy (defect class 32). Every line here was paid for by an outage - the marker-scoped delete,
     the in-place truncate that keeps the inode, the size floor, the forced admin load. A second
     copy of this block is a second chance to take six domains down, so there is exactly one."""
-    return [
+    return _module_check() + [
     "echo '== wire cybergod.ai into the shared caddy from the committed snippet =='",
     "CADDY_CT=\"$(docker ps --format '{{.Names}}' | grep -i caddy | head -1)\"",
     "CF=\"$(docker inspect \"$CADDY_CT\" --format '{{range .Mounts}}{{if eq .Destination \"/etc/caddy/Caddyfile\"}}{{.Source}}{{end}}{{end}}')\"",
@@ -250,6 +288,63 @@ def _proxy_tail():
     "curl -sk --resolve cybergod.ai:443:127.0.0.1 https://cybergod.ai/api/me -o /dev/null -w 'public via caddy = %{http_code}  (401 = LIVE)\\n'",
     "",
     ]
+
+
+def _module_literal():
+    """The derived module list as a Python list literal using DOUBLE quotes.
+
+    `repr(["a"])` renders single quotes, and this string is embedded in a single-quoted shell
+    argument, so repr would end the shell quoting mid-list and the step would die in a way that
+    looks like a droplet problem. Class 44's cousin: the quoting rule has a precondition, and the
+    precondition here is which shell quote the payload already sits inside.
+    """
+    return "[" + ", ".join('"%s"' % m for m in root_modules_main_imports()) + "]"
+
+
+def root_modules_main_imports():
+    """The root modules colt-web needs at runtime, read from main.py's own imports.
+
+    ONE HOME with the test: tests/test_image_modules.py answers the same question about the same
+    file. Derived, never typed, because a hand-written list is the thing that was wrong.
+    Transitive, because `import roles` is two hops from bot.py (user_store imports it) and a module
+    missing two hops away is the same 500.
+    """
+    import ast
+    roots = {f[:-3] for f in os.listdir(HERE) if f.endswith(".py") and not f.startswith("_")}
+
+    def direct(path):
+        # NARROW except, and it SAYS SO. The first version caught Exception and returned an empty
+        # set; `io` was not imported, so every file raised NameError, every file contributed
+        # nothing, and the derivation reported "no modules" - a swallowed exception returning a
+        # plausible default, indistinguishable from a measurement (class 38). The refusal below is
+        # what made it visible instead of shipping a step that checked nothing.
+        try:
+            with open(path, encoding="utf-8") as fh:
+                tree = ast.parse(fh.read())
+        except (OSError, SyntaxError, UnicodeDecodeError) as e:
+            print("  [!] could not read %s for the module derivation: %s" % (path, e))
+            return set()
+        out = set()
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Import):
+                out |= {a.name.split(".")[0] for a in n.names}
+            elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+                out.add(n.module.split(".")[0])
+        return out
+
+    seen, queue = set(), [os.path.join(HERE, "webapp", "backend", "app", "main.py")]
+    while queue:
+        for m in direct(queue.pop()) & roots:
+            if m not in seen:
+                seen.add(m)
+                queue.append(os.path.join(HERE, m + ".py"))
+    # A CHECK THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER (class 1). An empty list would make the
+    # remote step pass while measuring nothing, which is the failure mode this whole step exists
+    # to close, so it refuses instead.
+    if not seen:
+        raise SystemExit("[X] could not derive the root modules main.py imports - refusing to "
+                         "ship a verification step that would check nothing")
+    return sorted(seen)
 
 def remote_ghcr(tag, proxy=True, image=None):
     """PULL a pre-built, already-scanned colt-web image instead of building one on the droplet.

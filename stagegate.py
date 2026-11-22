@@ -517,6 +517,14 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
   EMPTY=$(printf '' | md5sum | cut -c1-12)
 
   # SECOND, INDEPENDENT PROOF — and the one that always works.
+  # kimi-k2.6, 22 Nov 2026, and it was right about the CHECK rather than the system: this detail
+  # used to read "WHAT it read is proven by mount_fresh + config_drift". Those checks run LATER in
+  # the source, and checks run in source order, so at the moment this PASS is printed neither has
+  # produced anything - the detail cited evidence that did not exist yet. Post-reboot it was
+  # check 38 citing checks 41 and 46. That is class 8: a detail that overclaims teaches the
+  # outage. The wording now says what this check MEASURED (order) and names where the content
+  # question is answered, without calling it proof in hand.
+  # tests/test_gate_claims.py fails the build if any detail cites a check that runs after it.
   # Caddy reads its Caddyfile ONLY AT START. That single fact is the whole 2026-08-07 RCA, and it
   # is also what makes this provable without any API: if the process started AFTER the file was
   # last written, it necessarily read the bytes that are on disk now. Comparing timestamps needs
@@ -532,14 +540,14 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
     elif [ -n "$R" ] && [ "$R" != "$EMPTY" ]; then
       chk config_write_ordering no "started after the write, but admin says disk=$D running=$R — a RELOAD lost it"
     else
-      chk config_write_ordering yes "started ${AGE}s after the write; WHAT it read is proven by mount_fresh + config_drift, not by this timing"
+      chk config_write_ordering yes "started ${AGE}s after the write, so it necessarily read the bytes on disk at that moment. This check measures ORDER ONLY. The CONTENT question - is the container reading the current inode, and is the running config that file - is answered by mount_fresh and config_drift, which run LATER in this same gate; read their verdicts, do not take this one as their proof"
     fi
   elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ] && [ "$STARTED" -eq "$WRITTEN" ]; then
     # Same-second tie. The deploy writes the file and then starts the container, so the order IS
     # correct — but one-second timestamp resolution cannot PROVE it. Say exactly that rather than
     # asserting a fault. (The `sleep 1` in deploy_to_staging should make this branch unreachable;
     # it stays because a tie must never be reported as staleness again.)
-    chk config_write_ordering yes "written and started in the same second; content proven by mount_fresh + config_drift"
+    chk config_write_ordering yes "written and started in the same second, so one-second timestamp resolution cannot prove the order either way; the deploy writes before it starts. CONTENT is not this check's question - mount_fresh and config_drift answer it LATER in this gate"
   elif [ -n "$STARTED" ] && [ -n "$WRITTEN" ]; then
     chk config_write_ordering no "the process started $((WRITTEN - STARTED))s BEFORE the config was written — it is serving something else"
   else
@@ -625,6 +633,24 @@ if docker ps --format '{{.Names}}' | grep -qi caddy; then
     OK*)   chk refuses_bad_config yes "${ST#OK }" ;;
     SKIP*) chk refuses_bad_config no  "could not exercise the validator: ${ST#SKIP }" ;;
     *)     chk refuses_bad_config no  "$ST" ;;
+  esac
+  # THE OTHER HALF OF THE RELOAD DOCTRINE, AND IT WAS PROSE UNTIL NOW. mistral-3-14B, 22 Nov 2026:
+  # guard_write_path_reloads proves a change written through apply() DOES propagate, then asserts
+  # in its own detail that a bare file edit does NOT - the clause that actually matters, because it
+  # is the 2026-08-07 mechanism, and the only one nobody measured. It stayed unmeasured for a good
+  # reason (editing the live shared config to watch it fail is an outage with a pass/fail label),
+  # so agent.py staleproof does the experiment on a THROWAWAY caddy instead: baseline, in-place
+  # edit, assert NOT propagated, explicit admin load, assert propagated. The live file's hash is
+  # compared before and after and printed, because a negative test that costs something is not
+  # worth having.
+  SP=$(python3 /opt/caddyguard/agent.py staleproof 2>&1 | tr '\n|' '  ' | cut -c1-800)
+  case "$SP" in
+    OK*)   chk bare_edit_does_not_propagate yes "${SP#OK }" ;;
+    # A SKIP HERE IS A FAILURE TO OBSERVE, not a pass. We are inside `if docker ps | grep caddy`,
+    # so docker and an image are both present; if the experiment could not run, the gate learned
+    # nothing about the mechanism it exists to prove.
+    SKIP*) chk bare_edit_does_not_propagate no "the experiment could not run: ${SP#SKIP }" ;;
+    *)     chk bare_edit_does_not_propagate no "$SP" ;;
   esac
   case "$RO" in
     OK*) chk vhost_roster yes "${RO}" ;;

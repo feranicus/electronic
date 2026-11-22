@@ -1117,6 +1117,136 @@ def cmd_selftest():
     return 0
 
 
+def cmd_staleproof():
+    """Prove the NEGATIVE: a bare file edit does NOT reach the running config, and a reload does.
+
+    WHY THIS EXISTS. `guard_write_path_reloads` proves the happy path - a change written through
+    apply() reaches the running config - and its own detail then ASSERTS the other half in prose:
+    "a bare file edit does NOT propagate, because Caddy reads its config at start or on reload".
+    mistral-3-14B on the 22 Nov panel called that out and was right: the clause that matters is
+    the one nobody measured, and it is the exact mechanism of the 2026-08-07 outage, where a file
+    damaged at 16:15 served happily from memory until a 04:22 reboot took six domains down.
+
+    The reason it stayed unmeasured was sound. Editing the LIVE shared config to watch it fail is
+    an outage with a pass/fail label, and an earlier attempt at a negative test did exactly that
+    and took staging down. So this never touches the live proxy: it starts a THROWAWAY caddy on
+    the proxy's own image, on its own config file, and does the experiment there. The live file is
+    hashed before and after and the hash is reported, because a negative test that costs something
+    is not worth having.
+
+    WHAT IT MEASURES, in order, and every step is an assertion:
+      1. the throwaway serves vhost A and NOT vhost B                 (the baseline)
+      2. the file is edited IN PLACE to add B, with no reload         (the 2026-08-07 action)
+      3. the running config STILL does not serve B                    <- the claim under test
+      4. the config is loaded through the admin API, as apply() does  (the repair)
+      5. the running config NOW serves B                              (the control)
+    Step 3 is the point. Steps 1 and 5 are what stop it passing for the wrong reason: without
+    them, a throwaway that never served anything would score step 3 perfectly (class 3).
+    """
+    try:
+        c = container()
+    except Exception as e:
+        print("SKIP cannot reach docker on this host (%s)" % type(e).__name__); return 0
+    if not c:
+        print("SKIP no caddy container on this host - nothing to borrow an image from"); return 0
+
+    src = mount_source(c) or LIVE
+    live_before = read(src)
+    h0 = hashlib.sha256(live_before.encode("utf-8", "replace")).hexdigest()[:12]
+
+    img, envargs = image_and_env(c)
+    d = "/tmp/_cgstale"
+    os.makedirs(d, exist_ok=True)
+    cfg = os.path.join(d, "Caddyfile")
+    A = "a.invalid"          # RFC 2606: cannot resolve, cannot be reached, cannot collide
+    B = "b.invalid"
+    base = "{\n  admin 0.0.0.0:2019\n  auto_https off\n}\n\n%s:8080 {\n  respond \"a\"\n}\n"
+    write_inplace(cfg, base % A)
+
+    name = "cg-staleproof-%d" % os.getpid()
+    run = sh(["docker", "run", "-d", "--rm", "--name", name,
+              "-v", "%s:/etc/caddy" % d] + envargs +
+             [img, "caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"])
+    if run.returncode != 0:
+        print("SKIP could not start a throwaway caddy: %s"
+              % ((run.stderr or run.stdout or "").strip()[-200:]))
+        return 0
+
+    def served():
+        """The hosts the THROWAWAY is actually serving, read from its own admin API."""
+        for _ in range(20):
+            r = sh(["docker", "exec", name, "wget", "-qO-", "http://127.0.0.1:2019/config/"])
+            if (r.stdout or "").strip():
+                try:
+                    hosts, _h = _served(json.loads(r.stdout))
+                    return hosts
+                except Exception:
+                    return None
+            time.sleep(0.5)
+        return None
+
+    fails = []
+    try:
+        start = served()
+        if start is None:
+            print("SKIP the throwaway caddy never answered its admin API - cannot run the "
+                  "experiment (this is a failure to OBSERVE, not a finding about the proxy)")
+            return 0
+        # 1. BASELINE. Without this, every later assertion could pass on a dead container.
+        if A not in start:
+            fails.append("the throwaway did not serve %s at all (%s) - the fixture does not "
+                         "reproduce the condition, so nothing below would mean anything"
+                         % (A, sorted(start)))
+        if B in start:
+            fails.append("%s was already being served before the edit" % B)
+
+        if not fails:
+            # 2. THE 2026-08-07 ACTION: edit the file in place, change nothing else.
+            write_inplace(cfg, (base % A) + "\n%s:8081 {\n  respond \"b\"\n}\n" % B)
+            time.sleep(1.0)
+            # 3. THE CLAIM UNDER TEST.
+            after_edit = served()
+            if after_edit is None:
+                fails.append("lost sight of the throwaway's admin API after the edit")
+            elif B in after_edit:
+                fails.append("A BARE FILE EDIT REACHED THE RUNNING CONFIG. Every write path in "
+                             "this repo is built on the opposite being true; if this ever fires, "
+                             "the reload doctrine in CLAUDE.md is wrong, not this check")
+            else:
+                # 4 + 5. THE REPAIR, and the control that proves step 3 was not a dead container.
+                ad = sh(["docker", "exec", name, "sh", "-c",
+                         "caddy adapt --config /etc/caddy/Caddyfile > /tmp/c.json && "
+                         "wget -qO- --post-file=/tmp/c.json "
+                         "--header='Content-Type: application/json' "
+                         "http://127.0.0.1:2019/load"])
+                time.sleep(1.0)
+                after_load = served()
+                if after_load is None:
+                    fails.append("lost sight of the throwaway's admin API after the load")
+                elif B not in after_load:
+                    fails.append("an explicit admin load did NOT publish %s either (%s) - the "
+                                 "experiment proves nothing about bare edits, because this "
+                                 "throwaway never accepted any change: %s"
+                                 % (B, sorted(after_load),
+                                    ((ad.stderr or ad.stdout or "").strip()[-160:])))
+    finally:
+        sh(["docker", "rm", "-f", name])
+
+    live_after = read(src)
+    h1 = hashlib.sha256(live_after.encode("utf-8", "replace")).hexdigest()[:12]
+    if h0 != h1:
+        fails.append("THE LIVE FILE CHANGED during a read-only experiment (%s -> %s)" % (h0, h1))
+
+    if fails:
+        print("FAIL " + " | ".join(fails))
+        return 1
+    print("OK   measured on a throwaway proxy, never the live one: an in-place file edit did NOT "
+          "reach the running config, and an explicit admin load of the same file DID. That is the "
+          "2026-08-07 mechanism reproduced end to end - the live source (%s) is byte-identical "
+          "before and after (%s)" % (src, h0))
+    return 0
+
+
 def main(argv):
     if not argv:
         return cmd_show()
@@ -1141,6 +1271,8 @@ def main(argv):
         return cmd_admin()
     if cmd == "selftest":
         return cmd_selftest()
+    if cmd == "staleproof":
+        return cmd_staleproof()
     if cmd == "show":
         return cmd_show()
     print(__doc__)

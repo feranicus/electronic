@@ -38,7 +38,7 @@ LOCAL   = os.path.dirname(os.path.abspath(__file__))
 # MODULE SCOPE, not a local inside package(): a deploy-shaping constant that only exists while one
 # function runs cannot be read by a test, and an unreadable constant is an untested one.
 BOTS_INCLUDE = ["docker-compose.reuse.yml", "assess-bot", "cassandra-bot", "hermes-skills",
-                "colt_auth.py", "user_store.py", "obs"]
+                "colt_auth.py", "user_store.py", "roles.py", "obs"]
 # Gitignored by design; see deploy_web_direct.pack(). Code from the commit, secrets from the machine.
 BOTS_SECRETS = ["assess-bot/.env", "cassandra-bot/.env"]
 # FAIL FAST, NEVER HANG. Without ConnectTimeout a stalled connect blocks forever with NO output:

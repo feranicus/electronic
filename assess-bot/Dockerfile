@@ -38,6 +38,10 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 COPY hermes-skills/shodan-assessment /opt/shodan-skill
 COPY colt_auth.py /opt/colt_auth.py
 COPY user_store.py /opt/user_store.py
+# user_store.set_role() imports roles to refuse an undefined role, so the bot image needs it too.
+# The engine has two delivery paths and so does every root module beside it; update both or the
+# second one fails the first time somebody reaches that line.
+COPY roles.py /opt/roles.py
 COPY assess-bot/bot.py /opt/bot.py
 RUN mkdir -p /root/work
 CMD ["python3", "/opt/bot.py"]

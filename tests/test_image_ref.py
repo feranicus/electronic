@@ -354,6 +354,18 @@ def test_the_no_token_branch_is_one_shell_script_not_a_python_tuple():
     for k in ("GHCR_TOKEN", "GITHUB_TOKEN"):
         os.environ.pop(k, None)
     script = deploy_web_direct.remote_ghcr("abc", proxy=False, image="ghcr.io/o/r/i")
-    assert "('" not in script and '", "' not in script, (
-        "a Python tuple or list repr reached the generated shell script: %s"
-        % [ln for ln in script.splitlines() if "('" in ln or '", "' in ln][:2])
+
+    # ORIGINAL ASSERTION, kept because deleting it loses why (class 17):
+    #     assert "('" not in script and '", "' not in script
+    # The `", "` half was a SUBSTRING standing in for a property, and it eventually matched a
+    # legitimate line: the module check deliberately embeds ["colt_auth", "roles", "user_store"]
+    # with DOUBLE quotes, precisely because the payload sits inside single shell quotes. A guard
+    # that fires on correct code teaches the next person to weaken it, which is how guards die.
+    #
+    # THE PROPERTY is narrower and sharper: `repr()` of a Python str sequence always renders its
+    # elements in SINGLE quotes, so a leaked tuple or list looks like `('a', 'b')` or `['a', 'b']`.
+    # A hand-written double-quoted literal cannot look like that, and the real defect always does.
+    import re
+    leak = re.compile(r"[(\[]'[^']*'(,\s*'[^']*')*[)\]]")
+    bad = [ln for ln in script.splitlines() if leak.search(ln)]
+    assert not bad, "a Python tuple or list repr reached the generated shell script: %s" % bad[:2]
