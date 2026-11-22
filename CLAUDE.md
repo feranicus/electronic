@@ -395,10 +395,13 @@ an authorisation act; it fails CLOSED and can only ever ADD). Extend without cod
 
 ## Secrets
 
-`python set_secret.py NAME` — value on **stdin**, never argv. It upserts BOTH the local
-`assess-bot/.env` (the source of truth: `deploy.py --reuse` packs it over the droplet's copy) and
-the droplet's `/opt/colt-stack/assess-bot/.env`. `bash -s` reads its SCRIPT from stdin, so the
-remote script travels in argv and the value on stdin — the two are mutually exclusive.
+`python set_secret.py NAME` — value on **stdin**, never argv (`bash -s` reads its SCRIPT from
+stdin; the script travels in argv).
+**A CREDENTIAL HAS AS MANY HOMES AS SOMEBODY GAVE IT; A CONTAINER'S ENV IS BAKED AT CREATION** (a
+stale key 403s like a wrong model id): homes local+droplet DERIVED from `BOTS_SECRETS`, others
+NAMED not written, consumers **recreated** not restarted, per SERVICE by
+label (per FILE, reuse.yml beats ghcr.yml and swaps the scanned artifact), `colt-stack` only,
+image ref printed. `test_secret_homes`
 
 ## The model chain and its budget
 
@@ -406,10 +409,10 @@ remote script travels in argv and the value on stdin — the two are mutually ex
 domain. Compose must not restate it (ship.py fails the deploy if `- ENRICH_MODELS=` reappears) and
 ship.py deletes `ENRICH_MODEL`/`ENRICH_MODELS` from the droplet .env. `GET /api/diag` +
 `engine_config.py` report the EFFECTIVE config with provenance.
-**THE HEAD HAS ELEVEN OTHER HOMES** as a fallback default (shield_panel, release_notes, settings,
-quorum, proteus, audit_fp, author_geopol, cassandra-bot, patchwatch x2, defense.js) - separate
-deployables that cannot import it. `tests/test_model_chain.py` DERIVES that set, so a deprecation
-is one line plus a suite that names every straggler, not a grep. `modelcheck.py` asks the live
+**THE HEAD HAS ELEVEN OTHER HOMES** as a fallback default - separate deployables that cannot import
+it; read `test_model_chain.HEAD_HOMES`, never a list here (class 32). That suite DERIVES the set
+from the whole tree and names every straggler, so a deprecation is one line, not a grep.
+`modelcheck.py` asks the live
 catalogue BEFORE the deploy: a marketing name is not an API id (`deepseek-v4-flash` 404'd for
 days), and do_verify alone would find it only after production was running it. [2026-11-22]
 

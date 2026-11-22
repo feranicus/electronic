@@ -31,7 +31,7 @@ def _mod():
 
 def test_the_value_never_appears_in_the_remote_command():
     ss = _mod()
-    cmd = ss.remote_command("ABUSEIPDB_KEY")
+    cmd = ss.remote_command("ABUSEIPDB_KEY", {"ABUSEIPDB_KEY"})
     for probe in ("02ffdeadbeef", "s3cr3t-value", "hunter2"):
         assert probe not in cmd, "a value could reach argv"
     assert "ABUSEIPDB_KEY" in cmd, "the (non-secret) name must be passed"
@@ -41,11 +41,21 @@ def test_the_value_never_appears_in_the_remote_command():
 
 def test_the_embedded_script_reads_the_value_from_stdin():
     ss = _mod()
-    cmd = ss.remote_command("ABUSEIPDB_KEY")
+    cmd = ss.remote_command("ABUSEIPDB_KEY", {"ABUSEIPDB_KEY"})
     b64 = re.search(r"'([A-Za-z0-9+/=]{40,})'", cmd).group(1)
     script = base64.b64decode(b64).decode()
     assert 'VALUE="$(cat)"' in script, "the script does not read the value from stdin"
     assert "grep -v" in script and "docker compose" in script, "not the real upsert script"
+
+
+def test_the_value_is_read_before_set_e_can_abort():
+    """ORDER MATTERS AND IT CHANGED. `VALUE="$(cat)"` must run before `set -e`, because stdin is
+    the ONE thing the caller cannot resend: an abort after the pipe is drained loses the secret and
+    the operator is asked to paste it again for a run that already consumed it."""
+    ss = _mod()
+    body = ss.REMOTE
+    assert body.index('VALUE="$(cat)"') < body.index("\nset -e"), (
+        "set -e precedes the stdin read; a failure before it discards the value")
 
 
 @pytest.mark.skipif(sys.platform == "win32" or shutil.which("bash") is None,
@@ -60,23 +70,37 @@ def test_end_to_end_the_value_lands_in_the_env_file_from_stdin_only():
     ss = _mod()
     work = tempfile.mkdtemp(prefix="setsecret-")
     try:
-        cmd = ss.remote_command("ABUSEIPDB_KEY")
+        cmd = ss.remote_command("ABUSEIPDB_KEY", {"ABUSEIPDB_KEY"})
         b64 = re.search(r"'([A-Za-z0-9+/=]{40,})'", cmd).group(1)
         script = base64.b64decode(b64).decode()
-        envf = os.path.join(work, "envtest.env")
-        script = script.replace(ss.ENVF, envf).split("cd /opt/colt-stack")[0]
         sf = os.path.join(work, "s.sh")
         with open(sf, "w", newline="\n") as fh:
             fh.write(script)
+        # The script no longer hardcodes /opt/colt-stack - it derives the stack root from the
+        # primary env path it is given, which is what makes this runnable off the droplet at all
+        # (class 20: simulate the platform rather than skipping it). `docker` is stubbed to a
+        # no-op: this test is about the UPSERT, and test_secret_homes.py exercises the container
+        # half against a docker that records what it was asked.
+        envf = os.path.join(work, "assess-bot", ".env")
+        os.makedirs(os.path.dirname(envf))
+        binq = os.path.join(work, "bin")
+        os.makedirs(binq)
+        with open(os.path.join(binq, "docker"), "w", newline="\n") as fh:
+            fh.write("#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(binq, "docker"), 0o755)
+        env = dict(os.environ, PATH=binq + os.pathsep + os.environ["PATH"])
+        fp = base64.b64encode(ss.FINGERPRINT.encode()).decode()
+        args = ["bash", sf, "ABUSEIPDB_KEY", "ABUSEIPDB_KEY", envf, fp]
         value = "02ffdeadbeefcafe0011223344556677"
-        r = subprocess.run(["bash", sf, "ABUSEIPDB_KEY"], input=value.encode(),
-                           capture_output=True, timeout=30)
-        assert r.returncode == 0, r.stderr.decode()[:200]
+        r = subprocess.run(args, input=value.encode(), capture_output=True, timeout=60, env=env)
+        assert r.returncode == 0, r.stderr.decode()[:300] + r.stdout.decode()[:300]
         got = open(envf, encoding="utf-8").read().strip()
         assert got == "ABUSEIPDB_KEY=%s" % value, "the value did not upsert from stdin: %r" % got
-        subprocess.run(["bash", sf, "ABUSEIPDB_KEY"], input=b"newvalue123456789", timeout=30)
+        subprocess.run(args, input=b"newvalue123456789", timeout=60, env=env,
+                       capture_output=True)
         lines = open(envf, encoding="utf-8").read().strip().splitlines()
         assert sum(l.startswith("ABUSEIPDB_KEY=") for l in lines) == 1, "the upsert duplicated"
+        assert "newvalue123456789" in open(envf, encoding="utf-8").read()
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -85,7 +109,8 @@ def test_run_sends_the_value_on_stdin_and_the_script_in_argv(monkeypatch):
     """The WIRING, not just remote_command in isolation. Reverting run() to `bash -s` with the
     value on stdin is the exact bug, and it must be caught here."""
     ss = _mod()
-    monkeypatch.setattr(ss, "upsert_local", lambda n, v: True)   # do not touch the real .env
+    monkeypatch.setattr(ss, "upsert_local", lambda n, v, fam: True)  # do not touch the real .env
+    monkeypatch.setattr(ss, "key_homes", lambda family=None: [])     # nor read it
     seen = {}
 
     def fake_run(argv, input=None, **kw):

@@ -2409,6 +2409,37 @@ def main():
     _stage_verdict = "not run (--no-stage)"
     _test_summary = "all suites passed (ship.py exits before deploying if any fail)"
 
+    # ---- IS THE INFERENCE CREDENTIAL THE SAME IN EVERY PLACE THAT SHIPS IT? -----------------
+    #      This runs BEFORE modelcheck because a split credential produces the identical symptom
+    #      and modelcheck cannot tell them apart: it asks colt-web, and colt-web is the one home
+    #      that was always correct. On 22 Nov 2026 `deepseek-v4.1-flash` returned 403 from the bots
+    #      for an afternoon because `cassandra-bot/.env` had held its own, older OPENAI_API_KEY
+    #      since 8 July while `assess-bot/.env` carried the new one - and `deploy.py::BOTS_SECRETS`
+    #      packs BOTH, so every --reuse deploy re-shipped the stale half.
+    #      REPORTED, NEVER BLOCKING - the precedent is report_requirement_drift(). These files are
+    #      gitignored, so CI legitimately has none of them, and a gate that cannot see its subject
+    #      must not deliver a verdict about it (class 1).
+    try:
+        import set_secret as _ss
+        _homes = _ss.key_homes()
+        if not _homes:
+            print('  [i] inference credential: no env file present here - not checked (gitignored; '
+                  'CI has none). This is an UNKNOWN, not a pass.')
+        elif len({h[2] for h in _homes}) > 1:
+            print('  [!] THE INFERENCE CREDENTIAL IS SPLIT ACROSS THE FILES deploy.py SHIPS:')
+            for _p, _n, _fp, _ln in _homes:
+                print('      %-46s %-18s sha256 %s' % (_p, _n, _fp))
+            print('      Whichever surface holds the older value answers HTTP 403 for any model')
+            print('      granted only to the newer key - an accurate reply to a stale credential,')
+            print('      which reads exactly like a wrong model id. Repair, then re-run:')
+            print('        python set_secret.py OPENAI_API_KEY')
+        else:
+            print('  [ok] inference credential: all %d home(s) agree (sha256 %s)'
+                  % (len(_homes), sorted({h[2] for h in _homes})[0]))
+    except Exception as _e:
+        print('  [!] credential-home check skipped (%s) - UNVERIFIED, not verified.'
+              % type(_e).__name__)
+
     # ---- DOES THE CHAIN WE ARE ABOUT TO SHIP EXIST? -----------------------------------------
     #      modelcheck.py is a BUILDING BLOCK, not a second command (operating principle 7).
     #      do_verify() already asserts this - in STEP 5, after the image is built, scanned, pushed

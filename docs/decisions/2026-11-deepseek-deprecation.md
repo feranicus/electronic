@@ -106,6 +106,69 @@ which is exactly what those 261ms and 144ms shards were.
 Six mutations, six caught, including the decisive one: reverting to the catalogue-only logic fails
 three tests, one of which replays the Verint 403 verbatim.
 
+## And the 403 was not entitlement either — the credential had a home nobody wrote to
+
+The new key was installed, `set_secret.py` reported `set, 71 chars`, and the bots kept 403'ing.
+Measured on the checkout, which is where the answer had been the whole time:
+
+    assess-bot/.env      OPENAI_API_KEY / DO_INFERENCE_KEY   sha256 b4bb02748df6   (new)
+    cassandra-bot/.env   OPENAI_API_KEY                      sha256 9327f18662ac
+    cassandra-bot/.env   last written 2026-07-08
+
+`cassandra-bot` loads `env_file: cassandra-bot/.env` in all three compose files and reads the same
+`OPENAI_API_KEY`. `set_secret.py` wrote one file. The operator's objection was reasonable — the key
+*was* touched eleven days ago, when two chain models were swapped — but a key's model list changing
+in the DigitalOcean console and a file on disk being written are different events, and the file's
+mtime settles it: nothing created eleven days ago can be in a file last written in July.
+
+`deploy.py::BOTS_SECRETS` packs **both** files, so every `--reuse` deploy re-shipped the stale half.
+
+Two defects with two repairs:
+
+1. **The files.** The write set is derived by reading them, and the file list comes from
+   `deploy.BOTS_SECRETS` — one home for "what gets shipped". A file that does **not** hold the
+   credential is NAMED, never silently written: an env file with no inference key points at a
+   service nobody configured, which is a different fault.
+2. **The containers.** A container's environment is baked at creation. `docker restart` re-executes
+   the process with the OLD environment, so a merely-restarted consumer keeps the stale credential
+   and then returns a perfectly accurate 403. Every consumer is recreated, derived from compose's
+   own labels and filtered to project `colt-stack` so Amnezia VPN, VideoDead and joplin are
+   untouched.
+
+### The first run fixed the credential and broke the artifact
+
+It worked — `colt-web`, `colt-assessbot` and `colt-cassandra` all came back `b4bb02748df6`, and a
+fourth home nobody had listed turned up on the droplet (`jobhuntwow-app/.env`, written because it
+already held the key). But the run also printed this:
+
+    recreated from /opt/colt-stack/docker-compose.ghcr.yml
+    recreated from /opt/colt-stack/docker-compose.reuse.yml
+    recreated from /opt/colt-stack/docker-compose.web.yml
+
+and the second pass, moments later, listed only two — `ghcr.yml` was no longer claimed by any
+container. Several compose files define the **same** services: `ghcr.yml` pulls the image CI built
+and scanned, `reuse.yml` builds it locally. Looping over files and running a bare `up -d` applied
+each definition in turn, so the bots were created from `ghcr.yml` and then again from `reuse.yml`.
+Last one wins, and "ONE ARTIFACT" — the rule that the only internet-facing image is the one CI saw
+— was broken by the script meant to fix a credential.
+
+A container's own labels carry the exact `-f` list it was created from, so the repair is to rebuild
+*that* invocation and name only *that* service: `up -d --force-recreate <service>`. A compose file
+no running container reports is never applied. And the verification now prints each container's
+image ref beside its key fingerprint, because recreating a container is precisely when its image
+can change and an unprinted change is one nobody can catch.
+
+Four more mutations, four caught, including reverting to the per-file loop.
+
+`set_secret.py --audit` answers "which value does each home hold" with sha256 prefixes, and
+`ship.py` reports divergence without blocking (the `report_requirement_drift` precedent — these
+files are gitignored, so CI has none of them and must not deliver a verdict about them).
+
+Seven mutations, seven caught — after the first run **missed** one. The project-filter assertion
+read the whole docker log, and the later verification pass lists containers with the same filter,
+so its line kept the test green while the recreate set had gone host-wide. Anchored on the `ps -q`
+selection call instead (class 4, again).
+
 ## Mistakes made while doing this
 
 **I rewrote history.** The bulk rename skipped lines starting with `#` and `//` but not
