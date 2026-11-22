@@ -98,7 +98,13 @@ def test_the_bare_edit_experiment_is_wired_into_the_gate():
     names = [n for _p, n, _d in found]
     assert "bare_edit_does_not_propagate" in names, (
         "the negative control is not run by the gate, so the reload doctrine is still prose")
-    assert "staleproof" in src, "the gate does not invoke the agent verb that runs the experiment"
+    # ANCHOR ON THE INVOCATION, NOT ON THE WORD. `"staleproof" in src` passed when the command was
+    # replaced with `true`, because the verb's name still appeared in the comment explaining it -
+    # a check matching its own explanatory prose, which this repo has done five separate times
+    # (class 4). The property is that the variable the verdict is read from is ASSIGNED by running
+    # the agent.
+    assert re.search(r'SP=\$\(\s*python3 /opt/caddyguard/agent\.py staleproof', src), (
+        "the gate does not actually run the experiment; the verdict comes from somewhere else")
     # A SKIP MUST NOT SCORE AS A PASS. We are inside the branch that already found a caddy
     # container, so an experiment that could not run means the gate learned nothing.
     i = src.index("bare_edit_does_not_propagate")

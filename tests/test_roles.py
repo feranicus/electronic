@@ -240,10 +240,26 @@ def test_nothing_reads_the_dead_role_column():
 # recovery: a person who edits their own role can demote themselves out of the page that would
 # undo it, and a committed ADMIN_EMAILS address would be given a row the server then ignores.
 # ---------------------------------------------------------------------------------------------
+def _fn(name):
+    i = BODY.index("def %s(" % name)
+    j = min(x for x in (BODY.find("\n@app.", i), BODY.find("\ndef ", i), BODY.find("\nclass ", i),
+                        len(BODY)) if x > 0)
+    return BODY[i:j]
+
+
 def _role_route():
-    i = BODY.index("def admin_set_role(")
-    j = BODY.find("\n@app.", i)
-    return BODY[i:j if j > 0 else len(BODY)]
+    """The route AND the helper it delegates to.
+
+    RESOLVE THE CALL SITE, do not grep one function (class 4). The decision moved into
+    `_grant_role` when the create-user form needed the same answer - two screens, one policy - and
+    a test that kept reading only the route body would have reported the guards missing from code
+    that has them, which is the exact failure this rule is about.
+    """
+    route = _fn("admin_set_role")
+    assert "_grant_role(" in route, (
+        "the route no longer delegates to the one home for the decision; this test is reading the "
+        "wrong function")
+    return route + "\n" + _fn("_grant_role")
 
 
 def test_the_route_refuses_a_self_edit_and_the_committed_admin_floor():
@@ -296,3 +312,63 @@ def test_every_role_has_a_label_in_every_interface_language():
         src = io.open(os.path.join(loc, code + ".js"), encoding="utf-8").read()
         missing = sorted(k for k in wanted if ('"%s"' % k) not in src)
         assert not missing, "%s is missing role labels: %s" % (code, missing)
+
+
+# ---------------------------------------------------------------------------------------------
+# THE PAGE. A role change must be an ACT, not a side effect of a dropdown, and the confirmation
+# must name what changed - "saved" is indistinguishable from the confirmation of a previous click.
+# ---------------------------------------------------------------------------------------------
+ADMIN_JSX = io.open(os.path.join(ROOT, "webapp", "frontend", "src", "pages", "Admin.jsx"),
+                    encoding="utf-8").read()
+
+
+def test_the_picker_does_not_write_on_change():
+    """The first version called the API from the select's onChange, so a mis-click was a silent
+    privilege change. The handler must only stage the value."""
+    i = ADMIN_JSX.index('className="input admin-role"')
+    cell = ADMIN_JSX[i:i + 900]
+    assert "setPending(" in cell, "the picker does not stage its value"
+    for direct in ("adminSetRole(", "applyRole(u)"):
+        assert direct not in cell.split("onChange")[1].split("</select>")[0], (
+            "the picker still commits from the change event: %s" % direct)
+
+
+def test_the_commit_is_a_button_that_only_lights_up_when_there_is_something_to_commit():
+    i = ADMIN_JSX.index("admin-rolecell")
+    cell = ADMIN_JSX[i:i + 1400]
+    assert "onClick={() => applyRole(u)}" in cell, "there is no Apply button"
+    assert 'disabled={busy || !pending[u.email] || pending[u.email] === u.role}' in cell, (
+        "the button is enabled when nothing has changed, so its state answers nothing")
+
+
+def test_the_confirmation_names_the_address_and_the_role():
+    """A CONFIRMATION THAT DOES NOT NAME ITS SUBJECT is the same class as a diagnostic that does
+    not (class 26): after two clicks the operator cannot tell which one it is about."""
+    assert 'setSaved(t("admin.roleSaved")' in ADMIN_JSX, "nothing confirms the change"
+    assert '.replace("{email}"' in ADMIN_JSX and '.replace("{role}"' in ADMIN_JSX
+    en = io.open(os.path.join(ROOT, "webapp", "frontend", "src", "locales", "en.js"),
+                 encoding="utf-8").read()
+    line = [ln for ln in en.split("\n") if '"admin.roleSaved"' in ln][0]
+    assert "{email}" in line and "{role}" in line, (
+        "the message has no placeholders, so it cannot name what changed: %s" % line)
+
+
+def test_the_create_form_can_grant_a_role_and_offers_only_grantable_ones():
+    i = ADMIN_JSX.index("admin-new")
+    form = ADMIN_JSX[i:ADMIN_JSX.index("</form>", i)]
+    assert "setNewRole(" in form, "the create form has no role control"
+    assert "grantable.has(r.key)" in form, (
+        "the create form offers roles the server would refuse, so the first feedback is a 403")
+    assert "catalogue.length ? catalogue" in form, (
+        "before the page loads this would render an empty picker")
+
+
+def test_the_permission_matrix_is_rendered_from_the_server_not_from_a_copy():
+    i = ADMIN_JSX.index("admin-perms")
+    panel = ADMIN_JSX[i - 400:i + 1400]
+    assert "r.perms" in panel and "data.permissions" in panel, (
+        "the page describes permissions from its own copy, which will drift from roles.py")
+    # ...and no verb string is written into the frontend at all.
+    for verb in roles.PERMISSIONS:
+        assert '"%s"' % verb not in ADMIN_JSX, (
+            "%s is hardcoded in Admin.jsx - the policy has two homes" % verb)

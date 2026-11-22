@@ -537,9 +537,8 @@ writing a check, a fixture or a diagnostic.
    printed on every run means it has never once executed. And a branch nobody executes is a branch
    nobody has checked: a skip guard written as `subprocess.run([tool...]); if rc != 0: skip` never
    reaches that `if` — subprocess RAISES FileNotFoundError when the tool is absent, so the machine
-   it exists for CRASHES instead of skipping. Gate on `shutil.which()` and catch OSError. [2026-10-15,
-   found by removing ssh-keygen from PATH, which also exposed an undefined `pytest` the F821 gate
-   had just caught in the same dead branch]
+   it exists for CRASHES instead of skipping. Gate on `shutil.which()` and catch OSError.
+   [2026-10-15, found by removing ssh-keygen from PATH]
 3. **A check that cannot FAIL is not a check.** If the denominator is produced by the thing being
    measured, it is not a measurement. Prove a gate by breaking the thing it guards.
 4. **Assert the PROPERTY, never a string the error text also contains, and never a position.**
@@ -552,7 +551,10 @@ writing a check, a fixture or a diagnostic.
    And a PASS detail must not carry failure vocabulary — another check parses it.
 8. **A name is read far more often than a detail.** A check whose name overclaims teaches the
    outage (`config_reread` -> `config_write_ordering`; `config_change_propagates` ->
-   `guard_write_path_reloads`).
+   `guard_write_path_reloads`). **A detail must not cite a check that runs LATER** - that claims
+   evidence nobody has yet; say what THIS check measured, point, never "proven by". A clause
+   asserted only in a PASS string is not measured: put the negative control on a THROWAWAY, where
+   proving it is free. `tests/test_gate_claims.py` [2026-11-22]
 9. **Behaviour AND wiring.** shield.py was fully tested while nothing asserted the middleware
    called it. A control that is correct and unreachable is not a control.
 10. **A gate must render its own PASS on the operator's console** (cp1252) and must distinguish a

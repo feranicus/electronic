@@ -34,6 +34,13 @@ export default function Admin() {
   // /api/admin/* route independently depends on _require_admin, so hiding a tab is not
   // a control and showing one grants nothing.
   const [adminTab, setAdminTab] = useState("users");
+  // A ROLE CHANGE IS NOT SAVED UNTIL IT IS APPLIED. The first version wrote on every `change`
+  // event, so a mis-click was a silent privilege change with nothing on screen to say so. The
+  // picker now holds a PENDING value per address and the Apply button is the commit.
+  const [pending, setPending] = useState({});      // email -> role chosen but not yet applied
+  const [saved, setSaved] = useState("");          // the confirmation line, cleared on next action
+  const [newRole, setNewRole] = useState("user");  // the role the create form will grant
+  const [showPerms, setShowPerms] = useState(false);
 
   async function load() {
     setErr("");
@@ -48,12 +55,19 @@ export default function Admin() {
 
   async function submit(ev) {
     ev.preventDefault();
-    setBusy(true); setErr(""); setIssued(null);
-    const r = await adminSetUser(email.trim().toLowerCase(), pw.trim(), true, note.trim());
+    setBusy(true); setErr(""); setIssued(null); setSaved("");
+    const r = await adminSetUser(email.trim().toLowerCase(), pw.trim(), true, note.trim(),
+                                 newRole === "user" ? "" : newRole);
     setBusy(false);
     if (!r.ok) { setErr((r.data && r.data.detail) || t("admin.saveFail")); return; }
     setIssued({ email: r.data.user.email, password: r.data.password });
-    setEmail(""); setPw(""); setNote("");
+    // THE SERVER DECIDES WHETHER THE ROLE WAS APPLIED, and says so when it was not. The account
+    // exists either way, so reporting "created" with no word about the role would be a lie by
+    // omission the administrator only discovers when the person cannot do their job.
+    if (r.data.role_error) setErr(r.data.role_error);
+    else setSaved(t("admin.roleSaved").replace("{email}", r.data.user.email)
+                   .replace("{role}", ROLE_LABEL[r.data.role] || r.data.role));
+    setEmail(""); setPw(""); setNote(""); setNewRole("user");
     load();
   }
 
@@ -68,11 +82,18 @@ export default function Admin() {
   // THE ROLE OF SOMEBODY WITH NO PASSWORD ROW IS SETTABLE, and that is the point of the feature:
   // every Colt address on this page signs in with the shared password and has no credential row at
   // all. Roles live in their own table for exactly that reason, so this works on every row here.
-  async function setRole(u, role) {
-    setBusy(true); setErr("");
-    const r = await adminSetRole(u.email, role);
+  async function applyRole(u) {
+    const want = pending[u.email];
+    if (!want || want === u.role) return;
+    setBusy(true); setErr(""); setSaved("");
+    const r = await adminSetRole(u.email, want === "user" ? "" : want);
     setBusy(false);
-    if (!r.ok) setErr((r.data && r.data.detail) || t("admin.saveFail"));
+    if (!r.ok) { setErr((r.data && r.data.detail) || t("admin.saveFail")); return; }
+    // SAY WHAT CHANGED, not "saved". A confirmation that does not name the address and the role
+    // is indistinguishable from a confirmation of the previous click.
+    setSaved(t("admin.roleSaved").replace("{email}", r.data.email)
+              .replace("{role}", ROLE_LABEL[r.data.role] || r.data.role));
+    setPending((p) => { const n = { ...p }; delete n[u.email]; return n; });
     load();
   }
 
@@ -127,6 +148,7 @@ export default function Admin() {
       {adminTab === "fleet" ? <Fleet /> : (<>
 
       {err ? <div className="err">{err}</div> : null}
+      {saved ? <div className="ok">{saved}</div> : null}
 
       {/* ---- issue or reset a password ---- */}
       <form className="card admin-new" onSubmit={submit}>
@@ -147,6 +169,21 @@ export default function Admin() {
             <div className="label">{t("admin.note")}</div>
             <input className="input" value={note} onChange={(e) => setNote(e.target.value)}
                    placeholder={t("admin.notePlaceholder")} />
+          </div>
+          <div className="fld fld-role">
+            <div className="label">{t("admin.colRole")}</div>
+            {/* The same catalogue and the same grantable set as the rows: one policy, one list.
+                Before the page has loaded it is empty, so the control falls back to the default
+                role rather than rendering an empty picker. */}
+            <select className="input" value={newRole} disabled={busy}
+                    aria-label={t("admin.colRole")}
+                    onChange={(e) => setNewRole(e.target.value)}>
+              {(catalogue.length ? catalogue : [{ key: "user" }]).map((r) => (
+                <option key={r.key} value={r.key} disabled={!grantable.has(r.key)}>
+                  {ROLE_LABEL[r.key] || r.key}
+                </option>
+              ))}
+            </select>
           </div>
           <button className="btn" disabled={busy || !email.trim()}>{t("admin.issue")}</button>
         </div>
@@ -210,16 +247,25 @@ export default function Admin() {
                   {u.role_fixed || u.email.toLowerCase() === myEmail ? (
                     <span className="tag muted">{ROLE_LABEL[u.role] || u.role}</span>
                   ) : (
-                    <select className="input admin-role" value={u.role} disabled={busy}
-                            aria-label={t("admin.colRole")}
-                            onChange={(e) => setRole(u, e.target.value === "user" ? "" : e.target.value)}>
-                      {catalogue.map((r) => (
-                        <option key={r.key} value={r.key}
-                                disabled={!grantable.has(r.key) && r.key !== u.role}>
-                          {ROLE_LABEL[r.key] || r.key}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="admin-rolecell">
+                      <select className="input admin-role" disabled={busy}
+                              value={pending[u.email] || u.role}
+                              aria-label={t("admin.colRole")}
+                              onChange={(e) => setPending(
+                                (p) => ({ ...p, [u.email]: e.target.value }))}>
+                        {catalogue.map((r) => (
+                          <option key={r.key} value={r.key}
+                                  disabled={!grantable.has(r.key) && r.key !== u.role}>
+                            {ROLE_LABEL[r.key] || r.key}
+                          </option>
+                        ))}
+                      </select>
+                      {/* Enabled only when there is something to commit, so the button's state is
+                          itself the answer to "did my choice register?" */}
+                      <button type="button" className="btn sm"
+                              disabled={busy || !pending[u.email] || pending[u.email] === u.role}
+                              onClick={() => applyRole(u)}>{t("admin.apply")}</button>
+                    </div>
                   )}
                 </td>
                 <td>
@@ -262,6 +308,47 @@ export default function Admin() {
       </div>
       <p className="hint">{t("admin.removeNote")}</p>
       <p className="hint">{t("admin.roleNote")}</p>
+
+      {/* WHAT A ROLE GRANTS, read from the policy the server enforces. The verbs and their
+          descriptions come from roles.py over the API; writing them again here would give one
+          fact two homes, and the copy in the frontend would be the one that goes stale. */}
+      <button type="button" className="btn ghost sm" aria-expanded={showPerms}
+              onClick={() => setShowPerms((v) => !v)}>
+        {showPerms ? t("admin.rolesHide") : t("admin.rolesShow")}
+      </button>
+      {showPerms ? (
+        <div className="tablewrap">
+          <table className="admin-tbl admin-perms">
+            <thead>
+              <tr>
+                <th>{t("admin.colRole")}</th>
+                <th>{t("admin.colPerms")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {catalogue.map((r) => (
+                <tr key={r.key}>
+                  <td>
+                    {ROLE_LABEL[r.key] || r.key}
+                    <div className="hint">{r.about}</div>
+                  </td>
+                  <td>
+                    <ul className="perm-list">
+                      {(r.perms || []).map((v) => (
+                        <li key={v}>
+                          <code>{v}</code>
+                          <span className="muted"> {(data && data.permissions
+                                                     && data.permissions[v]) || ""}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
       </>)}
     </div>
   );

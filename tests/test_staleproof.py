@@ -52,11 +52,14 @@ class FakeDocker:
     """A caddy that behaves like the real one: it serves what it was last TOLD, not what is on
     disk. `hot_reload=True` makes it the hypothetical broken one that follows the file."""
 
-    def __init__(self, cfgdir, hot_reload=False, start_fails=False, never_answers=False):
+    def __init__(self, cfgdir, hot_reload=False, start_fails=False, never_answers=False,
+                 serves_nothing=False, ignores_loads=False):
         self.cfgdir = cfgdir
         self.hot_reload = hot_reload
         self.start_fails = start_fails
         self.never_answers = never_answers
+        self.serves_nothing = serves_nothing      # a container that came up dead
+        self.ignores_loads = ignores_loads        # a container that accepts no change at all
         self.running = set()
         self.removed = False
         self.seen = []
@@ -88,7 +91,7 @@ class FakeDocker:
             if self.start_fails:
                 return _R(1, "", "no such image")
             # THE START is the only moment a real caddy reads the file by itself.
-            self.running = self._hosts_on_disk()
+            self.running = set() if self.serves_nothing else self._hosts_on_disk()
             return _R(0, "deadbeef\n")
         if cmd[:2] == ["docker", "exec"] and "2019/config/" in j and "/load" not in j:
             if self.never_answers:
@@ -97,7 +100,8 @@ class FakeDocker:
                 self.running = self._hosts_on_disk()      # the behaviour under suspicion
             return _R(0, _config_json(self.running))
         if cmd[:2] == ["docker", "exec"] and "/load" in j:
-            self.running = self._hosts_on_disk()          # an EXPLICIT load, which is apply()
+            if not self.ignores_loads:
+                self.running = self._hosts_on_disk()      # an EXPLICIT load, which is apply()
             return _R(0, "")
         if cmd[:3] == ["docker", "rm", "-f"]:
             self.removed = True
@@ -148,6 +152,29 @@ def test_a_caddy_that_hot_reloads_on_write_FAILS_the_check(agent, monkeypatch, c
     assert rc == 1, out
     assert "A BARE FILE EDIT REACHED THE RUNNING CONFIG" in out, out
     assert fake.removed, "the throwaway was left running on the failure path"
+
+
+def test_a_container_that_serves_nothing_is_a_FIXTURE_failure_not_a_pass(agent, monkeypatch,
+                                                                         capsys):
+    """PROVE THE FIXTURE BEFORE BELIEVING THE RESULT (class 12). A throwaway that came up serving
+    nothing would score "B is not in the running config" perfectly, every time, while measuring
+    nothing at all. That is the exact shape of a check that cannot fail."""
+    m, _live = agent
+    fake = FakeDocker("/tmp/_cgstale", serves_nothing=True)
+    rc, out = _run(m, fake, monkeypatch, capsys)
+    assert rc == 1, out
+    assert "the fixture does not reproduce the condition" in out, out
+
+
+def test_a_container_that_accepts_no_change_FAILS_rather_than_passing(agent, monkeypatch, capsys):
+    """THE CONTROL. If the explicit admin load does not publish B either, then step 3 proved
+    nothing: a container that refuses every change passes "a bare edit did not propagate" for the
+    wrong reason. The check must notice and say so (class 13 - defeat every guard on the path)."""
+    m, _live = agent
+    fake = FakeDocker("/tmp/_cgstale", ignores_loads=True)
+    rc, out = _run(m, fake, monkeypatch, capsys)
+    assert rc == 1, out
+    assert "did NOT publish" in out and "proves nothing about bare edits" in out, out
 
 
 def test_a_throwaway_that_never_starts_is_a_SKIP_not_a_pass(agent, monkeypatch, capsys):

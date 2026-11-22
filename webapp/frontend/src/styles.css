@@ -1224,6 +1224,25 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .admin-tbl .mono{font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:13px}
 .admin-tbl .row-off td{opacity:.55}
 .admin-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+/* A LAYOUT ROW IS ARITHMETIC (class 45). The create row gained a fourth field, and `.fld` is
+   `flex:1; min-width:240px`, so four flexible fields would need 4x240 + 4x12 gaps + the Save
+   button (~96px) = 1104px before anything wraps - wider than the card on a 1440px screen with the
+   sidebar. The role control is a SELECT with known, short options, so it takes a fixed width the
+   way `.fld-lang` already does, leaving 3x240 + 220 + 48 + 96 = 1084px. Below that it wraps,
+   which is correct, and under 720px the whole row stacks. */
+.assess-row .fld-role{flex:0 0 220px}
+
+/* The picker and its commit button share one cell. A ROLE CHANGE IS NOT SAVED UNTIL IT IS
+   APPLIED, so the button has to sit where the choice was made - a Save at the bottom of a table
+   belongs to no row in particular, and on a long list it is off screen when the choice is made. */
+.admin-rolecell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.admin-rolecell .btn.sm{padding:6px 12px;font-size:12px}
+/* The permission matrix is reference material, not a control: smaller, denser, and the verbs in
+   mono because they are identifiers the server matches on, not prose. */
+.admin-perms td{vertical-align:top}
+.admin-perms .hint{margin:4px 0 0;font-size:12px}
+.perm-list{margin:0;padding-left:18px;font-size:13px}
+.perm-list code{font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:12px}
 /* The role picker sits INSIDE a table cell, so it takes the row's height rather than the form
    control's: a full-size .input here makes every row 48px tall and the table twice as long as the
    screen. The longest label is the German "S4biz-Hauptbenutzer", which is what 190px is measured

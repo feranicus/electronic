@@ -294,6 +294,9 @@ class AdminUserReq(BaseModel):
     password: str = ""        # blank -> the server generates one and returns it ONCE
     must_change: bool = True
     note: str = ""
+    # EMPTY MEANS "do not decide" - the account gets the default role and no row is written, which
+    # is not the same as somebody choosing `user`. The create form sends a value explicitly.
+    role: str = ""
 
 
 class ChangePwReq(BaseModel):
@@ -867,31 +870,33 @@ def admin_users(request: Request):
             "min_password_len": user_store.MIN_PASSWORD_LEN,
             "shared_password_active": bool(colt_auth.COLT_PW),
             "me": {"email": me, "role": my_role},
-            "roles": [{"key": k, "label": v["label"], "about": v["about"], "rank": v["rank"]}
+            # `perms` and `permissions` are what let the page SHOW what a role grants instead of
+            # asking the operator to trust a label. Both come from roles.py, which is the thing the
+            # server enforces - a second description in the frontend would drift from the policy
+            # the first time a verb is added, and the drift would be invisible until somebody was
+            # refused something the screen said they had.
+            "roles": [{"key": k, "label": v["label"], "about": v["about"], "rank": v["rank"],
+                       "perms": sorted(v["perms"])}
                       for k, v in sorted(_roles.ROLES.items(), key=lambda kv: kv[1]["rank"])],
+            "permissions": dict(_roles.PERMISSIONS),
             "grantable": [k for k in _roles.ROLES if _roles.may_grant(my_role, k)]}
 
 
-class AdminRoleReq(BaseModel):
-    role: str = ""
+def _grant_role(actor, email, want):
+    """Apply a role, or raise the HTTPException that says why not. ONE HOME for the decision.
 
-
-@app.post("/api/admin/users/{email}/role")
-def admin_set_role(email: str, req: AdminRoleReq, request: Request):
-    """Assign a role. Works for an address with no credential row, which is most of them.
-
-    THE POLICY IS NOT RE-STATED HERE. roles.may_grant() decides whether this actor may hand out
-    this role at all (it refuses upward and sideways grants, and refuses entirely for a role that
-    holds no invite permission), and roles.may_touch() decides whether this actor may administer
-    this particular person (a company administrator is confined to their own tenant). Both live in
-    roles.py; this route only carries the two refusals that are about THIS endpoint rather than
-    about the policy.
+    Two routes need this - the row picker on the administration page and the role field on the
+    create-user form - and an authorisation rule answered in two places is how a partner ends up
+    able to do something the other screen would have refused. The policy itself is not restated
+    here either: roles.may_grant() refuses upward and sideways grants and refuses outright for a
+    role holding no invite permission, roles.may_touch() confines a company administrator to their
+    own tenant. This function carries only the two refusals that belong to this product rather
+    than to the policy, and both are about RECOVERY.
     """
     import roles as _roles
-    actor = _require_ready(request)
     actor_role = role_for(actor)
     target = (email or "").strip().lower()
-    want = (req.role or "").strip().lower()
+    want = (want or "").strip().lower()
 
     # 1. NOBODY EDITS THEIR OWN ROLE. Not a privilege question - a recovery one. An administrator
     #    who is not on the committed ADMIN_EMAILS floor could otherwise demote themselves out of
@@ -915,6 +920,25 @@ def admin_set_role(email: str, req: AdminRoleReq, request: Request):
         raise HTTPException(status_code=400, detail="could not record the role for %s" % target)
     _log(evt="role_set", user=actor, role=actor_role, target=target, granted=effective)
     return {"ok": True, "email": target, "role": _roles.role_of(target, want)}
+
+
+class AdminRoleReq(BaseModel):
+    role: str = ""
+
+
+@app.post("/api/admin/users/{email}/role")
+def admin_set_role(email: str, req: AdminRoleReq, request: Request):
+    """Assign a role. Works for an address with no credential row, which is most of them.
+
+    THE POLICY IS NOT RE-STATED HERE. roles.may_grant() decides whether this actor may hand out
+    this role at all (it refuses upward and sideways grants, and refuses entirely for a role that
+    holds no invite permission), and roles.may_touch() decides whether this actor may administer
+    this particular person (a company administrator is confined to their own tenant). Both live in
+    roles.py; this route only carries the two refusals that are about THIS endpoint rather than
+    about the policy.
+    """
+    actor = _require_ready(request)
+    return _grant_role(actor, email, req.role)
 
 
 @app.post("/api/admin/users")
@@ -941,8 +965,24 @@ def admin_create_user(req: AdminUserReq, request: Request):
                                       by=admin, note=(req.note or "").strip() or None)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    _log(evt="admin_user_set", user=admin, target=email, must_change=bool(req.must_change))
-    return {"ok": True, "user": rec, "password": pw}      # shown once, never stored
+    # THE ROLE IS APPLIED IN THE SAME REQUEST, through the SAME decision. Creating the account and
+    # then having to go find the row to set a role is how somebody ends up live with the default
+    # one. If the grant is refused the exception propagates: a 403 here is honest, and the account
+    # still exists with its password, which the detail says so the administrator can fix the role
+    # rather than wonder whether the user was created at all.
+    role_detail = ""
+    if (req.role or "").strip():
+        try:
+            _grant_role(admin, email, req.role)
+        except HTTPException as e:
+            role_detail = ("the account and password were created, but the role was NOT applied: "
+                           "%s" % e.detail)
+    _log(evt="admin_user_set", user=admin, target=email, must_change=bool(req.must_change),
+         role=(req.role or "").strip().lower() or None)
+    import roles as _roles
+    return {"ok": True, "user": rec, "password": pw,          # shown once, never stored
+            "role": _roles.role_of(email, user_store.get_role(email)),
+            "role_error": role_detail}
 
 
 @app.post("/api/admin/users/{email}/disable")

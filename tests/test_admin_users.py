@@ -297,8 +297,14 @@ def test_every_admin_route_is_gated_server_side():
         # An authenticated caller at minimum, THEN the policy. Either half alone is a hole:
         # without _require_ready an anonymous caller reaches the policy with no role at all.
         assert "_require_ready(request)" in b, "%s does not authenticate the caller" % route
+        # FOLLOW THE CALL (class 4). The policy lives in `_grant_role`, shared with the create-user
+        # form so two screens cannot answer the same authorisation question differently. Reading
+        # only the route body would report the gate missing from a route that has it.
+        i = src.index("def _grant_role(")
+        helper = src[i:src.index("\nclass ", i)]
+        reachable = b + "\n" + (helper if "_grant_role(" in b else "")
         for frag in alt:
-            assert frag in b, "%s claims a policy gate but never calls %s" % (route, frag)
+            assert frag in reachable, "%s claims a policy gate but never reaches %s" % (route, frag)
     missing = set(_POLICY_GATED) - seen
     assert not missing, (
         "a named exception no longer matches any route, so it is now a blanket hole: %s"
@@ -668,3 +674,74 @@ def test_nobody_can_grant_a_role_at_or_above_their_own(tmp_path, monkeypatch):
         r = _request("/api/admin/users/colleague@colt.net/role", "POST", email=actor,
                      body={"role": want})
         assert r["status"] == 403, "a company administrator granted %s (%d)" % (want, r["status"])
+
+
+# ---------------------------------------------------------------------------------------------
+# 6. THE ROLE IS COMMITTED DELIBERATELY, AND THE SERVER SAYS WHAT HAPPENED.
+#    Asked for after the first version shipped: the picker saved on every `change` event, so a
+#    mis-click was a silent privilege change with nothing on screen to say so, a new account could
+#    only be given a role by going back and finding its row, and nothing anywhere said what a role
+#    actually allows.
+# ---------------------------------------------------------------------------------------------
+def test_a_new_account_gets_its_role_in_the_same_request(tmp_path, monkeypatch):
+    us = _role_env(tmp_path, monkeypatch)
+    r = _request("/api/admin/users", "POST", email="feranicus@s4biz.io",
+                 body={"email": "new.person@colt.net", "role": "presales", "note": "partner"})
+    assert r["status"] == 200, r["json"]
+    assert us.get_role("new.person@colt.net") == "presales"
+    # The response says what the role ENDED UP as, so the page can confirm it without guessing.
+    assert r["json"].get("role") == "presales"
+    assert not r["json"].get("role_error")
+
+
+def test_a_refused_role_on_create_does_not_pretend_the_account_has_it(tmp_path, monkeypatch):
+    """THE ACCOUNT STILL EXISTS - its password was issued and shown once, and pretending otherwise
+    would send the administrator looking for a user that is really there. So the account is
+    reported as created AND the role failure is named, rather than one of the two being silent."""
+    us = _role_env(tmp_path, monkeypatch)
+    r = _request("/api/admin/users", "POST", email="feranicus@s4biz.io",
+                 body={"email": "someone@colt.net", "role": "wizard"})
+    assert r["status"] == 200, r["json"]
+    assert r["json"]["password"], "the account was not created"
+    assert us.get_role("someone@colt.net") == "", "an undefined role was stored"
+    assert r["json"].get("role_error"), "the refusal is silent - the page would show success"
+    assert "role was NOT applied" in r["json"]["role_error"]
+
+
+def test_create_and_the_row_picker_cannot_answer_the_same_question_differently(tmp_path,
+                                                                               monkeypatch):
+    """ONE HOME. Both paths must refuse an upward grant identically; if they drift, the weaker
+    screen is the one an attacker uses."""
+    us = _role_env(tmp_path, monkeypatch)
+    actor = "boss@colt.net"
+    us.set_role(actor, "company_admin")
+
+    row = _request("/api/admin/users/victim@colt.net/role", "POST", email=actor,
+                   body={"role": "admin"})
+    create = _request("/api/admin/users", "POST", email=actor,
+                      body={"email": "victim2@colt.net", "role": "admin"})
+    assert row["status"] == 403, "the row picker allowed an upward grant"
+    # The create path is gated by _require_admin first, so a company admin never reaches the
+    # policy there at all - a STRICTER answer, never a looser one, which is the property that
+    # matters. Assert that rather than an identical status code.
+    assert create["status"] in (403,), create["json"]
+    assert us.get_role("victim@colt.net") == "" and us.get_role("victim2@colt.net") == ""
+
+
+def test_the_page_is_told_what_each_role_allows(tmp_path, monkeypatch):
+    """A screen that shows role NAMES and no verbs asks the operator to trust a label. The
+    catalogue and the verb descriptions come from roles.py, so the page cannot describe a
+    permission the server does not enforce."""
+    _role_env(tmp_path, monkeypatch)
+    import roles
+    page = _request("/api/admin/users", "GET", email="feranicus@s4biz.io")["json"]
+    assert page.get("permissions"), "the verb catalogue is not served"
+    assert set(page["permissions"]) == set(roles.PERMISSIONS), (
+        "the page would describe a different permission set than the server enforces")
+    by_key = {r["key"]: r for r in page["roles"]}
+    assert set(by_key) == set(roles.ROLES)
+    for key, r in by_key.items():
+        assert set(r["perms"]) == set(roles.ROLES[key]["perms"]), (
+            "%s is shown with the wrong verbs" % key)
+        unknown = set(r["perms"]) - set(page["permissions"])
+        assert not unknown, "%s shows verbs with no description: %s" % (key, sorted(unknown))

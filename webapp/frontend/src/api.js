@@ -41,8 +41,8 @@ export const changePassword = (currentPassword, newPassword) =>
 export const adminUsers = () => getJSON("/api/admin/users");
 export const adminFleet = () => getJSON("/api/admin/fleet");
 // postJSON-backed: { ok, status, data }. data.password is the plaintext, returned ONCE.
-export const adminSetUser = (email, password, mustChange = true, note = "") =>
-  postJSON("/api/admin/users", { email, password, must_change: mustChange, note });
+export const adminSetUser = (email, password, mustChange = true, note = "", role = "") =>
+  postJSON("/api/admin/users", { email, password, must_change: mustChange, note, role });
 export const adminDisable = (email, disabled = true) =>
   postJSON(`/api/admin/users/${encodeURIComponent(email)}/disable?disabled=${disabled ? "true" : "false"}`, {});
 export const adminDeleteUser = (email) => delJSON(`/api/admin/users/${encodeURIComponent(email)}`);
