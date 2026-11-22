@@ -499,6 +499,22 @@ LH=$(cd /opt/colt-stack/hermes-skills/shodan-assessment && sha256sum scripts/sho
 [ -n "$EH" ] && [ "$EH" = "$LH" ] && chk engine_fresh yes "container engine == shipped sources ($EH)" \
   || chk engine_fresh no "container=$EH shipped=$LH — the container is NOT running what we sent"
 
+# WHICH container, and which image? engine_fresh says the bytes differ; it cannot say WHY, and the
+# two causes have opposite repairs: a stale build (rebuild) versus a DIFFERENT container answering
+# to this name (something recreated it, and anything docker-cp'd into the old one is gone with it).
+# Printed before AND after the reboot, so the pair makes the replacement self-evident instead of
+# leaving the next person to infer it from a hash they have nothing to compare against (class 26).
+CID=$(docker inspect -f '{{.Id}}' "$C" 2>/dev/null | cut -c1-12)
+CIMG=$(docker inspect -f '{{.Image}}' "$C" 2>/dev/null | cut -c8-19)
+CSTART=$(docker inspect -f '{{.State.StartedAt}}' "$C" 2>/dev/null)
+# AND WHICH PORTS IT PUBLISHES. api_auth/app_served/bot_gate curl 127.0.0.1:8090 while
+# proxy_routes goes over the docker network, so an unpublished port makes the first three report
+# 000 - "the app is down" - at the same moment the proxy is happily getting 401s off it. Three
+# FAILs and a PASS that cannot both be true, with nothing on screen to tell them apart. Printing
+# the binding turns that into one readable fact.
+CPORTS=$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$C" 2>/dev/null | cut -c1-400)
+chk container_identity yes "id=${CID:-none} image=${CIMG:-none} started=${CSTART:-?} ports=${CPORTS:-none} — compare with the post_reboot_ twin: a different id means the container was REPLACED, not restarted; an empty 8090 binding explains a 000 from the direct probes while the proxy still answers"
+
 # kimi-k2.6: "no evidence caddy RE-READ its config after reboot vs recycling a cached one".
 # Also correct, and it is the EXACT shape of the 2026-08-07 outage: a file that validates while
 # the process serves something else entirely. Ask the running process what it is serving and
@@ -918,6 +934,32 @@ def _decide_from_verdict(verdict):
     return gate, verdict.get("digest", "")
 
 
+def fallback_verdict(checks, panel_output=""):
+    """The deterministic verdict used when the AI panel does not answer. ONE HOME.
+
+    IT MUST CARRY THE FAILED CHECKS. govern.py reads `verdict["failed"]`; the first version of this
+    dict had no such key, so a NO-GO with four failures printed "No failed checks. Nothing to
+    remediate." two lines under the gate's own "(4 failed)". A governance step that contradicts the
+    gate it reports on is worse than none - it is a check reporting its own blindness as a finding
+    about the system (class 1).
+
+    AND IT MUST SAY WHY THE PANEL WAS SILENT. "AI panel unavailable" covers a gateway outage, a
+    missing key and a reviewer that is not in the container, which have nothing in common except
+    the sentence. Only the last one is namable from here, so it is named and the rest stay honest.
+    """
+    failed = [c for c in checks if not c.get("ok")]
+    why = "AI panel unavailable"
+    if "PANEL_NO_REVIEWER" in (panel_output or ""):
+        why = ("AI panel could not run: /opt/stagegate/quorum.py is not inside colt-web, so the "
+               "container was REPLACED after the reviewer was copied into it - compare "
+               "container_identity with its post_reboot_ twin")
+    return {"gate": "GO" if (checks and not failed) else "NO-GO",
+            "failed": failed,
+            "digest": "%s — gate decided by %d deterministic checks (%d failed)."
+                      % (why, len(checks), len(failed)),
+            "answered": 0}
+
+
 def parse_checks(text):
     out = []
     for ln in (text or "").splitlines():
@@ -1191,10 +1233,21 @@ def run(reboot_test=True, quiet=False):
     # the Summary page and the console output cannot disagree about how many checks passed.
     globals()["_LAST_EVIDENCE"] = evidence
 
-    say("asking 2 soldiers + 2 auditors for a written verdict...")
+    say("asking 2 soldiers + 2 auditors for a written verdict...")   # fallback: fallback_verdict()
     ev = json.dumps(evidence)
+    # RE-SHIP THE REVIEWER. `docker cp` writes into the container's WRITABLE LAYER, and the copy
+    # above happens BEFORE the reboot test. Any path that replaces the container between the two -
+    # a recreate, a different image coming up at boot - takes /opt/stagegate/quorum.py with it, and
+    # the panel then reports itself "unavailable" while the real fault is that its own code is no
+    # longer in there. MEASURED on the 22 Nov run: post_reboot_engine_fresh showed the container's
+    # engine bytes had changed, i.e. it was not the container we copied into.
+    # The copy is idempotent and costs nothing, so it belongs in the same session as the question.
     out3, _, _ = ssh_script(
-        "set +e\ncat >/tmp/ev.json <<'JSON'\n%s\nJSON\n"
+        "set +e\n" + ship_q +
+        "cat >/tmp/ev.json <<'JSON'\n%s\nJSON\n"
+        "if ! docker exec colt-web test -f /opt/stagegate/quorum.py; then\n"
+        "  echo 'PANEL_NO_REVIEWER: /opt/stagegate/quorum.py is not in the container'\n"
+        "fi\n"
         "docker exec -i colt-web python3 /opt/stagegate/quorum.py < /tmp/ev.json\n" % ev,
         timeout=600)
     try:
@@ -1202,11 +1255,7 @@ def run(reboot_test=True, quiet=False):
         globals()["_LAST_VERDICT"] = verdict     # govern.py reads the full panel output from here
     except Exception:
         # The gate must never depend on the panel answering. Fall back to the deterministic rule.
-        failed = [c for c in checks if not c["ok"]]
-        verdict = {"gate": "GO" if (checks and not failed) else "NO-GO",
-                   "digest": "AI panel unavailable — gate decided by %d deterministic checks (%d failed)."
-                             % (len(checks), len(failed)),
-                   "answered": 0}
+        verdict = fallback_verdict(checks, out3)
     return _decide_from_verdict(verdict)
 
 

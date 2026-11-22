@@ -789,6 +789,13 @@ def test_check_details_are_wrapped_not_truncated():
         ctx = body[max(0, m.start() - 90):m.start()]
         if "md5sum" in ctx or "sha256sum" in ctx:
             continue                                   # a 12-char hash prefix, not a detail
+        # A DOCKER ID AND IMAGE ARE sha256 DIGESTS TOO, and shortening one to 12 characters is the
+        # same deliberate abbreviation as above, not an amputated sentence. Kept narrow on purpose:
+        # only the two digest fields, never `docker inspect` in general, because the ports and
+        # status fields ARE details and must stay under the 400 rule. [2026-11-22,
+        # container_identity]
+        if "{{.Id}}" in ctx or "{{.Image}}" in ctx:
+            continue
         assert n >= 400, (
             "a check detail is capped at %d characters in the shell, which amputates it before it "
             "is ever printed. The cap exists only to stop a crashing command dumping a traceback "
