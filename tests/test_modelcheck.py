@@ -108,8 +108,32 @@ def test_the_verint_failure_is_caught_and_named_as_entitlement():
     rc, out = _run(CHAIN, {"deepseek-v4.1-flash": 403}, ALL_VISIBLE)
     assert rc == 1, out
     assert "FORBIDDEN" in out and "deepseek-v4.1-flash" in out, out
-    assert "not entitled" in out, out
+    assert "not entitled" in out.lower(), out
     assert "MISSING" not in out, "a 403 was reported as a missing id - the opposite repair"
+    assert "IS in this key's catalogue" in out, (
+        "the verdict does not say the catalogue was consulted, so it reads the same whether or "
+        "not it was - see the next test for what that cost")
+
+
+def test_a_403_on_a_model_the_key_cannot_SEE_is_called_a_wrong_id():
+    """THE SECOND HALF, and the one that cost an evening (22 Nov 2026). `visible` was computed and
+    then ignored: every 403 printed "in the catalog but this KEY is not entitled to it", so a 403
+    on an id DigitalOcean does not serve to this key read as an entitlement problem and sent the
+    operator to the console to grant a model to a key that already had five.
+
+    DigitalOcean answers an unserved id with 403 as readily as an ungranted one, so the catalogue
+    is the only thing that separates them - and the repairs are opposite: the console, or
+    enrich.py::_FALLBACKS."""
+    catalog = [m for m in ALL_VISIBLE if m != "deepseek-v4.1-flash"] + ["deepseek-v4.1-flash-1017"]
+    rc, out = _run(CHAIN, {"deepseek-v4.1-flash": 403}, catalog)
+    assert rc == 1, out
+    assert "NOT in the catalogue" in out, (
+        "a 403 on an id this key cannot even see was still reported as an entitlement problem:\n"
+        + out)
+    assert "WRONG ID" in out, out
+    assert "deepseek-v4.1-flash-1017" in out, (
+        "it did not print the deepseek ids this key DOES see, which is the one thing that names "
+        "the repair:\n" + out)
 
 
 def test_a_wrong_id_is_named_as_a_wrong_id_with_the_alternatives():

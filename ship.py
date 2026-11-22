@@ -2456,16 +2456,26 @@ def main():
                              errors="replace", timeout=150)
         for _l in ((_mc.stdout or '') + (_mc.stderr or '')).rstrip().splitlines():
             print('  ' + _l.strip())
-        if _mc.returncode == 1:
+        if _mc.returncode == 1 and os.environ.get("SHIP_ALLOW_BAD_HEAD") == "1":
+            # A GUARD AN INFORMED OPERATOR CANNOT OVERRIDE IS A BUG - the same escape hatch as
+            # SHIP_ALLOW_BRANCH / SHIP_ALLOW_BEHIND. The chain is BUILT to degrade: with the head
+            # unusable the remaining models still answer, so this is a tax on every call, not an
+            # outage. It must stay loud, and it must not be the reason a release cannot ship when
+            # the operator has read the evidence and decided.
+            print('  [!] SHIP_ALLOW_BAD_HEAD=1 - shipping with an unusable chain head. Every call '
+                  'pays a wasted round-trip to it before failing over to the rest.')
+        elif _mc.returncode == 1:
             # TWO FAULTS, OPPOSITE REPAIRS, and the old wording named only one. A 403 means the
             # id is RIGHT and the key is not granted that model (DigitalOcean console); a 404
             # means the id is wrong and belongs in enrich.py. Saying "does not serve" for both
             # sent the operator to edit code when the code was correct - which is what the
             # Verint run cost. modelcheck prints which it is; this line must not contradict it.
             sys.exit('[X] the chain HEAD is unusable, so every assessment pays a wasted '
-                     'round-trip before failing over. Read the FORBIDDEN / MISSING lines above: '
-                     'FORBIDDEN = grant the model to the key in the DigitalOcean console; '
-                     'MISSING = fix the id in enrich.py::_FALLBACKS.')
+                     'round-trip before failing over. Read the FORBIDDEN / MISSING / NEAR lines '
+                     'above: a 403 on a model the key CAN see = grant it in the DigitalOcean '
+                     'console; a 403 or 404 on one it CANNOT see = wrong id, and the NEAR line '
+                     'lists what that vendor actually serves - fix enrich.py::_FALLBACKS. '
+                     'Override deliberately with SHIP_ALLOW_BAD_HEAD=1.')
     except SystemExit:
         raise
     except Exception as _e:

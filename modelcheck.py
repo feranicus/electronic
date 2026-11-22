@@ -116,9 +116,20 @@ for i, m in enumerate(want):
     if code in (200, 201):
         print("OK      %-26s usable" % m)
     elif code == 403:
-        print("FORBIDDEN %-24s in the catalog but this KEY is not entitled to it. %s"
-              % (m, detail))
-        bad.append((m, i, "entitlement"))
+        # SAY WHAT WAS MEASURED, NOT WHAT IS ASSUMED. This line used to read "in the catalog but
+        # this KEY is not entitled to it" unconditionally - a detail that rendered identically
+        # whether or not the catalogue had been consulted (class 7), while `visible` sat computed
+        # and unused two lines above. It cost an evening: the operator was sent to the
+        # DigitalOcean console to grant a model to a key that already had five, when the catalogue
+        # answer was sitting in the same function.
+        if visible:
+            print("FORBIDDEN %-24s IS in this key's catalogue, so the id is right and the key is "
+                  "NOT entitled. %s" % (m, detail))
+            bad.append((m, i, "entitlement"))
+        else:
+            print("FORBIDDEN %-24s and it is NOT in the catalogue this key can see - so this is "
+                  "very likely the WRONG ID, answered 403 rather than 404. %s" % (m, detail))
+            bad.append((m, i, "id"))
     elif code == 404 or not visible:
         print("MISSING %-26s not served under this id. %s" % (m, detail))
         bad.append((m, i, "id"))
@@ -130,11 +141,14 @@ for i, m in enumerate(want):
         print("UNKNOWN %-26s HTTP %s %s" % (m, code, detail))
         bad.append((m, i, "unknown"))
 
+# PRINT THE EVIDENCE FOR EVERY BAD MODEL, not only the ones already judged to be a wrong id.
+# The ids this key can actually see are what settle "wrong id" versus "not entitled", and leaving
+# them out on a 403 is what turned a one-line answer into an evening of guessing.
 for m, i, why in bad:
-    if why == "id":
-        stem = m.split("-")[0].lower()
-        near = [x for x in ids if x.lower().startswith(stem)]
-        print("NEAR    %s -> %s" % (m, ", ".join(near) if near else "(nothing from that vendor)"))
+    stem = m.split("-")[0].lower()
+    near = [x for x in ids if x.lower().startswith(stem)]
+    print("NEAR    %s -> this key sees: %s"
+          % (m, ", ".join(near) if near else "(nothing from that vendor)"))
 
 # THE HEAD IS DIFFERENT FROM THE REST. The chain is built to degrade, so an unusable model at
 # position 2+ is a warning. An unusable HEAD costs every single call a wasted round-trip before

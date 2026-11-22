@@ -169,6 +169,44 @@ read the whole docker log, and the later verification pass lists containers with
 so its line kept the test green while the recreate set had gone host-wide. Anchored on the `ps -q`
 selection call instead (class 4, again).
 
+## It was never the credential, and my own check said it was
+
+With all four homes agreeing on `b4bb02748df6` — the key the DigitalOcean console shows holding
+five models including DeepSeek V4.1 Flash 1017 — the next ship said:
+
+    KEY     fingerprint b4bb02748df6, 71 chars
+    CATALOG 78 model(s) visible on https://inference.do-ai.run/v1
+    FORBIDDEN deepseek-v4.1-flash  in the catalog but this KEY is not entitled to it.
+    OK      openai-gpt-oss-120b    usable
+    OK      mistral-3-14B          usable
+    OK      kimi-k2.6              usable
+
+Three models answer on that key, so it is not paused, not VPC-scoped and not stale. The credential
+theory is dead, and the line that killed it was one I wrote.
+
+**`visible` was computed and then ignored.** The function asks `m in ids` and never reads the
+answer: every 403 printed "in the catalog but this KEY is not entitled to it" regardless. That is
+class 7 — a detail that renders identically whether or not anything was measured — and it sent the
+operator to the console to grant a model to a key that already had it. The evidence needed to
+settle it was sitting in the same function, in a variable, unused.
+
+DigitalOcean answers an **unserved** id with 403 as readily as an **ungranted** one, so the
+catalogue is the only thing that separates them, and the repairs are opposite: the console, or
+`enrich.py::_FALLBACKS`. The verdict now says which it measured, and the NEAR line prints every
+deepseek id this key actually sees — on entitlement cases too, not only on a 404.
+
+The docs do not settle the id either. The migration note says DeepSeek V4 Flash moves to
+`deepseek-v4.1-flash-1017`; the supported-models table still lists `deepseek-4-flash` and does not
+carry the V4.1 slugs at all; the pricing page names both "DeepSeek V4.1 Flash" and "DeepSeek V4.1
+Flash 1017". Three DigitalOcean pages, three answers. **That is exactly why this check asks the
+API** — a marketing name is not an API id, and guessing `deepseek-v4-flash` off a pricing page is
+the scar that started all of this. The next run prints the served ids, and that is the authority.
+
+`SHIP_ALLOW_BAD_HEAD=1` was added alongside it. CLAUDE.md says a guard an informed operator cannot
+override is a bug, and this one had no escape hatch: the chain is built to degrade, so an unusable
+head is a tax on every call, not an outage, and it must not be the reason a release cannot ship
+once the operator has read the evidence.
+
 ## Mistakes made while doing this
 
 **I rewrote history.** The bulk rename skipped lines starting with `#` and `//` but not
