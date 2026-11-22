@@ -1360,3 +1360,9 @@ section.lp{padding:52px 0;border-top:1px solid var(--line);position:relative}
 .pipe-notes li:last-child{border-bottom:none}
 .pipe-notes .hint{margin:3px 0 0;font-size:11px}
 @media (max-width:720px){ .kcol{flex:0 0 78vw} }
+
+/* The mailbox consent control. A checkbox with its state in WORDS beside it: a bare tick box in a
+   column of tags reads as decoration, and this is the most consequential switch on the page. */
+.mail-opt{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--body);
+  cursor:pointer}
+.mail-opt input{width:15px;height:15px;accent-color:var(--cta);cursor:pointer}

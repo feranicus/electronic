@@ -58,6 +58,11 @@ export const adminDisable = (email, disabled = true) =>
 export const adminDeleteUser = (email) => delJSON(`/api/admin/users/${encodeURIComponent(email)}`);
 // The empty string clears the role, which is how somebody goes back to the default. The server
 // decides whether this actor may: the picker only OFFERS what /api/admin/users said is grantable.
+// Whose mailbox the pipeline may read. An administrative act with a named actor, recorded
+// server-side; the page never decides it locally.
+export const adminSetMail = (email, enabled) =>
+  postJSON(`/api/admin/users/${encodeURIComponent(email)}/mail`, { enabled });
+
 export const adminSetRole = (email, role) =>
   postJSON(`/api/admin/users/${encodeURIComponent(email)}/role`, { role });
 

@@ -122,6 +122,22 @@ export default function Pipeline() {
     openCard(id);
   }
 
+  // DELETE, NOT "LOST". Lost is a STAGE - a real outcome with a reason, and it stays on the
+  // board because a partner who went quiet is the thing you most need to see. A test deal is not
+  // an outcome; it is noise, and there has to be a way to remove it entirely. The mail filed
+  // against it is UNFILED rather than destroyed (the message really was received), which the
+  // server does and the confirmation says.
+  async function removeDeal(d) {
+    if (!window.confirm(t("pipe.confirmDelete").replace("{company}", txt(d.company)))) return;
+    setBusy(d.deal_id); setErr(""); setSaved("");
+    const r = await delJSON("/api/pipeline/" + encodeURIComponent(d.deal_id));
+    setBusy("");
+    if (!r.ok) { setErr(txt((r.data && r.data.detail) || t("pipe.saveFail"))); return; }
+    setSaved(t("pipe.deleted").replace("{company}", txt(d.company)));
+    setOpen(null);
+    load();
+  }
+
   async function sweep() {
     setBusy("sweep"); setErr(""); setSaved("");
     const r = await postJSON("/api/pipeline/sweep", {});
@@ -242,8 +258,13 @@ export default function Pipeline() {
         <div className="card pipe-detail">
           <div className="admin-head">
             <h2>{txt(open.deal.company)}</h2>
-            <button type="button" className="btn ghost sm"
-                    onClick={() => setOpen(null)}>{t("pipe.close")}</button>
+            <div className="admin-actions">
+              <button type="button" className="btn ghost sm"
+                      onClick={() => setOpen(null)}>{t("pipe.close")}</button>
+              <button type="button" className="btn ghost sm danger"
+                      disabled={busy === open.deal.deal_id}
+                      onClick={() => removeDeal(open.deal)}>{t("pipe.delete")}</button>
+            </div>
           </div>
           <p className="hint">
             {txt(open.deal.deal_id)} · {txt(open.deal.contact)} {txt(open.deal.domain)}

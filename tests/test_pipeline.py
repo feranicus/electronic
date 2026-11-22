@@ -11,6 +11,7 @@ The map has THREE TRACKS, not one funnel. A partner at R6 runs its own customers
 that touches a stage touches it beside a track, because that is the only way a stage is meaningful.
 """
 import importlib
+import io
 import json
 import os
 import sys
@@ -298,6 +299,9 @@ def _request(path, method="GET", email=None, body=None):
 def api(tmp_path, monkeypatch):
     monkeypatch.setenv("PIPELINE_DB", str(tmp_path / "p.sqlite"))
     monkeypatch.setenv("USER_DB", str(tmp_path / "u.sqlite"))
+    # PRODUCTION HAS THIS, so the fixture must too, or every mailbox test measures the "we do not
+    # know our own domain" path instead of the one under test (class 12).
+    monkeypatch.setenv("GMAIL_SENDER", "feranicus@s4biz.io")
     import user_store
     importlib.reload(user_store)
     from app import pipeline
@@ -365,16 +369,205 @@ def test_sweeping_the_mailboxes_needs_more_than_pipeline_edit(api):
     assert _request("/api/pipeline/sweep", "POST", email="boss@s4biz.io")["status"] == 200
 
 
-def test_the_board_says_when_the_mail_reader_is_off(api):
-    """A feature guarded by `if configured():` fails silently by construction (class 37). The
-    screen says it is off and what is missing, rather than looking like a board nobody writes to.
-    """
+def test_the_board_says_which_half_of_the_mail_reader_is_missing(api):
+    """A feature guarded by `if configured():` fails silently by construction (class 37), and
+    "it is off" sends the next person to the wrong console (class 26). The note names the half
+    that is actually missing: the credential, the kill switch, or the mailbox list."""
     _pipeline, us = api
     us.set_role("rep@s4biz.io", "sales_rep")
     b = _request("/api/pipeline", "GET", email="rep@s4biz.io")["json"]
     assert "mail" in b and b["mail"].get("note"), b.get("mail")
-    assert "gmail.readonly" in b["mail"]["note"], (
-        "the note does not name the console step a domain admin has to take")
+    note = b["mail"]["note"]
+    assert any(w in note for w in ("GMAIL_SA_B64", "PIPELINE_MAIL_READ", "MAILBOXES")), note
+
+
+def test_whose_mail_is_read_is_decided_in_the_product(api):
+    """DELIBERATE REVERSAL, one turn after the previous one, on the operator's instruction - and
+    the old reasoning is kept because deleting it loses why (class 17).
+
+    The list was briefly COMMITTED in gmail_read.py, on the argument that a name in a reviewed
+    diff beats an env var on a droplet. Right about env vars, wrong about the product: consent to
+    read a colleague's mailbox is an ADMINISTRATIVE act - a named administrator, a recorded time,
+    reversible by somebody who is not holding a git client. Shipping a code change to add a person
+    is the same "edit code, commit, ship, come back" loop colt_auth.email_allowed() was already
+    fixed to avoid.
+    """
+    _pipeline, us = api
+    sys.path.insert(0, BACKEND)
+    from app import gmail_read
+    import importlib as _il
+    _il.reload(gmail_read)
+
+    src = io.open(os.path.join(ROOT, "webapp", "backend", "app", "gmail_read.py"),
+                  encoding="utf-8").read()
+    body = "\n".join(ln for ln in src.split("\n") if not ln.strip().startswith("#"))
+    assert "MAILBOXES = [" not in body, (
+        "the mailbox list is hardcoded again; adding a person must not need a deploy")
+
+    # NOBODY IS READ UNTIL AN ADMINISTRATOR SAYS SO.
+    assert gmail_read.mailboxes() == []
+
+    r = _request("/api/admin/users/dima@s4biz.io/mail", "POST", email="feranicus@s4biz.io",
+                 body={"enabled": True})
+    assert r["status"] == 200, r["json"]
+
+    # AND THE PERSON APPEARS ON THE PAGE THAT DECIDED IT. Same defect as the role case: somebody
+    # with no credential row and no live session would otherwise vanish from the only screen that
+    # could switch it back off.
+    page = _request("/api/admin/users", "GET", email="feranicus@s4biz.io")["json"]
+    row = [u for u in page["users"] if u["email"] == "dima@s4biz.io"]
+    assert row, "the person whose mailbox was just enabled is not on the page"
+    assert row[0]["mail_read"] is True and row[0]["mail_possible"] is True, row[0]
+    assert us.mail_optin("dima@s4biz.io") is True
+    assert gmail_read.mailboxes() == ["dima@s4biz.io"]
+
+    # AND IT IS REVERSIBLE WITHOUT A DEPLOY.
+    _request("/api/admin/users/dima@s4biz.io/mail", "POST", email="feranicus@s4biz.io",
+             body={"enabled": False})
+    assert gmail_read.mailboxes() == []
+    assert us.list_mail_optin() == {"dima@s4biz.io": False}, (
+        "withdrawal erased the record instead of recording it")
+
+
+def test_a_deployment_that_cannot_name_its_own_domain_says_so(api, monkeypatch):
+    """TWO FAULTS, OPPOSITE REPAIRS (class 26). "outside this Workspace" about an address that is
+    perfectly fine sends the operator to argue with Google instead of setting GMAIL_SENDER."""
+    monkeypatch.delenv("GMAIL_SENDER", raising=False)
+    sys.path.insert(0, BACKEND)
+    from app import gmail_read
+    import importlib as _il
+    _il.reload(gmail_read)
+    try:
+        r = _request("/api/admin/users/dima@s4biz.io/mail", "POST", email="feranicus@s4biz.io",
+                     body={"enabled": True})
+        assert r["status"] == 400 and "GMAIL_SENDER" in r["json"].get("detail", ""), r["json"]
+    finally:
+        monkeypatch.setenv("GMAIL_SENDER", "feranicus@s4biz.io")
+        _il.reload(gmail_read)
+
+
+def test_a_mailbox_outside_our_workspace_is_refused_not_quietly_stored(api):
+    """A CONTROL THAT CANNOT WORK MUST REFUSE (class 2). Domain-wide delegation reaches our own
+    Workspace only, so armin.hall@colt.net can never be opened - storing a yes would show a green
+    switch beside a mailbox nothing will ever read."""
+    _pipeline, us = api
+    r = _request("/api/admin/users/armin.hall@colt.net/mail", "POST",
+                 email="feranicus@s4biz.io", body={"enabled": True})
+    assert r["status"] == 400 and "@s4biz.io" in r["json"].get("detail", ""), r["json"]
+    assert us.mail_optin("armin.hall@colt.net") is False
+    page = _request("/api/admin/users", "GET", email="feranicus@s4biz.io")["json"]
+    colt = [u for u in page["users"] if u["email"] == "armin.hall@colt.net"]
+    if colt:
+        assert colt[0]["mail_possible"] is False, "the page would offer a switch that cannot work"
+
+
+def test_a_row_for_another_workspace_is_filtered_even_if_it_reaches_the_store(api):
+    """DEFEAT EVERY GUARD ON THE PATH (class 13). The route refuses an impossible mailbox, so this
+    row can only arrive another way - a hand-edited database, a restored backup, a future caller.
+    The reader filters it anyway, because the route is not the last line of defence."""
+    _pipeline, us = api
+    sys.path.insert(0, BACKEND)
+    from app import gmail_read
+    import importlib as _il
+    _il.reload(gmail_read)
+    us.set_mail_optin("dima@s4biz.io", True, by="x")
+    us.set_mail_optin("armin.hall@colt.net", True, by="x")        # past the route, into the store
+    assert sorted(us.mailboxes_opted_in()) == ["armin.hall@colt.net", "dima@s4biz.io"]
+    assert gmail_read.mailboxes() == ["dima@s4biz.io"], (
+        "a mailbox in another company's Workspace would be attempted")
+
+
+def test_a_store_that_cannot_be_read_reads_no_mail(api, monkeypatch):
+    """FAIL CLOSED. On a question about reading somebody's mail there is only one defensible
+    direction for an unreadable store, and "fall back to the sending identity" is not it."""
+    _pipeline, us = api
+    sys.path.insert(0, BACKEND)
+    from app import gmail_read
+    import importlib as _il
+    _il.reload(gmail_read)
+    us.set_mail_optin("dima@s4biz.io", True, by="x")
+    assert gmail_read.mailboxes() == ["dima@s4biz.io"]
+
+    def boom():
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(us, "mailboxes_opted_in", boom)
+    assert gmail_read.mailboxes() == [], "a broken store started reading a mailbox"
+
+
+def test_only_the_platform_administrator_may_read_somebody_elses_mail(api):
+    """Not users.invite.org, which a company administrator holds. Reading a colleague's mail is
+    not user administration; it is a decision about a person."""
+    _pipeline, us = api
+    us.set_role("boss@s4biz.io", "company_admin")
+    us.set_role("power@s4biz.io", "s4biz_power")
+    for who in ("boss@s4biz.io", "power@s4biz.io", "nobody@s4biz.io"):
+        r = _request("/api/admin/users/dima@s4biz.io/mail", "POST", email=who,
+                     body={"enabled": True})
+        assert r["status"] == 403, "%s switched on somebody's mailbox (%d)" % (who, r["status"])
+    assert us.mail_optin("dima@s4biz.io") is False
+
+
+def test_a_deal_can_be_deleted_outright_and_its_mail_survives(api):
+    """"Lost" is a STAGE - a real outcome that stays on the board. A test deal is not an outcome,
+    and there has to be a way to remove it entirely."""
+    pipeline, us = api
+    us.set_role("rep@s4biz.io", "sales_rep")
+    made = _request("/api/pipeline", "POST", email="rep@s4biz.io", body={"company": "TEST"})
+    did = made["json"]["deal_id"]
+    pipeline.record_mail({"id": "m1", "from": "a@b.com", "subject": "x", "ts": 1.0},
+                         {"deal_id": did, "score": 9, "evidence": ["x"]})
+
+    r = _request("/api/pipeline/" + did, "DELETE", email="rep@s4biz.io")
+    assert r["status"] == 200 and r["json"]["ok"] is True, r["json"]
+    assert pipeline.get(did) is None
+    assert [m["msg_id"] for m in pipeline.unfiled_mail()] == ["m1"], (
+        "the message was destroyed; it really was received, and the next sweep would re-file it "
+        "as new activity")
+
+
+def test_the_board_offers_the_delete_and_warns_that_it_is_final():
+    import io as _io
+    jsx = _io.open(os.path.join(ROOT, "webapp", "frontend", "src", "pages", "Pipeline.jsx"),
+                   encoding="utf-8").read()
+    # ANCHOR ON THE WIRING, NOT THE DEFINITION (class 9). Asserting `removeDeal(` exists passed
+    # when the button's onClick was emptied: the function was still there, and nothing called it.
+    import re as _re
+    assert _re.search(r"onClick=\{\(\)\s*=>\s*removeDeal\(", jsx), (
+        "nothing on the board calls removeDeal - the function is defined and unreachable")
+    assert 'delJSON("/api/pipeline/"' in jsx, "the delete does not reach the API"
+    assert "window.confirm(" in jsx, "a permanent deletion with no confirmation"
+    en = _io.open(os.path.join(ROOT, "webapp", "frontend", "src", "locales", "en.js"),
+                  encoding="utf-8").read()
+    line = [ln for ln in en.split("\n") if '"pipe.confirmDelete"' in ln][0]
+    assert "cannot be undone" in line, "the confirmation does not say it is final: %s" % line
+
+
+def test_the_old_committed_list_doctrine_is_recorded_not_lost():
+    """The reversal above is written down where the next person will look, and the scope rule -
+    which did NOT change - is still asserted here."""
+    sys.path.insert(0, BACKEND)
+    from app import gmail_read
+    doc = io.open(os.path.join(ROOT, "docs", "decisions", "2026-11-pipeline.md"),
+                  encoding="utf-8").read()
+    assert "GUI" in doc and "administrative act" in doc.lower(), (
+        "the decision file does not record why the committed list was abandoned")
+    # THE SCOPE IS READ-ONLY, and that is unchanged. gmail.modify would let a correlation engine
+    # delete somebody's mail; nothing here needs that, and the console grant must match the code.
+    assert gmail_read.SCOPE.endswith("/gmail.readonly"), gmail_read.SCOPE
+    src = io.open(os.path.join(ROOT, "webapp", "backend", "app", "gmail_read.py"),
+                  encoding="utf-8").read()
+    assert "gmail.modify" not in src.replace("`gmail.modify`", ""), (
+        "a write scope appears in the module that is supposed to only read")
+
+
+def test_the_kill_switch_needs_no_deploy(monkeypatch):
+    sys.path.insert(0, BACKEND)
+    from app import gmail_read
+    monkeypatch.setenv("PIPELINE_MAIL_READ", "0")
+    assert gmail_read.enabled() is False
+    assert gmail_read.configured() is False
+    assert "switched off" in gmail_read.status()["note"]
 
 
 def test_the_cabinet_gates_the_board_on_the_verb_not_a_domain():
@@ -425,3 +618,66 @@ def test_two_deals_that_match_equally_well_leave_the_mail_UNFILED(P, monkeypatch
 def test_the_module_selftests_pass(mod, capsys):
     m = importlib.import_module(mod)
     assert m._selftest() == 0, capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------------------------
+# 6. THE SWEEP RUNS BY ITSELF. A button is a feature somebody has to remember.
+# ---------------------------------------------------------------------------------------------
+def test_the_main_guard_is_the_last_statement_in_the_module():
+    """MODULE ORDER IS EXECUTION ORDER (class 48). The guard sat above build_router(), so
+    `python -m app.pipeline` would have run main() at a point where half the module did not exist
+    yet - invisible to an importer, fatal to the systemd timer that runs exactly that command."""
+    import ast
+    import io as _io
+    src = _io.open(os.path.join(ROOT, "webapp", "backend", "app", "pipeline.py"),
+                   encoding="utf-8").read()
+    body = ast.parse(src).body
+    guards = [i for i, n in enumerate(body)
+              if isinstance(n, ast.If) and "__main__" in ast.dump(n.test)]
+    # EXACTLY ONE, AND IT IS LAST. Asserting only that the LAST one is last passes when a second
+    # guard is added higher up - which is the mutation that got through: `guards[-1]` still
+    # pointed at the real one at the bottom while a new block ran mid-file.
+    assert len(guards) == 1, "%d __main__ guards; module order is execution order" % len(guards)
+    assert guards[0] == len(body) - 1, (
+        "the __main__ guard is not the last statement; %d definition(s) follow it and do not "
+        "exist when it runs" % (len(body) - 1 - guards[0]))
+
+
+def test_the_cli_says_why_when_reading_is_off(P, monkeypatch, capsys):
+    """A timer whose output is silence cannot be told apart from a timer nobody installed, and
+    being switched off is not a fault - so it explains itself and exits 0."""
+    monkeypatch.delenv("PIPELINE_MAIL_READ", raising=False)
+    assert P._cli_sweep() == 0
+    out = capsys.readouterr().out
+    assert "mailsweep: OFF" in out, out
+    # It must NAME what is missing. In the test environment that is the credential; on the droplet
+    # it would be the kill switch or the list. Any of the three is a usable answer; "off" is not.
+    assert any(w in out for w in ("GMAIL_SA_B64", "PIPELINE_MAIL_READ", "MAILBOXES")), out
+
+
+def test_the_timer_is_installed_by_ship_and_not_by_the_operator():
+    """OPERATING PRINCIPLE 7. A new script the operator has to remember to run is a bug."""
+    import io as _io
+    import re
+    ship = _io.open(os.path.join(ROOT, "ship.py"), encoding="utf-8").read()
+    # ANCHOR ON THE CALL, NOT THE WORD. `"mailsweep.py" in ship` passed when the subprocess was
+    # repointed at logship.py, because the name still appeared in the COMMENT explaining it -
+    # a check matching its own explanatory prose, for the seventh time in this repo (class 4).
+    code = "\n".join(ln for ln in ship.split("\n") if not ln.strip().startswith("#"))
+    assert re.search(r'subprocess\.run\(\[sys\.executable,\s*os\.path\.join\(HERE,\s*"mailsweep\.py"\)',
+                     code), "ship.py does not RUN mailsweep.py"
+
+    ms = _io.open(os.path.join(ROOT, "mailsweep.py"), encoding="utf-8").read()
+    # IT MUST RUN WHERE THE CREDENTIALS ARE. `docker exec <ct> <path>` resolves inside the
+    # CONTAINER (class 55); the host has neither the app nor its env. Assert the ExecStart LINE,
+    # not that the command appears somewhere - it appears in the first-run step too, which is how
+    # a unit pointed at the host still passed.
+    execs = [ln.strip() for ln in ms.split("\n") if ln.strip().startswith("ExecStart=")]
+    assert len(execs) == 1, execs
+    assert "docker exec colt-web" in execs[0] and "-m app.pipeline sweep" in execs[0], (
+        "the unit does not run the sweep inside the container that holds the credentials: %s"
+        % execs[0])
+    assert "TimeoutStartSec" in ms, "no hard ceiling on a call that reaches Gmail (class 42)"
+    # A TIMER POINTED AT A MISSING CONTAINER fires every 15 minutes and fails every time, which
+    # teaches the operator to ignore systemd.
+    assert "refusing to enable a timer that cannot work" in ms

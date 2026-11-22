@@ -836,6 +836,7 @@ def admin_users(request: Request):
     me = _require_admin(request)
     import roles as _roles
     stored_roles = user_store.list_roles()
+    mail_optin = user_store.list_mail_optin()
     accounts = {u["email"]: dict(u, source="assigned") for u in user_store.list_all()}
     # Everyone who has ever completed email + password + OTP. This is the de-facto register.
     for uid, rec in (getattr(AUTH, "authed", {}) or {}).items():
@@ -851,10 +852,14 @@ def admin_users(request: Request):
     # plus people who have signed in SINCE THIS PROCESS STARTED, so assigning a role to somebody
     # who has not logged in here makes them disappear from the only screen that could change it
     # back. Found by a request-path test, not by reading: the write succeeded and the row was gone.
-    for e in stored_roles:
+    # ...AND EVERYONE WHO HAS A DECISION RECORDED ABOUT THEM, of either kind. The role case was
+    # found the hard way; the mailbox case is the same defect and would have shipped with it -
+    # a person whose mail was switched on but who has no credential row and no live session would
+    # disappear from the only page that could switch it off again.
+    for e in set(stored_roles) | set(mail_optin):
         accounts.setdefault(e, {"email": e, "must_change": False, "disabled": False,
                                 "created_ts": None, "updated_ts": None, "created_by": "",
-                                "note": "", "source": "role-only", "last_login_ts": None})
+                                "note": "", "source": "decision-only", "last_login_ts": None})
     out = []
     for e, row in accounts.items():
         row.setdefault("last_login_ts", None)
@@ -869,6 +874,12 @@ def admin_users(request: Request):
         row["role_set"] = bool(stored_roles.get(e))
         row["role_fixed"] = colt_auth.is_admin(e)      # the floor: cannot be changed from here
         row["org"] = _roles.org_of(e)
+        # WHOSE MAILBOX THE PIPELINE MAY READ. Three states, not two: allowed, explicitly not
+        # allowed, and nobody has decided - which is why `mail_read` is None rather than False
+        # when there is no row. `mail_possible` is whether the control can do anything at all;
+        # offering a switch that cannot work is a control nobody can trust (class 2).
+        row["mail_read"] = mail_optin.get(e)
+        row["mail_possible"] = _mail_possible(e)
         try:
             row["assessments"] = store.count_jobs(e)
         except Exception:
@@ -954,6 +965,20 @@ app.include_router(_pipeline.build_router(
 ))
 
 
+def _mail_possible(email):
+    """Can this mailbox be read at all? Only inside the Workspace our service account is delegated
+    in; another company's Gmail is not ours to open however the page is clicked."""
+    try:
+        from . import gmail_read
+        return bool(gmail_read.readable_domain(email))
+    except Exception:
+        return False
+
+
+class AdminMailReq(BaseModel):
+    enabled: bool = False
+
+
 class AdminRoleReq(BaseModel):
     role: str = ""
 
@@ -971,6 +996,41 @@ def admin_set_role(email: str, req: AdminRoleReq, request: Request):
     """
     actor = _require_ready(request)
     return _grant_role(actor, email, req.role)
+
+
+@app.post("/api/admin/users/{email}/mail")
+def admin_set_mail(email: str, req: AdminMailReq, request: Request):
+    """Allow (or withdraw) reading this person's mailbox into the channel pipeline.
+
+    THE MOST SENSITIVE SWITCH ON THIS PAGE, so it is the platform administrator's alone - not
+    `users.invite.org`, which a company administrator holds. Reading a colleague's mail is not an
+    act of user administration; it is a decision about surveillance of a person, and it is
+    recorded with who made it and when.
+    """
+    admin = _require_admin(request)
+    target = (email or "").strip().lower()
+    if req.enabled and not _mail_possible(target):
+        # A CONTROL THAT CANNOT WORK MUST REFUSE, LOUDLY - and NAME THE REAL REASON (class 26).
+        # Two different faults land here and they need opposite repairs: a mailbox in somebody
+        # else's Workspace (nothing will ever fix that), and a deployment where GMAIL_SENDER is
+        # not set, so we cannot tell which domain is ours. Saying "outside this Workspace" for
+        # the second sends the operator to argue with Google about an address that was fine.
+        try:
+            from . import gmail_read as _gr
+            _dom = _gr._domain()
+        except Exception:
+            _dom = ""
+        if not _dom:
+            detail = ("this deployment does not know which Workspace it belongs to "
+                      "(GMAIL_SENDER is not set), so no mailbox can be enabled")
+        else:
+            detail = ("%s is outside @%s, so the service account cannot open it. Domain-wide "
+                      "delegation reaches our own domain only." % (target, _dom))
+        raise HTTPException(status_code=400, detail=detail)
+    if not user_store.set_mail_optin(target, bool(req.enabled), by=admin):
+        raise HTTPException(status_code=400, detail="could not record that for %s" % target)
+    _log(evt="mail_optin", user=admin, target=target, enabled=bool(req.enabled))
+    return {"ok": True, "email": target, "mail_read": bool(req.enabled)}
 
 
 @app.post("/api/admin/users")

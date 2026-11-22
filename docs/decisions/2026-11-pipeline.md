@@ -122,6 +122,134 @@ domain, and both module self-tests wired into the suite.
 `ship.py` now prints the stage count per track with the document id, so a change to the columns is
 visible in the ship log rather than discovered on the board.
 
+## Which Google integration, and why this one (asked 22 Nov)
+
+Four options were on the table. The one that is built is **Google Cloud: a service account with
+domain-wide delegation, calling the Gmail REST API**.
+
+**It is already the mechanism this product uses.** `notify.email()` has been sending the one-time
+sign-in codes through that service account since the login gate was written -
+`colt-bots@colt-bots.iam.gserviceaccount.com`, project `colt-bots`, client id
+`105211423907937536502`, impersonating `feranicus@s4biz.io` with scope `gmail.send`. Reading is the
+same mechanism with one more scope. No second auth system, no consent screen, no refresh token to
+store and rotate, no browser on a server that has none.
+
+**Apps Script** was the obvious alternative and is the wrong shape here. It runs inside Workspace
+as a user, so it would have to call OUT to cybergod.ai - which needs an API credential anyway, so
+the auth problem does not go away, it moves. Worse, the script lives in Google's editor and not in
+this repo, which breaks operating principle 2 (GitHub is the single source of truth) and principle
+1 (no console-configured steps that a script could own). It is also per-user: Dima would install
+his own copy, and it would break silently the day he changed something nobody else can see.
+
+**A Chrome extension** does not read mail server-side at all, so it cannot keep the board right
+while nobody is looking - which is the entire point. What it would buy, and nothing else does, is a
+button *inside* Gmail reading "file this on a deal". That is a real capability and a later feature;
+if it is wanted, a **Workspace add-on** (CardService) beats a Chrome extension, because it works in
+Gmail on mobile as well as desktop and a domain admin installs it once for everybody instead of
+each person installing it themselves.
+
+### The trade-off, stated rather than buried
+
+Domain-wide delegation means the service account can impersonate **any** mailbox in s4biz.io. Our
+code limits it to `PIPELINE_MAILBOXES` and the scope is `gmail.readonly`, never `gmail.modify` - so
+it can read, and it cannot label, archive or delete. But the limit on *whose* mail is in our code,
+not in Google's grant: the control that actually matters is the service-account key, which lives in
+the droplet's `chmod 600` env file and in GitHub Actions secrets, and nowhere else.
+
+The alternative is per-user OAuth - each person clicks "connect Gmail" and we store a refresh token
+per user. That narrows the blast radius to whoever consented, at the cost of tokens to store,
+rotate and repair when they expire. Worth doing if the mailbox set ever grows beyond the two or
+three people who run the channel; overkill for them.
+
+### Where the consent lives — reversed TWICE in one day, and the second one is the right one
+
+**Final answer: on the Administration page, as a per-person switch, stored beside the roles.**
+The operator said it plainly — *"the approval of dima@s4biz.io or any other s4biz.io address needs
+to be in the GUI of cybergod.ai as RBAC, not in any other way; all other backend issues need to be
+working under the hood automatically"* — and he is right, for a reason worth keeping.
+
+Consent to read a colleague's mailbox is an **administrative act**: a named administrator, a
+recorded time, visible and reversible by somebody who is not holding a git client. Shipping a code
+change to add a person is exactly the "edit code, commit, ship, come back" loop that
+`colt_auth.email_allowed()` was already fixed to avoid, and the reasons are identical. A withdrawal
+is a write (`enabled=0`) rather than a delete, because a row saying somebody turned it off is
+evidence and a missing row is silence.
+
+`user_store.user_mail` is its own table keyed by address — same shape and same reasoning as
+`user_roles`, because the people this has to describe (Colt addresses, partners) have no credential
+row at all. It fails closed: a store that cannot be read reads no mail.
+
+**A control that cannot work is not offered.** Domain-wide delegation reaches our own Workspace
+only, so `armin.hall@colt.net` can never be opened however many times a box is ticked. The page
+shows "another Workspace" with the reason instead of a switch, and the route refuses a yes rather
+than storing one — a green toggle beside a mailbox nothing will ever read is worse than no toggle.
+Two different faults land in that refusal and they need opposite repairs, so it distinguishes them:
+a mailbox in another company, versus a deployment with no `GMAIL_SENDER` that cannot tell which
+domain is its own. Saying "outside this Workspace" for the second sends the operator to argue with
+Google about an address that was fine.
+
+**Only the platform administrator may set it.** Not `users.invite.org`, which a company
+administrator holds: reading a colleague's mail is not user administration, it is a decision about
+a person.
+
+The same merge bug as the role case would have shipped with it and was caught by the same test
+shape — somebody with a mailbox decision, no credential row and no live session vanished from the
+only page that could switch it off again.
+
+---
+
+#### The first reversal, kept because deleting it loses why (superseded above)
+
+`enabled()` used to require `PIPELINE_MAIL_READ=1` on the droplet, on the principle that a feature
+which reads somebody's mailbox must not default to on. That principle is right and still holds.
+What changed is WHERE the deliberate act lives.
+
+`gmail_read.MAILBOXES` is now a committed list. Naming a person's address in the tree, reviewed in
+a diff before it ships, is a stronger and far more auditable act of consent than an environment
+variable typed into a droplet that nobody will ever look at again — it shows up in a PR, in
+`git log`, and in a blame. It is the same reasoning that already puts `ADMIN_EMAILS`,
+`PARTNER_EMAILS` and `USER_QUOTAS` in the tree rather than in an env file, and for mailbox reading
+the argument is stronger, not weaker.
+
+It also removes a manual step, which is operating principle 1: a value typed into a droplet by
+hand gets forgotten, done differently on the twin, and lost on a rebuild.
+
+`PIPELINE_MAIL_READ=0` stays as an immediate kill switch that needs no deploy, and an empty list
+reads nothing whatever the flag says. The module's own self-test asserts all three, and the old
+check is kept above the new one with its reasoning, because deleting it would lose why (class 17).
+
+### The one human step
+
+Only a domain admin can grant it, and it is one line in the console:
+
+> admin.google.com → Security → Access and data control → API controls → Domain-wide delegation →
+> edit client **105211423907937536502** → add `https://www.googleapis.com/auth/gmail.readonly`
+
+That is the whole console job. Nothing else: the Gmail API is already enabled in the `colt-bots`
+project (the send path proves it), colt-web already receives `GMAIL_SA_B64` and `GMAIL_SENDER`
+through `env_file: assess-bot/.env`, and whose mail is read is committed. The next ship turns it on.
+
+Until every half is in place the board names **all** the missing ones, not the first it finds —
+reporting one cause of two sends the operator to fix it, redeploy, and come back to the same
+screen.
+
+## The sweep runs itself
+
+A button is a feature somebody has to remember, and the point of filing partner mail against deals
+is that the board is right when you open it. `mailsweep.py` installs a systemd timer - every 15
+minutes, 5 after boot, persistent so an hour of downtime does not silently skip the mail that
+arrived - and ship.py installs it as a building block, never as a second command.
+
+The work happens inside colt-web by `docker exec`, because the credentials are in the container's
+environment and nowhere on the host (class 55). The unit refuses to enable itself if colt-web is
+not running: a timer that fails every fifteen minutes teaches the operator to ignore systemd.
+
+Moving the sweep to a timer exposed a defect the board never would have: `pipeline.py`'s
+`__main__` guard sat above `build_router()`, so `python -m app.pipeline` - exactly what the unit
+runs - would have executed main() at a point where half the module did not exist (class 48). It is
+the last statement in the file now, and a test asserts there is exactly one guard and it is last.
+Asserting only that the *last* guard is last passed the mutation that added a second one higher up.
+
 ## What is not built
 
 - **Deal documents.** Dima asked to "catch the balls that are falling, the NDAs … organize the

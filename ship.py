@@ -2615,6 +2615,30 @@ def main():
     except Exception as _e:
         print("  [!] logship skipped (%s) - never blocks a deploy" % type(_e).__name__)
 
+    # ---- THE PIPELINE'S MAIL SWEEP -----------------------------------------------------------
+    #      mailsweep.py is a BUILDING BLOCK, not a second command (operating principle 7).
+    #      WHY IT EXISTS: the board has a "Read mail now" button, and a button is a feature
+    #      somebody has to remember. The point of filing partner mail against deals is that the
+    #      board is RIGHT when you open it. NON-BLOCKING and safe before the Workspace scope is
+    #      granted: with PIPELINE_MAIL_READ unset the sweep prints what is missing and exits 0,
+    #      so the schedule is already in place on the day a domain admin adds gmail.readonly.
+    try:
+        _ms = subprocess.run([sys.executable, os.path.join(HERE, "mailsweep.py")],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=460)
+        _msout = ((_ms.stdout or "") + (_ms.stderr or "")).rstrip()
+        print("")
+        for _l in _msout.splitlines():
+            _t = _l.strip()
+            if (_t.startswith(("####", "[X]", "[!]", "mailsweep")) or "colt-web" in _t
+                    or "NEXT" in _t or "mailsweep.timer" in _t):
+                print("  " + _t)
+        if _ms.returncode != 0:
+            print("  [!] the mail sweep timer is not installed - the board still works and the "
+                  "button still sweeps by hand.")
+    except Exception as _e:
+        print("  [!] mailsweep skipped (%s) - never blocks a deploy" % type(_e).__name__)
+
     # ---- PATCH CADENCE ON BOTH DROPLETS ------------------------------------------------------
     #      secaudit.py is a BUILDING BLOCK, not a second command (operating principle 7).
     #      WHY IT EXISTS: the kernel CVE team published 432 CVEs across one weekend in July 2026.

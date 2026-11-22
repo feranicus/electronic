@@ -31,6 +31,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import threading
 import time
 
@@ -589,17 +590,6 @@ def counts(track=None):
     return out
 
 
-if __name__ == "__main__":                                      # pragma: no cover
-    for t, lab, about in TRACKS:
-        print("\n%s - %s (%s)%s" % (t.upper(), lab, about,
-                                    "   [default]" if t == DEFAULT_TRACK else ""))
-        for st in stage_meta(t):
-            print("   %-4s %-14s %-34s gate: %s" % (st["code"], st["key"], st["label"], st["gate"]))
-    print("\nlegacy keys remapped: %s" % ", ".join(sorted(LEGACY_STAGES)))
-    print("source: Herkos_Commercial_Process_Map_v0.1_DRAFT.docx (HRK-COM-PRC-001, Assad Kondakji)")
-    print("database: %s" % db_path())
-
-
 # ---------------------------------------------------------------------------------------------
 # THE ROUTER. Built, not declared, so the PERMISSIONS ARE INJECTED: main.py passes
 # `_require_perm("pipeline.view")` and friends, which read roles.py. The policy therefore has one
@@ -739,3 +729,40 @@ def _mail_status():
         return gmail_read.status()
     except Exception as e:
         return {"enabled": False, "note": "the mail reader could not be loaded: %r" % (e,)}
+
+
+def _cli_sweep():
+    """`python -m app.pipeline sweep` - what the systemd timer runs through `docker exec`.
+
+    IT SAYS WHAT IT DID, AND WHY NOT. A timer whose output is silence cannot be told apart from a
+    timer that was never installed, and `if configured():` fails silently by construction
+    (class 37). Being switched off is not a fault, so that path prints the reason and exits 0; a
+    real fault exits non-zero and systemd records it.
+    """
+    from . import gmail_read
+    if not gmail_read.configured():
+        print("mailsweep: OFF - %s" % gmail_read.status()["note"])
+        return 0
+    out = sweep()
+    print("mailsweep: read %(read)d, filed %(filed)d, unfiled %(unfiled)d, "
+          "already seen %(already_seen)d, against %(deals_considered)d open deal(s)" % out)
+    for n in out["notes"]:
+        print("   %s" % n)
+    return 0
+
+
+# THE GUARD IS THE LAST STATEMENT IN THE FILE, and that is a rule rather than a style: module
+# order is execution order, so a `__main__` block placed mid-file runs where it APPEARS and every
+# def below it does not exist yet. Invisible to an importer, fatal to `python -m app.pipeline`.
+# This block used to sit above build_router() (class 48).
+if __name__ == "__main__":                                      # pragma: no cover
+    if len(sys.argv) > 1 and sys.argv[1] == "sweep":
+        sys.exit(_cli_sweep())
+    for t, lab, about in TRACKS:
+        print("\n%s - %s (%s)%s" % (t.upper(), lab, about,
+                                    "   [default]" if t == DEFAULT_TRACK else ""))
+        for st in stage_meta(t):
+            print("   %-4s %-14s %-34s gate: %s" % (st["code"], st["key"], st["label"], st["gate"]))
+    print("\nlegacy keys remapped: %s" % ", ".join(sorted(LEGACY_STAGES)))
+    print("source: Herkos_Commercial_Process_Map_v0.1_DRAFT.docx (HRK-COM-PRC-001, Assad Kondakji)")
+    print("database: %s" % db_path())

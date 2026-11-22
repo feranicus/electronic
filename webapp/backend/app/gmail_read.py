@@ -59,20 +59,79 @@ BODY_CHARS = int(os.environ.get("PIPELINE_MAIL_BODY_CHARS", "4000"))
 LOOKBACK_DAYS = int(os.environ.get("PIPELINE_MAIL_LOOKBACK_DAYS", "14"))
 
 
+# WHOSE MAIL THIS READS: AN ADMINISTRATOR'S DECISION, TAKEN IN THE PRODUCT.
+#
+# DELIBERATE REVERSAL, one turn after the previous one, on the operator's instruction - and the
+# old reasoning is kept because deleting it loses why (class 17).
+#
+# The list was briefly COMMITTED here, on the argument that a name in a reviewed diff is a
+# stronger consent than an env var on a droplet. That argument was right about env vars and wrong
+# about the product: "the approval of dima@s4biz.io or any other s4biz.io address needs to be in
+# the GUI of cybergod.ai as RBAC, not in any other way". He is right. Consent to read a
+# colleague's mailbox is an ADMINISTRATIVE ACT - a named administrator, a recorded time, visible
+# and reversible on the Administration page by someone who is not holding a git client. Shipping a
+# code change to add a person is exactly the "edit code, commit, ship, come back" loop that
+# colt_auth.email_allowed() was already fixed to avoid.
+#
+# So the store decides, `user_store.mailboxes_opted_in()`, and it fails CLOSED: a store that
+# cannot be read reads no mail. PIPELINE_MAILBOXES survives as an override for a droplet with no
+# database to consult, and for nothing else.
+def _domain():
+    """The Workspace domain this service account can impersonate inside. Derived from the sending
+    identity, never typed: domain-wide delegation is granted to a DOMAIN, so a mailbox outside it
+    cannot be opened however many times somebody ticks a box."""
+    return (SENDER.split("@", 1)[1].lower() if "@" in SENDER else "")
+
+
+def readable_domain(email):
+    """Can this address be read AT ALL? A control that cannot work must not be offered (class 2):
+    armin.hall@colt.net is a real user of this platform and his mailbox is in somebody else's
+    Workspace, where our delegation grants nothing."""
+    d = _domain()
+    e = str(email or "").strip().lower()
+    return bool(d and "@" in e and e.split("@", 1)[1] == d)
+
+
 def mailboxes():
-    """Which addresses to read. Defaults to the sending identity alone, so switching the feature
-    on without naming anybody reads only the mailbox this app already owns."""
-    raw = os.environ.get("PIPELINE_MAILBOXES", "") or SENDER
-    return [a.strip().lower() for a in str(raw).replace(";", ",").split(",") if a.strip()]
+    """Which addresses to read: the ones an administrator switched on, filtered to the domain we
+    can actually impersonate. The env var overrides, for a deployment with no store."""
+    raw = os.environ.get("PIPELINE_MAILBOXES", "")
+    if raw.strip():
+        # THE OVERRIDE IS NOT FILTERED, and that is deliberate. It exists for a deployment this
+        # code cannot reason about - no store to consult, possibly no GMAIL_SENDER to derive a
+        # domain from - so filtering it by a domain we may not know turns an explicit instruction
+        # into an empty list. An address we cannot impersonate fails at the token mint and says
+        # so, per mailbox, which is visible and safe. (Found by the suite: with no GMAIL_SENDER
+        # the filter silently emptied every explicit override.)
+        return [a.strip().lower() for a in raw.replace(";", ",").split(",") if a.strip()]
+    try:
+        import user_store
+        out = user_store.mailboxes_opted_in()
+    except Exception:
+        # FAIL CLOSED. On a question about reading somebody's mail there is only one defensible
+        # direction for an unreadable store.
+        return []
+    # THE STORE PATH IS FILTERED. This is what the Administration page writes, and a yes recorded
+    # against a mailbox in another company's Workspace must never become an attempt to open it.
+    return [a for a in out if readable_domain(a)]
 
 
 def enabled():
-    return os.environ.get("PIPELINE_MAIL_READ", "").lower() in ("1", "true", "yes", "on")
+    """ON unless somebody turned it OFF.
+
+    DELIBERATE REVERSAL, and the old reasoning is kept because deleting it loses why. This used to
+    require `PIPELINE_MAIL_READ=1`, on the principle that a feature which reads somebody's mailbox
+    must not default to on. That principle is right and this still honours it - what changed is
+    WHERE the deliberate act lives. Naming a person's address in a committed file, reviewed in a
+    diff before it ships, is a stronger and far more auditable act of consent than setting an
+    environment variable on a droplet that nobody will ever look at again. The list IS the switch.
+    `PIPELINE_MAIL_READ=0` remains as an immediate kill switch that needs no deploy.
+    """
+    return os.environ.get("PIPELINE_MAIL_READ", "1").lower() not in ("0", "false", "no", "off")
 
 
 def configured():
-    """Reading is OPT-IN. A feature that reads somebody's mailbox does not default to on, and
-    `if <derived thing>:` must never fail silently - status() says which half is missing."""
+    """`if <derived thing>:` must never fail silently - status() says which half is missing."""
     return bool(SA_B64 and mailboxes() and enabled())
 
 
@@ -84,11 +143,27 @@ def status():
         "credentials": bool(SA_B64),
         "scope": SCOPE,
         "query": DEFAULT_QUERY,
-        "note": ("" if configured() else
-                 "reading is off: set PIPELINE_MAIL_READ=1, name the mailboxes in "
-                 "PIPELINE_MAILBOXES, and have a Workspace admin add gmail.readonly to the "
-                 "existing service account's domain-wide delegation"),
+        "note": ("" if configured() else _why_off()),
     }
+
+
+def _why_off():
+    """NAME EVERY MISSING HALF (class 26), not the first one found.
+
+    Reporting only the first cause sends the operator to fix it, redeploy, and come back to the
+    same screen for the second - which is how a five-minute configuration becomes three rounds.
+    """
+    missing = []
+    if not SA_B64:
+        missing.append("the Gmail service-account credential (GMAIL_SA_B64) is not in this "
+                       "container's environment, so no mailbox can be opened")
+    if not enabled():
+        missing.append("reading was switched off with PIPELINE_MAIL_READ=0")
+    if not mailboxes():
+        missing.append("no mailbox has been switched on: do it per person on the Administration "
+                       "page (only @%s addresses can be read - domain-wide delegation does not "
+                       "reach another company's Workspace)" % (_domain() or "your-domain"))
+    return "; and ".join(missing)
 
 
 def _token(mailbox):
@@ -228,6 +303,46 @@ def fetch_recent(days=None, query=None, limit=None, fetch=None):
 
 
 # --------------------------------------------------------------------------- self-test
+def _configured_with(boxes):
+    """configured() with a given mailbox list, without touching the process environment."""
+    import os as _os
+    was = _os.environ.get("PIPELINE_MAILBOXES")
+    _os.environ["PIPELINE_MAILBOXES"] = ",".join(boxes) if boxes else " "
+    try:
+        return bool(SA_B64 and mailboxes() and enabled())
+    finally:
+        if was is None:
+            _os.environ.pop("PIPELINE_MAILBOXES", None)
+        else:
+            _os.environ["PIPELINE_MAILBOXES"] = was
+
+
+def _boxes_with(raw):
+    import os as _os
+    was = _os.environ.get("PIPELINE_MAILBOXES")
+    _os.environ["PIPELINE_MAILBOXES"] = raw
+    try:
+        return mailboxes()
+    finally:
+        if was is None:
+            _os.environ.pop("PIPELINE_MAILBOXES", None)
+        else:
+            _os.environ["PIPELINE_MAILBOXES"] = was
+
+
+def _off_with(value):
+    import os as _os
+    was = _os.environ.get("PIPELINE_MAIL_READ")
+    _os.environ["PIPELINE_MAIL_READ"] = value
+    try:
+        return enabled()
+    finally:
+        if was is None:
+            _os.environ.pop("PIPELINE_MAIL_READ", None)
+        else:
+            _os.environ["PIPELINE_MAIL_READ"] = was
+
+
 def _selftest():
     fails = []
 
@@ -281,9 +396,28 @@ def _selftest():
     _g, n3 = fetch_mailbox("x@s4biz.io", fetch=boom)
     ck("a transport fault is reported, never raised", "could not be listed" in n3, n3)
 
-    ck("reading is OFF unless switched on", not enabled() or configured())
-    ck("the status note names the console step when it is off",
-       bool(status()["note"]) is not configured())
+    # DOCTRINE CORRECTED 22 Nov, and the old check is kept above the new one because deleting it
+    # would lose why (class 17). It used to read:
+    #     ck("reading is OFF unless switched on", not enabled() or configured())
+    # on the principle that a feature reading somebody's mailbox must not default to on. That
+    # principle still holds; what moved is WHERE the deliberate act lives. Naming a person's
+    # address in a committed list, reviewed in a diff before it ships, is a stronger and far more
+    # auditable consent than an env var on a droplet nobody looks at again.
+    ck("an address outside our Workspace can never be read, whoever ticks the box",
+       not readable_domain("armin.hall@colt.net"), "colt.net is not %r" % _domain())
+    ck("...and one inside it can", readable_domain("dima@" + (_domain() or "x.invalid"))
+       if _domain() else True)
+    ck("an empty list reads nothing, whatever the flag says",
+       not _configured_with([]), "an unconfigured deployment would read mail")
+    ck("an explicit override is honoured as written, on a box we cannot reason about",
+       _boxes_with("a@x.invalid,b@y.invalid") == ["a@x.invalid", "b@y.invalid"],
+       str(_boxes_with("a@x.invalid,b@y.invalid")))
+    ck("PIPELINE_MAIL_READ=0 is an immediate kill switch", _off_with("0") is False)
+    ck("...and it needs no deploy: any falsey spelling works",
+       all(_off_with(v) is False for v in ("0", "false", "no", "off", "OFF")))
+    ck("the status note names the MISSING half, not just 'off'",
+       "credential" in _why_off() or "switched off" in _why_off() or "mailboxes" in _why_off(),
+       _why_off())
 
     print("gmail_read selftest: %d check(s) failed" % len(fails))
     return 1 if fails else 0

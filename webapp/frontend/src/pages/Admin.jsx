@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { adminUsers, adminSetUser, adminDisable, adminDeleteUser, adminSetRole } from "../api.js";
+import { adminUsers, adminSetUser, adminDisable, adminDeleteUser, adminSetRole,
+         adminSetMail } from "../api.js";
 import { useT } from "../i18n";
 import Fleet from "./Fleet.jsx";
 
@@ -94,6 +95,18 @@ export default function Admin() {
     setSaved(t("admin.roleSaved").replace("{email}", r.data.email)
               .replace("{role}", ROLE_LABEL[r.data.role] || r.data.role));
     setPending((p) => { const n = { ...p }; delete n[u.email]; return n; });
+    load();
+  }
+
+  // WHOSE MAILBOX THE PIPELINE READS. The operator's instruction, and it belongs here rather than
+  // in a code file: a consent to read a colleague's mail is an administrative act taken by a named
+  // person at a recorded time, visible and reversible without a deploy.
+  async function setMail(u, on) {
+    setBusy(true); setErr(""); setSaved("");
+    const r = await adminSetMail(u.email, on);
+    setBusy(false);
+    if (!r.ok) { setErr(String((r.data && r.data.detail) || t("admin.saveFail"))); return; }
+    setSaved(t(on ? "admin.mailOn" : "admin.mailOff").replace("{email}", u.email));
     load();
   }
 
@@ -226,6 +239,7 @@ export default function Admin() {
             <tr>
               <th>{t("admin.colEmail")}</th>
               <th>{t("admin.colRole")}</th>
+              <th>{t("admin.colMail")}</th>
               <th>{t("admin.colAccess")}</th>
               <th>{t("admin.colState")}</th>
               <th>{t("admin.colLast")}</th>
@@ -269,6 +283,23 @@ export default function Admin() {
                   )}
                 </td>
                 <td>
+                  {/* A SWITCH THAT CANNOT WORK IS NOT OFFERED. Domain-wide delegation reaches our
+                      own Workspace only, so a colt.net mailbox can never be opened however many
+                      times this is clicked - it says why instead of lying with a grey toggle. */}
+                  {u.mail_possible ? (
+                    <label className="mail-opt">
+                      <input type="checkbox" checked={u.mail_read === true} disabled={busy}
+                             onChange={(e) => setMail(u, e.target.checked)} />
+                      <span>{u.mail_read === true ? t("admin.mailYes")
+                             : u.mail_read === false ? t("admin.mailNo") : t("admin.mailUndecided")}</span>
+                    </label>
+                  ) : (
+                    <span className="tag muted" title={t("admin.mailImpossibleWhy")}>
+                      {t("admin.mailImpossible")}
+                    </span>
+                  )}
+                </td>
+                <td>
                   {u.has_password
                     ? <span className="tag ok">{t("admin.tagAssigned")}</span>
                     : <span className="tag muted">{t("admin.tagShared")}</span>}
@@ -301,7 +332,7 @@ export default function Admin() {
               </tr>
             ))}
             {!users.length ? (
-              <tr><td colSpan="7" className="muted">{data ? t("admin.none") : t("admin.loading")}</td></tr>
+              <tr><td colSpan="8" className="muted">{data ? t("admin.none") : t("admin.loading")}</td></tr>
             ) : null}
           </tbody>
         </table>

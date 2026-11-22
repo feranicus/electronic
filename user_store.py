@@ -111,6 +111,20 @@ def _conn():
     # who they are". The dead `role` column is still added below because the droplet already has
     # it (it shipped on 22 Nov) and a schema that differs between boxes is its own class of bug;
     # nothing reads it, and tests/test_roles.py fails the build if anything starts to.
+    # WHOSE MAILBOX THE PIPELINE MAY READ. Same shape and same reasoning as user_roles: keyed by
+    # address, independent of whether a password was ever issued, because the Colt and partner
+    # addresses that have no credential row are exactly the people this has to be able to describe.
+    #
+    # IT LIVES HERE RATHER THAN IN CODE because the operator said so, and he is right: a consent
+    # to read a colleague's mail is an administrative act, taken on the Administration page by a
+    # named administrator at a recorded time, not a line somebody edits and ships. The committed
+    # list it replaces is described in docs/decisions/2026-11-pipeline.md.
+    c.execute("""CREATE TABLE IF NOT EXISTS user_mail (
+                     email      TEXT PRIMARY KEY,
+                     enabled    INTEGER NOT NULL DEFAULT 0,
+                     updated_ts REAL,
+                     set_by     TEXT
+                 )""")
     c.execute("""CREATE TABLE IF NOT EXISTS user_roles (
                      email      TEXT PRIMARY KEY,
                      role       TEXT NOT NULL,
@@ -297,6 +311,72 @@ def get_role(email):
             c.close()
     except Exception:
         return ""
+
+
+def set_mail_optin(email, on, by=""):
+    """Record that an administrator allowed (or withdrew) reading this mailbox into the pipeline.
+
+    WITHDRAWAL IS A WRITE, NOT A DELETE. A row saying `enabled=0` is the evidence that somebody
+    turned it off and when; deleting it would leave the same silence as never having decided.
+    """
+    e = _norm(email)
+    if not e or "@" not in e:
+        return False
+    try:
+        c = _conn()
+        try:
+            c.execute("INSERT INTO user_mail (email, enabled, updated_ts, set_by) VALUES (?,?,?,?) "
+                      "ON CONFLICT(email) DO UPDATE SET enabled=excluded.enabled, "
+                      "updated_ts=excluded.updated_ts, set_by=excluded.set_by",
+                      (e, 1 if on else 0, time.time(), by or ""))
+            c.commit()
+            return True
+        finally:
+            c.close()
+    except Exception:
+        return False
+
+
+def mail_optin(email):
+    """True only if an administrator said yes. A store we cannot read says NO: failing closed on a
+    question about reading somebody's mail is the only defensible direction."""
+    try:
+        c = _conn()
+        try:
+            r = c.execute("SELECT enabled FROM user_mail WHERE email=?",
+                          (_norm(email),)).fetchone()
+            return bool(r and r["enabled"])
+        finally:
+            c.close()
+    except Exception:
+        return False
+
+
+def mailboxes_opted_in():
+    """Every address an administrator has switched on, in one query."""
+    try:
+        c = _conn()
+        try:
+            return sorted(r["email"] for r in
+                          c.execute("SELECT email FROM user_mail WHERE enabled=1"))
+        finally:
+            c.close()
+    except Exception:
+        return []
+
+
+def list_mail_optin():
+    """{address: bool} for everyone who has a decision recorded, so the page can show BOTH states
+    - "allowed" and "explicitly not allowed" are different from "nobody has decided"."""
+    try:
+        c = _conn()
+        try:
+            return {r["email"]: bool(r["enabled"])
+                    for r in c.execute("SELECT email, enabled FROM user_mail")}
+        finally:
+            c.close()
+    except Exception:
+        return {}
 
 
 def list_roles():
