@@ -594,12 +594,25 @@ def test_a_site_that_goes_dark_is_restored_automatically(monkeypatch, capsys):
 
     BOTH TERMS OVER THE SAME PERIOD: a site that was already down before the change must not be
     blamed on it, which is what the baseline probe is for."""
+    # THE DARK SITE IS DERIVED, NOT NAMED (class 17: the doctrine stands, the facts moved).
+    # This used to pin godeyes.ai, the site of the 22 Oct incident. That domain was given up on
+    # 21 Nov, so it left the survivor list and the fixture stopped reproducing the condition it
+    # was written for - the test would have passed while measuring nothing. The incident is about
+    # ANY survivor going dark, so the fixture takes one from the live roster and cannot go stale.
+    import estate
+    _DARK = estate.expected_vhosts()[0]
+    _N = len(D.SURVIVORS)
     seen = {"n": 0}
 
     def flaky(url, **kw):
         seen["n"] += 1
         # healthy for the baseline sweep, dark for the after sweep, healthy once restored
-        if "godeyes" in url and 5 <= seen["n"] <= 8:
+        # THE WINDOW IS ARITHMETIC, NOT A CONSTANT. It used to be `5 <= n <= 8`, calibrated by
+        # hand against a four-entry survivor list. The list is derived now and has eight entries,
+        # so the hardcoded window fell in the BASELINE sweep instead of the AFTER sweep and the
+        # fixture stopped reproducing its own condition (class 12). Baseline is calls 1..N,
+        # after is N+1..2N; the site is dark for exactly the second sweep.
+        if _DARK in url and _N < seen["n"] <= 2 * _N:
             return None, "URLError"
         return 200, "ok"
 

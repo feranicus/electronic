@@ -96,8 +96,25 @@ if KEY:
     SSH += ["-i", KEY]
 
 # The public names this box serves. Used only to verify recovery from the outside.
-SITES = ["https://cybergod.ai/api/me", "https://www.cybergod.ai/",
-         "https://godeyes.ai/", "https://www.jobhuntwow.com/"]
+# THE OUTSIDE-VIEW PROBE LIST, DERIVED. This was the NINTH home of "which sites exist", and it
+# is the one that kept godeyes.ai after the domain was given up: the CI production job probed a
+# name nobody owns, got URLError, counted 4 of 5 and exited 1, which stopped a release that had
+# already verified. A stale entry in a health check does not fail safe - it fails LOUD and wrong,
+# and it blocks exactly the thing it was written to protect.
+#
+# estate.py is the one home. Everything here follows from it, so retiring a site is still one edit.
+def _sites():
+    try:
+        import estate
+        return [u for _n, u, _c in estate.watch_list()]
+    except Exception:
+        # A PROBE THAT CANNOT SEE ITS SUBJECT MUST NOT ANSWER (class 1). If the roster cannot be
+        # read, return the production pair only rather than inventing a list: a short list that
+        # is true beats a long one that is guessed.
+        return ["https://cybergod.ai/api/me", "https://cybergod.ai/"]
+
+
+SITES = _sites()
 
 # The proxy that owns :443. If this is not running, every site on the box is refused.
 PROXY_HINTS = ("caddy", "nginx-proxy", "traefik")

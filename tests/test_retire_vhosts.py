@@ -165,3 +165,48 @@ def test_it_runs_inside_the_orchestrator_and_needs_no_second_command():
     assert "caddyguard" in ship, "ship.py does not invoke the guard, so nothing converges"
     assert not os.path.exists(os.path.join(ROOT, "observemove.py")), (
         "the standalone migration script is back; it is a second command and principle 7 forbids it")
+
+
+def test_no_probe_list_anywhere_still_names_a_retired_site():
+    """THE NINTH HOME. 22 Nov 2026: the CI production job failed on `4/5 endpoints answering`
+    because recover.SITES still carried https://godeyes.ai/, a domain given up the day before.
+    The probe got URLError, the count came up short and the job exited 1 - a health check that
+    stopped a release it had already verified.
+
+    A stale entry in a health check does not fail safe. It fails loud and wrong, and it blocks
+    exactly the thing it exists to protect. So the probe lists are derived rather than typed, and
+    this test walks every root script for a hardcoded URL naming a retired name.
+    """
+    import re
+    import estate
+    roots = [f for f in os.listdir(ROOT)
+             if f.endswith(".py") and not f.startswith("test_")]
+    offenders = []
+    for f in roots:
+        src = io.open(os.path.join(ROOT, f), encoding="utf-8").read()
+        for ln, line in enumerate(src.split("\n"), 1):
+            if line.strip().startswith("#"):
+                continue                      # a comment recording the history is not a probe
+            for dead in estate.RETIRED:
+                if re.search(r"https?://%s" % re.escape(dead), line):
+                    offenders.append("%s:%d names %s" % (f, ln, dead))
+    assert not offenders, "a retired site is still probed:\n  " + "\n  ".join(offenders)
+
+
+def test_the_outside_view_is_derived_from_the_one_home():
+    import recover
+    import estate
+    assert set(recover.SITES) == {u for _n, u, _c in estate.watch_list()}, (
+        "recover.SITES has drifted from estate.py, which is how godeyes.ai survived a retirement")
+    src = io.open(os.path.join(ROOT, "recover.py"), encoding="utf-8").read()
+    assert "import estate" in src, "the list is typed again instead of derived"
+
+
+def test_the_endpoint_count_matches_the_list_that_was_printed():
+    """`4/5` with four lines printed is a denominator nobody can check. caddyguard appended one
+    URL to SITES and counted len(SITES)+1; now jobhuntwow.com is IN the roster, so that would
+    both double-probe it and make the printed list disagree with the total."""
+    src = io.open(os.path.join(ROOT, "caddyguard.py"), encoding="utf-8").read()
+    body = "\n".join(l for l in src.split("\n") if not l.strip().startswith("#"))
+    assert "len(SITES) + 1" not in body, "the denominator counts a URL the loop does not print"
+    assert 'SITES + [' not in body, "a URL is appended outside the one home"

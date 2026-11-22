@@ -62,8 +62,18 @@ from recover import HOST, probe, sections, ssh_script  # noqa: E402  one ssh imp
 
 # Sites that must SURVIVE and are verified afterwards. If one of these stops answering, the
 # decommission has done damage and says so instead of reporting success.
-SURVIVORS = ["https://cybergod.ai/api/me", "https://www.cybergod.ai/",
-             "https://godeyes.ai/", "https://www.jobhuntwow.com/"]
+# DERIVED, never typed. A hardcoded survivor list goes stale the first time a site is retired,
+# and then the check that is supposed to prove "the decommission did no damage" fails because of
+# the previous decommission. estate.py is the one home.
+def _survivors():
+    try:
+        import estate
+        return [u for _n, u, _c in estate.watch_list()]
+    except Exception:
+        return ["https://cybergod.ai/api/me", "https://cybergod.ai/"]
+
+
+SURVIVORS = _survivors()
 
 # NAMED GROUPS, NOT A DEFAULT TARGET LIST (2026-10-22).
 #

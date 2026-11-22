@@ -404,7 +404,7 @@ def main():
 
     print("\n--- OUTSIDE VIEW ---")
     good = 0
-    for u in SITES + ["https://jobhuntwow.com/"]:
+    for u in SITES:
         st, note = probe(u)
         # 401 from /api/me is the HEALTHY answer for the authenticated endpoint.
         ok = st and st < 500
@@ -431,13 +431,13 @@ def main():
         for w in warn:
             print("[X] " + w)
         print("-" * 78)
-    print("%d/%d endpoints answering." % (good, len(SITES) + 1))
+    print("%d/%d endpoints answering." % (good, len(SITES)))
     print("From now on: no project writes the shared file. Each writes its own fragment via")
     print("`caddyguard write <name> <file>` and the guard assembles, validates and reloads.")
     print("=" * 78)
     if warn:
         return 1
-    return 0 if good == len(SITES) + 1 else 1
+    return 0 if good == len(SITES) else 1
 
 
 if __name__ == "__main__":
