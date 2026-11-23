@@ -163,28 +163,12 @@ throwaway git repo, all four mutations caught.
 `tests/test_shipflow.py` · `tests/test_pipeline_architecture.py` ·
 `docs/decisions/2026-10-pipeline-architecture.md`
 
-**THE SECRET SCANNER HAD BEEN RED FOR TWO MONTHS AND NOBODY SAW IT.** The first run that actually
-blocked a merge (PR #19) reported 5 gitleaks findings; the oldest has been in the tree since
-2026-08-22. The bypass made a failing scanner invisible — "an alert nobody gets is not an alert",
-proven on this repo. All 5 are code ABOUT secrets (the delimiters `ci_key.py` matches on, synthetic key fixtures, the
-token list the LLM guard must redact), so they are PATH-allowlisted in `.gitleaks.toml` — never
-obfuscated, because hiding from the scanner teaches the next person to do it too. **An allowlist
-is a new hole, so it ships with its own guard**: `tests/test_secret_scan.py` hands every PEM block
-in each allowlisted file to `ssh-keygen -y` — OpenSSH decides, not a regex — and fails if one
-PARSES, if a token is undocumented, if an entry is stale, or if the list grows. Two of my versions
-could not fail: a greedy `.*?` returned ONE 25 KB "block" (class 13), and re-wrapping every body
-in OPENSSH armour made a real RSA PEM unparseable for the WRONG reason. Keep the armour label;
-handle the one-line escaped form a service-account JSON uses. **AND THE GUARD ITSELF STAYS UNDER THE SCANNER** — twice gitleaks
-flagged it (the synthetic PAT written literally; a BEGIN/END pair in a COMMENT, since the rule
-spans everything between). Allowlisting the guard was the tempting fix and the wrong one: who
-guards the guard. Pin the token as `SYNTHETIC_SHA256`, describe armour in prose, and
-`test_this_file_is_not_itself_a_finding` asserts it against gitleaks' OWN regexes so it fails
-locally, not in CI. All four mutations caught. **BUT IT READ ONE FILE — ITS OWN**, so when I wrote
-an armour pair into test_gate_diagnostics.py the laptop saw nothing (`ship.py --test` runs no
-gitleaks) and run #8 died at the gate, skipping build/scan/staging/production behind it. A rule
-enforced on one file is an exception. The sweep now covers every TRACKED file, allowlist derived
-from the config, no binary needed — proved by re-introducing the verbatim run-#8 armour.
-[2026-10-16]
+**AN ALLOWLIST IS A NEW HOLE, SO IT SHIPS WITH ITS OWN GUARD, AND THE GUARD STAYS UNDER THE
+SCANNER.** gitleaks was red for two months behind the ruleset bypass - an alert nobody gets is not
+an alert. The 5 findings are code ABOUT secrets, PATH-allowlisted in `.gitleaks.toml`, never
+obfuscated. `tests/test_secret_scan.py` hands every PEM block to `ssh-keygen -y` (OpenSSH decides,
+not a regex) and sweeps every TRACKED file, because a rule enforced on one file is an exception.
+[2026-10-16] `docs/decisions/2026-10-secret-scanner.md`
 The repo is **PUBLIC**; `gmail_sa.json` / `colt-bots-*.json` hold REAL keys, are gitignored and
 never committed (asserted via `git ls-files -z` — tracked paths here contain spaces and `.split()`
 shreds them). `tests/test_secret_scan.py`
@@ -308,9 +292,13 @@ change instead of telling the user about it. If there is genuinely nothing to ru
   for a genuine fork that cannot be resolved from the code or that reverses one of his own
   documented rules. It is NOT for "shall I continue" or "want me to build the next part". Finish
   the work, then report what was built and what it measured.
-- **Look at a UI change before shipping it.** `python preview.py` and actually LOOK. Enforced by
-  `ui_preview_stamp.py`: ship.py stops with exit 2 when the frontend hash changed since the last
-  preview. `--no-preview` overrides deliberately.
+- **Look at a FRONTEND-ONLY change before shipping it.** `python preview.py` and actually LOOK.
+  Enforced by `ui_preview_stamp.py`: ship.py stops with exit 2 when the frontend hash changed.
+  **A FULL-STACK change is exempt and the STAGING GATE is its preview** - preview.py serves the
+  frontend alone (no API, no DB, no models), so a screen whose form posts to a new route just
+  errors there; demanding it anyway teaches `--no-preview` on every ship and kills the gate for
+  the CSS tweak it is good at. Measured from the diff, never a flag; unknown = still ask.
+  [2026-11-23] `tests/test_preview_proxy.py`
 - **Every release, the four models write the release notes and they are SENT** (Gmail API to
   feranicus@s4biz.io + Telegram). Same four as the staging panel; asserted identical by test.
 - **The staging panel's findings get ACTED ON.** When the panel is right, it becomes a check or a
@@ -397,10 +385,10 @@ an authorisation act; it fails CLOSED and can only ever ADD). Extend without cod
 
 `python set_secret.py NAME` — value on **stdin**, never argv (`bash -s` reads its SCRIPT from
 stdin; the script travels in argv).
-**A CREDENTIAL HAS AS MANY HOMES AS SOMEBODY GAVE IT; A CONTAINER'S ENV IS BAKED AT CREATION** (a
-stale key 403s like a wrong id): homes DERIVED from `BOTS_SECRETS`, others NAMED not written,
-consumers **recreated** not restarted, per SERVICE by label (per FILE, reuse.yml beats ghcr.yml
-and swaps the scanned artifact), `colt-stack` only. `test_secret_homes`
+**A CREDENTIAL HAS AS MANY HOMES AS SOMEBODY GAVE IT; A CONTAINER'S ENV IS BAKED AT CREATION**
+(a stale key 403s like a wrong id): homes DERIVED from `BOTS_SECRETS`, others NAMED not written,
+consumers **recreated** not restarted, per SERVICE by label (per FILE swaps the scanned
+artifact), `colt-stack` only. `test_secret_homes`
 
 ## The model chain and its budget
 
@@ -411,10 +399,9 @@ ship.py deletes `ENRICH_MODEL`/`ENRICH_MODELS` from the droplet .env. `GET /api/
 **THE HEAD HAS ELEVEN OTHER HOMES** as a fallback default - separate deployables that cannot import
 it; read `test_model_chain.HEAD_HOMES`, never a list here (class 32). That suite DERIVES the set
 from the whole tree and names every straggler, so a deprecation is one line, not a grep.
-`modelcheck.py` CALLS every chain model
-before deploying: **LISTED IS NOT CALLABLE** (/models is the gateway, not the key) and
-**a suffix is a DIFFERENT MODEL** (`-v4.1-flash` vs `-1017` cost 2 days): it calls siblings and
-NAMES the usable one, never picks.
+`modelcheck.py` CALLS each chain model first:
+**LISTED IS NOT CALLABLE** (/models is the gateway, not the key) and **a suffix is a DIFFERENT
+MODEL** (`-v4.1-flash` vs `-1017`). It calls siblings and NAMES the usable one.
 
 - Entitlement is not visibility: every `anthropic-*` and commercial `openai-gpt-*` returns **403**
   on this account. `model_watch.entitled()` skips probing them and says why.
@@ -707,8 +694,11 @@ writing a check, a fixture or a diagnostic.
     are VERBATIM from `Herkos_Commercial_Process_Map_v0.1_DRAFT.docx` (Assad) - THREE tracks
     (partner R1-R6, Herkos H0-H9, Perseus P0-P10), so `canon_stage` is track-aware or a card lands
     in a column that board never renders. A mail LABEL never moves a card: the gates are signature
-    events. A tie leaves the mail unfiled WITH the reason.
-    [2026-11-22] `tests/test_pipeline.py` · `docs/decisions/2026-11-pipeline.md`
+    events. A tie leaves the mail unfiled WITH the reason. **DEAL REG IS AN INCENTIVE, NEVER A BAN**
+    (a ban = customer allocation + a PASSIVE-sale restriction, hardcore Art. 4 VBER);
+    opportunity-scoped; CODE decides duplicates, the 4 models only FLAG; its numbers are
+    market-standard defaults, not policy. `tests/test_dealreg.py`
+    [2026-11-22/23] `docs/decisions/2026-11-pipeline.md` · `2026-11-deal-registration.md`
 58. **A ROLE IS NOT A CREDENTIAL AND MUST NOT LIVE IN THE CREDENTIAL ROW.** The people it is FOR
     have no row (shared password, `pw_hash NOT NULL`), so a `users.role` column means inventing
     one - `has_account()` turns true and TAKES THE SHARED PASSWORD AWAY. Own table; policy only

@@ -964,6 +964,23 @@ app.include_router(_pipeline.build_router(
     require_admin=_require_perm("pipeline.admin"),
 ))
 
+# DEAL REGISTRATION. A fourth board beside the three process-map tracks, and a different KIND of
+# object: the tracks follow a partner relationship, a registration follows one deal and carries a
+# protection window with a clock on it.
+#
+# `dealreg.view.own` is the view dependency, NOT `view.all`: a partner must reach the board to see
+# their own registrations, and `visible_to()` is the single place that decides what comes back.
+# Gating the route on view.all instead would have been the easy wiring and would have shut every
+# partner out of the thing they are supposed to use.
+from . import dealreg as _dealreg        # noqa: E402
+
+app.include_router(_dealreg.build_router(
+    require_submit=_require_perm("dealreg.submit"),
+    require_view=_require_perm("dealreg.view.own"),
+    require_decide=_require_perm("dealreg.decide"),
+    perms_of=lambda email: __import__("roles").perms_of(role_for(email)),
+))
+
 
 def _mail_possible(email):
     """Can this mailbox be read at all? Only inside the Workspace our service account is delegated

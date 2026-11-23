@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { delJSON, getJSON, patchJSON, postJSON } from "../api.js";
 import { useT } from "../i18n";
+import DealReg from "./DealReg.jsx";
 
 /* Pipeline — the channel-sales board.
 
@@ -33,6 +34,7 @@ export default function Pipeline() {
   const [, , t] = useT();
   const [board, setBoard] = useState(null);
   const [track, setTrack] = useState("");
+  const [tab, setTab] = useState("tracks");
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState("");
   const [busy, setBusy] = useState("");
@@ -168,9 +170,19 @@ export default function Pipeline() {
           <button type="button" role="tab" key={tr.key} aria-selected={track === tr.key}
                   className={"admin-tab" + (track === tr.key ? " on" : "")}
                   title={tr.about}
-                  onClick={() => { setOpen(null); load(tr.key); }}>{tr.label}</button>
+                  onClick={() => { setOpen(null); setTab("tracks"); load(tr.key); }}>{tr.label}</button>
         ))}
+        {/* THE FOURTH TAB IS NOT A FOURTH TRACK. The three above are stages of one process map
+            and a card is dragged between them; a registration is a verdict with a clock, lives in
+            its own store behind its own permissions, and is rendered by its own component. Making
+            it a track would have been the smaller diff and the wrong object. */}
+        <button type="button" role="tab" aria-selected={tab === "dealreg"}
+                className={"admin-tab" + (tab === "dealreg" ? " on" : "")}
+                onClick={() => { setOpen(null); setTab("dealreg"); }}>{t("dr.tab")}</button>
       </div>
+
+      {tab === "dealreg" ? <DealReg /> : (
+      <>
 
       <form className="card admin-new" onSubmit={addDeal}>
         <div className="assess-row">
@@ -333,6 +345,8 @@ export default function Pipeline() {
           </ul>
         </div>
       ) : null}
+      </>
+      )}
     </div>
   );
 }

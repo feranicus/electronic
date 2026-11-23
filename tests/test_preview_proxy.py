@@ -76,3 +76,89 @@ def test_the_guard_only_applies_when_pointed_at_a_remote_target():
     assert "if (!READONLY) return;" in s, (
         "the read-only guard is unconditional; running the preview against a local backend would "
         "then refuse writes for no reason")
+
+
+# ---------------------------------------------------------------------------------------------
+# THE PREVIEW GATE CAN ONLY HELP WITH A FRONTEND-ONLY CHANGE (23 Nov 2026)
+# ---------------------------------------------------------------------------------------------
+# The operator, on the deal-registration ship: "forget about this preview ... this is not only
+# front end but also AI and backend database etc ... there can be no preview here it needs to go
+# to regular test/prod."
+#
+# He is right, and it is a gap in the gate rather than an exception to it. `preview.py` serves the
+# built frontend and nothing else - no FastAPI, no sqlite, no model chain. A feature whose screen
+# is a form posting to a new route, backed by a new table and a four-model panel, renders there as
+# a page that errors on load, so "look at it" produces no evidence about the thing that was built.
+# Demanding it anyway teaches the operator to reach for `--no-preview` on every ship, which is how
+# the gate dies for the pure-UI tweak it IS good at.
+#
+# For a full-stack change the STAGING GATE is the preview: the real image, the real backend, a real
+# database on the twin, then a reboot. Strictly more evidence than a dev server, and already
+# mandatory - so the look is not being skipped, it is being done properly.
+
+import importlib.util as _ilu
+import os as _os
+
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+
+
+def _ups():
+    spec = _ilu.spec_from_file_location("ups_t", _os.path.join(_ROOT, "ui_preview_stamp.py"))
+    m = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+class _Run:
+    def __init__(self, out, rc=0):
+        self.stdout, self.returncode = out, rc
+
+
+def test_a_frontend_only_change_still_demands_a_look():
+    """THE GATE MUST NOT BE SWITCHED OFF. A pure CSS or copy change is exactly what previewing is
+    good at, and it must still block."""
+    ups = _ups()
+    full, why = ups.full_stack_change(
+        run=lambda c: _Run(" M webapp/frontend/src/pages/Landing.jsx\n"
+                           " M webapp/frontend/src/index.css\n"))
+    assert full is False, "a frontend-only change was waved through: %s" % why
+
+
+def test_a_backend_change_alongside_the_ui_is_full_stack():
+    ups = _ups()
+    full, why = ups.full_stack_change(
+        run=lambda c: _Run(" M webapp/frontend/src/pages/DealReg.jsx\n"
+                           " M webapp/backend/app/dealreg.py\n M roles.py\n"))
+    assert full is True
+    assert "webapp/backend/app/dealreg.py" in why and "roles.py" in why, (
+        "it does not NAME the backend files, so the operator cannot check the claim: %s" % why)
+
+
+def test_docs_and_tests_alone_are_not_a_backend_change():
+    """A decision doc and a test suite change nothing a user can run into. Counting them would
+    make almost every ship 'full-stack' and quietly retire the gate."""
+    ups = _ups()
+    full, _ = ups.full_stack_change(
+        run=lambda c: _Run(" M webapp/frontend/src/pages/Landing.jsx\n"
+                           " M docs/decisions/2026-11-x.md\n M tests/test_x.py\n"))
+    assert full is False
+
+
+def test_an_unknown_answer_keeps_the_gate_asking():
+    """No git, not a repo, a crash: the question is unanswered, and an unanswered question must not
+    read as permission (class 1). It falls back to demanding the look."""
+    ups = _ups()
+    assert ups.full_stack_change(run=lambda c: _Run("", rc=128))[0] is False
+    assert ups.full_stack_change(
+        run=lambda c: (_ for _ in ()).throw(OSError("no git")))[0] is False
+
+
+def test_the_full_stack_path_says_WHY_and_points_at_the_staging_gate():
+    """A gate that passes silently teaches nothing. This one has to say what it measured and what
+    is covering the look instead (class 5: print the comparison you made)."""
+    ups = _ups()
+    ups.full_stack_change = lambda run=None: (True, ["webapp/backend/app/dealreg.py"])
+    ok, msg = ups.check()
+    if ok and "STAGING GATE" in msg:
+        assert "dealreg.py" in msg, "it does not name the evidence: " + msg
+        assert "preview.py" in msg, "it does not say why previewing cannot help: " + msg

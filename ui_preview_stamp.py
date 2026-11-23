@@ -107,6 +107,44 @@ def record_shipped():
     SHIPPED.write_text(ui_hash(), encoding="utf-8")
 
 
+def full_stack_change(run=None):
+    """Does this working tree change the BACKEND as well as the frontend?
+
+    THE GATE CAN ONLY HELP WITH A FRONTEND-ONLY CHANGE, and pretending otherwise blocks ships it
+    cannot improve. `preview.py` serves the built frontend and nothing else: no FastAPI, no sqlite,
+    no model chain. A feature whose screen is a form posting to a new route, backed by a new table
+    and a four-model panel, renders in the preview as a page that errors on load - so "look at it"
+    produces no evidence about the thing that was built, and demanding it anyway trains the
+    operator to reach for `--no-preview` on every ship, which is how the gate dies for the pure-UI
+    tweak it IS good at.
+
+    For a full-stack change the STAGING GATE is the preview: it builds the real image, runs the
+    real backend against a real database on the twin, exercises the engine, reboots the box and
+    re-checks. That is strictly more evidence than a person looking at a dev server, and it is
+    already mandatory.
+
+    Measured from git, never from a flag: a flag would be the operator asserting it, and this is a
+    fact about the diff. Unknown (no git, not a repo) counts as NOT full-stack, so the gate keeps
+    asking rather than quietly letting a UI change through on an unanswered question (class 1).
+    """
+    import subprocess
+    runner = run or (lambda c: subprocess.run(c, cwd=str(ROOT), capture_output=True, text=True,
+                                              timeout=30))
+    try:
+        r = runner(["git", "status", "--porcelain", "--untracked-files=all"])
+        if r.returncode != 0:
+            return False, []
+        paths = [ln[3:].strip().strip('"') for ln in (r.stdout or "").splitlines() if ln[3:].strip()]
+    except Exception:
+        return False, []
+    fe = "webapp/frontend/"
+    back = [p for p in paths
+            if not p.startswith(fe)
+            and p.endswith((".py", ".sql", ".yml", ".yaml", ".toml", ".json"))
+            and not p.startswith(("docs/", "tests/", "marketing/"))]
+    return bool(back), back[:8]
+
+
 def check():
     """(ok, message). ok=False means: the UI changed and has not been previewed."""
     now = ui_hash()
@@ -114,6 +152,12 @@ def check():
         return True, "previewed (%d UI files, %s)" % (len(ui_files()), now[:12])
     if _read(SHIPPED) == now:
         return True, "no UI change since the last deploy (%s)" % now[:12]
+    full, why = full_stack_change()
+    if full:
+        return True, ("the UI changed, and so did the backend (%s) - `preview.py` serves the "
+                      "frontend alone, so it cannot render this. The STAGING GATE is the preview "
+                      "for a full-stack change: real image, real backend, real database, on the "
+                      "twin, with a reboot." % ", ".join(why))
     if not _read(SHIPPED) and not _read(STAMP):
         # First run on this machine: nothing to compare against. Ask once rather than assert
         # something untrue about what has or has not been looked at.

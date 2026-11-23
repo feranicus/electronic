@@ -45,6 +45,22 @@ PERMISSIONS = {
     "pipeline.edit":     "move a deal, write an update, attach a file",
     "pipeline.admin":    "read the connected mailboxes into the board, and re-file a message by "
                          "hand onto a different deal",
+    # DEAL REGISTRATION. Four verbs, because "register a deal", "see your own", "see everyone's"
+    # and "decide" are four different powers and collapsing any two of them is a leak.
+    #
+    # `dealreg.view.all` IS THE SENSITIVE ONE. A registration names an end customer, the expected
+    # value, the close date and the incumbent competitor, submitted by a reseller who competes with
+    # the other resellers. Granting it to a partner would make US the channel through which one
+    # reseller learns a rival's pipeline — competitor-to-competitor disclosure via the vendor,
+    # which is the exposure dual distribution is judged on. So it goes to S4biz roles only, which
+    # is also exactly what the operator asked for: every S4biz account sees every registration,
+    # because you cannot adjudicate "who got here first" from a partial view, and an S4biz seller
+    # must know an account is spoken for before promising it to somebody else.
+    "dealreg.submit":    "register a deal and ask for protection, a discount and deal support",
+    "dealreg.view.own":  "open the deal registrations this person submitted",
+    "dealreg.view.all":  "open EVERY deal registration on the platform (S4biz only — a "
+                         "registration is a rival reseller's pipeline)",
+    "dealreg.decide":    "approve, return, reject or expire a registration, and extend protection",
     "users.invite.org":  "create and disable accounts INSIDE their own company",
     "users.invite.any":  "create accounts in any company, and create companies",
     "users.manage.all":  "create, disable and delete any account anywhere",
@@ -62,16 +78,21 @@ _R = [
      "S4biz staff. The whole product and the whole pipeline, but not the controls that can break "
      "the platform.",
      {"assess.run", "assess.read.own", "assess.read.org", "assess.read.all", "brand.manage",
-      "pipeline.view", "pipeline.edit", "pipeline.admin", "users.invite.any", "fleet.read"}),
+      "pipeline.view", "pipeline.edit", "pipeline.admin", "users.invite.any", "fleet.read",
+      "dealreg.submit", "dealreg.view.own", "dealreg.view.all", "dealreg.decide"}),
 
     ("reseller_admin", "Reseller administrator",
      "A distributor. Administers their own people AND the companies they sell to.",
      {"assess.run", "assess.read.own", "assess.read.org", "brand.manage",
-      "pipeline.view", "pipeline.edit", "users.invite.any"}),
+      "pipeline.view", "pipeline.edit", "users.invite.any",
+      # A distributor REGISTERS deals and sees their own. NOT view.all: that would hand one
+      # reseller the pipeline of every other reseller, through us.
+      "dealreg.submit", "dealreg.view.own"}),
 
     ("company_admin", "Company administrator",
      "Administers their own company's people. Sees nothing outside it.",
-     {"assess.run", "assess.read.own", "assess.read.org", "brand.manage", "users.invite.org"}),
+     {"assess.run", "assess.read.own", "assess.read.org", "brand.manage", "users.invite.org",
+      "dealreg.submit", "dealreg.view.own"}),
 
     ("presales", "Pre-sales engineer",
      "Runs assessments and reads every assessment their company ran.",
@@ -79,7 +100,8 @@ _R = [
 
     ("sales_rep", "Sales representative",
      "Runs assessments and works the pipeline. Reads their own work.",
-     {"assess.run", "assess.read.own", "pipeline.view", "pipeline.edit"}),
+     {"assess.run", "assess.read.own", "pipeline.view", "pipeline.edit",
+      "dealreg.submit", "dealreg.view.own"}),
 
     ("user", "User", "Runs assessments and reads their own.",
      {"assess.run", "assess.read.own"}),
